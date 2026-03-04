@@ -1,0 +1,11 @@
+<Solution>
+  <Project Path="Chat/Chat.csproj" />
+  <Project Path="Cours/Cours.csproj" />
+  <Project Path="GPOE26.ApiService/GPOE26.ApiService.csproj" />
+  <Project Path="GPOE26.AppHost/GPOE26.AppHost.csproj" />
+  <Project Path="GPOE26.ServiceDefaults/GPOE26.ServiceDefaults.csproj" />
+  <Project Path="GPOE26.Tests/GPOE26.Tests.csproj" />
+  <Project Path="GPOE26.Web/GPOE26.Web.csproj" />
+  <Project Path="Quiz/Quiz.csproj" />
+  <Project Path="User/User.csproj" />
+</Solution>
