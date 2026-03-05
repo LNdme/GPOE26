@@ -1,29 +1,99 @@
-﻿<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="">GPOE26</a>
+﻿@inject GPOE26.Web.Services.AuthService Auth
+@inject NavigationManager Nav
+@implements IDisposable
+@rendermode InteractiveServer
+
+<style>
+    /* Styles inspirés de Google ML Crash Course */
+    .navbar-clean { background-color: #ffffff; border-bottom: 1px solid #dadce0; }
+    .text-navy { color: #174ea6 !important; }
+    .btn-navy { background-color: #174ea6; color: white; border: none; font-weight: 500; border-radius: 4px; }
+    .btn-navy:hover { background-color: #123d82; color: white; }
+    .nav-link { font-weight: 500; color: #5f6368 !important; transition: color 0.2s; }
+    .nav-link:hover, .nav-link.active { color: #174ea6 !important; }
+    .navbar-brand { font-size: 1.4rem; letter-spacing: -0.5px; }
+</style>
+
+<nav class="navbar navbar-expand-md navbar-clean sticky-top py-2 shadow-sm">
+    <div class="container">
+        <a class="navbar-brand fw-bold text-navy" href="/">
+            GPOE<span class="text-muted fs-5">26</span>
+        </a>
+
+        <button class="navbar-toggler border-0" type="button" @onclick="ToggleNavMenu">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="collapse navbar-collapse @(collapseNavMenu ? "" : "show")">
+            <ul class="navbar-nav me-auto mb-2 mb-md-0 ms-md-4">
+                <li class="nav-item">
+                    <NavLink class="nav-link px-3" href="/" Match="NavLinkMatch.All">Accueil</NavLink>
+                </li>
+                
+                @if (Auth.IsAuthenticated)
+                {
+                    <li class="nav-item">
+                        <NavLink class="nav-link px-3" href="/mes-cours">Mes Cours</NavLink>
+                    </li>
+                    <li class="nav-item">
+                        <NavLink class="nav-link px-3" href="/quiz">Quiz</NavLink>
+                    </li>
+                    <li class="nav-item">
+                        <NavLink class="nav-link px-3" href="/chat">Chat IA</NavLink>
+                    </li>
+                }
+            </ul>
+
+            <ul class="navbar-nav ms-auto align-items-center">
+                @if (Auth.IsAuthenticated)
+                {
+                    <li class="nav-item me-3 d-none d-md-block">
+                        <span class="text-muted small">
+                            👤 Bonjour, <strong class="text-navy">@(Auth.Profile?.Username ?? "Utilisateur")</strong>
+                        </span>
+                    </li>
+                    <li class="nav-item">
+                        <button class="btn btn-outline-danger btn-sm" @onclick="Logout">Déconnexion</button>
+                    </li>
+                }
+                else
+                {
+                    <li class="nav-item me-2 mb-2 mb-md-0">
+                        <a class="nav-link" href="/login">Se connecter</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="btn btn-navy btn-sm px-3 py-2" href="/register">S'inscrire</a>
+                    </li>
+                }
+            </ul>
+        </div>
     </div>
-</div>
+</nav>
 
-<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+@code {
+    private bool collapseNavMenu = true;
 
-<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
-    <nav class="nav flex-column">
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="bi bi-house-door-fill" aria-hidden="true"></span> Home
-            </NavLink>
-        </div>
+    protected override void OnInitialized()
+    {
+        // On s'abonne à l'événement pour rafraîchir l'UI lors de la connexion/déconnexion
+        Auth.OnAuthChanged += StateHasChanged;
+    }
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="counter">
-                <span class="bi bi-plus-square-fill" aria-hidden="true"></span> Counter
-            </NavLink>
-        </div>
+    public void Dispose()
+    {
+        // On se désabonne proprement pour éviter les fuites de mémoire
+        Auth.OnAuthChanged -= StateHasChanged;
+    }
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="weather">
-                <span class="bi bi-list-nested" aria-hidden="true"></span> Weather
-            </NavLink>
-        </div>
-    </nav>
-</div>
+    private void ToggleNavMenu()
+    {
+        collapseNavMenu = !collapseNavMenu;
+    }
+
+    private void Logout()
+    {
+        Auth.Logout();
+        // Redirection vers l'accueil public avec un rechargement forcé pour nettoyer l'état de la page
+        Nav.NavigateTo("/", forceLoad: true); 
+    }
+}

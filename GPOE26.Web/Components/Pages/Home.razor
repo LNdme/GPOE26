@@ -1,7 +1,128 @@
-﻿@page "/"
+@page "/"
+@rendermode InteractiveServer
+@inject GPOE26.Web.Services.ApiClient Api
+@using GPOE26.Web.Models
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Accueil – GPOE26</PageTitle>
 
-<h1>Hello, world!</h1>
+<style>
+    /* Thème inspiré de Google ML Crash Course */
+    .bg-light-gray { background-color: #f8f9fa; }
+    .text-navy { color: #174ea6 !important; }
+    .bg-navy { background-color: #174ea6 !important; color: white; }
+    .btn-navy { background-color: #174ea6; color: white; border: none; font-weight: 500; padding: 0.5rem 1.5rem; border-radius: 4px; }
+    .btn-navy:hover { background-color: #123d82; color: white; }
+    .card-clean { border: 1px solid #dadce0; border-radius: 8px; box-shadow: none; transition: box-shadow 0.2s; background: white; }
+    .card-clean:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    .section-title { font-weight: 400; font-size: 2rem; margin-bottom: 2rem; color: #202124; }
+</style>
 
-Welcome to your new app.
+<div class="container-fluid bg-light-gray py-5 text-center">
+    <div class="container py-5">
+        <h1 class="display-4 fw-bold text-navy mb-3">Plateforme d'apprentissage IA</h1>
+        <p class="lead text-muted mb-4" style="max-width: 700px; margin: auto;">
+            Rejoignez le Lycée GPOE pour apprendre, créer et réussir avec des outils propulsés par l'intelligence artificielle.
+        </p>
+        <a href="/register" class="btn btn-navy btn-lg shadow-sm">Commencer maintenant</a>
+    </div>
+</div>
+
+<div class="container py-5">
+    
+    <h2 class="section-title">Dernières Actualités</h2>
+    @if (_loading)
+    {
+        <div class="text-center text-muted"><div class="spinner-border text-navy"></div> Chargement...</div>
+    }
+    else if (_news.Any())
+    {
+        <div class="row g-4 mb-5">
+            @foreach (var article in _news)
+            {
+                <div class="col-md-4">
+                    <div class="card card-clean h-100 p-3">
+                        <div class="card-body">
+                            <span class="badge bg-light text-navy mb-2 border">@article.Category</span>
+                            <h5 class="card-title fw-bold">@article.Title</h5>
+                            <p class="card-text text-muted small">@article.Excerpt</p>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    <div class="row g-5 mb-5">
+        <div class="col-md-6">
+            <h2 class="section-title">Événements à venir</h2>
+            <ul class="list-group list-group-flush border-top border-bottom">
+                @foreach (var ev in _events)
+                {
+                    <li class="list-group-item py-3 px-0 border-light d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-1 fw-bold">@ev.Title</h6>
+                            <small class="text-muted">@ev.StartDate.ToString("dd MMM yyyy") - @ev.Type</small>
+                        </div>
+                        <span class="text-navy">📅</span>
+                    </li>
+                }
+                @if (!_events.Any() && !_loading) { <li class="list-group-item py-3 px-0 text-muted">Aucun événement prévu.</li> }
+            </ul>
+        </div>
+
+        <div class="col-md-6">
+            <h2 class="section-title">Clubs & Activités</h2>
+            <div class="d-flex flex-wrap gap-2">
+                @foreach (var act in _activities)
+                {
+                    <div class="p-3 card-clean w-100 d-flex justify-content-between">
+                        <span class="fw-bold">@act.Name</span>
+                        <span class="badge bg-light text-dark border">@act.Category</span>
+                    </div>
+                }
+                @if (!_activities.Any() && !_loading) { <span class="text-muted">Aucune activité disponible.</span> }
+            </div>
+        </div>
+    </div>
+
+    <h2 class="section-title text-center mt-5">Notre Équipe</h2>
+    <div class="row g-4 justify-content-center">
+        @foreach (var member in _hierarchy.Take(4))
+        {
+            <div class="col-md-3 text-center">
+                <div class="rounded-circle bg-light-gray mx-auto mb-3 d-flex align-items-center justify-content-center" style="width: 80px; height: 80px; font-size: 24px;">
+                    @@(member.Name?.FirstOrDefault() ?? '👤')
+                </div>
+                <h6 class="fw-bold mb-0">@member.PreName @member.Name</h6>
+                <small class="text-navy">@member.Role</small>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private bool _loading = true;
+    private List<NewArticle> _news = new();
+    private List<SchoolEvent> _events = new();
+    private List<SchoolActivity> _activities = new();
+    private List<Hierarchy> _hierarchy = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _loading = true;
+        // Chargement parallèle de toutes les API publiques
+        var newsTask = Api.GetNewsAsync(published: true, pageSize: 3);
+        var eventsTask = Api.GetUpcomingEventsAsync(4);
+        var activitiesTask = Api.GetActiveActivitiesAsync();
+        var hierarchyTask = Api.GetHierarchyAsync();
+
+        await Task.WhenAll(newsTask, eventsTask, activitiesTask, hierarchyTask);
+
+        _news = (await newsTask).items;
+        _events = await eventsTask;
+        _activities = await activitiesTask;
+        _hierarchy = await hierarchyTask;
+        
+        _loading = false;
+    }
+}

@@ -28,11 +28,12 @@ builder.AddServiceDefaults();
 
 // ─── Base de données ──────────────────────────────────────────────────────────
 // "coursdb" = déclaré dans AppHost.cs : postgres.AddDatabase("coursdb")
-//builder.AddNpgsqlDbContext<CoursContext>("coursdb");
 
-
-var lol = builder.Configuration.GetConnectionString("CoursDB");
-builder.Services.AddDbContext<CoursContext>(op => op.UseNpgsql(lol));
+// Use the centralized AddNpgsqlDbContext registration (declared in AppHost)
+// to register `CoursContext`. Do not also call `AddDbContext` for the same
+// context — registering the DbContext twice can cause DI resolution errors
+// such as "Cannot resolve scoped service IEnumerable<IDbContextOptionsConfiguration<>...".
+builder.AddNpgsqlDbContext<CoursContext>("coursdb");
 
 
 

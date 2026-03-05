@@ -1,0 +1,67 @@
+@inject GPOE26.Web.Services.ApiClient Api
+@inject NavigationManager Nav
+@inject AuthService Auth
+@rendermode InteractiveServer
+
+<header class="py-3 mb-3 border-bottom">
+  <div class="container-fluid d-grid gap-3 align-items-center" style="grid-template-columns: 1fr 2fr">
+    <div class="dropdown">
+      <a href="#" class="d-flex align-items-center link-body-emphasis text-decoration-none dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Bootstrap menu">
+        <svg class="bi me-2" width="40" height="32" aria-hidden="true"><use xlink:href="#bootstrap"></use></svg>
+        <strong class="ms-2">@contact?.Name</strong>
+      </a>
+      <ul class="dropdown-menu text-small shadow">
+        <li><NavLink class="dropdown-item" href="/">Accueil</NavLink></li>
+        <li><NavLink class="dropdown-item" href="/mes-cours">Mes cours</NavLink></li>
+        <li><NavLink class="dropdown-item" href="/projets">Projets</NavLink></li>
+        <li><NavLink class="dropdown-item" href="/blog">Blog</NavLink></li>
+        <li><hr class="dropdown-divider" /></li>
+        <li><NavLink class="dropdown-item" href="/evenements">Événements</NavLink></li>
+      </ul>
+    </div>
+
+    <div class="d-flex align-items-center">
+      <form class="w-100 me-3" role="search">
+        <input type="search" class="form-control" placeholder="Search..." aria-label="Search" />
+      </form>
+
+      <div class="flex-shrink-0 dropdown">
+        @if (Auth.IsAuthenticated)
+        {
+          <a href="#" class="d-block link-body-emphasis text-decoration-none dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+            <img src="https://github.com/mdo.png" alt="avatar" width="32" height="32" class="rounded-circle" />
+          </a>
+          <ul class="dropdown-menu text-small shadow dropdown-menu-end">
+            <li><a class="dropdown-item" href="/mes-cours">Mes cours</a></li>
+            <li><a class="dropdown-item" href="/profil">Profil</a></li>
+            <li><hr class="dropdown-divider" /></li>
+            <li><button class="dropdown-item" @onclick="DoLogout">Se déconnecter</button></li>
+          </ul>
+        }
+        else
+        {
+          <a href="/login" class="btn btn-outline-primary me-2">Login</a>
+          <a href="/register" class="btn btn-primary">Sign-up</a>
+        }
+      </div>
+    </div>
+  </div>
+</header>
+
+@code {
+    private Contact? contact;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { contact = await Api.GetPrimaryContactAsync(); }
+        catch { }
+    }
+
+    private void DoLogout()
+    {
+        Auth.Logout();
+        Nav.NavigateTo("/");
+    }
+}
+
+

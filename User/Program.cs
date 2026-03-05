@@ -24,7 +24,7 @@ builder.AddServiceDefaults();
 //   builder.Services.AddDbContext<UserContext>(op => op.UseNpgsql(lol));
 //
 // Après (correct) :
-//   builder.AddNpgsqlDbContext<UserContext>("userdb");
+builder.AddNpgsqlDbContext<UserContext>("userdb");
 //
 // "userdb" = le nom déclaré dans AppHost.cs : postgres.AddDatabase("userdb")
 // Aspire gère automatiquement : retry, health check, OpenTelemetry, connection string.
@@ -33,10 +33,10 @@ builder.AddServiceDefaults();
 
 
 
-
+/*
 var lol = builder.Configuration.GetConnectionString("UserDB");
 builder.Services.AddDbContext<UserContext>(op => op.UseNpgsql(lol));
-
+*/
 
 
 

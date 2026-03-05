@@ -1,0 +1,96 @@
+@page "/login"
+@inject GPOE26.Web.Services.AuthService Auth
+@inject NavigationManager Nav
+@rendermode InteractiveServer
+
+<PageTitle>Connexion – GPOE26</PageTitle>
+
+<style>
+    .bg-light-gray { background-color: #f8f9fa; }
+    .text-navy { color: #174ea6 !important; }
+    .btn-navy { background-color: #174ea6; color: white; border: none; font-weight: 500; padding: 0.6rem; border-radius: 4px; }
+    .btn-navy:hover { background-color: #123d82; color: white; }
+    .card-clean { border: 1px solid #dadce0; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); background: white; }
+    .form-control:focus { border-color: #174ea6; box-shadow: 0 0 0 0.25rem rgba(23, 78, 166, 0.25); }
+</style>
+
+<div class="vh-100 d-flex justify-content-center align-items-center bg-light-gray">
+    <div class="card card-clean p-4" style="width: 100%; max-width: 400px;">
+        <div class="text-center mb-4">
+            <h2 class="fw-bold text-navy mb-1">GPOE<span class="text-muted fs-4">26</span></h2>
+            <p class="text-muted">Connexion à votre espace</p>
+        </div>
+
+        @if (_error is not null)
+        {
+            <div class="alert alert-danger py-2" role="alert">
+                <small>⚠️ @_error</small>
+            </div>
+        }
+
+        <div class="mb-3">
+            <label class="form-label small fw-bold text-muted">Email</label>
+            <input type="email" class="form-control" @bind="_email" @bind:event="oninput" @onkeydown="OnKey" placeholder="vous@exemple.cm" />
+        </div>
+
+        <div class="mb-4">
+            <label class="form-label small fw-bold text-muted">Mot de passe</label>
+            <input type="password" class="form-control" @bind="_password" @bind:event="oninput" @onkeydown="OnKey" placeholder="••••••••" />
+        </div>
+
+        <button class="btn btn-navy w-100 mb-3" @onclick="DoLogin" disabled="@_loading">
+            @if (_loading)
+            {
+                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                <span>Connexion...</span>
+            }
+            else
+            {
+                <span>Se connecter</span>
+            }
+        </button>
+
+        <div class="text-center small">
+            Pas encore de compte ? <a href="/register" class="text-navy text-decoration-none fw-bold">S'inscrire</a>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string _email = "";
+    private string _password = "";
+    private string? _error;
+    private bool _loading;
+
+    protected override void OnInitialized()
+    {
+        if (Auth.IsAuthenticated)
+            Nav.NavigateTo("/mes-cours");
+    }
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await DoLogin();
+    }
+
+    private async Task DoLogin()
+    {
+        if (string.IsNullOrWhiteSpace(_email) || string.IsNullOrWhiteSpace(_password))
+        {
+            _error = "Remplis tous les champs.";
+            return;
+        }
+
+        _loading = true;
+        _error = null;
+        
+        var (ok, err) = await Auth.LoginAsync(_email, _password);
+        
+        _loading = false;
+        
+        if (ok)
+            Nav.NavigateTo("/mes-cours");
+        else
+            _error = err;
+    }
+}

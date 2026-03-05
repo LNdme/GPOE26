@@ -1,0 +1,146 @@
+@page "/register"
+@inject GPOE26.Web.Services.AuthService Auth
+@inject NavigationManager Nav
+@using GPOE26.Web.Models
+@rendermode InteractiveServer
+
+<PageTitle>Inscription – GPOE26</PageTitle>
+
+<style>
+    .bg-light-gray { background-color: #f8f9fa; }
+    .text-navy { color: #174ea6 !important; }
+    .btn-navy { background-color: #174ea6; color: white; border: none; font-weight: 500; padding: 0.6rem; border-radius: 4px; }
+    .btn-navy:hover { background-color: #123d82; color: white; }
+    .card-clean { border: 1px solid #dadce0; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); background: white; }
+    .form-control:focus, .form-select:focus { border-color: #174ea6; box-shadow: 0 0 0 0.25rem rgba(23, 78, 166, 0.25); }
+    .form-label { font-size: 0.875rem; font-weight: 600; color: #5f6368; }
+</style>
+
+<div class="min-vh-100 d-flex justify-content-center align-items-center bg-light-gray py-5">
+    <div class="card card-clean p-4" style="width: 100%; max-width: 600px;">
+        <div class="text-center mb-4">
+            <h2 class="fw-bold text-navy mb-1">Créer un compte</h2>
+            <p class="text-muted">Rejoignez la plateforme GPOE26</p>
+        </div>
+
+        @if (_error is not null)
+        {
+            <div class="alert alert-danger py-2" role="alert">
+                <small>⚠️ @_error</small>
+            </div>
+        }
+
+        <div class="row g-3 mb-3">
+            <div class="col-md-6">
+                <label class="form-label">Email</label>
+                <input type="email" class="form-control" @bind="_email" placeholder="toi@exemple.cm" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Nom d'utilisateur</label>
+                <input type="text" class="form-control" @bind="_username" placeholder="jean_paul" />
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Mot de passe</label>
+            <input type="password" class="form-control" @bind="_password" placeholder="Au moins 8 caractères" />
+        </div>
+
+        <div class="row g-3 mb-4">
+            <div class="col-md-6">
+                <label class="form-label">Rôle</label>
+                <select class="form-select" @bind="_role">
+                    <option value="Student">Élève</option>
+                    <option value="Teacher">Enseignant</option>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Niveau</label>
+                <select class="form-select" @bind="_level">
+                    <option value="">— Choisir —</option>
+                    <option value="3eme">3ème</option>
+                    <option value="2nde">2nde</option>
+                    <option value="1ere">1ère</option>
+                    <option value="Tle">Terminale</option>
+                </select>
+            </div>
+        </div>
+
+        @if (_role == "Student")
+        {
+            <div class="mb-4">
+                <label class="form-label">Filière</label>
+                <select class="form-select" @bind="_filiere">
+                    <option value="">— Choisir —</option>
+                    <option value="Scientifique">Scientifique</option>
+                    <option value="Litteraire">Littéraire</option>
+                    <option value="Technique">Technique</option>
+                </select>
+            </div>
+        }
+
+        @if (_role == "Teacher")
+        {
+            <div class="mb-4">
+                <label class="form-label">Spécialité</label>
+                <input type="text" class="form-control" @bind="_specialite" placeholder="Mathématiques, Physique..." />
+            </div>
+        }
+
+        <button class="btn btn-navy w-100 mb-3" @onclick="DoRegister" disabled="@_loading">
+            @if (_loading)
+            {
+                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                <span>Création...</span>
+            }
+            else
+            {
+                <span>Créer mon compte</span>
+            }
+        </button>
+
+        <div class="text-center small">
+            Déjà un compte ? <a href="/login" class="text-navy text-decoration-none fw-bold">Se connecter</a>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string _email = "", _username = "", _password = "";
+    private string _role = "Student", _level = "", _filiere = "", _specialite = "";
+    private string? _error;
+    private bool _loading;
+
+    protected override void OnInitialized()
+    {
+        if (Auth.IsAuthenticated) Nav.NavigateTo("/mes-cours");
+    }
+
+    private async Task DoRegister()
+    {
+        if (string.IsNullOrWhiteSpace(_email) || string.IsNullOrWhiteSpace(_username) || string.IsNullOrWhiteSpace(_password))
+        {
+            _error = "Remplis tous les champs obligatoires.";
+            return;
+        }
+
+        _loading = true;
+        _error = null;
+
+        var req = new RegisterRequest(
+            Email: _email, 
+            Username: _username, 
+            Password: _password,
+            Role: _role,
+            Level: string.IsNullOrWhiteSpace(_level) ? null : _level,
+            Specialite: _role == "Teacher" && !string.IsNullOrWhiteSpace(_specialite) ? _specialite : null,
+            Filiere: _role == "Student" && !string.IsNullOrWhiteSpace(_filiere) ? _filiere : null
+        );
+
+        var (ok, err) = await Auth.RegisterAsync(req);
+        _loading = false;
+        
+        if (ok) Nav.NavigateTo("/mes-cours");
+        else _error = err;
+    }
+}

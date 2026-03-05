@@ -1,0 +1,75 @@
+@inject GPOE26.Web.Services.ApiClient Api
+@using GPOE26.Web.Services
+@inject NavigationManager Nav
+@rendermode InteractiveServer
+
+<footer class="gpoe-footer" style="background:#0b0b0b;color:#dcdcdc;padding-top:48px;padding-bottom:28px;">
+  <div class="container">
+    <div class="row">
+      <div class="col-12 col-md-4 mb-4 d-flex align-items-start gap-3">
+        <div style="width:44px;height:44px;border-radius:6px;background:#ff5c1d;display:flex;align-items:center;justify-content:center;font-weight:700;color:white;">G</div>
+        <div>
+          <div style="font-weight:700;color:white;">@contact?.Name</div>
+          <p class="gpoe-footer-desc" style="color:#bfbfbf;margin:6px 0 0;max-width:320px;">La plateforme d'apprentissage du lycée — Apprendre, Construire, Réussir.</p>
+        </div>
+      </div>
+
+      <div class="col-6 col-md-2 mb-3">
+        <h6 style="color:white">Programs</h6>
+        <ul class="list-unstyled" style="color:#bfbfbf;line-height:1.9;">
+          <li>Evenements</li>
+          <li></li>
+          <li>Work at a Startup</li>
+          <li>Co-Founder Matching</li>
+        </ul>
+      </div>
+
+      <div class="col-6 col-md-2 mb-3">
+        <h6 style="color:white">Resources</h6>
+        <ul class="list-unstyled" style="color:#bfbfbf;line-height:1.9;">
+          <li>Startup Directory</li>
+          <li>Startup Library</li>
+          <li>Investors</li>
+          <li>Demo Day</li>
+          <li>Hacker News</li>
+        </ul>
+      </div>
+
+      <div class="col-6 col-md-3 mb-3">
+        <h6 style="color:white">Company</h6>
+        <ul class="list-unstyled" style="color:#bfbfbf;line-height:1.9;">
+          <li>YC Blog</li>
+          <li>Contact</li>
+          <li>Press</li>
+          <li>Careers</li>
+          <li>Privacy</li>
+        </ul>
+      </div>
+    </div>
+
+    <hr style="border-color:rgba(255,255,255,0.08);" />
+
+    <div class="d-flex flex-column flex-sm-row justify-content-between align-items-center py-3">
+      <div style="color:#bfbfbf">© @DateTime.UtcNow.Year Lycée GPOE</div>
+      <div class="d-flex gap-3" style="margin-top:10px;">
+        <a href="#" class="text-light" aria-label="Twitter">🐦</a>
+        <a href="#" class="text-light" aria-label="Facebook">📘</a>
+        <a href="#" class="text-light" aria-label="Instagram">📸</a>
+        <a href="#" class="text-light" aria-label="LinkedIn">🔗</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+@code {
+    private Contact? contact;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { contact = await Api.GetPrimaryContactAsync(); }
+        catch { }
+    }
+
+    
+}
