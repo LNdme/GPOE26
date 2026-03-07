@@ -1,0 +1,76 @@
+@page "/learning"
+@rendermode InteractiveServer
+
+<PageTitle>Apprentissage – GPOE26</PageTitle>
+
+<style>
+    .text-navy { color: #174ea6 !important; }
+    .bg-navy { background-color: #174ea6 !important; }
+    .btn-navy { background-color: #174ea6; color: white; border: none; font-weight: 500; padding: 0.5rem 1.5rem; border-radius: 4px; }
+    .btn-navy:hover { background-color: #123d82; color: white; }
+    .card-clean { border: 1px solid #dadce0; border-radius: 8px; box-shadow: none; transition: box-shadow 0.2s, transform 0.2s; background: white; }
+    .card-clean:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); transform: translateY(-2px); }
+    .section-title { font-weight: 400; font-size: 2rem; margin-bottom: 1.5rem; color: #202124; }
+    .badge-subject { background-color: #e8f0fe; color: #174ea6; font-weight: 500; }
+    .hero-learning { background: linear-gradient(135deg, #174ea6 0%, #1a73e8 100%); color: white; border-radius: 12px; padding: 2.5rem; margin-bottom: 2rem; }
+</style>
+
+<div class="container py-5">
+    <div class="hero-learning">
+        <h1 class="fw-bold mb-2">🎓 Espace d'Apprentissage</h1>
+        <p class="mb-0 opacity-75">Étudiez vos cours, posez des questions à l'assistant IA et testez vos connaissances avec des quiz interactifs.</p>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="text-center py-5"><div class="spinner-border text-navy"></div><p class="text-muted mt-2">Chargement de vos cours...</p></div>
+    }
+    else if (!_courses.Any())
+    {
+        <div class="text-center py-5">
+            <div class="display-1 mb-3">📚</div>
+            <h4 class="text-muted">Vous n'avez aucun cours pour le moment</h4>
+            <p class="text-muted mb-4">Créez ou uploadez un cours pour commencer à apprendre avec l'IA.</p>
+            <a href="/cours/create" class="btn btn-navy btn-lg">Créer un cours</a>
+        </div>
+    }
+    else
+    {
+        <h2 class="section-title">Mes Cours</h2>
+        <div class="row g-4">
+            @foreach (var c in _courses)
+            {
+                <div class="col-md-4">
+                    <div class="card card-clean h-100 p-3">
+                        <div class="card-body d-flex flex-column">
+                            <span class="badge badge-subject mb-2 align-self-start">@c.Subject</span>
+                            <h5 class="card-title fw-bold mb-2">@c.Title</h5>
+                            @if (!string.IsNullOrEmpty(c.Description))
+                            {
+                                <p class="card-text text-muted small flex-grow-1">@Truncate(c.Description, 120)</p>
+                            }
+                            <small class="text-muted mb-3">@c.CreatedAt.ToString("dd MMM yyyy")</small>
+                            <a href="@($"/learning/course/{c.Id}")" class="btn btn-navy w-100 mt-auto">
+                                📖 Commencer l'étude
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private bool _loading = true;
+    private List<CourseSummaryDto> _courses = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _loading = true;
+        _courses = await Api.GetMyCoursesAsync();
+        _loading = false;
+    }
+
+    private static string Truncate(string t, int m) => t.Length <= m ? t : t[..m] + "…";
+}

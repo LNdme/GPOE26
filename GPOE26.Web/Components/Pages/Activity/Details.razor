@@ -1,0 +1,71 @@
+@page "/activities/details/{Id:guid}"
+@rendermode InteractiveServer
+
+<PageTitle>Activité – GPOE26</PageTitle>
+
+<style>
+    .text-navy { color: #174ea6 !important; }
+    .btn-navy { background-color: #174ea6; color: white; border: none; font-weight: 500; padding: 0.5rem 1.5rem; border-radius: 4px; }
+    .btn-navy:hover { background-color: #123d82; color: white; }
+    .badge-cat { background-color: #e8f0fe; color: #174ea6; font-weight: 500; }
+    .detail-section { max-width: 780px; margin: 0 auto; }
+</style>
+
+<div class="container py-5">
+    @if (_loading)
+    {
+        <div class="text-center py-5"><div class="spinner-border text-navy"></div></div>
+    }
+    else if (_item is null)
+    {
+        <div class="text-center py-5"><p class="text-muted fs-5">Activité introuvable.</p><a href="/activities" class="btn btn-outline-secondary">Retour</a></div>
+    }
+    else
+    {
+        <div class="detail-section">
+            <nav aria-label="breadcrumb" class="mb-3">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="/activities" class="text-navy text-decoration-none">Activités</a></li>
+                    <li class="breadcrumb-item active">@_item.Name</li>
+                </ol>
+            </nav>
+
+            <div class="d-flex gap-2 mb-3">
+                <span class="badge badge-cat">@_item.Category</span>
+                @if (!_item.IsActive) { <span class="badge bg-secondary">Inactive</span> }
+            </div>
+
+            @if (!string.IsNullOrEmpty(_item.ImageUrl))
+            {
+                <img src="@_item.ImageUrl" alt="@_item.Name" class="img-fluid rounded mb-4 w-100" style="max-height: 350px; object-fit: cover;" />
+            }
+
+            <h1 class="fw-bold mb-3" style="color:#202124;">@_item.Name</h1>
+
+            @if (!string.IsNullOrEmpty(_item.Schedule))
+            {
+                <p class="text-muted"><strong>🕐 Horaire :</strong> @_item.Schedule</p>
+            }
+            @if (!string.IsNullOrEmpty(_item.ResponsibleTeacher))
+            {
+                <p class="text-muted"><strong>👨‍🏫 Responsable :</strong> @_item.ResponsibleTeacher</p>
+            }
+
+            <div class="mb-5" style="white-space: pre-wrap; line-height:1.8; color:#3c4043;">@_item.Description</div>
+
+            <hr />
+            <div class="d-flex gap-2 mt-3">
+                <a href="@($"/activities/edit/{_item.Id}")" class="btn btn-navy">Modifier</a>
+                <a href="/activities" class="btn btn-outline-secondary">Retour</a>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private SchoolActivity? _item;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync() { _item = await Api.GetActivityByIdAsync(Id); _loading = false; }
+}

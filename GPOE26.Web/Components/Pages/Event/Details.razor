@@ -1,0 +1,70 @@
+@page "/events/details/{Id:guid}"
+@rendermode InteractiveServer
+
+<PageTitle>Événement – GPOE26</PageTitle>
+
+<style>
+    .text-navy { color: #174ea6 !important; }
+    .btn-navy { background-color: #174ea6; color: white; border: none; font-weight: 500; padding: 0.5rem 1.5rem; border-radius: 4px; }
+    .btn-navy:hover { background-color: #123d82; color: white; }
+    .badge-type { background-color: #e8f0fe; color: #174ea6; font-weight: 500; }
+    .detail-section { max-width: 780px; margin: 0 auto; }
+</style>
+
+<div class="container py-5">
+    @if (_loading)
+    {
+        <div class="text-center py-5"><div class="spinner-border text-navy"></div></div>
+    }
+    else if (_ev is null)
+    {
+        <div class="text-center py-5"><p class="text-muted fs-5">Événement introuvable.</p><a href="/events" class="btn btn-outline-secondary">Retour</a></div>
+    }
+    else
+    {
+        <div class="detail-section">
+            <nav aria-label="breadcrumb" class="mb-3">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="/events" class="text-navy text-decoration-none">Événements</a></li>
+                    <li class="breadcrumb-item active">@_ev.Title</li>
+                </ol>
+            </nav>
+
+            <span class="badge badge-type mb-3">@_ev.Type</span>
+            @if (!_ev.IsPublic) { <span class="badge bg-warning text-dark ms-2">Privé</span> }
+
+            @if (!string.IsNullOrEmpty(_ev.ImageUrl))
+            {
+                <img src="@_ev.ImageUrl" alt="@_ev.Title" class="img-fluid rounded mb-4 w-100" style="max-height: 350px; object-fit: cover;" />
+            }
+
+            <h1 class="fw-bold mb-2" style="color:#202124;">@_ev.Title</h1>
+
+            <div class="d-flex gap-3 text-muted small mb-4 flex-wrap">
+                <span>📅 @_ev.StartDate.ToString("dd MMMM yyyy")</span>
+                @if (_ev.EndDate.HasValue) { <span>→ @_ev.EndDate.Value.ToString("dd MMMM yyyy")</span> }
+                @if (!string.IsNullOrEmpty(_ev.Location)) { <span>📍 @_ev.Location</span> }
+            </div>
+
+            <div class="mb-5" style="white-space: pre-wrap; line-height:1.8; color:#3c4043;">@_ev.Description</div>
+
+            <hr />
+            <div class="d-flex gap-2 mt-3">
+                <a href="@($"/events/edit/{_ev.Id}")" class="btn btn-navy">Modifier</a>
+                <a href="/events" class="btn btn-outline-secondary">Retour</a>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private SchoolEvent? _ev;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _ev = await Api.GetEventByIdAsync(Id);
+        _loading = false;
+    }
+}

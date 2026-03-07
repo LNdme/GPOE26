@@ -1,0 +1,232 @@
+@page "/cours/edit/{Id:guid}"
+@rendermode InteractiveServer
+
+<PageTitle>Modifier un Cours – GPOE26</PageTitle>
+
+<style>
+    .text-navy { color: #174ea6 !important; }
+    .btn-navy { background-color: #174ea6; color: white; border: none; font-weight: 500; padding: 0.5rem 1.5rem; border-radius: 4px; }
+    .btn-navy:hover { background-color: #123d82; color: white; }
+    .form-section { max-width: 800px; margin: 0 auto; }
+    .section-block { border: 1px solid #dadce0; border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem; background: #fafafa; position: relative; }
+    .section-block:hover { border-color: #174ea6; }
+    .section-type-badge { font-size: 0.75rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: 4px; }
+    .badge-heading { background: #e8f0fe; color: #174ea6; }
+    .badge-paragraph { background: #e6f4ea; color: #137333; }
+    .badge-image { background: #fef7e0; color: #e37400; }
+    .add-section-bar { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+</style>
+
+<div class="container py-5">
+    <div class="form-section">
+        <nav aria-label="breadcrumb" class="mb-3">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/cours" class="text-navy text-decoration-none">Mes Cours</a></li>
+                <li class="breadcrumb-item active">Modifier</li>
+            </ol>
+        </nav>
+
+        @if (_loading)
+        {
+            <div class="text-center py-5"><div class="spinner-border text-navy"></div></div>
+        }
+        else if (_course is null)
+        {
+            <div class="alert alert-warning">Cours introuvable.</div>
+            <a href="/cours" class="btn btn-outline-secondary">Retour</a>
+        }
+        else
+        {
+            <h1 class="fw-bold mb-4" style="font-size:1.8rem; color:#202124;">Modifier le cours</h1>
+            @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
+
+            <EditForm Model="_form" OnValidSubmit="Submit" FormName="EditCourseForm">
+                <DataAnnotationsValidator />
+
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Titre *</label>
+                    <InputText @bind-Value="_form.Title" class="form-control" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Matière *</label>
+                    <InputText @bind-Value="_form.Subject" class="form-control" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Description</label>
+                    <InputTextArea @bind-Value="_form.Description" class="form-control" rows="3" />
+                </div>
+
+                @if (_course.ContentType == ContentType.Text)
+                {
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Contenu structuré</label>
+
+                        <div class="add-section-bar">
+                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick='() => AddSection(SectionType.Heading, 1)'>+ Titre H1</button>
+                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick='() => AddSection(SectionType.Heading, 2)'>+ Titre H2</button>
+                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick='() => AddSection(SectionType.Heading, 3)'>+ Titre H3</button>
+                            <button type="button" class="btn btn-outline-success btn-sm" @onclick='() => AddSection(SectionType.Paragraph, 0)'>+ Paragraphe</button>
+                            <button type="button" class="btn btn-outline-warning btn-sm" @onclick='() => AddSection(SectionType.Image, 0)'>+ Image (URL)</button>
+                        </div>
+
+                        @for (int i = 0; i < _sections.Count; i++)
+                        {
+                            var idx = i;
+                            var s = _sections[idx];
+                            <div class="section-block">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span class="section-type-badge @GetBadgeClass(s.Type)">
+                                            @GetTypeLabel(s.Type, s.Level)
+                                        </span>
+                                    </div>
+                                    <div class="d-flex gap-1">
+                                        @if (idx > 0)
+                                        {
+                                            <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1" @onclick="() => MoveUp(idx)">↑</button>
+                                        }
+                                        @if (idx < _sections.Count - 1)
+                                        {
+                                            <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1" @onclick="() => MoveDown(idx)">↓</button>
+                                        }
+                                        <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1" @onclick="() => RemoveSection(idx)">✕</button>
+                                    </div>
+                                </div>
+
+                                @if (s.Type == SectionType.Heading)
+                                {
+                                    <input type="text" class="form-control" placeholder="Titre..."
+                                           value="@s.Content" @onchange="(e) => s.Content = e.Value?.ToString() ?? string.Empty" />
+                                }
+                                else if (s.Type == SectionType.Paragraph)
+                                {
+                                    <textarea class="form-control" rows="4" placeholder="Paragraphe..."
+                                              @onchange="(e) => s.Content = e.Value?.ToString() ?? string.Empty">@s.Content</textarea>
+                                }
+                                else
+                                {
+                                    <input type="url" class="form-control" placeholder="https://exemple.com/image.jpg"
+                                           value="@s.Content" @onchange="(e) => s.Content = e.Value?.ToString() ?? string.Empty" />
+                                    @if (!string.IsNullOrEmpty(s.Content))
+                                    {
+                                        <img src="@s.Content" alt="Aperçu" class="mt-2 rounded" style="max-width: 100%; max-height: 200px;" />
+                                    }
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="alert alert-info">
+                        Ce cours a été créé à partir d'un PDF. Le contenu textuel est extrait automatiquement.
+                    </div>
+                }
+
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-navy" disabled="@_saving">
+                        @if (_saving) { <span class="spinner-border spinner-border-sm me-1"></span> } Enregistrer
+                    </button>
+                    <a href="/cours" class="btn btn-outline-secondary">Annuler</a>
+                </div>
+            </EditForm>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private CourseDto? _course;
+    private EditFormModel _form = new();
+    private List<SectionModel> _sections = new();
+    private bool _loading = true, _saving;
+    private string? _error;
+
+    private class EditFormModel
+    {
+        public string Title { get; set; } = "";
+        public string Subject { get; set; } = "";
+        public string? Description { get; set; }
+    }
+
+    private class SectionModel
+    {
+        public SectionType Type { get; set; }
+        public string Content { get; set; } = "";
+        public int Level { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _course = await Api.GetCourseAsync(Id);
+        if (_course is not null)
+        {
+            _form = new EditFormModel
+            {
+                Title = _course.Title,
+                Subject = _course.Subject,
+                Description = _course.Description
+            };
+
+            // Charger les sections existantes
+            if (_course.Sections is { Count: > 0 })
+            {
+                _sections = _course.Sections.OrderBy(s => s.Order).Select(s => new SectionModel
+                {
+                    Type = s.Type,
+                    Content = s.Content,
+                    Level = s.Level
+                }).ToList();
+            }
+        }
+        _loading = false;
+    }
+
+    private void AddSection(SectionType type, int level)
+        => _sections.Add(new SectionModel { Type = type, Level = level });
+
+    private void RemoveSection(int index) => _sections.RemoveAt(index);
+
+    private void MoveUp(int index)
+    {
+        if (index <= 0) return;
+        (_sections[index], _sections[index - 1]) = (_sections[index - 1], _sections[index]);
+    }
+
+    private void MoveDown(int index)
+    {
+        if (index >= _sections.Count - 1) return;
+        (_sections[index], _sections[index + 1]) = (_sections[index + 1], _sections[index]);
+    }
+
+    private async Task Submit()
+    {
+        _saving = true; _error = null;
+
+        var sections = _course!.ContentType == ContentType.Text
+            ? _sections.Select((s, i) => new CreateSectionDto(s.Type, s.Content, i, s.Level)).ToList()
+            : null;
+
+        var request = new UpdateCourseRequest(_form.Title, _form.Subject, _form.Description, sections);
+        var ok = await Api.UpdateCourseAsync(Id, request);
+        _saving = false;
+        if (ok) Nav.NavigateTo("/cours");
+        else _error = "Erreur lors de la mise à jour.";
+    }
+
+    private static string GetBadgeClass(SectionType type) => type switch
+    {
+        SectionType.Heading => "badge-heading",
+        SectionType.Paragraph => "badge-paragraph",
+        SectionType.Image => "badge-image",
+        _ => ""
+    };
+
+    private static string GetTypeLabel(SectionType type, int level) => type switch
+    {
+        SectionType.Heading => $"Titre H{level}",
+        SectionType.Paragraph => "Paragraphe",
+        SectionType.Image => "Image",
+        _ => ""
+    };
+}

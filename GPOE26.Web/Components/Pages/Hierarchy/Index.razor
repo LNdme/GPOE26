@@ -1,0 +1,99 @@
+@page "/hierarchy"
+@rendermode InteractiveServer
+
+<PageTitle>Personnel – GPOE26</PageTitle>
+
+<style>
+    .text-navy { color: #174ea6 !important; }
+    .btn-navy { background-color: #174ea6; color: white; border: none; font-weight: 500; padding: 0.5rem 1.5rem; border-radius: 4px; }
+    .btn-navy:hover { background-color: #123d82; color: white; }
+    .card-clean { border: 1px solid #dadce0; border-radius: 8px; box-shadow: none; transition: box-shadow 0.2s; background: white; }
+    .card-clean:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    .section-title { font-weight: 400; font-size: 2rem; margin-bottom: 1.5rem; color: #202124; }
+    .avatar-circle { width: 64px; height: 64px; border-radius: 50%; background: #e8f0fe; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; color: #174ea6; font-weight: 700; }
+</style>
+
+<div class="container py-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="section-title mb-0">Personnel & Hiérarchie</h1>
+        <a href="/hierarchy/create" class="btn btn-navy"><i class="bi bi-plus-lg me-1"></i> Ajouter</a>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="text-center py-5"><div class="spinner-border text-navy"></div></div>
+    }
+    else if (!_items.Any())
+    {
+        <div class="text-center py-5 text-muted"><p class="fs-5">Aucun membre trouvé.</p></div>
+    }
+    else
+    {
+        <div class="row g-4">
+            @foreach (var m in _items)
+            {
+                <div class="col-md-4 col-lg-3">
+                    <div class="card card-clean h-100 text-center p-3">
+                        <div class="card-body d-flex flex-column align-items-center">
+                            @if (!string.IsNullOrEmpty(m.ImageUrl))
+                            {
+                                <img src="@m.ImageUrl" alt="@m.Name" class="rounded-circle mb-3" style="width:64px; height:64px; object-fit:cover;" />
+                            }
+                            else
+                            {
+                                <div class="avatar-circle mb-3">@(m.Name?.FirstOrDefault())</div>
+                            }
+                            <h6 class="fw-bold mb-0">@m.PreName @m.Name</h6>
+                            <small class="text-navy mb-1">@m.Role</small>
+                            @if (!string.IsNullOrEmpty(m.Department))
+                            {
+                                <small class="text-muted">@m.Department</small>
+                            }
+                            <div class="d-flex gap-1 mt-auto pt-3">
+                                <a href="@($"/hierarchy/edit/{m.Id}")" class="btn btn-outline-primary btn-sm">Modifier</a>
+                                <button class="btn btn-outline-danger btn-sm" @onclick="() => ConfirmDel(m)"><i class="bi bi-trash"></i></button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@if (_toDel is not null)
+{
+    <div class="modal d-block" tabindex="-1" style="background: rgba(0,0,0,0.4);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header"><h5 class="modal-title">Confirmer la suppression</h5><button type="button" class="btn-close" @onclick="CancelDel"></button></div>
+                <div class="modal-body"><p>Supprimer <strong>@_toDel.PreName @_toDel.Name</strong> ?</p></div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CancelDel">Annuler</button>
+                    <button class="btn btn-danger" @onclick="Del" disabled="@_deleting">
+                        @if (_deleting) { <span class="spinner-border spinner-border-sm me-1"></span> } Supprimer
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _loading = true, _deleting;
+    private List<Hierarchy> _items = new();
+    private Hierarchy? _toDel;
+
+    protected override async Task OnInitializedAsync() => await Load();
+    private async Task Load() { _loading = true; _items = await Api.GetHierarchyAsync(); _loading = false; }
+    private void ConfirmDel(Hierarchy m) => _toDel = m;
+    private void CancelDel() => _toDel = null;
+    private async Task Del()
+    {
+        if (_toDel is null) return;
+        _deleting = true;
+        await Api.DeleteHierarchyAsync(_toDel.Id);
+        _toDel = null; _deleting = false;
+        await Load();
+    }
+}

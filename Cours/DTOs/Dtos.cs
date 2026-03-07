@@ -3,38 +3,44 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Cours.DTOs
 {
-    
+    // ══════════════════════════════════════════════════════════════════════════════
+    //  DTOs pour l'API Cours — modèle structuré avec sections
+    // ══════════════════════════════════════════════════════════════════════════════
 
-    
-    // ══════════════════════════════════════════════════════════════════════════════
-    //  CreateCourseRequest  = données envoyées pour créer un cours en TEXTE
-    //  CourseDto            = ce qu'on renvoie au client (jamais le modèle brut)
-    //  UpdateCourseRequest  = données envoyées pour PUT (remplacement complet)
-    //
-    //  L'upload PDF a son propre endpoint : POST /cours/{id}/upload
-    //  pour ne pas mélanger JSON et multipart/form-data dans le même endpoint.
-    // ══════════════════════════════════════════════════════════════════════════════
+    // ── Requêtes ──────────────────────────────────────────────────────────────────
 
     public record CreateCourseRequest(
         [Required, MaxLength(200)] string Title,
         [Required, MaxLength(100)] string Subject,
         string? Description,
-        // Si TextContent est fourni → cours en texte
-        // Si TextContent est null  → le client uploadera un PDF ensuite via /upload
-        string? TextContent
+        List<CreateSectionDto>? Sections
     );
 
     public record UpdateCourseRequest(
         [Required, MaxLength(200)] string Title,
         [Required, MaxLength(100)] string Subject,
         string? Description,
-        string? TextContent
+        List<CreateSectionDto>? Sections
     );
 
+    public record PatchCourseRequest(
+        string? Title,
+        string? Subject,
+        string? Description
+    );
+
+    public record CreateSectionDto(
+        SectionType Type,
+        string Content,
+        int Order,
+        int Level = 0
+    );
+
+    // ── Réponses ──────────────────────────────────────────────────────────────────
+
     /// <summary>
-    /// Ce que l'API renvoie au client.
-    /// ExtractedText est inclus — le frontend peut l'afficher,
-    /// et le service Chat l'utilisera directement.
+    /// Détail complet d'un cours avec ses sections.
+    /// ExtractedText est toujours présent (calculé ou extrait du PDF).
     /// </summary>
     public record CourseDto(
         Guid Id,
@@ -44,11 +50,12 @@ namespace Cours.DTOs
         ContentType ContentType,
         string? ExtractedText,
         string? PdfPath,
+        List<SectionDto> Sections,
         DateTime CreatedAt,
         DateTime UpdatedAt
     )
     {
-        public CourseDto(Model.Course c) : this(
+        public CourseDto(Course c) : this(
             c.Id,
             c.Title,
             c.Subject,
@@ -56,14 +63,26 @@ namespace Cours.DTOs
             c.ContentType,
             c.ExtractedText,
             c.PdfPath,
+            (c.Sections ?? new List<CourseSection>())
+                .OrderBy(s => s.Order)
+                .Select(s => new SectionDto(s.Id, s.Type, s.Content, s.Order, s.Level))
+                .ToList(),
             c.CreatedAt,
             c.UpdatedAt
         )
         { }
     }
 
+    public record SectionDto(
+        Guid Id,
+        SectionType Type,
+        string Content,
+        int Order,
+        int Level
+    );
+
     /// <summary>
-    /// Version allégée pour la liste des cours (sans ExtractedText qui peut être très long)
+    /// Version allégée pour la liste des cours (sans contenu ni sections)
     /// </summary>
     public record CourseSummaryDto(
         Guid Id,
@@ -74,7 +93,7 @@ namespace Cours.DTOs
         DateTime CreatedAt
     )
     {
-        public CourseSummaryDto(Model.Course c) : this(
+        public CourseSummaryDto(Course c) : this(
             c.Id,
             c.Title,
             c.Subject,
@@ -84,11 +103,4 @@ namespace Cours.DTOs
         )
         { }
     }
-
-    public record PatchCourseRequest(
-    string? Title,
-    string? Subject,
-    string? Description
-    // Pas de TextContent — pour modifier le contenu, utiliser PUT ou /upload
-);
 }

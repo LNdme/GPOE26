@@ -1,0 +1,116 @@
+@page "/activities"
+@rendermode InteractiveServer
+
+<PageTitle>Activités – GPOE26</PageTitle>
+
+<style>
+    .text-navy { color: #174ea6 !important; }
+    .btn-navy { background-color: #174ea6; color: white; border: none; font-weight: 500; padding: 0.5rem 1.5rem; border-radius: 4px; }
+    .btn-navy:hover { background-color: #123d82; color: white; }
+    .card-clean { border: 1px solid #dadce0; border-radius: 8px; box-shadow: none; transition: box-shadow 0.2s; background: white; }
+    .card-clean:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    .section-title { font-weight: 400; font-size: 2rem; margin-bottom: 1.5rem; color: #202124; }
+    .badge-cat { background-color: #e8f0fe; color: #174ea6; font-weight: 500; }
+</style>
+
+<div class="container py-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="section-title mb-0">Clubs & Activités</h1>
+        <a href="/activities/create" class="btn btn-navy"><i class="bi bi-plus-lg me-1"></i> Nouvelle Activité</a>
+    </div>
+
+    <div class="d-flex gap-2 mb-4 flex-wrap">
+        <button class="btn @(_selCat == null ? "btn-navy" : "btn-outline-secondary") btn-sm" @onclick='() => Filter(null)'>Tous</button>
+        @foreach (var c in _cats)
+        {
+            <button class="btn @(_selCat == c ? "btn-navy" : "btn-outline-secondary") btn-sm" @onclick='() => Filter(c)'>@c</button>
+        }
+    </div>
+
+    @if (_loading)
+    {
+        <div class="text-center py-5"><div class="spinner-border text-navy"></div></div>
+    }
+    else if (!_items.Any())
+    {
+        <div class="text-center py-5 text-muted"><p class="fs-5">Aucune activité trouvée.</p></div>
+    }
+    else
+    {
+        <div class="row g-4">
+            @foreach (var a in _items)
+            {
+                <div class="col-md-4">
+                    <div class="card card-clean h-100">
+                        @if (!string.IsNullOrEmpty(a.ImageUrl))
+                        {
+                            <img src="@a.ImageUrl" class="card-img-top" alt="@a.Name" style="height: 160px; object-fit: cover;" />
+                        }
+                        <div class="card-body d-flex flex-column">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <span class="badge badge-cat">@a.Category</span>
+                                @if (!a.IsActive) { <span class="badge bg-secondary">Inactive</span> }
+                            </div>
+                            <h5 class="card-title fw-bold">@a.Name</h5>
+                            <p class="card-text text-muted small flex-grow-1">@Truncate(a.Description, 100)</p>
+                            @if (!string.IsNullOrEmpty(a.Schedule))
+                            {
+                                <small class="text-muted mb-2">🕐 @a.Schedule</small>
+                            }
+                            @if (!string.IsNullOrEmpty(a.ResponsibleTeacher))
+                            {
+                                <small class="text-muted mb-3">👨‍🏫 @a.ResponsibleTeacher</small>
+                            }
+                            <div class="d-flex gap-2 mt-auto">
+                                <a href="@($"/activities/details/{a.Id}")" class="btn btn-outline-secondary btn-sm flex-fill">Détails</a>
+                                <a href="@($"/activities/edit/{a.Id}")" class="btn btn-outline-primary btn-sm flex-fill">Modifier</a>
+                                <button class="btn btn-outline-danger btn-sm" @onclick="() => ConfirmDel(a)"><i class="bi bi-trash"></i></button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@if (_toDel is not null)
+{
+    <div class="modal d-block" tabindex="-1" style="background: rgba(0,0,0,0.4);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header"><h5 class="modal-title">Confirmer la suppression</h5><button type="button" class="btn-close" @onclick="CancelDel"></button></div>
+                <div class="modal-body"><p>Supprimer <strong>@_toDel.Name</strong> ?</p></div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CancelDel">Annuler</button>
+                    <button class="btn btn-danger" @onclick="Del" disabled="@_deleting">
+                        @if (_deleting) { <span class="spinner-border spinner-border-sm me-1"></span> } Supprimer
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _loading = true, _deleting;
+    private List<SchoolActivity> _items = new();
+    private SchoolActivity? _toDel;
+    private string? _selCat;
+    private readonly string[] _cats = { "Sport", "Art", "Science", "Club" };
+
+    protected override async Task OnInitializedAsync() => await Load();
+    private async Task Load() { _loading = true; _items = await Api.GetActiveActivitiesAsync(_selCat); _loading = false; }
+    private async Task Filter(string? c) { _selCat = c; await Load(); }
+    private void ConfirmDel(SchoolActivity a) => _toDel = a;
+    private void CancelDel() => _toDel = null;
+    private async Task Del()
+    {
+        if (_toDel is null) return;
+        _deleting = true;
+        await Api.DeleteActivityAsync(_toDel.Id);
+        _toDel = null; _deleting = false;
+        await Load();
+    }
+    private static string Truncate(string t, int m) => t.Length <= m ? t : t[..m] + "…";
+}

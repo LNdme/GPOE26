@@ -1,0 +1,136 @@
+@page "/blog/create"
+@rendermode InteractiveServer
+
+<PageTitle>Créer un article – GPOE26</PageTitle>
+
+<style>
+    .text-navy { color: #174ea6 !important; }
+    .btn-navy { background-color: #174ea6; color: white; border: none; font-weight: 500; padding: 0.5rem 1.5rem; border-radius: 4px; }
+    .btn-navy:hover { background-color: #123d82; color: white; }
+    .form-section { max-width: 720px; margin: 0 auto; }
+</style>
+
+<div class="container py-5">
+    <div class="form-section">
+        <nav aria-label="breadcrumb" class="mb-3">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/blog" class="text-navy text-decoration-none">Actualités</a></li>
+                <li class="breadcrumb-item active">Nouvel article</li>
+            </ol>
+        </nav>
+
+        <h1 class="fw-bold mb-4" style="font-size:1.8rem; color:#202124;">Créer un nouvel article</h1>
+
+        @if (!string.IsNullOrEmpty(_errorMessage))
+        {
+            <div class="alert alert-danger">@_errorMessage</div>
+        }
+        @if (_success)
+        {
+            <div class="alert alert-success">Article créé avec succès !</div>
+        }
+
+        <EditForm Model="_article" OnValidSubmit="HandleSubmit" FormName="CreateArticleForm">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="text-danger" />
+
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Titre *</label>
+                <InputText @bind-Value="_article.Title" class="form-control" placeholder="Titre de l'article" />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Slug</label>
+                <InputText @bind-Value="_article.Slug" class="form-control" placeholder="mon-article (généré automatiquement si vide)" />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Catégorie</label>
+                <InputSelect @bind-Value="_article.Category" class="form-select">
+                    <option value="Général">Général</option>
+                    <option value="Sport">Sport</option>
+                    <option value="Culturel">Culturel</option>
+                    <option value="Administratif">Administratif</option>
+                </InputSelect>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Image URL</label>
+                <InputText @bind-Value="_article.ImageUrl" class="form-control" placeholder="https://..." />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Extrait</label>
+                <InputTextArea @bind-Value="_article.Excerpt" class="form-control" rows="2" placeholder="Résumé court de l'article (optionnel)" />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Contenu *</label>
+                <InputTextArea @bind-Value="_article.Content" class="form-control" rows="10" placeholder="Contenu de l'article..." />
+            </div>
+
+            <div class="form-check mb-4">
+                <InputCheckbox @bind-Value="_article.IsPublished" class="form-check-input" id="isPublished" />
+                <label class="form-check-label" for="isPublished">Publier immédiatement</label>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-navy" disabled="@_saving">
+                    @if (_saving) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                    Créer l'article
+                </button>
+                <a href="/blog" class="btn btn-outline-secondary">Annuler</a>
+            </div>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private NewArticle _article = new();
+    private bool _saving = false;
+    private bool _success = false;
+    private string? _errorMessage;
+
+    private async Task HandleSubmit()
+    {
+        _saving = true;
+        _errorMessage = null;
+        _success = false;
+
+        if (string.IsNullOrWhiteSpace(_article.Title))
+        {
+            _errorMessage = "Le titre est obligatoire.";
+            _saving = false;
+            return;
+        }
+
+        // Auto-generate slug if empty
+        if (string.IsNullOrWhiteSpace(_article.Slug))
+        {
+            _article.Slug = _article.Title.ToLowerInvariant()
+                .Replace(" ", "-")
+                .Replace("'", "")
+                .Replace("é", "e").Replace("è", "e").Replace("ê", "e")
+                .Replace("à", "a").Replace("ù", "u")
+                .Replace("ç", "c");
+        }
+
+        if (_article.IsPublished)
+        {
+            _article.PublishedAt = DateTime.UtcNow;
+        }
+
+        var ok = await Api.CreateNewsAsync(_article);
+        _saving = false;
+
+        if (ok)
+        {
+            _success = true;
+            Nav.NavigateTo("/blog");
+        }
+        else
+        {
+            _errorMessage = "Erreur lors de la création de l'article. Veuillez réessayer.";
+        }
+    }
+}

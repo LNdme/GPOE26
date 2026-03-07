@@ -101,25 +101,8 @@ public class Contact
 
 #region GPOE26 API USER DTOs
 // ============================================
-// gpo26 API SERVICE DTOs
+// gpo26 API USER DTOs
 // ============================================
-
-
-// ══════════════════════════════════════════════════════════════════════════════
-// RÈGLE DES DTOs :
-//
-//  AppUser (Model)      = structure de la TABLE en base de données
-//                         → ne sort JAMAIS directement de l'API (contient PasswordHash !)
-//
-//  RegisterRequest      = données que le CLIENT envoie pour s'inscrire
-//  LoginRequest         = données que le CLIENT envoie pour se connecter
-//  AuthResponse         = ce qu'on renvoie après une auth réussie (token + infos de base)
-//
-//  UserProfileDto       = profil complet exposé par GET /auth/me
-//                         → lu par le LLM pour personnaliser ses réponses
-//
-//  UpdateProfileRequest = données acceptées par PATCH /auth/me
-// ══════════════════════════════════════════════════════════════════════════════
 
 public record LoginRequest(string Email, string Password);
 
@@ -157,35 +140,40 @@ public record AuthResponse(
 
 #region  COURS App DTOs
 // ══════════════════════════════════════════════════════════════════════════════
-//  CreateCourseRequest  = données envoyées pour créer un cours en TEXTE
-//  CourseDto            = ce qu'on renvoie au client (jamais le modèle brut)
-//  UpdateCourseRequest  = données envoyées pour PUT (remplacement complet)
-//
-//  L'upload PDF a son propre endpoint : POST /cours/{id}/upload
-//  pour ne pas mélanger JSON et multipart/form-data dans le même endpoint.
+//  DTOs Cours — modèle structuré avec sections
 // ══════════════════════════════════════════════════════════════════════════════
+
+public enum ContentType { Text, Pdf }
+
+public enum SectionType { Heading, Paragraph, Image }
 
 public record CreateCourseRequest(
     [Required, MaxLength(200)] string Title,
     [Required, MaxLength(100)] string Subject,
     string? Description,
-    // Si TextContent est fourni → cours en texte
-    // Si TextContent est null  → le client uploadera un PDF ensuite via /upload
-    string? TextContent
+    List<CreateSectionDto>? Sections
 );
 
 public record UpdateCourseRequest(
     [Required, MaxLength(200)] string Title,
     [Required, MaxLength(100)] string Subject,
     string? Description,
-    string? TextContent
+    List<CreateSectionDto>? Sections
 );
 
-/// <summary>
-/// Ce que l'API renvoie au client.
-/// ExtractedText est inclus — le frontend peut l'afficher,
-/// et le service Chat l'utilisera directement.
-/// </summary>
+public record PatchCourseRequest(
+    string? Title,
+    string? Subject,
+    string? Description
+);
+
+public record CreateSectionDto(
+    SectionType Type,
+    string Content,
+    int Order,
+    int Level = 0
+);
+
 public record CourseDto(
     Guid Id,
     string Title,
@@ -194,14 +182,19 @@ public record CourseDto(
     ContentType ContentType,
     string? ExtractedText,
     string? PdfPath,
+    List<SectionDto>? Sections,
     DateTime CreatedAt,
     DateTime UpdatedAt
 );
 
+public record SectionDto(
+    Guid Id,
+    SectionType Type,
+    string Content,
+    int Order,
+    int Level
+);
 
-/// <summary>
-/// Version allégée pour la liste des cours (sans ExtractedText qui peut être très long)
-/// </summary>
 public record CourseSummaryDto(
     Guid Id,
     string Title,
@@ -209,14 +202,6 @@ public record CourseSummaryDto(
     string? Description,
     ContentType ContentType,
     DateTime CreatedAt
-);
-
-
-public record PatchCourseRequest(
-string? Title,
-string? Subject,
-string? Description
-// Pas de TextContent — pour modifier le contenu, utiliser PUT ou /upload
 );
 
 #endregion

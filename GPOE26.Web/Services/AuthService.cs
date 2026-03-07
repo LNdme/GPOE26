@@ -6,8 +6,9 @@ namespace GPOE26.Web.Services;
 /// <summary>
 /// Gère l'état de connexion (JWT en mémoire).
 /// Délègue les appels HTTP à ApiClient.
+/// Synchronise le token vers AuthTokenProvider pour le DelegatingHandler.
 /// </summary>
-public class AuthService(ApiClient api)
+public class AuthService(ApiClient api, AuthTokenProvider tokenProvider)
 {
     private string? _jwt;
     private UserProfileDto? _profile;
@@ -41,18 +42,8 @@ public class AuthService(ApiClient api)
     public void Logout()
     {
         _jwt = null; _profile = null; _expiresAt = DateTime.MinValue;
+        tokenProvider.Token = null;
         OnAuthChanged?.Invoke();
-    }
-
-    /// <summary>
-    /// Injecte le JWT dans les headers d'un HttpClient nommé.
-    /// Utilisé par ApiClient pour les endpoints protégés.
-    /// </summary>
-    public void InjectToken(HttpClient client)
-    {
-        if (_jwt is not null)
-            client.DefaultRequestHeaders.Authorization =
-                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _jwt);
     }
 
     private void SetAuth(AuthResponse auth)
@@ -60,6 +51,7 @@ public class AuthService(ApiClient api)
         _jwt = auth.Token;
         _profile = auth.Profile;
         _expiresAt = auth.ExpiresAt;
+        tokenProvider.Token = _jwt;
         OnAuthChanged?.Invoke();
     }
 }

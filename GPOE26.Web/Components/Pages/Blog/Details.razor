@@ -1,0 +1,88 @@
+@page "/blog/details/{Id:guid}"
+@rendermode InteractiveServer
+
+<PageTitle>Article – GPOE26</PageTitle>
+
+<style>
+    .text-navy { color: #174ea6 !important; }
+    .btn-navy { background-color: #174ea6; color: white; border: none; font-weight: 500; padding: 0.5rem 1.5rem; border-radius: 4px; }
+    .btn-navy:hover { background-color: #123d82; color: white; }
+    .article-content { max-width: 780px; margin: 0 auto; line-height: 1.8; font-size: 1.05rem; color: #3c4043; }
+    .badge-category { background-color: #e8f0fe; color: #174ea6; border: none; font-weight: 500; }
+</style>
+
+<div class="container py-5">
+    @if (_loading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-navy"></div>
+            <p class="text-muted mt-2">Chargement de l'article...</p>
+        </div>
+    }
+    else if (_article is null)
+    {
+        <div class="text-center py-5">
+            <p class="text-muted fs-5">Article introuvable.</p>
+            <a href="/blog" class="btn btn-outline-secondary">Retour aux actualités</a>
+        </div>
+    }
+    else
+    {
+        <div class="article-content">
+            <nav aria-label="breadcrumb" class="mb-3">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="/blog" class="text-navy text-decoration-none">Actualités</a></li>
+                    <li class="breadcrumb-item active">@_article.Title</li>
+                </ol>
+            </nav>
+
+            <span class="badge badge-category mb-3">@_article.Category</span>
+
+            @if (!string.IsNullOrEmpty(_article.ImageUrl))
+            {
+                <img src="@_article.ImageUrl" alt="@_article.Title" class="img-fluid rounded mb-4 w-100" style="max-height: 400px; object-fit: cover;" />
+            }
+
+            <h1 class="fw-bold mb-2" style="color:#202124;">@_article.Title</h1>
+
+            <div class="d-flex gap-3 text-muted small mb-4">
+                <span>📅 @_article.CreatedAt.ToString("dd MMMM yyyy")</span>
+                @if (_article.IsPublished)
+                {
+                    <span class="text-success">● Publié</span>
+                }
+                else
+                {
+                    <span class="text-warning">● Brouillon</span>
+                }
+            </div>
+
+            @if (!string.IsNullOrEmpty(_article.Excerpt))
+            {
+                <p class="lead text-muted fst-italic border-start border-3 border-primary ps-3 mb-4">@_article.Excerpt</p>
+            }
+
+            <div class="mb-5" style="white-space: pre-wrap;">@_article.Content</div>
+
+            <hr />
+            <div class="d-flex gap-2 mt-3">
+                <a href="@($"/blog/edit/{_article.Id}")" class="btn btn-navy">Modifier</a>
+                <a href="/blog" class="btn btn-outline-secondary">Retour</a>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private NewArticle? _article;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _loading = true;
+        _article = await Api.GetNewsByIdAsync(Id);
+        _loading = false;
+    }
+}

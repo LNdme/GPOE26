@@ -1,6 +1,9 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-var jwtKey = builder.AddParameter("jwt-key", secret: true);
+// ── JWT partagé : même clé / issuer / audience pour User (émetteur) et Cours (validateur)
+var jwtKeyValue = "votre_cle_secrete_tres_longue_et_aleatoire_ici_changez_moi_en_production_cle_256_bits";
+var jwtIssuer   = "GPOE2026";
+var jwtAudience = "GPOE2026Users";
 
 
 
@@ -11,7 +14,7 @@ var postgres = builder.AddPostgres("postgres")
 
 var userDb = postgres.AddDatabase("userdb");
 var coursDb = postgres.AddDatabase("coursdb");
-var schoolDb = postgres.AddDatabase("schooldb");  // ApiService
+var schoolDb = postgres.AddDatabase("LyceeDB");  // ApiService
 // Quiz et Chat sont en InMemory pour l'instant, pas de DB à déclarer
 
 
@@ -25,11 +28,18 @@ var apiService = builder.AddProject<Projects.GPOE26_ApiService>("apiservice")
     .WaitFor(schoolDb);
 
 var userService = builder.AddProject<Projects.User>("user")
-    .WithEnvironment("Jwt__Key", jwtKey)
-    .WithEnvironment("Jwt__Issuer", "jpoe2026-user")
-    .WithEnvironment("Jwt__Audience", "jpoe2026-clients");
+    .WithEnvironment("Jwt__Key", jwtKeyValue)
+    .WithEnvironment("Jwt__Issuer", jwtIssuer)
+    .WithEnvironment("Jwt__Audience", jwtAudience)
+    .WithReference(userDb)   // ← ajoute
+    .WaitFor(userDb);        // ← ajoute
 
-var coursService = builder.AddProject<Projects.Cours>("cours");
+var coursService = builder.AddProject<Projects.Cours>("cours")
+    .WithEnvironment("Jwt__Key", jwtKeyValue)
+    .WithEnvironment("Jwt__Issuer", jwtIssuer)
+    .WithEnvironment("Jwt__Audience", jwtAudience)
+    .WithReference(coursDb)  // ← ajoute
+    .WaitFor(coursDb);       // ← ajoute
 
 var chatService = builder.AddProject<Projects.Chat>("chat");
 

@@ -1,4 +1,5 @@
 ﻿using System.Net.Http.Json;
+using System.Net.Http.Headers;
 using GPOE26.Web.Models;
 
 namespace GPOE26.Web.Services
@@ -7,11 +8,27 @@ namespace GPOE26.Web.Services
     {
         private readonly IHttpClientFactory _factory;
         private readonly ILogger<ApiClient> _logger;
+        private readonly AuthTokenProvider _tokenProvider;
 
-        public ApiClient(IHttpClientFactory httpClientFactory, ILogger<ApiClient> logger)
+        public ApiClient(IHttpClientFactory httpClientFactory, ILogger<ApiClient> logger, AuthTokenProvider tokenProvider)
         {
             _factory = httpClientFactory;
             _logger = logger;
+            _tokenProvider = tokenProvider;
+        }
+
+        /// <summary>
+        /// Creates an HttpClient with the JWT Bearer token injected (for protected APIs).
+        /// </summary>
+        private HttpClient CreateAuthClient(string name)
+        {
+            var client = _factory.CreateClient(name);
+            if (!string.IsNullOrEmpty(_tokenProvider.Token))
+            {
+                client.DefaultRequestHeaders.Authorization =
+                    new AuthenticationHeaderValue("Bearer", _tokenProvider.Token);
+            }
+            return client;
         }
 
 
@@ -19,7 +36,7 @@ namespace GPOE26.Web.Services
 
         public async Task<Contact?> GetFooterContactAsync()
         {
-            var client = _factory.CreateClient("GPOE26ApiService");
+            var client = _factory.CreateClient("apiservice");
             try
             {
                 var contacts = await client.GetFromJsonAsync<List<Contact>>("/api/contact");
@@ -34,7 +51,7 @@ namespace GPOE26.Web.Services
 
         public async Task<List<Contact>> GetAllContactsAsync()
         {
-            var client = _factory.CreateClient("PortfolioApiService");
+            var client = _factory.CreateClient("apiservice");
             try
             {
                 return await client.GetFromJsonAsync<List<Contact>>("/api/contact")
@@ -55,7 +72,7 @@ namespace GPOE26.Web.Services
 
         public async Task<Contact?> GetContactByIdAsync(int id)
         {
-            var client = _factory.CreateClient("GPOE26ApiService");
+            var client = _factory.CreateClient("apiservice");
             try
             {
                 return await client.GetFromJsonAsync<Contact>($"/api/contact/{id}");
@@ -69,7 +86,7 @@ namespace GPOE26.Web.Services
 
         public async Task<bool> CreateContactAsync(Contact contact)
         {
-            var client = _factory.CreateClient("GPOE26ApiService");
+            var client = _factory.CreateClient("apiservice");
             try
             {
                 var response = await client.PostAsJsonAsync("/api/contact", contact);
@@ -87,7 +104,7 @@ namespace GPOE26.Web.Services
 
         public async Task<bool> UpdateContactAsync(int id, Contact contact)
         {
-            var client = _factory.CreateClient("GPOE26ApiService");
+            var client = _factory.CreateClient("apiservice");
             try
             {
                 // ✅ Avec l'ID dans l'URL
@@ -105,7 +122,7 @@ namespace GPOE26.Web.Services
 
         public async Task<bool> DeleteContactAsync(int id)
         {
-            var client = _factory.CreateClient("GPOE26ApiService");
+            var client = _factory.CreateClient("apiservice");
             try
             {
                 var response = await client.DeleteAsync($"/api/contact/{id}");
@@ -125,7 +142,7 @@ namespace GPOE26.Web.Services
 
         public async Task<(int total, List<NewArticle> items)> GetNewsAsync(string? category = null, bool? published = null, int page = 1, int pageSize = 10)
         {
-            var client = _factory.CreateClient("GPOE26ApiService");
+            var client = _factory.CreateClient("apiservice");
             try
             {
                 var url = "/api/news";
@@ -148,7 +165,7 @@ namespace GPOE26.Web.Services
 
         public async Task<NewArticle?> GetNewsByIdAsync(Guid id)
         {
-            var client = _factory.CreateClient("GPOE26ApiService");
+            var client = _factory.CreateClient("apiservice");
             try
             {
                 return await client.GetFromJsonAsync<NewArticle>($"/api/news/{id}");
@@ -162,7 +179,7 @@ namespace GPOE26.Web.Services
 
         public async Task<bool> CreateNewsAsync(NewArticle article)
         {
-            var client = _factory.CreateClient("GPOE26ApiService");
+            var client = _factory.CreateClient("apiservice");
             try
             {
                 var resp = await client.PostAsJsonAsync("/api/news", article);
@@ -177,7 +194,7 @@ namespace GPOE26.Web.Services
 
         public async Task<bool> UpdateNewsAsync(Guid id, NewArticle updated)
         {
-            var client = _factory.CreateClient("GPOE26ApiService");
+            var client = _factory.CreateClient("apiservice");
             try
             {
                 var resp = await client.PutAsJsonAsync($"/api/news/{id}", updated);
@@ -192,7 +209,7 @@ namespace GPOE26.Web.Services
 
         public async Task<bool> DeleteNewsAsync(Guid id)
         {
-            var client = _factory.CreateClient("GPOE26ApiService");
+            var client = _factory.CreateClient("apiservice");
             try
             {
                 var resp = await client.DeleteAsync($"/api/news/{id}");
@@ -214,7 +231,7 @@ namespace GPOE26.Web.Services
 
         public async Task<List<SchoolEvent>> GetUpcomingEventsAsync(int limit = 5)
         {
-            var client = _factory.CreateClient("GPOE26ApiService");
+            var client = _factory.CreateClient("apiservice");
             try
             {
                 var resp = await client.GetFromJsonAsync<List<SchoolEvent>>($"/api/events/upcoming?limit={limit}");
@@ -229,7 +246,7 @@ namespace GPOE26.Web.Services
 
         public async Task<List<SchoolEvent>> GetAllEventsAsync(string? type = null)
         {
-            var client = _factory.CreateClient("GPOE26ApiService");
+            var client = _factory.CreateClient("apiservice");
             try
             {
                 var url = "/api/events" + (string.IsNullOrEmpty(type) ? "" : $"?type={Uri.EscapeDataString(type)}");
@@ -243,6 +260,65 @@ namespace GPOE26.Web.Services
             }
         }
 
+        public async Task<SchoolEvent?> GetEventByIdAsync(Guid id)
+        {
+            var client = _factory.CreateClient("apiservice");
+            try
+            {
+                return await client.GetFromJsonAsync<SchoolEvent>($"/api/events/{id}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error fetching event {id}");
+                return null;
+            }
+        }
+
+        public async Task<bool> CreateEventAsync(SchoolEvent ev)
+        {
+            var client = _factory.CreateClient("apiservice");
+            try
+            {
+                var resp = await client.PostAsJsonAsync("/api/events", ev);
+                return resp.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating event");
+                return false;
+            }
+        }
+
+        public async Task<bool> UpdateEventAsync(Guid id, SchoolEvent ev)
+        {
+            var client = _factory.CreateClient("apiservice");
+            try
+            {
+                var resp = await client.PutAsJsonAsync($"/api/events/{id}", ev);
+                return resp.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error updating event {id}");
+                return false;
+            }
+        }
+
+        public async Task<bool> DeleteEventAsync(Guid id)
+        {
+            var client = _factory.CreateClient("apiservice");
+            try
+            {
+                var resp = await client.DeleteAsync($"/api/events/{id}");
+                return resp.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error deleting event {id}");
+                return false;
+            }
+        }
+
         #endregion
 
 
@@ -251,7 +327,7 @@ namespace GPOE26.Web.Services
 
         public async Task<List<Speech>> GetAllSpeechesAsync()
         {
-            var client = _factory.CreateClient("GPOE26ApiService");
+            var client = _factory.CreateClient("apiservice");
             try
             {
                 var resp = await client.GetFromJsonAsync<List<Speech>>("/api/speeches");
@@ -271,7 +347,7 @@ namespace GPOE26.Web.Services
 
         public async Task<List<SchoolActivity>> GetActiveActivitiesAsync(string? category = null)
         {
-            var client = _factory.CreateClient("GPOE26ApiService");
+            var client = _factory.CreateClient("apiservice");
             try
             {
                 var url = "/api/activities" + (string.IsNullOrEmpty(category) ? "" : $"?category={Uri.EscapeDataString(category)}");
@@ -285,13 +361,72 @@ namespace GPOE26.Web.Services
             }
         }
 
+        public async Task<SchoolActivity?> GetActivityByIdAsync(Guid id)
+        {
+            var client = _factory.CreateClient("apiservice");
+            try
+            {
+                return await client.GetFromJsonAsync<SchoolActivity>($"/api/activities/{id}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error fetching activity {id}");
+                return null;
+            }
+        }
+
+        public async Task<bool> CreateActivityAsync(SchoolActivity activity)
+        {
+            var client = _factory.CreateClient("apiservice");
+            try
+            {
+                var resp = await client.PostAsJsonAsync("/api/activities", activity);
+                return resp.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating activity");
+                return false;
+            }
+        }
+
+        public async Task<bool> UpdateActivityAsync(Guid id, SchoolActivity activity)
+        {
+            var client = _factory.CreateClient("apiservice");
+            try
+            {
+                var resp = await client.PutAsJsonAsync($"/api/activities/{id}", activity);
+                return resp.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error updating activity {id}");
+                return false;
+            }
+        }
+
+        public async Task<bool> DeleteActivityAsync(Guid id)
+        {
+            var client = _factory.CreateClient("apiservice");
+            try
+            {
+                var resp = await client.DeleteAsync($"/api/activities/{id}");
+                return resp.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error deleting activity {id}");
+                return false;
+            }
+        }
+
         #endregion
 
         #region HIERARCHY API (GPO26ApiService)
 
         public async Task<List<Hierarchy>> GetHierarchyAsync()
         {
-            var client = _factory.CreateClient("GPOE26ApiService");
+            var client = _factory.CreateClient("apiservice");
             try
             {
                 var resp = await client.GetFromJsonAsync<List<Hierarchy>>("/api/hierarchy");
@@ -304,6 +439,65 @@ namespace GPOE26.Web.Services
             }
         }
 
+        public async Task<Hierarchy?> GetHierarchyByIdAsync(int id)
+        {
+            var client = _factory.CreateClient("apiservice");
+            try
+            {
+                return await client.GetFromJsonAsync<Hierarchy>($"/api/hierarchy/{id}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error fetching hierarchy member {id}");
+                return null;
+            }
+        }
+
+        public async Task<bool> CreateHierarchyAsync(Hierarchy member)
+        {
+            var client = _factory.CreateClient("apiservice");
+            try
+            {
+                var resp = await client.PostAsJsonAsync("/api/hierarchy", member);
+                return resp.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating hierarchy member");
+                return false;
+            }
+        }
+
+        public async Task<bool> UpdateHierarchyAsync(int id, Hierarchy member)
+        {
+            var client = _factory.CreateClient("apiservice");
+            try
+            {
+                var resp = await client.PutAsJsonAsync($"/api/hierarchy/{id}", member);
+                return resp.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error updating hierarchy member {id}");
+                return false;
+            }
+        }
+
+        public async Task<bool> DeleteHierarchyAsync(int id)
+        {
+            var client = _factory.CreateClient("apiservice");
+            try
+            {
+                var resp = await client.DeleteAsync($"/api/hierarchy/{id}");
+                return resp.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error deleting hierarchy member {id}");
+                return false;
+            }
+        }
+
         #endregion
 
 
@@ -312,7 +506,7 @@ namespace GPOE26.Web.Services
 
         public async Task<List<CourseSummaryDto>> GetMyCoursesAsync(string? subject = null)
         {
-            var client = _factory.CreateClient("cours");
+            var client = CreateAuthClient("cours");
             try
             {
                 var url = subject is null ? "/cours" : $"/cours?subject={Uri.EscapeDataString(subject)}";
@@ -328,7 +522,7 @@ namespace GPOE26.Web.Services
 
         public async Task<CourseDto?> GetCourseAsync(Guid id)
         {
-            var client = _factory.CreateClient("cours");
+            var client = CreateAuthClient("cours");
             try
             {
                 return await client.GetFromJsonAsync<CourseDto>($"/cours/{id}");
@@ -340,6 +534,71 @@ namespace GPOE26.Web.Services
             }
         }
 
+        public async Task<CourseDto?> CreateCourseAsync(CreateCourseRequest request)
+        {
+            var client = CreateAuthClient("cours");
+            try
+            {
+                var resp = await client.PostAsJsonAsync("/cours", request);
+                resp.EnsureSuccessStatusCode();
+                return await resp.Content.ReadFromJsonAsync<CourseDto>();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating course");
+                return null;
+            }
+        }
+
+        public async Task<bool> UpdateCourseAsync(Guid id, UpdateCourseRequest request)
+        {
+            var client = CreateAuthClient("cours");
+            try
+            {
+                var resp = await client.PutAsJsonAsync($"/cours/{id}", request);
+                return resp.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error updating course {id}");
+                return false;
+            }
+        }
+
+        public async Task<bool> DeleteCourseAsync(Guid id)
+        {
+            var client = CreateAuthClient("cours");
+            try
+            {
+                var resp = await client.DeleteAsync($"/cours/{id}");
+                return resp.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error deleting course {id}");
+                return false;
+            }
+        }
+
+        public async Task<bool> UploadCoursePdfAsync(Guid courseId, Stream fileStream, string fileName)
+        {
+            var client = CreateAuthClient("cours");
+            try
+            {
+                using var content = new MultipartFormDataContent();
+                var fileContent = new StreamContent(fileStream);
+                fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
+                content.Add(fileContent, "file", fileName);
+                var resp = await client.PostAsync($"/cours/{courseId}/upload", content);
+                return resp.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error uploading PDF for course {courseId}");
+                return false;
+            }
+        }
+
         #endregion
 
 
@@ -348,7 +607,7 @@ namespace GPOE26.Web.Services
 
         public async Task<ChatMessageResponse?> SendChatMessageAsync(string message, List<ConversationMessage> history, string? courseContent = null, string? courseId = null)
         {
-            var client = _factory.CreateClient("chat");
+            var client = CreateAuthClient("chat");
             try
             {
                 var req = new ChatMessageRequest(message, history, courseContent, courseId);
@@ -365,7 +624,7 @@ namespace GPOE26.Web.Services
 
         public async Task<CourseSummaryResponse?> GetCourseSummaryAsync(string courseContent)
         {
-            var client = _factory.CreateClient("chat");
+            var client = CreateAuthClient("chat");
             try
             {
                 var req = new CourseSummaryRequest(courseContent);
@@ -387,7 +646,7 @@ namespace GPOE26.Web.Services
 
         public async Task<GenerateQuizResponse?> GenerateQuizAsync(string title, string courseText, int numberOfQuestions = 5)
         {
-            var client = _factory.CreateClient("quiz");
+            var client = CreateAuthClient("quiz");
             try
             {
                 var req = new GenerateQuizRequest(title, courseText, numberOfQuestions);
@@ -404,7 +663,7 @@ namespace GPOE26.Web.Services
 
         public async Task<GenerateQuizResponse?> GetQuizAsync(Guid id)
         {
-            var client = _factory.CreateClient("quiz");
+            var client = CreateAuthClient("quiz");
             try
             {
                 var resp = await client.GetAsync($"/api/quiz/{id}");
@@ -421,7 +680,7 @@ namespace GPOE26.Web.Services
 
         public async Task<SubmitAnswersResponse?> SubmitQuizAnswersAsync(Guid quizId, List<StudentAnswer> answers)
         {
-            var client = _factory.CreateClient("quiz");
+            var client = CreateAuthClient("quiz");
             try
             {
                 var req = new SubmitAnswersRequest(answers);

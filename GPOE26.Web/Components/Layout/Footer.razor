@@ -3,64 +3,81 @@
 @inject NavigationManager Nav
 @rendermode InteractiveServer
 
-<footer class="gpoe-footer" style="background:#0b0b0b;color:#dcdcdc;padding-top:48px;padding-bottom:28px;">
-  <div class="container">
-    <div class="row">
-      <div class="col-12 col-md-4 mb-4 d-flex align-items-start gap-3">
-        <div style="width:44px;height:44px;border-radius:6px;background:#ff5c1d;display:flex;align-items:center;justify-content:center;font-weight:700;color:white;">G</div>
-        <div>
-          <div style="font-weight:700;color:white;">@contact?.Name</div>
-          <p class="gpoe-footer-desc" style="color:#bfbfbf;margin:6px 0 0;max-width:320px;">La plateforme d'apprentissage du lycée — Apprendre, Construire, Réussir.</p>
+<footer class="lt-footer text-white" style="background-color: #0b2b5e; padding-top: 60px; padding-bottom: 20px;">
+    <div class="container">
+        <div class="row gy-4 mb-5">
+            <div class="col-12 col-lg-4 pe-lg-5">
+                <div class="d-flex align-items-center gap-3 mb-3">
+                    <div class="lt-logo-square">LT</div>
+                    <div class="fw-bold fs-5">LT Nanga-Eboko</div>
+                </div>
+                <p class="text-white-50" style="line-height: 1.6;">
+                    La plateforme d'apprentissage d'excellence du Lycée Technique de Nanga-Eboko. <br />
+                    Apprendre, Construire, Réussir.
+                </p>
+                @if (contact != null && !string.IsNullOrEmpty(contact.Email))
+                {
+                    <div class="d-flex align-items-center gap-2 mt-3 text-white-50">
+                        <i class="bi bi-envelope"></i>
+                        <a href="mailto:@contact.Email" class="text-white-50 text-decoration-none hover-white">@contact.Email</a>
+                    </div>
+                }
+            </div>
+
+            <div class="col-6 col-md-4 col-lg-2 offset-lg-1">
+                <h6 class="fw-bold text-uppercase mb-3" style="color: #6ea8ff; letter-spacing: 0.5px; font-size: 0.85rem;">Pédagogie</h6>
+                <ul class="list-unstyled d-flex flex-column gap-2 mb-0">
+                    <li><a href="/cours" class="footer-link">Cours en ligne</a></li>
+                    <li><a href="/projets" class="footer-link">Projets</a></li>
+                    <li><a href="/quiz" class="footer-link">Évaluations</a></li>
+                    <li><a href="/bibliotheque" class="footer-link">Ressources</a></li>
+                </ul>
+            </div>
+
+            <div class="col-6 col-md-4 col-lg-2">
+                <h6 class="fw-bold text-uppercase mb-3" style="color: #6ea8ff; letter-spacing: 0.5px; font-size: 0.85rem;">Vie Scolaire</h6>
+                <ul class="list-unstyled d-flex flex-column gap-2 mb-0">
+                    <li><a href="/evenements" class="footer-link">Événements</a></li>
+                    <li><a href="/activities" class="footer-link">Activités</a></li>
+                    <li><a href="/blog" class="footer-link">Actualités</a></li>
+                    <li><a href="/reglement" class="footer-link">Règlement</a></li>
+                </ul>
+            </div>
+
+            <div class="col-12 col-md-4 col-lg-3">
+                <h6 class="fw-bold text-uppercase mb-3" style="color: #6ea8ff; letter-spacing: 0.5px; font-size: 0.85rem;">L'Établissement</h6>
+                <ul class="list-unstyled d-flex flex-column gap-2 mb-0">
+                    <li><a href="/a-propos" class="footer-link">À propos de nous</a></li>
+                    <li><a href="/contact" class="footer-link">Contact</a></li>
+                    <li><a href="/administration" class="footer-link">Administration</a></li>
+                </ul>
+            </div>
         </div>
-      </div>
 
-      <div class="col-6 col-md-2 mb-3">
-        <h6 style="color:white">Programs</h6>
-        <ul class="list-unstyled" style="color:#bfbfbf;line-height:1.9;">
-          <li>Evenements</li>
-          <li></li>
-          <li>Work at a Startup</li>
-          <li>Co-Founder Matching</li>
-        </ul>
-      </div>
+        <hr style="border-color: rgba(255, 255, 255, 0.15);" class="mb-4" />
 
-      <div class="col-6 col-md-2 mb-3">
-        <h6 style="color:white">Resources</h6>
-        <ul class="list-unstyled" style="color:#bfbfbf;line-height:1.9;">
-          <li>Startup Directory</li>
-          <li>Startup Library</li>
-          <li>Investors</li>
-          <li>Demo Day</li>
-          <li>Hacker News</li>
-        </ul>
-      </div>
-
-      <div class="col-6 col-md-3 mb-3">
-        <h6 style="color:white">Company</h6>
-        <ul class="list-unstyled" style="color:#bfbfbf;line-height:1.9;">
-          <li>YC Blog</li>
-          <li>Contact</li>
-          <li>Press</li>
-          <li>Careers</li>
-          <li>Privacy</li>
-        </ul>
-      </div>
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-center gap-3">
+            <div class="text-white-50 small">
+                © @DateTime.UtcNow.Year Lycée Technique de Nanga-Eboko. Tous droits réservés.
+            </div>
+            <div class="d-flex gap-3 social-links">
+                <a href="#" aria-label="Facebook"><i class="bi bi-facebook"></i></a>
+                <a href="#" aria-label="Twitter"><i class="bi bi-twitter-x"></i></a>
+                <a href="#" aria-label="Instagram"><i class="bi bi-instagram"></i></a>
+                <a href="#" aria-label="LinkedIn"><i class="bi bi-linkedin"></i></a>
+            </div>
+        </div>
     </div>
-
-    <hr style="border-color:rgba(255,255,255,0.08);" />
-
-    <div class="d-flex flex-column flex-sm-row justify-content-between align-items-center py-3">
-      <div style="color:#bfbfbf">© @DateTime.UtcNow.Year Lycée GPOE</div>
-      <div class="d-flex gap-3" style="margin-top:10px;">
-        <a href="#" class="text-light" aria-label="Twitter">🐦</a>
-        <a href="#" class="text-light" aria-label="Facebook">📘</a>
-        <a href="#" class="text-light" aria-label="Instagram">📸</a>
-        <a href="#" class="text-light" aria-label="LinkedIn">🔗</a>
-      </div>
-    </div>
-  </div>
 </footer>
 
+<style>
+    .lt-logo-square { width: 48px; height: 48px; border-radius: 8px; background-color: #174ea6; color: white; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.25rem; letter-spacing: -0.5px; border: 2px solid rgba(255,255,255,0.2); }
+    .footer-link { color: rgba(255, 255, 255, 0.7); text-decoration: none; transition: color 0.2s ease, transform 0.2s ease; display: inline-block; }
+    .footer-link:hover { color: white; transform: translateX(2px); }
+    .hover-white:hover { color: white !important; }
+    .social-links a { color: rgba(255, 255, 255, 0.7); font-size: 1.25rem; transition: color 0.2s ease, transform 0.2s ease; display: inline-block; }
+    .social-links a:hover { color: white; transform: translateY(-2px); }
+</style>
 
 @code {
     private Contact? contact;
@@ -70,6 +87,4 @@
         try { contact = await Api.GetPrimaryContactAsync(); }
         catch { }
     }
-
-    
 }

@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Cours.Migrations
 {
     [DbContext(typeof(CoursContext))]
-    [Migration("20260303204034_InitialCreated")]
+    [Migration("20260307010012_InitialCreated")]
     partial class InitialCreated
     {
         /// <inheritdoc />
@@ -55,9 +55,6 @@ namespace Cours.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
-                    b.Property<string>("TextContent")
-                        .HasColumnType("text");
-
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -73,6 +70,52 @@ namespace Cours.Migrations
                     b.HasIndex("OwnerId", "Subject");
 
                     b.ToTable("Courses");
+                });
+
+            modelBuilder.Entity("Cours.Model.CourseSection", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("CourseId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Level")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CourseId", "Order");
+
+                    b.ToTable("CourseSections");
+                });
+
+            modelBuilder.Entity("Cours.Model.CourseSection", b =>
+                {
+                    b.HasOne("Cours.Model.Course", "Course")
+                        .WithMany("Sections")
+                        .HasForeignKey("CourseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Course");
+                });
+
+            modelBuilder.Entity("Cours.Model.Course", b =>
+                {
+                    b.Navigation("Sections");
                 });
 #pragma warning restore 612, 618
         }

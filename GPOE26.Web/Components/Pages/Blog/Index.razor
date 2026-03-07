@@ -1,0 +1,181 @@
+@page "/blog"
+@rendermode InteractiveServer
+
+<PageTitle>Actualités – GPOE26</PageTitle>
+
+<style>
+    .bg-light-gray { background-color: #f8f9fa; }
+    .text-navy { color: #174ea6 !important; }
+    .btn-navy { background-color: #174ea6; color: white; border: none; font-weight: 500; padding: 0.5rem 1.5rem; border-radius: 4px; }
+    .btn-navy:hover { background-color: #123d82; color: white; }
+    .card-clean { border: 1px solid #dadce0; border-radius: 8px; box-shadow: none; transition: box-shadow 0.2s; background: white; }
+    .card-clean:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    .section-title { font-weight: 400; font-size: 2rem; margin-bottom: 1.5rem; color: #202124; }
+    .badge-category { background-color: #e8f0fe; color: #174ea6; border: none; font-weight: 500; }
+</style>
+
+<div class="container py-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="section-title mb-0">Actualités</h1>
+        <a href="/blog/create" class="btn btn-navy">
+            <i class="bi bi-plus-lg me-1"></i> Nouvel Article
+        </a>
+    </div>
+
+    @* Filtres par catégorie *@
+    <div class="d-flex gap-2 mb-4 flex-wrap">
+        <button class="btn @(_selectedCategory == null ? "btn-navy" : "btn-outline-secondary") btn-sm" @onclick='() => FilterByCategory(null)'>Tous</button>
+        @foreach (var cat in _categories)
+        {
+            <button class="btn @(_selectedCategory == cat ? "btn-navy" : "btn-outline-secondary") btn-sm" @onclick='() => FilterByCategory(cat)'>@cat</button>
+        }
+    </div>
+
+    @if (_loading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-navy"></div>
+            <p class="text-muted mt-2">Chargement des articles...</p>
+        </div>
+    }
+    else if (!_articles.Any())
+    {
+        <div class="text-center py-5 text-muted">
+            <p class="fs-5">Aucun article trouvé.</p>
+        </div>
+    }
+    else
+    {
+        <div class="row g-4">
+            @foreach (var article in _articles)
+            {
+                <div class="col-md-4">
+                    <div class="card card-clean h-100">
+                        @if (!string.IsNullOrEmpty(article.ImageUrl))
+                        {
+                            <img src="@article.ImageUrl" class="card-img-top" alt="@article.Title" style="height: 180px; object-fit: cover;" />
+                        }
+                        <div class="card-body d-flex flex-column">
+                            <span class="badge badge-category mb-2 align-self-start">@article.Category</span>
+                            <h5 class="card-title fw-bold">@article.Title</h5>
+                            <p class="card-text text-muted small flex-grow-1">@(article.Excerpt ?? Truncate(article.Content, 120))</p>
+                            <small class="text-muted mb-3">@article.CreatedAt.ToString("dd MMM yyyy")</small>
+
+                            <div class="d-flex gap-2 mt-auto">
+                                <a href="@($"/blog/details/{article.Id}")" class="btn btn-outline-secondary btn-sm flex-fill">Détails</a>
+                                <a href="@($"/blog/edit/{article.Id}")" class="btn btn-outline-primary btn-sm flex-fill">Modifier</a>
+                                <button class="btn btn-outline-danger btn-sm" @onclick="() => ConfirmDelete(article)">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+
+        @* Pagination *@
+        @if (_totalPages > 1)
+        {
+            <nav class="mt-4">
+                <ul class="pagination justify-content-center">
+                    <li class="page-item @(_currentPage <= 1 ? "disabled" : "")">
+                        <button class="page-link" @onclick="() => GoToPage(_currentPage - 1)">Précédent</button>
+                    </li>
+                    @for (int i = 1; i <= _totalPages; i++)
+                    {
+                        var pageNum = i;
+                        <li class="page-item @(pageNum == _currentPage ? "active" : "")">
+                            <button class="page-link" @onclick="() => GoToPage(pageNum)">@pageNum</button>
+                        </li>
+                    }
+                    <li class="page-item @(_currentPage >= _totalPages ? "disabled" : "")">
+                        <button class="page-link" @onclick="() => GoToPage(_currentPage + 1)">Suivant</button>
+                    </li>
+                </ul>
+            </nav>
+        }
+    }
+</div>
+
+@* Modal de confirmation de suppression *@
+@if (_articleToDelete is not null)
+{
+    <div class="modal d-block" tabindex="-1" style="background: rgba(0,0,0,0.4);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Confirmer la suppression</h5>
+                    <button type="button" class="btn-close" @onclick="CancelDelete"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Voulez-vous vraiment supprimer l'article <strong>@_articleToDelete.Title</strong> ?</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CancelDelete">Annuler</button>
+                    <button class="btn btn-danger" @onclick="DeleteArticle" disabled="@_deleting">
+                        @if (_deleting) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        Supprimer
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _loading = true;
+    private bool _deleting = false;
+    private List<NewArticle> _articles = new();
+    private NewArticle? _articleToDelete;
+    private int _total;
+    private int _currentPage = 1;
+    private int _pageSize = 9;
+    private int _totalPages => (int)Math.Ceiling((double)_total / _pageSize);
+    private string? _selectedCategory;
+    private readonly string[] _categories = { "Général", "Sport", "Culturel", "Administratif" };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadArticles();
+    }
+
+    private async Task LoadArticles()
+    {
+        _loading = true;
+        var result = await Api.GetNewsAsync(category: _selectedCategory, page: _currentPage, pageSize: _pageSize);
+        _total = result.total;
+        _articles = result.items;
+        _loading = false;
+    }
+
+    private async Task FilterByCategory(string? category)
+    {
+        _selectedCategory = category;
+        _currentPage = 1;
+        await LoadArticles();
+    }
+
+    private async Task GoToPage(int page)
+    {
+        if (page < 1 || page > _totalPages) return;
+        _currentPage = page;
+        await LoadArticles();
+    }
+
+    private void ConfirmDelete(NewArticle article) => _articleToDelete = article;
+    private void CancelDelete() => _articleToDelete = null;
+
+    private async Task DeleteArticle()
+    {
+        if (_articleToDelete is null) return;
+        _deleting = true;
+        await Api.DeleteNewsAsync(_articleToDelete.Id);
+        _articleToDelete = null;
+        _deleting = false;
+        await LoadArticles();
+    }
+
+    private static string Truncate(string text, int maxLength)
+        => text.Length <= maxLength ? text : text[..maxLength] + "…";
+}

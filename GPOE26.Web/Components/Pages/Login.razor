@@ -65,7 +65,7 @@
     protected override void OnInitialized()
     {
         if (Auth.IsAuthenticated)
-            Nav.NavigateTo("/mes-cours");
+            Nav.NavigateTo("/cours");
     }
 
     private async Task OnKey(KeyboardEventArgs e)
@@ -89,7 +89,7 @@
         _loading = false;
         
         if (ok)
-            Nav.NavigateTo("/mes-cours");
+            Nav.NavigateTo("/cours");
         else
             _error = err;
     }

@@ -113,7 +113,7 @@
 
     protected override void OnInitialized()
     {
-        if (Auth.IsAuthenticated) Nav.NavigateTo("/mes-cours");
+        if (Auth.IsAuthenticated) Nav.NavigateTo("/cours");
     }
 
     private async Task DoRegister()
@@ -140,7 +140,7 @@
         var (ok, err) = await Auth.RegisterAsync(req);
         _loading = false;
         
-        if (ok) Nav.NavigateTo("/mes-cours");
+        if (ok) Nav.NavigateTo("/cours");
         else _error = err;
     }
 }

@@ -72,12 +72,15 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
-// Migration automatique au démarrage
-/*using (var scope = app.Services.CreateScope())
+// Création automatique des tables au démarrage (pas de migrations EF pour ce projet)
+using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ApiServiceContext>();
-    await db.Database.MigrateAsync();
-}*/
+    await db.Database.EnsureCreatedAsync();
+
+    // ⚠️ AJOUT : injection des données test (Contact, Events, News...)
+    await ApiSeeder.SeedAsync(db);
+}
 
 app.UseCors("AllowAll");
 app.MapDefaultEndpoints();
