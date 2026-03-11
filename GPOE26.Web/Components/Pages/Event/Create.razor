@@ -21,7 +21,7 @@
 
         <h1 class="fw-bold mb-4" style="font-size:1.8rem; color:#202124;">Créer un événement</h1>
 
-        @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
+        @if (!string.IsNullOrEmpty(_errorMessage)) { <div class="alert alert-danger">@_errorMessage</div> }
 
         <EditForm Model="_ev" OnValidSubmit="Submit" FormName="CreateEventForm">
             <DataAnnotationsValidator />
@@ -66,8 +66,15 @@
             </div>
 
             <div class="mb-3">
-                <label class="form-label fw-semibold">Image URL</label>
-                <InputText @bind-Value="_ev.ImageUrl" class="form-control" />
+                <label class="form-label fw-semibold">Image (URL ou Upload)</label>
+                <div class="input-group">
+                    <InputText @bind-Value="_ev.ImageUrl" class="form-control" />
+                    <InputFile OnChange="HandleImageUpload" class="form-control" accept="image/*" />
+                </div>
+                @if (_isUploading)
+                {
+                    <div class="form-text text-info">Téléchargement en cours...</div>
+                }
             </div>
 
             <div class="form-check mb-4">
@@ -86,16 +93,46 @@
 </div>
 
 @code {
-    private SchoolEvent _ev = new() { IsPublic = true, StartDate = DateTime.Today };
+    private SchoolEvent _ev = new() { StartDate = DateTime.Today, EndDate = DateTime.Today };
     private bool _saving;
-    private string? _error;
+    private string? _errorMessage;
+    private bool _isUploading = false;
 
+    private async Task HandleImageUpload(InputFileChangeEventArgs e)
+    {
+        _isUploading = true;
+        try
+        {
+            var file = e.File;
+            if (file.Size > 5 * 1024 * 1024)
+            {
+                _errorMessage = "Fichier trop volumineux (max 5MB).";
+                return;
+            }
+            using var stream = file.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024);
+            var url = await Api.UploadImageAsync(stream, file.Name);
+            if (url != null)
+            {
+                _ev.ImageUrl = url;
+            }
+            else _errorMessage = "Erreur upload.";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Erreur upload : {ex.Message}";
+        }
+        finally
+        {
+            _isUploading = false;
+            StateHasChanged();
+        }
+    }
     private async Task Submit()
     {
-        _saving = true; _error = null;
+        _saving = true; _errorMessage = null;
         var ok = await Api.CreateEventAsync(_ev);
         _saving = false;
         if (ok) Nav.NavigateTo("/events");
-        else _error = "Erreur lors de la création.";
+        else _errorMessage = "Erreur lors de la création.";
     }
 }

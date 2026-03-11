@@ -74,7 +74,7 @@ public class OpenAiQuizGeneratorService : IQuizGeneratorService
         };
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
 
-        _http.Timeout = TimeSpan.FromMinutes(5);
+        // Au lieu de modifier _http.Timeout qui est global, cela devrait être fait dans Program.cs via AddHttpClient
         var response = await _http.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
 

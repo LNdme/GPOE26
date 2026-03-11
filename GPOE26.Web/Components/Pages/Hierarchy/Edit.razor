@@ -31,7 +31,7 @@
         else
         {
             <h1 class="fw-bold mb-4" style="font-size:1.8rem; color:#202124;">Modifier le membre</h1>
-            @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
+            @if (!string.IsNullOrEmpty(_errorMessage)) { <div class="alert alert-danger">@_errorMessage</div> }
 
             <EditForm Model="_item" OnValidSubmit="Submit" FormName="EditHierarchyForm">
                 <DataAnnotationsValidator />
@@ -72,9 +72,16 @@
                     <InputText @bind-Value="_item.Email" class="form-control" />
                 </div>
                 <div class="mb-3">
-                    <label class="form-label fw-semibold">Image URL</label>
+                <label class="form-label fw-semibold">Image (URL ou Upload)</label>
+                <div class="input-group">
                     <InputText @bind-Value="_item.ImageUrl" class="form-control" />
+                    <InputFile OnChange="HandleImageUpload" class="form-control" accept="image/*" />
                 </div>
+                @if (_isUploading)
+                {
+                    <div class="form-text text-info">Téléchargement en cours...</div>
+                }
+            </div>
                 <div class="mb-4">
                     <label class="form-label fw-semibold">Citation</label>
                     <InputTextArea @bind-Value="_item.Citation" class="form-control" rows="2" />
@@ -93,18 +100,52 @@
 @code {
     [Parameter] public int Id { get; set; }
     private Hierarchy? _item;
-    private bool _loading = true, _saving;
-    private string? _error;
+    private string _roleOther = "";
+    private bool _loading = true;
+    private bool _saving = false;
+    private string? _errorMessage;
+    private bool _isUploading = false;
+
+    private async Task HandleImageUpload(InputFileChangeEventArgs e)
+    {
+        _isUploading = true;
+        try
+        {
+            var file = e.File;
+            if (file.Size > 5 * 1024 * 1024)
+            {
+                _errorMessage = "Fichier trop volumineux (max 5MB).";
+                return;
+            }
+            using var stream = file.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024);
+            var url = await Api.UploadImageAsync(stream, file.Name);
+            if (url != null && _item != null)
+            {
+                _item.ImageUrl = url;
+            }
+            else _errorMessage = "Erreur upload.";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Erreur upload : {ex.Message}";
+        }
+        finally
+        {
+            _isUploading = false;
+            StateHasChanged();
+        }
+    }
 
     protected override async Task OnInitializedAsync() { _item = await Api.GetHierarchyByIdAsync(Id); _loading = false; }
 
     private async Task Submit()
     {
         if (_item is null) return;
-        _saving = true; _error = null;
+        if (_item.Role == "Autre" && !string.IsNullOrWhiteSpace(_roleOther)) _item.Role = _roleOther;
+        _saving = true; _errorMessage = null;
         var ok = await Api.UpdateHierarchyAsync(Id, _item);
         _saving = false;
         if (ok) Nav.NavigateTo("/hierarchy");
-        else _error = "Erreur lors de la mise à jour.";
+        else _errorMessage = "Erreur lors de la mise à jour.";
     }
 }

@@ -146,8 +146,8 @@ cours.MapPost("", async (
 
     var course = new Course
     {
-        Title = req.Title,
-        Subject = req.Subject,
+        Title = req.Title.Length > 200 ? req.Title[..200] : req.Title,
+        Subject = req.Subject.Length > 100 ? req.Subject[..100] : req.Subject,
         Description = req.Description,
         OwnerId = ownerId.Value,
         ContentType = ContentType.Text,
@@ -253,8 +253,8 @@ cours.MapPut("/{id:guid}", async (
     if (course is null)
         return Results.NotFound(new { message = "Cours introuvable." });
 
-    course.Title = req.Title;
-    course.Subject = req.Subject;
+    course.Title = req.Title.Length > 200 ? req.Title[..200] : req.Title;
+    course.Subject = req.Subject.Length > 100 ? req.Subject[..100] : req.Subject;
     course.Description = req.Description;
 
     // Remplacer les sections — supprimer les anciennes via le DbContext pour éviter

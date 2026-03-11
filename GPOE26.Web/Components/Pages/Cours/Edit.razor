@@ -1,5 +1,6 @@
 @page "/cours/edit/{Id:guid}"
 @rendermode InteractiveServer
+@inject IJSRuntime JS
 
 <PageTitle>Modifier un Cours – GPOE26</PageTitle>
 
@@ -7,14 +8,38 @@
     .text-navy { color: #174ea6 !important; }
     .btn-navy { background-color: #174ea6; color: white; border: none; font-weight: 500; padding: 0.5rem 1.5rem; border-radius: 4px; }
     .btn-navy:hover { background-color: #123d82; color: white; }
-    .form-section { max-width: 800px; margin: 0 auto; }
-    .section-block { border: 1px solid #dadce0; border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem; background: #fafafa; position: relative; }
-    .section-block:hover { border-color: #174ea6; }
-    .section-type-badge { font-size: 0.75rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: 4px; }
-    .badge-heading { background: #e8f0fe; color: #174ea6; }
-    .badge-paragraph { background: #e6f4ea; color: #137333; }
-    .badge-image { background: #fef7e0; color: #e37400; }
-    .add-section-bar { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .form-section { max-width: 1000px; margin: 0 auto; }
+    
+    .md-editor-container {
+        display: flex;
+        gap: 1.5rem;
+        min-height: 400px;
+    }
+    .md-editor-pane {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+    }
+    .md-textarea {
+        flex: 1;
+        font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
+        font-size: 0.9rem;
+        resize: vertical;
+        border: 1px solid #dadce0;
+        border-radius: 8px;
+        padding: 1rem;
+        min-height: 400px;
+    }
+    .md-preview-pane {
+        flex: 1;
+        border: 1px solid #dadce0;
+        border-radius: 8px;
+        padding: 1.5rem;
+        background: #fafafa;
+        overflow-y: auto;
+        min-height: 400px;
+        max-height: 800px;
+    }
 </style>
 
 <div class="container py-5">
@@ -59,61 +84,55 @@
                 @if (_course.ContentType == ContentType.Text)
                 {
                     <div class="mb-3">
-                        <label class="form-label fw-semibold">Contenu structuré</label>
-
-                        <div class="add-section-bar">
-                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick='() => AddSection(SectionType.Heading, 1)'>+ Titre H1</button>
-                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick='() => AddSection(SectionType.Heading, 2)'>+ Titre H2</button>
-                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick='() => AddSection(SectionType.Heading, 3)'>+ Titre H3</button>
-                            <button type="button" class="btn btn-outline-success btn-sm" @onclick='() => AddSection(SectionType.Paragraph, 0)'>+ Paragraphe</button>
-                            <button type="button" class="btn btn-outline-warning btn-sm" @onclick='() => AddSection(SectionType.Image, 0)'>+ Image (URL)</button>
+                        <div class="d-flex justify-content-between align-items-end mb-2">
+                            <div>
+                                <label class="form-label fw-semibold mb-0">Contenu du cours (Markdown)</label>
+                                <p class="text-muted small mb-0">L'éditeur a été mis à jour pour supporter le Markdown complet !</p>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <label class="btn btn-outline-secondary btn-sm mb-0 position-relative">
+                                    📷 Insérer une image
+                                    <InputFile OnChange="HandleDirectImageUpload" accept="image/*" class="position-absolute" style="opacity: 0; width: 0; height: 0;" />
+                                </label>
+                            </div>
                         </div>
-
-                        @for (int i = 0; i < _sections.Count; i++)
+                        
+                        @if (_isUploadingImage)
                         {
-                            var idx = i;
-                            var s = _sections[idx];
-                            <div class="section-block">
-                                <div class="d-flex justify-content-between align-items-center mb-2">
-                                    <div class="d-flex align-items-center gap-2">
-                                        <span class="section-type-badge @GetBadgeClass(s.Type)">
-                                            @GetTypeLabel(s.Type, s.Level)
-                                        </span>
-                                    </div>
-                                    <div class="d-flex gap-1">
-                                        @if (idx > 0)
-                                        {
-                                            <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1" @onclick="() => MoveUp(idx)">↑</button>
-                                        }
-                                        @if (idx < _sections.Count - 1)
-                                        {
-                                            <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1" @onclick="() => MoveDown(idx)">↓</button>
-                                        }
-                                        <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1" @onclick="() => RemoveSection(idx)">✕</button>
-                                    </div>
-                                </div>
+                            <div class="alert alert-info py-2 small">Téléchargement de l'image en cours...</div>
+                        }
 
-                                @if (s.Type == SectionType.Heading)
+                        <div class="md-editor-container">
+                        <!-- Éditeur Markdown -->
+                        <div class="md-editor-pane">
+                            <div class="md-toolbar d-flex flex-wrap gap-1 p-2 bg-light border-bottom">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="@(() => InsertMarkdown("md-editor", "# ", ""))" title="Titre 1">H1</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="@(() => InsertMarkdown("md-editor", "## ", ""))" title="Titre 2">H2</button>
+                                <div class="vr mx-1"></div>
+                                <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" @onclick="@(() => InsertMarkdown("md-editor", "**", "**"))" title="Gras">B</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary fst-italic" @onclick="@(() => InsertMarkdown("md-editor", "_", "_"))" title="Italique">I</button>
+                                <div class="vr mx-1"></div>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="@(() => InsertMarkdown("md-editor", "- ", ""))" title="Liste à puces">• Liste</button>
+                                <div class="vr mx-1"></div>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="@(() => InsertMarkdown("md-editor", "```\n", "\n```"))" title="Bloc de code">{'}'} Code</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="@(() => InsertMarkdown("md-editor", "$$ ", " $$"))" title="Formule mathématique">∑ Maths</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="@(() => InsertMarkdown("md-editor", "\n| Titre 1 | Titre 2 |\n|---|---|\n| Ligne 1 | Ligne 1 |\n", ""))" title="Tableau">⊞ Tab</button>
+                            </div>
+                            <textarea id="md-editor" class="md-textarea" 
+                                          placeholder="Éditez votre cours en Markdown ici..."
+                                          @bind="_markdownContent" @bind:event="oninput"></textarea>
+                            </div>
+                            <div class="md-preview-pane">
+                                @if (string.IsNullOrWhiteSpace(_markdownContent))
                                 {
-                                    <input type="text" class="form-control" placeholder="Titre..."
-                                           value="@s.Content" @onchange="(e) => s.Content = e.Value?.ToString() ?? string.Empty" />
-                                }
-                                else if (s.Type == SectionType.Paragraph)
-                                {
-                                    <textarea class="form-control" rows="4" placeholder="Paragraphe..."
-                                              @onchange="(e) => s.Content = e.Value?.ToString() ?? string.Empty">@s.Content</textarea>
+                                    <div class="text-muted text-center mt-5">Aperçu du rendu Markdown.</div>
                                 }
                                 else
                                 {
-                                    <input type="url" class="form-control" placeholder="https://exemple.com/image.jpg"
-                                           value="@s.Content" @onchange="(e) => s.Content = e.Value?.ToString() ?? string.Empty" />
-                                    @if (!string.IsNullOrEmpty(s.Content))
-                                    {
-                                        <img src="@s.Content" alt="Aperçu" class="mt-2 rounded" style="max-width: 100%; max-height: 200px;" />
-                                    }
+                                    <GPOE26.Web.Components.UI.MarkdownViewer Content="@_markdownContent" />
                                 }
                             </div>
-                        }
+                        </div>
                     </div>
                 }
                 else
@@ -138,7 +157,8 @@
     [Parameter] public Guid Id { get; set; }
     private CourseDto? _course;
     private EditFormModel _form = new();
-    private List<SectionModel> _sections = new();
+    private string _markdownContent = "";
+    private bool _isUploadingImage = false;
     private bool _loading = true, _saving;
     private string? _error;
 
@@ -147,13 +167,6 @@
         public string Title { get; set; } = "";
         public string Subject { get; set; } = "";
         public string? Description { get; set; }
-    }
-
-    private class SectionModel
-    {
-        public SectionType Type { get; set; }
-        public string Content { get; set; } = "";
-        public int Level { get; set; }
     }
 
     protected override async Task OnInitializedAsync()
@@ -168,35 +181,74 @@
                 Description = _course.Description
             };
 
-            // Charger les sections existantes
+            // Charger les sections existantes et les formater en Markdown
             if (_course.Sections is { Count: > 0 })
             {
-                _sections = _course.Sections.OrderBy(s => s.Order).Select(s => new SectionModel
+                if (_course.Sections.Count == 1 && _course.Sections[0].Type == SectionType.Paragraph)
                 {
-                    Type = s.Type,
-                    Content = s.Content,
-                    Level = s.Level
-                }).ToList();
+                    _markdownContent = _course.Sections[0].Content;
+                }
+                else
+                {
+                    // Migration à la volée des vieilles sections
+                    var sb = new System.Text.StringBuilder();
+                    foreach (var s in _course.Sections.OrderBy(x => x.Order))
+                    {
+                        if (s.Type == SectionType.Heading) sb.AppendLine($"{new string('#', s.Level > 0 ? s.Level : 1)} {s.Content}\n");
+                        else if (s.Type == SectionType.Paragraph) sb.AppendLine($"{s.Content}\n");
+                        else if (s.Type == SectionType.Image) sb.AppendLine($"\n![Image]({s.Content})\n");
+                    }
+                    _markdownContent = sb.ToString().Trim();
+                }
+            }
+            else if (!string.IsNullOrEmpty(_course.ExtractedText) && _course.ContentType == ContentType.Text)
+            {
+                _markdownContent = _course.ExtractedText;
             }
         }
         _loading = false;
     }
 
-    private void AddSection(SectionType type, int level)
-        => _sections.Add(new SectionModel { Type = type, Level = level });
-
-    private void RemoveSection(int index) => _sections.RemoveAt(index);
-
-    private void MoveUp(int index)
+    private async Task HandleDirectImageUpload(InputFileChangeEventArgs e)
     {
-        if (index <= 0) return;
-        (_sections[index], _sections[index - 1]) = (_sections[index - 1], _sections[index]);
+        _isUploadingImage = true;
+        _error = null;
+        try
+        {
+            var file = e.File;
+            if (file.Size > 5 * 1024 * 1024)
+            {
+                _error = "L'image est trop volumineuse (max 5MB).";
+                return;
+            }
+            using var stream = file.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024);
+            var url = await Api.UploadImageAsync(stream, file.Name);
+            if (url != null) 
+            {
+                var imageMarkdown = $"\n![{file.Name}]({url})\n";
+                _markdownContent += imageMarkdown;
+            }
+            else 
+            {
+                _error = "Erreur lors du téléchargement de l'image.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Erreur upload : {ex.Message}";
+        }
+        finally
+        {
+            _isUploadingImage = false;
+            StateHasChanged();
+        }
     }
 
-    private void MoveDown(int index)
+    private async Task InsertMarkdown(string elementId, string startTag, string endTag)
     {
-        if (index >= _sections.Count - 1) return;
-        (_sections[index], _sections[index + 1]) = (_sections[index + 1], _sections[index]);
+        var newValue = await JS.InvokeAsync<string>("markdownInterop.insertAtCursor", elementId, startTag, endTag);
+        _markdownContent = newValue;
+        StateHasChanged();
     }
 
     private async Task Submit()
@@ -204,7 +256,7 @@
         _saving = true; _error = null;
 
         var sections = _course!.ContentType == ContentType.Text
-            ? _sections.Select((s, i) => new CreateSectionDto(s.Type, s.Content, i, s.Level)).ToList()
+            ? new List<CreateSectionDto> { new CreateSectionDto(SectionType.Paragraph, _markdownContent, 0, 0) }
             : null;
 
         var request = new UpdateCourseRequest(_form.Title, _form.Subject, _form.Description, sections);
@@ -213,20 +265,4 @@
         if (ok) Nav.NavigateTo("/cours");
         else _error = "Erreur lors de la mise à jour.";
     }
-
-    private static string GetBadgeClass(SectionType type) => type switch
-    {
-        SectionType.Heading => "badge-heading",
-        SectionType.Paragraph => "badge-paragraph",
-        SectionType.Image => "badge-image",
-        _ => ""
-    };
-
-    private static string GetTypeLabel(SectionType type, int level) => type switch
-    {
-        SectionType.Heading => $"Titre H{level}",
-        SectionType.Paragraph => "Paragraphe",
-        SectionType.Image => "Image",
-        _ => ""
-    };
 }

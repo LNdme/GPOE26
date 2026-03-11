@@ -65,9 +65,16 @@
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label fw-semibold">Image URL</label>
+                <label class="form-label fw-semibold">Image (URL ou Upload)</label>
+                <div class="input-group">
                     <InputText @bind-Value="_article.ImageUrl" class="form-control" />
+                    <InputFile OnChange="HandleImageUpload" class="form-control" accept="image/*" />
                 </div>
+                @if (_isUploading)
+                {
+                    <div class="form-text text-info">Téléchargement en cours...</div>
+                }
+            </div>
 
                 <div class="mb-3">
                     <label class="form-label fw-semibold">Extrait</label>
@@ -103,6 +110,37 @@
     private bool _loading = true;
     private bool _saving = false;
     private string? _errorMessage;
+    private bool _isUploading = false;
+
+    private async Task HandleImageUpload(InputFileChangeEventArgs e)
+    {
+        _isUploading = true;
+        try
+        {
+            var file = e.File;
+            if (file.Size > 5 * 1024 * 1024)
+            {
+                _errorMessage = "Fichier trop volumineux (max 5MB).";
+                return;
+            }
+            using var stream = file.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024);
+            var url = await Api.UploadImageAsync(stream, file.Name);
+            if (url != null && _article != null)
+            {
+                _article.ImageUrl = url;
+            }
+            else _errorMessage = "Erreur upload.";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Erreur upload : {ex.Message}";
+        }
+        finally
+        {
+            _isUploading = false;
+            StateHasChanged();
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {

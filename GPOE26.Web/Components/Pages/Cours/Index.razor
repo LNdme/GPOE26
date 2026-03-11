@@ -3,33 +3,23 @@
 
 <PageTitle>Mes Cours – GPOE26</PageTitle>
 
-<style>
-    .text-navy { color: #174ea6 !important; }
-    .btn-navy { background-color: #174ea6; color: white; border: none; font-weight: 500; padding: 0.5rem 1.5rem; border-radius: 4px; }
-    .btn-navy:hover { background-color: #123d82; color: white; }
-    .card-clean { border: 1px solid #dadce0; border-radius: 8px; box-shadow: none; transition: box-shadow 0.2s; background: white; }
-    .card-clean:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
-    .section-title { font-weight: 400; font-size: 2rem; margin-bottom: 1.5rem; color: #202124; }
-    .badge-subject { background-color: #e8f0fe; color: #174ea6; font-weight: 500; }
-    .badge-type-pdf { background-color: #fce8e6; color: #c5221f; }
-    .badge-type-text { background-color: #e6f4ea; color: #137333; }
-</style>
+
 
 <div class="container py-5">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="section-title mb-0">Mes Cours</h1>
-        <a href="/cours/create" class="btn btn-navy"><i class="bi bi-plus-lg me-1"></i> Nouveau Cours</a>
+        <a href="/cours/create" class="btn btn-brand"><i class="bi bi-plus-lg me-1"></i> Nouveau Cours</a>
     </div>
 
     @if (_loading)
     {
-        <div class="text-center py-5"><div class="spinner-border text-navy"></div></div>
+        <div class="text-center py-5"><div class="spinner-border text-brand-dark"></div></div>
     }
     else if (!_courses.Any())
     {
-        <div class="text-center py-5 text-muted">
+        <div class="text-center py-5 text-muted-chic">
             <p class="fs-5">Vous n'avez pas encore de cours.</p>
-            <a href="/cours/create" class="btn btn-navy">Créer mon premier cours</a>
+            <a href="/cours/create" class="btn btn-brand">Créer mon premier cours</a>
         </div>
     }
     else
@@ -38,23 +28,23 @@
             @foreach (var c in _courses)
             {
                 <div class="col-md-4">
-                    <div class="card card-clean h-100 p-3">
-                        <div class="card-body d-flex flex-column">
-                            <div class="d-flex gap-2 mb-2">
-                                <span class="badge badge-subject">@c.Subject</span>
-                                <span class="badge @(c.ContentType.ToString() == "Pdf" ? "badge-type-pdf" : "badge-type-text")">
+                    <div class="card card-elegant h-100 border-0">
+                        <div class="card-body d-flex flex-column p-4">
+                            <div class="d-flex gap-2 mb-3">
+                                <span class="badge bg-slate-100 text-brand-dark px-2 py-1">@c.Subject</span>
+                                <span class="badge @(c.ContentType.ToString() == "Pdf" ? "bg-danger bg-opacity-10 text-danger" : "bg-success bg-opacity-10 text-success") px-2 py-1">
                                     @(c.ContentType.ToString() == "Pdf" ? "📄 PDF" : "📝 Texte")
                                 </span>
                             </div>
-                            <h5 class="card-title fw-bold">@c.Title</h5>
+                            <h5 class="card-title fw-bold" style="color: var(--slate-900);">@c.Title</h5>
                             @if (!string.IsNullOrEmpty(c.Description))
                             {
-                                <p class="card-text text-muted small flex-grow-1">@Truncate(c.Description, 100)</p>
+                                <p class="card-text text-muted-chic small flex-grow-1">@Truncate(c.Description, 100)</p>
                             }
-                            <small class="text-muted mb-3">Créé le @c.CreatedAt.ToString("dd MMM yyyy")</small>
+                            <small class="text-muted-chic mb-4">Créé le @c.CreatedAt.ToString("dd MMM yyyy")</small>
                             <div class="d-flex gap-2 mt-auto">
-                                <a href="@($"/learning/course/{c.Id}")" class="btn btn-navy btn-sm flex-fill">📖 Étudier</a>
-                                <a href="@($"/cours/edit/{c.Id}")" class="btn btn-outline-primary btn-sm">Modifier</a>
+                                <a href="@($"/learning/course/{c.Id}")" class="btn btn-brand btn-sm flex-fill">📖 Étudier</a>
+                                <a href="@($"/cours/edit/{c.Id}")" class="btn btn-brand-outline btn-sm">Modifier</a>
                                 <button class="btn btn-outline-danger btn-sm" @onclick="() => ConfirmDel(c)"><i class="bi bi-trash"></i></button>
                             </div>
                         </div>

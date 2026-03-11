@@ -5,34 +5,47 @@
 
 <PageTitle>Accueil – GPOE26</PageTitle>
 
-<style>
-    /* Thème inspiré de Google ML Crash Course */
-    .bg-light-gray { background-color: #f8f9fa; }
-    .text-navy { color: #174ea6 !important; }
-    .bg-navy { background-color: #174ea6 !important; color: white; }
-    .btn-navy { background-color: #174ea6; color: white; border: none; font-weight: 500; padding: 0.5rem 1.5rem; border-radius: 4px; }
-    .btn-navy:hover { background-color: #123d82; color: white; }
-    .card-clean { border: 1px solid #dadce0; border-radius: 8px; box-shadow: none; transition: box-shadow 0.2s; background: white; }
-    .card-clean:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
-    .section-title { font-weight: 400; font-size: 2rem; margin-bottom: 2rem; color: #202124; }
-</style>
-
-<div class="container-fluid bg-light-gray py-5 text-center">
-    <div class="container py-5">
-        <h1 class="display-4 fw-bold text-navy mb-3">Plateforme d'apprentissage IA</h1>
-        <p class="lead text-muted mb-4" style="max-width: 700px; margin: auto;">
-            Rejoignez le Lycée GPOE pour apprendre, créer et réussir avec des outils propulsés par l'intelligence artificielle.
+<div class="container-fluid bg-brand-dark text-white py-5 text-center">
+    <div class="container py-5 my-4">
+        <h1 class="display-4 fw-bold mb-4" style="letter-spacing: -1px;">@( _contact?.Name ?? "Plateforme d'apprentissage IA" )</h1>
+        <p class="lead text-white-50 mb-5" style="max-width: 700px; margin: auto;">
+            L'excellence éducative propulsée par l'intelligence artificielle. Rejoignez-nous pour construire votre avenir avec curiosité et rigueur.
         </p>
-        <a href="/register" class="btn btn-navy btn-lg shadow-sm">Commencer maintenant</a>
+        <a href="/register" class="btn btn-light text-brand-dark btn-lg px-5 shadow-sm fw-bold">Commencer maintenant</a>
     </div>
 </div>
 
+@if (_contact is not null)
+{
+    <div class="container py-5 mt-4">
+        <div class="row align-items-center g-5">
+            <div class="col-lg-6">
+                <h2 class="section-title mb-4">À propos de notre établissement</h2>
+                <p class="text-muted-chic fs-5 mb-4" style="line-height: 1.7;">
+                    Situé au cœur de @_contact.City, notre établissement s'engage à fournir une éducation de premier plan mêlant tradition d'excellence et innovation technologique. Nos outils numériques de pointe accompagnent nos élèves et professeurs vers la réussite globale.
+                </p>
+                <ul class="list-unstyled text-muted-chic">
+                    <li class="mb-3 d-flex align-items-center"><i class="bi bi-geo-alt-fill text-brand-dark fs-5 me-3"></i> @_contact.Address</li>
+                    <li class="mb-3 d-flex align-items-center"><i class="bi bi-envelope-fill text-brand-dark fs-5 me-3"></i> @_contact.Email</li>
+                    <li class="mb-3 d-flex align-items-center"><i class="bi bi-telephone-fill text-brand-dark fs-5 me-3"></i> @_contact.Phone</li>
+                </ul>
+            </div>
+            <div class="col-lg-6 text-center">
+                <!-- Abstract placeholder ou future image du lycée -->
+                <div class="rounded-4 bg-white d-flex align-items-center justify-content-center shadow-sm" style="height: 350px; border: 1px solid var(--slate-200); overflow: hidden;">
+                   <i class="bi bi-building" style="font-size: 5rem; color: var(--slate-200);"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 <div class="container py-5">
     
-    <h2 class="section-title">Dernières Actualités</h2>
+    <h2 class="section-title text-center">Dernières Actualités</h2>
     @if (_loading)
     {
-        <div class="text-center text-muted"><div class="spinner-border text-navy"></div> Chargement...</div>
+        <div class="text-center text-muted-chic"><div class="spinner-border text-brand-dark"></div> Chargement...</div>
     }
     else if (_news.Any())
     {
@@ -40,11 +53,14 @@
             @foreach (var article in _news)
             {
                 <div class="col-md-4">
-                    <div class="card card-clean h-100 p-3">
-                        <div class="card-body">
-                            <span class="badge bg-light text-navy mb-2 border">@article.Category</span>
-                            <h5 class="card-title fw-bold">@article.Title</h5>
-                            <p class="card-text text-muted small">@article.Excerpt</p>
+                    <div class="card card-elegant h-100 border-0">
+                        @if(!string.IsNullOrEmpty(article.ImageUrl)) {
+                            <img src="@article.ImageUrl" class="card-img-top" style="height:200px; object-fit:cover;" alt="@article.Title" />
+                        }
+                        <div class="card-body p-4">
+                            <span class="badge bg-slate-100 text-brand-dark mb-3 border px-2 py-1">@article.Category</span>
+                            <h5 class="card-title fw-bold mb-3" style="color: var(--slate-900);">@article.Title</h5>
+                            <p class="card-text text-muted-chic small">@article.Excerpt</p>
                         </div>
                     </div>
                 </div>
@@ -52,49 +68,57 @@
         </div>
     }
 
-    <div class="row g-5 mb-5">
+    <div class="row g-5 mb-5 mt-4">
         <div class="col-md-6">
             <h2 class="section-title">Événements à venir</h2>
-            <ul class="list-group list-group-flush border-top border-bottom">
-                @foreach (var ev in _events)
-                {
-                    <li class="list-group-item py-3 px-0 border-light d-flex justify-content-between align-items-center">
-                        <div>
-                            <h6 class="mb-1 fw-bold">@ev.Title</h6>
-                            <small class="text-muted">@ev.StartDate.ToString("dd MMM yyyy") - @ev.Type</small>
-                        </div>
-                        <span class="text-navy">📅</span>
-                    </li>
-                }
-                @if (!_events.Any() && !_loading) { <li class="list-group-item py-3 px-0 text-muted">Aucun événement prévu.</li> }
-            </ul>
+            <div class="card card-elegant border-0">
+                <ul class="list-group list-group-flush">
+                    @foreach (var ev in _events)
+                    {
+                        <li class="list-group-item py-4 px-4 border-light d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-1 fw-bold" style="color: var(--slate-900);">@ev.Title</h6>
+                                <small class="text-muted-chic">@ev.StartDate.ToString("dd MMM yyyy") - <span class="badge bg-slate-100 text-brand-dark px-2">@ev.Type</span></small>
+                            </div>
+                            <div class="bg-slate-50 rounded-circle d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
+                                <i class="bi bi-calendar-event text-brand-dark"></i>
+                            </div>
+                        </li>
+                    }
+                    @if (!_events.Any() && !_loading) { <li class="list-group-item py-4 px-4 text-muted-chic">Aucun événement prévu.</li> }
+                </ul>
+            </div>
         </div>
 
         <div class="col-md-6">
             <h2 class="section-title">Clubs & Activités</h2>
-            <div class="d-flex flex-wrap gap-2">
+            <div class="d-flex flex-wrap gap-3">
                 @foreach (var act in _activities)
                 {
-                    <div class="p-3 card-clean w-100 d-flex justify-content-between">
-                        <span class="fw-bold">@act.Name</span>
-                        <span class="badge bg-light text-dark border">@act.Category</span>
+                    <div class="p-3 card-elegant border-0 w-100 d-flex justify-content-between align-items-center">
+                        <span class="fw-bold" style="color: var(--slate-900);">@act.Name</span>
+                        <span class="badge bg-slate-100 text-brand-dark border px-3 py-2 rounded-pill">@act.Category</span>
                     </div>
                 }
-                @if (!_activities.Any() && !_loading) { <span class="text-muted">Aucune activité disponible.</span> }
+                @if (!_activities.Any() && !_loading) { <span class="text-muted-chic">Aucune activité disponible.</span> }
             </div>
         </div>
     </div>
 
-    <h2 class="section-title text-center mt-5">Notre Équipe</h2>
+    <h2 class="section-title text-center mt-5 pt-4">Notre Équipe</h2>
     <div class="row g-4 justify-content-center">
         @foreach (var member in _hierarchy.Take(4))
         {
             <div class="col-md-3 text-center">
-                <div class="rounded-circle bg-light-gray mx-auto mb-3 d-flex align-items-center justify-content-center" style="width: 80px; height: 80px; font-size: 24px;">
-                    @@(member.Name?.FirstOrDefault() ?? '👤')
+                <div class="rounded-circle mx-auto mb-3 d-flex align-items-center justify-content-center shadow-sm" style="width: 100px; height: 100px; font-size: 24px; background-color: var(--slate-100); overflow: hidden; border: 3px solid white;">
+                    @if(!string.IsNullOrEmpty(member.ImageUrl)) {
+                        <img src="@member.ImageUrl" style="width: 100%; height: 100%; object-fit: cover;" alt="@member.Name" />
+                    } else {
+                        <i class="bi bi-person text-brand-dark"></i>
+                    }
                 </div>
-                <h6 class="fw-bold mb-0">@member.PreName @member.Name</h6>
-                <small class="text-navy">@member.Role</small>
+                <h5 class="fw-bold mb-1" style="color: var(--slate-900);">@member.PreName @member.Name</h5>
+                <div class="text-muted-chic small fw-medium text-uppercase" style="letter-spacing: 0.5px;">@member.Role</div>
             </div>
         }
     </div>
@@ -102,6 +126,7 @@
 
 @code {
     private bool _loading = true;
+    private Contact? _contact;
     private List<NewArticle> _news = new();
     private List<SchoolEvent> _events = new();
     private List<SchoolActivity> _activities = new();
@@ -110,14 +135,16 @@
     protected override async Task OnInitializedAsync()
     {
         _loading = true;
-        // Chargement parallèle de toutes les API publiques
+        
+        var contactTask = Api.GetPrimaryContactAsync();
         var newsTask = Api.GetNewsAsync(published: true, pageSize: 3);
         var eventsTask = Api.GetUpcomingEventsAsync(4);
         var activitiesTask = Api.GetActiveActivitiesAsync();
         var hierarchyTask = Api.GetHierarchyAsync();
 
-        await Task.WhenAll(newsTask, eventsTask, activitiesTask, hierarchyTask);
+        await Task.WhenAll(contactTask, newsTask, eventsTask, activitiesTask, hierarchyTask);
 
+        _contact = await contactTask;
         _news = (await newsTask).items;
         _events = await eventsTask;
         _activities = await activitiesTask;

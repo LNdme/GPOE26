@@ -20,7 +20,7 @@
         </nav>
         <h1 class="fw-bold mb-4" style="font-size:1.8rem; color:#202124;">Créer une activité</h1>
 
-        @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
+        @if (!string.IsNullOrEmpty(_errorMessage)) { <div class="alert alert-danger">@_errorMessage</div> }
 
         <EditForm Model="_item" OnValidSubmit="Submit" FormName="CreateActivityForm">
             <DataAnnotationsValidator />
@@ -53,8 +53,15 @@
                 <InputText @bind-Value="_item.ResponsibleTeacher" class="form-control" />
             </div>
             <div class="mb-3">
-                <label class="form-label fw-semibold">Image URL</label>
-                <InputText @bind-Value="_item.ImageUrl" class="form-control" />
+                <label class="form-label fw-semibold">Image (URL ou Upload)</label>
+                <div class="input-group">
+                    <InputText @bind-Value="_item.ImageUrl" class="form-control" />
+                    <InputFile OnChange="HandleImageUpload" class="form-control" accept="image/*" />
+                </div>
+                @if (_isUploading)
+                {
+                    <div class="form-text text-info">Téléchargement en cours...</div>
+                }
             </div>
             <div class="form-check mb-4">
                 <InputCheckbox @bind-Value="_item.IsActive" class="form-check-input" id="isActive" />
@@ -72,15 +79,47 @@
 
 @code {
     private SchoolActivity _item = new() { IsActive = true, Category = "Club" };
-    private bool _saving;
-    private string? _error;
+    private bool _saving = false;
+    private string? _errorMessage;
+    private bool _isUploading = false;
+
+    private async Task HandleImageUpload(InputFileChangeEventArgs e)
+    {
+        _isUploading = true;
+        _errorMessage = null; // Clear previous errors
+        try
+        {
+            var file = e.File;
+            if (file.Size > 5 * 1024 * 1024)
+            {
+                _errorMessage = "Fichier trop volumineux (max 5MB).";
+                return;
+            }
+            using var stream = file.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024);
+            var url = await Api.UploadImageAsync(stream, file.Name);
+            if (url != null)
+            {
+                _item.ImageUrl = url;
+            }
+            else _errorMessage = "Erreur lors de l'upload de l'image.";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Erreur lors de l'upload de l'image : {ex.Message}";
+        }
+        finally
+        {
+            _isUploading = false;
+            StateHasChanged();
+        }
+    }
 
     private async Task Submit()
     {
-        _saving = true; _error = null;
+        _saving = true; _errorMessage = null;
         var ok = await Api.CreateActivityAsync(_item);
         _saving = false;
         if (ok) Nav.NavigateTo("/activities");
-        else _error = "Erreur lors de la création.";
+        else _errorMessage = "Erreur lors de la création.";
     }
 }

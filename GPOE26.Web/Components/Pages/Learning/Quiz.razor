@@ -4,13 +4,9 @@
 <PageTitle>Quiz – GPOE26</PageTitle>
 
 <style>
-    .text-navy { color: #174ea6 !important; }
-    .btn-navy { background-color: #174ea6; color: white; border: none; font-weight: 500; padding: 0.5rem 1.5rem; border-radius: 4px; }
-    .btn-navy:hover { background-color: #123d82; color: white; }
-    .card-clean { border: 1px solid #dadce0; border-radius: 8px; background: white; }
-    .option-btn { display: block; width: 100%; text-align: left; padding: 0.75rem 1rem; margin-bottom: 0.5rem; border: 2px solid #dadce0; border-radius: 8px; background: white; cursor: pointer; transition: all 0.2s; font-size: 0.95rem; }
-    .option-btn:hover { border-color: #174ea6; background: #f8f9fa; }
-    .option-btn.selected { border-color: #174ea6; background: #e8f0fe; color: #174ea6; font-weight: 600; }
+    .option-btn { display: block; width: 100%; text-align: left; padding: 0.75rem 1rem; margin-bottom: 0.5rem; border: 2px solid var(--slate-200); border-radius: 8px; background: white; cursor: pointer; transition: all 0.2s; font-size: 0.95rem; }
+    .option-btn:hover { border-color: var(--slate-700); background: var(--slate-50); }
+    .option-btn.selected { border-color: var(--slate-800); background: var(--slate-100); color: var(--slate-900); font-weight: 600; }
     .option-btn.correct { border-color: #137333; background: #e6f4ea; color: #137333; }
     .option-btn.wrong { border-color: #c5221f; background: #fce8e6; color: #c5221f; }
     .score-circle { width: 120px; height: 120px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: 700; margin: 0 auto; }
@@ -24,15 +20,15 @@
     <div class="quiz-container">
         <nav aria-label="breadcrumb" class="mb-3">
             <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="/learning" class="text-navy text-decoration-none">Apprentissage</a></li>
-                <li class="breadcrumb-item"><a href="@($"/learning/course/{CourseId}")" class="text-navy text-decoration-none">Cours</a></li>
+                <li class="breadcrumb-item"><a href="/learning" class="text-brand-dark text-decoration-none">Apprentissage</a></li>
+                <li class="breadcrumb-item"><a href="@($"/learning/course/{CourseId}")" class="text-brand-dark text-decoration-none">Cours</a></li>
                 <li class="breadcrumb-item active">Quiz</li>
             </ol>
         </nav>
 
         @if (_loadingCourse)
         {
-            <div class="text-center py-5"><div class="spinner-border text-navy"></div><p class="text-muted mt-2">Chargement du cours...</p></div>
+            <div class="text-center py-5"><div class="spinner-border text-brand-dark"></div><p class="text-muted-chic mt-2">Chargement du cours...</p></div>
         }
         else if (_course is null)
         {
@@ -41,7 +37,7 @@
         else if (_generating)
         {
             <div class="text-center py-5">
-                <div class="spinner-border text-navy mb-3" style="width: 3rem; height: 3rem;"></div>
+                <div class="spinner-border text-brand-dark mb-3" style="width: 3rem; height: 3rem;"></div>
                 <h4 class="text-muted">🧠 L'IA génère votre quiz...</h4>
                 <p class="text-muted">Cela peut prendre quelques secondes.</p>
             </div>
@@ -49,37 +45,39 @@
         else if (_quiz is null)
         {
             @* Configuration du quiz *@
-            <div class="card card-clean p-4">
-                <h2 class="fw-bold mb-3" style="color:#202124;">🧠 Créer un Quiz</h2>
-                <p class="text-muted mb-4">Cours : <strong>@_course.Title</strong></p>
+            <div class="card card-elegant p-4 border-0">
+                <h2 class="fw-bold mb-3" style="color:var(--slate-900);">🧠 Créer un Quiz</h2>
+                <p class="text-muted-chic mb-4">Cours : <strong>@_course.Title</strong></p>
 
                 @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
 
                 <div class="mb-3">
                     <label class="form-label fw-semibold">Nombre de questions</label>
                     <select class="form-select" style="max-width: 200px;" @bind="_numQuestions">
+                        <option value="1">1 question</option>
+                        <option value="2">2 questions</option>
                         <option value="3">3 questions</option>
                         <option value="5">5 questions</option>
                         <option value="10">10 questions</option>
                     </select>
                 </div>
 
-                <button class="btn btn-navy" @onclick="GenerateQuiz">Générer le Quiz</button>
+                <button class="btn btn-brand" @onclick="GenerateQuiz">Générer le Quiz</button>
             </div>
         }
         else if (_results is null)
         {
             @* Affichage des questions *@
-            <h2 class="fw-bold mb-1" style="color:#202124;">📝 @_quiz.Title</h2>
-            <p class="text-muted mb-4">Répondez aux @_quiz.Questions.Count questions ci-dessous</p>
+            <h2 class="fw-bold mb-1" style="color:var(--slate-900);">📝 @_quiz.Title</h2>
+            <p class="text-muted-chic mb-4">Répondez aux @_quiz.Questions.Count questions ci-dessous</p>
 
             @for (int i = 0; i < _quiz.Questions.Count; i++)
             {
                 var q = _quiz.Questions[i];
                 var qIndex = i;
-                <div class="card card-clean p-4 mb-3">
-                    <h5 class="fw-bold mb-3">
-                        <span class="text-navy">Q@(qIndex + 1).</span> @q.Text
+                <div class="card card-elegant p-4 mb-3 border-0">
+                    <h5 class="fw-bold mb-3" style="color:var(--slate-800);">
+                        <span class="text-brand-dark">Q@(qIndex + 1).</span> @q.Text
                     </h5>
                     @for (int j = 0; j < q.Options.Count; j++)
                     {
@@ -95,7 +93,7 @@
             }
 
             <div class="d-flex gap-2 mt-4">
-                <button class="btn btn-navy btn-lg" @onclick="SubmitQuiz"
+                <button class="btn btn-brand btn-lg w-100" @onclick="SubmitQuiz"
                         disabled="@(_submitting || _answers.Count < _quiz.Questions.Count)">
                     @if (_submitting) { <span class="spinner-border spinner-border-sm me-1"></span> }
                     Soumettre mes réponses (@_answers.Count / @_quiz.Questions.Count)
@@ -111,17 +109,17 @@
         {
             @* Résultats *@
             <div class="text-center mb-4">
-                <div class="score-circle @GetScoreClass(_results.Percentage) mb-3">
+                <div class="score-circle @GetScoreClass(_results.Percentage) mb-3 shadow-sm">
                     @_results.Score / @_results.Total
                 </div>
-                <h2 class="fw-bold" style="color:#202124;">@GetScoreMessage(_results.Percentage)</h2>
-                <p class="text-muted">Vous avez obtenu <strong>@_results.Percentage.ToString("F0")%</strong></p>
+                <h2 class="fw-bold" style="color:var(--slate-900);">@GetScoreMessage(_results.Percentage)</h2>
+                <p class="text-muted-chic">Vous avez obtenu <strong class="text-brand-dark">@_results.Percentage.ToString("F0")%</strong></p>
             </div>
 
-            <h4 class="fw-bold mb-3">Correction détaillée</h4>
+            <h4 class="fw-bold mb-3" style="color:var(--slate-800);">Correction détaillée</h4>
             @foreach (var fb in _results.Feedbacks)
             {
-                <div class="card card-clean p-4 mb-3 @(fb.IsCorrect ? "border-success" : "border-danger")" style="border-left: 4px solid;">
+                <div class="card card-elegant p-4 mb-3 @(fb.IsCorrect ? "border-success" : "border-danger") border-0" style="border-left: 4px solid !important;">
                     <h6 class="fw-bold mb-2">
                         @(fb.IsCorrect ? "✅" : "❌") @fb.QuestionText
                     </h6>
@@ -130,13 +128,13 @@
                         <p class="mb-1"><small class="text-danger">Votre réponse : option @((char)('A' + fb.SelectedOptionIndex))</small></p>
                         <p class="mb-1"><small class="text-success">Bonne réponse : option @((char)('A' + fb.CorrectOptionIndex))</small></p>
                     }
-                    <p class="text-muted small mb-0 mt-2 fst-italic">💡 @fb.Explanation</p>
+                    <p class="text-muted-chic small mb-0 mt-2 fst-italic">💡 @fb.Explanation</p>
                 </div>
             }
 
             <div class="d-flex gap-2 mt-4">
-                <button class="btn btn-navy" @onclick="ResetQuiz">🔄 Refaire un quiz</button>
-                <a href="@($"/learning/course/{CourseId}")" class="btn btn-outline-secondary">Retour au cours</a>
+                <button class="btn btn-brand" @onclick="ResetQuiz">🔄 Refaire un quiz</button>
+                <a href="@($"/learning/course/{CourseId}")" class="btn btn-brand-outline">Retour au cours</a>
             </div>
         }
     </div>

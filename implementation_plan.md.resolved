@@ -1,0 +1,67 @@
+# Fix Database Persistence and Add Image Upload Options
+
+This plan addresses two main issues:
+1. Centralized databases in AppHost losing data on restart
+2. Providing an option to upload an image file instead of only providing a URL in Web forms
+
+## Proposed Changes
+
+### AppHost Configuration
+
+#### [AppHost.cs](file:///c:/Users/Libert/Documents/Visual%20Studio%2018/Projets/GPOE26/GPOE26.AppHost/AppHost.cs)
+- Add `.WithDataVolume()` immediately after `.AddPostgres("postgres")` to instruct Aspire to create a durable Docker volume for the PostgreSQL container, ensuring data persistence across application restarts.
+
+---
+
+### API Service (Backend)
+
+#### [Program.cs](file:///c:/Users/Libert/Documents/Visual%20Studio%2018/Projets/GPOE26/GPOE26.ApiService/Program.cs)
+- Add `app.UseStaticFiles()` to serve uploaded files.
+- Create an endpoint `POST /api/upload` taking an `IFormFile`:
+  - Validates the input
+  - Saves the file inside `wwwroot/uploads/images`
+  - Returns the URL of the saved file relative to the API service (e.g. `https://apiservice/uploads/images/filename.jpg` if requested, or just the relative path). We'll return the absolute URL `https://localhost:7192/...` or allow [ApiClient](file:///c:/Users/Libert/Documents/Visual%20Studio%2018/Projets/GPOE26/GPOE26.Web/Services/ApiClient.cs#13-19) to build it, or just use `PathString`. We will return `$"https://localhost:7192/uploads/images/{fileName}"` for simplicity if CORS works. Since Aspire uses dynamic ports, the best way is to return just the relative path `/uploads/images/filename` and let the Web frontend prepend the `apiservice` BaseAddress when displaying, but since the forms send `ImageUrl`, it's easiest if [ApiClient](file:///c:/Users/Libert/Documents/Visual%20Studio%2018/Projets/GPOE26/GPOE26.Web/Services/ApiClient.cs#13-19) handles constructing the absolute path of the uploaded image if needed. Actually, `ApiService` can generate absolute paths by using the HTTP Request Scheme & Host.
+
+---
+
+### Web Frontend Services
+
+#### [ApiClient.cs](file:///c:/Users/Libert/Documents/Visual%20Studio%2018/Projets/GPOE26/GPOE26.Web/Services/ApiClient.cs)
+- Add `UploadImageAsync(Stream file, string fileName)` using the `apiservice` HttpClient. This will hit the new `POST /api/upload` endpoint and return the full URL to the saved image.
+
+---
+
+### Web Frontend UI Components
+
+For each of the following components, we will add an `<InputFile>` component next to the existing `ImageUrl` URL input. We will add an option (radio buttons or a toggle switch, or simply both fields where uploading a file automatically updates the URL input). The simplest approach is providing a standard `InputFile` element that, `OnChange`, immediately uploads the file using `ApiClient.UploadImageAsync` and places the resulting URL directly into the `ImageUrl` text box. 
+
+#### Hierarchy
+- [Create.razor](file:///c:/Users/Libert/Documents/Visual%20Studio%2018/Projets/GPOE26/GPOE26.Web/Components/Pages/Hierarchy/Create.razor)
+- [Edit.razor](file:///c:/Users/Libert/Documents/Visual%20Studio%2018/Projets/GPOE26/GPOE26.Web/Components/Pages/Hierarchy/Edit.razor)
+
+#### Event
+- [Create.razor](file:///c:/Users/Libert/Documents/Visual%20Studio%2018/Projets/GPOE26/GPOE26.Web/Components/Pages/Event/Create.razor)
+- [Edit.razor](file:///c:/Users/Libert/Documents/Visual%20Studio%2018/Projets/GPOE26/GPOE26.Web/Components/Pages/Event/Edit.razor)
+
+#### Blog
+- [Create.razor](file:///c:/Users/Libert/Documents/Visual%20Studio%2018/Projets/GPOE26/GPOE26.Web/Components/Pages/Blog/Create.razor)
+- [Edit.razor](file:///c:/Users/Libert/Documents/Visual%20Studio%2018/Projets/GPOE26/GPOE26.Web/Components/Pages/Blog/Edit.razor)
+
+#### Activity
+- [Create.razor](file:///c:/Users/Libert/Documents/Visual%20Studio%2018/Projets/GPOE26/GPOE26.Web/Components/Pages/Activity/Create.razor)
+- [Edit.razor](file:///c:/Users/Libert/Documents/Visual%20Studio%2018/Projets/GPOE26/GPOE26.Web/Components/Pages/Activity/Edit.razor)
+
+#### Cours
+- [Create.razor](file:///c:/Users/Libert/Documents/Visual%20Studio%2018/Projets/GPOE26/GPOE26.Web/Components/Pages/Cours/Create.razor)
+- [Edit.razor](file:///c:/Users/Libert/Documents/Visual%20Studio%2018/Projets/GPOE26/GPOE26.Web/Components/Pages/Cours/Edit.razor)
+- We will update the `SectionType.Image` section inputs so that they also feature an image upload option next to the URL input.
+
+## Verification Plan
+
+### Manual Verification
+1. Start the application using Aspire AppHost.
+2. In `GPOE26.Web`, go to any Create view (e.g. `Event/Create.razor`).
+3. Select an image using the new "Upload" option.
+4. Verify the file uploads successfully, and the URL field is populated automatically.
+5. Save the Event and verify the image displays properly in the lists.
+6. Stop the entire Aspire host, restart it, and verify that all data (including the new event and databases in general) are preserved since the Docker volume is now persistent.

@@ -18,7 +18,7 @@ public class OllamaService(IConfiguration configuration, IHttpClientFactory http
     private const string TutorSystemPrompt = """
         Tu es un répétiteur virtuel intelligent et bienveillant.
         Tu aides les élèves à comprendre leur cours, à réviser, et à approfondir leur compréhension.
-        Réponds toujours en français, de façon claire et pédagogique, adapté au niveau lycée.
+        Réponds toujours en français, de façon claire et pédagogique, adapté au niveau lycée (les réponse doivent assez courte pour les permettre de miex assimiler).
         Si l'élève pose une question hors du cours fourni, rappelle-lui gentiment de se concentrer sur son cours.
 
         Contenu du cours :
@@ -37,6 +37,24 @@ public class OllamaService(IConfiguration configuration, IHttpClientFactory http
           ]
         }
         """;
+
+    private const string DraftSystemPrompt = """
+        Tu es un professeur expert en la matière. 
+        Rédige un cours très détaillé au format Markdown. Utilise `# Titre`, `## Sous-titre`, `**Gras**`, et `- Puces` pour structurer le cours.
+        Si cela est pertinent avec la matière (maths, physique, info...), utilise ABSOLUMENT des blocs de code markdown (```css, ```python, etc.) et de belles équations avec la syntaxe KaTeX (`$$ x = 2 $$`). 
+        Ne mets aucune phrase d'introduction, fournis uniquement le cours Markdown complet prêt à l'emploi.
+        """;
+
+    public async Task<string> GenerateDraftAsync(CourseDraftRequest request, CancellationToken ct)
+    {
+        var messages = new List<object>
+        {
+            new { role = "system", content = DraftSystemPrompt },
+            new { role = "user", content = $"Génère un cours Markdown structuré sur le sujet suivant : {request.Subject}\nDirectives supplémentaires : {request.AdditionalInstructions ?? "Aucune"}" }
+        };
+
+        return await CallApiAsync(messages, ct);
+    }
 
     public async Task<ChatMessageResponse> SendMessageAsync(ChatMessageRequest request, CancellationToken ct)
     {
@@ -88,7 +106,7 @@ public class OllamaService(IConfiguration configuration, IHttpClientFactory http
 
     private async Task<string> CallApiAsync(List<object> messages, CancellationToken ct)
     {
-        var client = httpClientFactory.CreateClient();
+        var client = httpClientFactory.CreateClient("LlmClient");
 
         // Ollama utilise l'API compatible OpenAI : /v1/chat/completions
         var url = $"{_baseUrl.TrimEnd('/')}/v1/chat/completions";

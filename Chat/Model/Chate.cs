@@ -28,7 +28,11 @@
 
     public record CoursePart(string Title, string Summary);
 
-
+    // --- Draft Generation ---
+    public record CourseDraftRequest(
+        string Subject,
+        string? AdditionalInstructions = null
+    );
 
 
 

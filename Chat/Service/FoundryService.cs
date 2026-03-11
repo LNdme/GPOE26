@@ -94,7 +94,7 @@ public class FoundryService(IConfiguration configuration, IHttpClientFactory htt
 
     private async Task<string> CallApiAsync(List<object> messages, int maxTokens, CancellationToken ct)
     {
-        var client = httpClientFactory.CreateClient();
+        var client = httpClientFactory.CreateClient("LlmClient");
         client.DefaultRequestHeaders.Add("api-key", _apiKey);
 
         // URL Azure Foundry : endpoint + deployment + version
@@ -118,6 +118,11 @@ public class FoundryService(IConfiguration configuration, IHttpClientFactory htt
             .GetProperty("message")
             .GetProperty("content")
             .GetString() ?? "";
+    }
+
+    public Task<string> GenerateDraftAsync(CourseDraftRequest request, CancellationToken ct)
+    {
+        throw new NotImplementedException("Draft generation not implemented for FoundryService yet.");
     }
 
     private static string ResolveCourseContent(string? content, string? courseId)

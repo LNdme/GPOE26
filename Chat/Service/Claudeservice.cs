@@ -103,6 +103,11 @@ public class ClaudeService(IConfiguration configuration) : ILlmService
         }
     }
 
+    public Task<string> GenerateDraftAsync(CourseDraftRequest request, CancellationToken ct)
+    {
+        throw new NotImplementedException("Draft generation not implemented for ClaudeService yet.");
+    }
+
     private static string ResolveCourseContent(string? content, string? courseId)
     {
         if (!string.IsNullOrWhiteSpace(content)) return content;

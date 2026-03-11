@@ -10,6 +10,7 @@ var jwtAudience = "GPOE2026Users";
 
 // ── 1 seul serveur PostgreSQL, toutes les DBs dessus ─────────────────────────
 var postgres = builder.AddPostgres("postgres")
+    .WithDataVolume()
     .WithPgAdmin(); // interface admin dispo sur http://localhost:5050
 
 var userDb = postgres.AddDatabase("userdb");

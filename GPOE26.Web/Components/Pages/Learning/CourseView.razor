@@ -288,29 +288,9 @@
                     <hr />
 
                     <div class="course-content">
-                        @if (_course.Sections is { Count: > 0 })
+                        @if (_course.ContentType == ContentType.Text || _course.Sections is { Count: > 0 })
                         {
-                            @foreach (var sec in _course.Sections.OrderBy(s => s.Order))
-                            {
-                                @switch (sec.Type)
-                                {
-                                    case SectionType.Heading when sec.Level == 1:
-                                        <h1>@sec.Content</h1>
-                                        break;
-                                    case SectionType.Heading when sec.Level == 2:
-                                        <h2>@sec.Content</h2>
-                                        break;
-                                    case SectionType.Heading when sec.Level == 3:
-                                        <h3>@sec.Content</h3>
-                                        break;
-                                    case SectionType.Paragraph:
-                                        <p style="white-space: pre-wrap;">@sec.Content</p>
-                                        break;
-                                    case SectionType.Image:
-                                        <img src="@sec.Content" alt="Illustration du cours" />
-                                        break;
-                                }
-                            }
+                            <GPOE26.Web.Components.UI.MarkdownViewer Content="@GetCourseMarkdown()" />
                         }
                         else if (!string.IsNullOrEmpty(_course.ExtractedText))
                         {
@@ -357,7 +337,9 @@
                                     }
                                     else
                                     {
-                                        <div class="msg-bubble ai-msg">@((MarkupString)RenderMarkdown(msg.Content))</div>
+                                        <div class="msg-bubble ai-msg p-2">
+                                            <GPOE26.Web.Components.UI.MarkdownViewer Content="@msg.Content" />
+                                        </div>
                                     }
                                 </div>
                             </div>
@@ -415,14 +397,6 @@
         _loading = false;
     }
 
-    private static string RenderMarkdown(string content)
-    {
-        if (string.IsNullOrWhiteSpace(content))
-            return "";
-
-        return Markdig.Markdown.ToHtml(content, _mdPipeline);
-    }
-
     private async Task HandleChatKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
     {
         if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_chatInput) && !_chatting)
@@ -435,25 +409,63 @@
 
         var userMsg = _chatInput.Trim();
         _chatInput = "";
-        _messages.Add(new ConversationMessage("user", userMsg));
+        // On n'ajoute plus le message manuellement ici, car l'API nous retourne l'historique mis à jour complet.
         _chatting = true;
         StateHasChanged();
 
-        var response = await Api.SendChatMessageAsync(
-            userMsg,
-            _messages,
-            _course.ExtractedText,
-            _course.Id.ToString()
-        );
-        _chatting = false;
+        try 
+        {
+            var response = await Api.SendChatMessageAsync(
+                userMsg,
+                _messages,
+                _course.ExtractedText,
+                _course.Id.ToString()
+            );
 
-        if (response is not null)
-        {
-            _messages = response.UpdatedHistory;
+            if (response is not null)
+            {
+                _messages = response.UpdatedHistory;
+            }
+            else
+            {
+                _messages.Add(new ConversationMessage("assistant", "Désolé, une erreur s'est produite lors de la connexion à l'IA."));
+            }
         }
-        else
+        catch (Exception)
         {
-            _messages.Add(new ConversationMessage("assistant", "Désolé, une erreur s'est produite."));
+            _messages.Add(new ConversationMessage("assistant", "⚠️ Erreur réseau ou service IA indisponible. Veuillez réessayer plus tard."));
         }
+        finally
+        {
+            _chatting = false;
+        }
+    }
+
+    private string GetCourseMarkdown()
+    {
+        if (_course?.Sections is { Count: > 0 })
+        {
+            if (_course.Sections.Count == 1 && _course.Sections[0].Type == SectionType.Paragraph)
+                return _course.Sections[0].Content;
+
+            var sb = new System.Text.StringBuilder();
+            foreach (var sec in _course.Sections.OrderBy(s => s.Order))
+            {
+                switch (sec.Type)
+                {
+                    case SectionType.Heading:
+                        sb.AppendLine($"{new string('#', sec.Level > 0 ? sec.Level : 1)} {sec.Content}\n\n");
+                        break;
+                    case SectionType.Paragraph:
+                        sb.AppendLine($"{sec.Content}\n\n");
+                        break;
+                    case SectionType.Image:
+                        sb.AppendLine($"![Illustration]({sec.Content})\n\n");
+                        break;
+                }
+            }
+            return sb.ToString().Trim();
+        }
+        return _course?.ExtractedText ?? "";
     }
 }

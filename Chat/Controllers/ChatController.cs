@@ -40,4 +40,19 @@ public class ChatController(ILlmService claudeService) : ControllerBase
         var result = await claudeService.GetSummaryAsync(request, cancellationToken);
         return Ok(result);
     }
+
+    /// <summary>
+    /// Génère un brouillon de cours Markdown via l'IA.
+    /// </summary>
+    [HttpPost("draft")]
+    public async Task<ActionResult<string>> GenerateDraft(
+        [FromBody] CourseDraftRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Subject))
+            return BadRequest("Le sujet est requis pour générer le cours.");
+
+        var result = await claudeService.GenerateDraftAsync(request, cancellationToken);
+        return Ok(result);
+    }
 }

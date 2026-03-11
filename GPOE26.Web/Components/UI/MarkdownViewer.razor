@@ -1,0 +1,34 @@
+@using Markdig
+@inject IJSRuntime JSRuntime
+
+<div class="markdown-viewer" @ref="markdownContainer">
+    @((MarkupString)HtmlRendered)
+</div>
+
+@code {
+    [Parameter] public string Content { get; set; } = string.Empty;
+    
+    private string HtmlRendered => TransformMarkdownToHtml(Content);
+    private ElementReference markdownContainer;
+
+    private static MarkdownPipeline pipeline = new MarkdownPipelineBuilder()
+        .UseAdvancedExtensions()
+        .UseMathematics()
+        .Build();
+
+    private string TransformMarkdownToHtml(string markdown)
+    {
+        if (string.IsNullOrWhiteSpace(markdown))
+            return string.Empty;
+            
+        return Markdown.ToHtml(markdown, pipeline);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!string.IsNullOrWhiteSpace(Content))
+        {
+            await JSRuntime.InvokeVoidAsync("markdownInterop.renderEffects", markdownContainer);
+        }
+    }
+}

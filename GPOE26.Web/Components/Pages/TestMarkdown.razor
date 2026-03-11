@@ -1,0 +1,79 @@
+@page "/test-markdown"
+@using GPOE26.Web.Components.UI
+
+<PageTitle>Test Rendu Markdown</PageTitle>
+
+<div class="container mt-4">
+    <h2 class="mb-4 text-navy">Test du Composant MarkdownViewer</h2>
+    <div class="card shadow-sm border-0">
+        <div class="card-body p-4">
+            <MarkdownViewer Content="@sampleMarkdown" />
+        </div>
+    </div>
+</div>
+
+@code {
+    private string sampleMarkdown = @"
+# Introduction à C# et aux Mathématiques
+
+Ceci est un test complexe pour vérifier que notre composant **MarkdownViewer** fonctionne parfaitement.
+
+## 1. Coloration Syntaxique (PrismJS)
+Voici un exemple classique de code en C# avec des types, des méthodes et des commentaires :
+
+```csharp
+public class Calculator
+{
+    // Calcule la somme de deux nombres
+    public int Add(int a, int b) 
+    {
+        return a + b;
+    }
+}
+```
+
+Et un peu de JavaScript pour comparer :
+
+```javascript
+function greet(name) {
+    console.log(`Hello, ${name}!`);
+}
+greet('World');
+```
+
+## 2. Formules Mathématiques (KaTeX)
+Une formule en ligne : l'équation de la relativité restreinte $E = mc^2$.
+
+Une équation complexe centrée (Display Math) :
+$$ f(x) = \int_{-\infty}^\infty \hat f(\xi)\,e^{2 \pi i \xi x} \,d\xi $$
+
+Une autre équation complexe :
+$$ \frac{-b \pm \sqrt{b^2 - 4ac}}{2a} $$
+
+## 3. Éléments classiques Markdown
+*   **Gras**, *Italique*, ~~Barré~~
+*   Listes à puces
+    *   Sous-élément
+*   [Un lien vers Google](https://google.com)
+
+> ""L'imagination est plus importante que le savoir.""
+> — Albert Einstein
+
+## 4. Tableaux (Tables)
+
+| Concept | Description | Complexité |
+| :--- | :--- | :---: |
+| **Variables** | Stockent des données | Facile |
+| **Boucles** | Répètent des instructions | Facile |
+| **Classes** | Structures orientées objet | Moyenne |
+| **Polymorphisme** | Plusieurs formes pour la même méthode | Difficile |
+
+## 5. Images
+
+Voici un exemple d'intégration d'image dans le cours :
+![Logo C#](https://upload.wikimedia.org/wikipedia/commons/4/4f/Csharp_Logo.png)
+
+---
+Fin du test.
+";
+}

@@ -83,6 +83,7 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.UseCors("AllowAll");
+app.UseStaticFiles(); // Added to serve uploaded images (e.g. from /uploads)
 app.MapDefaultEndpoints();
 
 if (app.Environment.IsDevelopment())
@@ -94,6 +95,43 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+// ── Image Upload Endpoint ─────────────────────────────────────────────────────
+app.MapPost("/api/upload", async (IFormFile file, IWebHostEnvironment env) =>
+{
+    if (file is null || file.Length == 0)
+        return Results.BadRequest("Aucun fichier n'a été fourni.");
+
+    // Validate size (e.g., 5MB max)
+    if (file.Length > 5 * 1024 * 1024)
+        return Results.BadRequest("Le fichier est trop volumineux (max 5MB).");
+
+    // Validate extension
+    var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp" };
+    var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+    if (!allowedExtensions.Contains(ext))
+        return Results.BadRequest("Type de fichier non autorisé. Seules les images sont acceptées.");
+
+    // Ensure directory exists
+    var uploadFolder = Path.Combine(env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), "uploads", "images");
+    Directory.CreateDirectory(uploadFolder);
+
+    // Generate unique name
+    var uniqueName = $"{Guid.NewGuid()}{ext}";
+    var filePath = Path.Combine(uploadFolder, uniqueName);
+
+    // Save file
+    using (var stream = new FileStream(filePath, FileMode.Create))
+    {
+        await file.CopyToAsync(stream);
+    }
+
+    // Return the relative URL
+    var relativeUrl = $"/uploads/images/{uniqueName}";
+    return Results.Ok(new { url = relativeUrl });
+})
+.DisableAntiforgery()
+.WithSummary("Uploader une image");
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 
@@ -258,7 +296,7 @@ static async Task<IResult> NewsUpdate(Guid id, NewArticle updated, ApiServiceCon
     article.Excerpt = updated.Excerpt;
     article.Category = updated.Category;
     article.IsPublished = updated.IsPublished;
-    article.PublishedAt = updated.PublishedAt;
+    article.PublishedAt = DateTime.SpecifyKind(updated.PublishedAt, DateTimeKind.Utc);
     article.ImageUrl = updated.ImageUrl;
     article.UpdatedAt = DateTime.UtcNow;
 
@@ -324,6 +362,9 @@ static async Task<IResult> EventsCreate(SchoolEvent ev, ApiServiceContext db)
 {
     ev.Id = Guid.NewGuid();
     ev.CreatedAt = DateTime.UtcNow;
+    ev.StartDate = DateTime.SpecifyKind(ev.StartDate, DateTimeKind.Utc);
+    if (ev.EndDate.HasValue)
+        ev.EndDate = DateTime.SpecifyKind(ev.EndDate.Value, DateTimeKind.Utc);
     db.Events.Add(ev);
     await db.SaveChangesAsync();
     return TypedResults.Created($"/api/events/{ev.Id}", ev);
@@ -337,8 +378,8 @@ static async Task<IResult> EventsUpdate(Guid id, SchoolEvent updated, ApiService
     ev.Title = updated.Title;
     ev.Description = updated.Description;
     ev.Location = updated.Location;
-    ev.StartDate = updated.StartDate;
-    ev.EndDate = updated.EndDate;
+    ev.StartDate = DateTime.SpecifyKind(updated.StartDate, DateTimeKind.Utc);
+    ev.EndDate = updated.EndDate.HasValue ? DateTime.SpecifyKind(updated.EndDate.Value, DateTimeKind.Utc) : null;
     ev.Type = updated.Type;
     ev.IsPublic = updated.IsPublic;
     ev.ImageUrl = updated.ImageUrl;
@@ -394,7 +435,7 @@ static async Task<IResult> SpeechesUpdate(Guid id, Speech updated, ApiServiceCon
     speech.Content = updated.Content;
     speech.Excerpt = updated.Excerpt;
     speech.Occasion = updated.Occasion;
-    speech.DeliveredAt = updated.DeliveredAt;
+    speech.DeliveredAt = DateTime.SpecifyKind(updated.DeliveredAt, DateTimeKind.Utc);
     speech.AuthorName = updated.AuthorName;
     speech.AuthorRole = updated.AuthorRole;
     speech.AvatarUrl = updated.AvatarUrl;

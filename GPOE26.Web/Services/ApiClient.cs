@@ -23,10 +23,10 @@ namespace GPOE26.Web.Services
         private HttpClient CreateAuthClient(string name)
         {
             var client = _factory.CreateClient(name);
-            if (!string.IsNullOrEmpty(_tokenProvider.Token))
+            var token = _tokenProvider.Token;
+            if (!string.IsNullOrEmpty(token))
             {
-                client.DefaultRequestHeaders.Authorization =
-                    new AuthenticationHeaderValue("Bearer", _tokenProvider.Token);
+                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
             }
             return client;
         }
@@ -39,8 +39,7 @@ namespace GPOE26.Web.Services
             var client = _factory.CreateClient("apiservice");
             try
             {
-                var contacts = await client.GetFromJsonAsync<List<Contact>>("/api/contact");
-                return contacts?.FirstOrDefault();
+                return await client.GetFromJsonAsync<Contact?>("/api/contact");
             }
             catch (Exception ex)
             {
@@ -54,8 +53,8 @@ namespace GPOE26.Web.Services
             var client = _factory.CreateClient("apiservice");
             try
             {
-                return await client.GetFromJsonAsync<List<Contact>>("/api/contact")
-                       ?? new List<Contact>();
+                var contact = await client.GetFromJsonAsync<Contact?>("/api/contact");
+                return contact is not null ? new List<Contact> { contact } : new List<Contact>();
             }
             catch (Exception ex)
             {
@@ -506,6 +505,8 @@ namespace GPOE26.Web.Services
 
         public async Task<List<CourseSummaryDto>> GetMyCoursesAsync(string? subject = null)
         {
+            if (string.IsNullOrEmpty(_tokenProvider.Token)) return new List<CourseSummaryDto>();
+            
             var client = CreateAuthClient("cours");
             try
             {
@@ -522,6 +523,8 @@ namespace GPOE26.Web.Services
 
         public async Task<CourseDto?> GetCourseAsync(Guid id)
         {
+            if (string.IsNullOrEmpty(_tokenProvider.Token)) return null;
+
             var client = CreateAuthClient("cours");
             try
             {
@@ -599,6 +602,54 @@ namespace GPOE26.Web.Services
             }
         }
 
+        // ── Upload Image (Hébergée sur ApiService) ──────────────────────────────────
+        public async Task<string?> UploadImageAsync(Stream fileStream, string fileName)
+        {
+            try
+            {
+                using var client = _factory.CreateClient("apiservice");
+                using var content = new MultipartFormDataContent();
+
+                var fileContent = new StreamContent(fileStream);
+                content.Add(fileContent, "file", fileName);
+
+                var resp = await client.PostAsync("/api/upload", content);
+                if (resp.IsSuccessStatusCode)
+                {
+                    var result = await resp.Content.ReadFromJsonAsync<UploadResponse>();
+                    if (result != null && !string.IsNullOrEmpty(result.Url))
+                    {
+                        // Build absolute URL from the request URI (avoids the http+https:// scheme from Aspire)
+                        var requestUri = resp.RequestMessage?.RequestUri;
+                        if (requestUri != null)
+                        {
+                            return $"{requestUri.Scheme}://{requestUri.Host}:{requestUri.Port}{result.Url}";
+                        }
+                        // Fallback: use the base address if request URI is unavailable
+                        var baseAddress = client.BaseAddress?.ToString().TrimEnd('/');
+                        if (baseAddress != null)
+                        {
+                            // Strip any non-standard scheme (e.g., "https+http://")
+                            var uri = new Uri(baseAddress);
+                            return $"https://{uri.Host}:{uri.Port}{result.Url}";
+                        }
+                    }
+                }
+                _logger.LogWarning($"Image upload failed: {resp.StatusCode}");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Exception uploading image");
+                return null;
+            }
+        }
+
+        private class UploadResponse
+        {
+            public string? Url { get; set; }
+        }
+
         #endregion
 
 
@@ -622,23 +673,40 @@ namespace GPOE26.Web.Services
             }
         }
 
-        public async Task<CourseSummaryResponse?> GetCourseSummaryAsync(string courseContent)
+        public async Task<CourseSummaryResponse?> GetCourseSummaryAsync(string? courseContent = null, string? courseId = null)
         {
             var client = CreateAuthClient("chat");
             try
             {
-                var req = new CourseSummaryRequest(courseContent);
+                var req = new CourseSummaryRequest(courseContent, courseId);
                 var resp = await client.PostAsJsonAsync("/chat/summary", req);
                 resp.EnsureSuccessStatusCode();
                 return await resp.Content.ReadFromJsonAsync<CourseSummaryResponse>();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fetching course summary");
+                _logger.LogError(ex, "Error getting course summary");
                 return null;
             }
         }
 
+        public async Task<string?> GenerateCourseDraftAsync(string subject, string? additionalInstructions = null)
+        {
+            var client = CreateAuthClient("chat");
+            try
+            {
+                // Nous reproduisons ici l'objet CourseDraftRequest
+                var req = new { Subject = subject, AdditionalInstructions = additionalInstructions };
+                var resp = await client.PostAsJsonAsync("/chat/draft", req);
+                resp.EnsureSuccessStatusCode();
+                return await resp.Content.ReadAsStringAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generating course draft");
+                return null;
+            }
+        }
         #endregion
 
 

@@ -1,12 +1,26 @@
 using Chat.Service;
 using Microsoft.OpenApi;
+using Microsoft.Extensions.Http.Resilience;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
-builder.Services.AddHttpClient();
+builder.Services.AddHttpClient("LlmClient", client =>
+{
+    client.Timeout = TimeSpan.FromMinutes(3);
+})
+    .AddStandardResilienceHandler(options =>
+    {
+        options.AttemptTimeout.Timeout = TimeSpan.FromMinutes(3);
+        options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(3);
+        options.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(10);
+        options.Retry.MaxRetryAttempts = 1;
+    });
+
+
+
 
 builder.Services.AddSwaggerGen(c =>
 {
@@ -27,14 +41,21 @@ builder.Services.AddSingleton<ILlmService>(sp =>
 {
     var config = sp.GetRequiredService<IConfiguration>();
     var http = sp.GetRequiredService<IHttpClientFactory>();
+    var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
 
-    return provider switch
+    switch (provider)
     {
-        "Gpt" => (ILlmService)new GptService(config, http),
-        "Ollama" => new OllamaService(config, http),
-        "Foundry" => new FoundryService(config, http),
-        _ => new ClaudeService(config)  // défaut
-    };
+        case "Gpt":
+            return new GptService(config, http);
+        case "Foundry":
+            return new FoundryService(config, http);
+        case "Ollama": // Remplacé par DeepSeek comme demandé
+        case "FallbackChain":
+        case "DeepSeek":
+            return new DeepSeekService(config, http);
+        default:
+            return new ClaudeService(config);
+    }
 });
 
 var app = builder.Build();
