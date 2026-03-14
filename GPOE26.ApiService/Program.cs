@@ -7,13 +7,11 @@ var builder = WebApplication.CreateBuilder(args);
 
 
 
-builder.AddNpgsqlDbContext<ApiServiceContext>("LyceeDB");
+var lyceeConnStr = builder.Configuration.GetConnectionString("LyceeDB")
+    ?? throw new InvalidOperationException("No connection string for LyceeDB");
 
-
-/*
 builder.Services.AddDbContext<ApiServiceContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("LyceeDB")));
-*/
+    options.UseNpgsql(lyceeConnStr));
 
 
 // âœ… AJOUT: Configuration CORS
@@ -38,7 +36,6 @@ builder.Services.AddCors(options =>
 
 
 
-// Add service defaults & Aspire client integrations.
 builder.AddServiceDefaults();
 
 
@@ -77,8 +74,6 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ApiServiceContext>();
     await db.Database.EnsureCreatedAsync();
-
-    // ⚠️ AJOUT : injection des données test (Contact, Events, News...)
     await ApiSeeder.SeedAsync(db);
 }
 

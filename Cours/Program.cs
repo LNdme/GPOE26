@@ -16,7 +16,11 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 
 // ─── Base de données ──────────────────────────────────────────────────────────
-builder.AddNpgsqlDbContext<CoursContext>("coursdb");
+var coursConnStr = builder.Configuration.GetConnectionString("CoursDB")
+    ?? throw new InvalidOperationException("No connection string for CoursDB");
+
+builder.Services.AddDbContext<CoursContext>(options =>
+    options.UseNpgsql(coursConnStr));
 
 // ─── Services ─────────────────────────────────────────────────────────────────
 builder.Services.AddScoped<PdfExtractorService>();
@@ -69,9 +73,31 @@ app.MapDefaultEndpoints();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<CoursContext>();
-    await db.Database.MigrateAsync();
-    
-    // ⚠️ AJOUT : injection des cours factices pour tests
+    await db.Database.ExecuteSqlRawAsync(
+        @"CREATE TABLE IF NOT EXISTS ""Courses"" (
+            ""Id"" uuid NOT NULL,
+            ""Title"" character varying(200) NOT NULL,
+            ""Subject"" character varying(100) NOT NULL,
+            ""Description"" text,
+            ""ContentType"" integer NOT NULL DEFAULT 0,
+            ""PdfPath"" text,
+            ""ExtractedText"" text,
+            ""OwnerId"" uuid NOT NULL,
+            ""CreatedAt"" timestamp with time zone NOT NULL,
+            ""UpdatedAt"" timestamp with time zone NOT NULL,
+            CONSTRAINT ""PK_Courses"" PRIMARY KEY (""Id"")
+        )");
+    await db.Database.ExecuteSqlRawAsync(
+        @"CREATE TABLE IF NOT EXISTS ""CourseSections"" (
+            ""Id"" uuid NOT NULL,
+            ""CourseId"" uuid NOT NULL,
+            ""Type"" integer NOT NULL DEFAULT 0,
+            ""Content"" text NOT NULL,
+            ""Order"" integer NOT NULL DEFAULT 0,
+            ""Level"" integer NOT NULL DEFAULT 0,
+            CONSTRAINT ""PK_CourseSections"" PRIMARY KEY (""Id""),
+            CONSTRAINT ""FK_CourseSections_Courses_CourseId"" FOREIGN KEY (""CourseId"") REFERENCES ""Courses"" (""Id"") ON DELETE CASCADE
+        )");
     await CoursSeeder.SeedAsync(db);
 }
 

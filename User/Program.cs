@@ -24,12 +24,11 @@ builder.AddServiceDefaults();
 //   builder.Services.AddDbContext<UserContext>(op => op.UseNpgsql(lol));
 //
 // Après (correct) :
-builder.AddNpgsqlDbContext<UserContext>("userdb");
-//
-// "userdb" = le nom déclaré dans AppHost.cs : postgres.AddDatabase("userdb")
-// Aspire gère automatiquement : retry, health check, OpenTelemetry, connection string.
-// La connection string dans appsettings.json n'est plus nécessaire.
-//builder.AddNpgsqlDbContext<UserContext>("userdb");
+var userConnStr = builder.Configuration.GetConnectionString("UserDB")
+    ?? throw new InvalidOperationException("No connection string for UserDB");
+
+builder.Services.AddDbContext<UserContext>(options =>
+    options.UseNpgsql(userConnStr));
 
 
 
@@ -104,8 +103,25 @@ app.MapDefaultEndpoints();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<UserContext>();
-    await db.Database.MigrateAsync();
-    // ⚠️ AJOUT : injection des données de test
+    await db.Database.ExecuteSqlRawAsync(
+        @"CREATE TABLE IF NOT EXISTS ""AppUsers"" (
+            ""Id"" uuid NOT NULL,
+            ""Email"" character varying(256) NOT NULL,
+            ""Username"" character varying(64) NOT NULL,
+            ""PasswordHash"" text NOT NULL,
+            ""CreatedAt"" timestamp with time zone NOT NULL,
+            ""Role"" integer NOT NULL DEFAULT 0,
+            ""Level"" text,
+            ""Specialite"" text,
+            ""Filiere"" text,
+            ""Language"" text NOT NULL DEFAULT 'fr',
+            ""LastLoginAt"" timestamp with time zone,
+            CONSTRAINT ""PK_AppUsers"" PRIMARY KEY (""Id"")
+        )");
+    await db.Database.ExecuteSqlRawAsync(
+        @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AppUsers_Email"" ON ""AppUsers"" (""Email"")");
+    await db.Database.ExecuteSqlRawAsync(
+        @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AppUsers_Username"" ON ""AppUsers"" (""Username"")");
     await UserSeeder.SeedAsync(db);
 }
 
