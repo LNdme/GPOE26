@@ -1,0 +1,404 @@
+/* ================================================================
+   COURS.CSS — Rich Markdown reader styles for GPOE26
+   Used by .markdown-viewer inside course pages
+   ================================================================ */
+
+/* ── Typography base ─────────────────────────────────────────── */
+.markdown-viewer {
+    font-family: 'Outfit', Georgia, 'Times New Roman', serif;
+    font-size: 1.05rem;
+    line-height: 1.85;
+    color: #2d3748;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+/* ── Headings ─────────────────────────────────────────────────── */
+.markdown-viewer h1,
+.markdown-viewer h2,
+.markdown-viewer h3,
+.markdown-viewer h4,
+.markdown-viewer h5,
+.markdown-viewer h6 {
+    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-weight: 700;
+    line-height: 1.3;
+    margin-top: 2rem;
+    margin-bottom: 0.75rem;
+    scroll-margin-top: 4rem;
+}
+
+.markdown-viewer h1 {
+    font-size: 2rem;
+    color: #0f172a;
+    border-bottom: 3px solid #174ea6;
+    padding-bottom: 0.4rem;
+    margin-top: 0;
+}
+
+.markdown-viewer h2 {
+    font-size: 1.55rem;
+    color: #174ea6;
+    border-bottom: 1.5px solid #e8f0fe;
+    padding-bottom: 0.3rem;
+}
+
+.markdown-viewer h3 {
+    font-size: 1.25rem;
+    color: #1e3a5f;
+    position: relative;
+    padding-left: 1rem;
+}
+
+.markdown-viewer h3::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.2em;
+    bottom: 0.2em;
+    width: 4px;
+    background: #174ea6;
+    border-radius: 2px;
+}
+
+.markdown-viewer h4 {
+    font-size: 1.1rem;
+    color: #334155;
+    font-weight: 600;
+}
+
+.markdown-viewer h5, .markdown-viewer h6 {
+    font-size: 1rem;
+    color: #475569;
+    font-weight: 600;
+}
+
+/* ── Paragraphs & spacing ─────────────────────────────────────── */
+.markdown-viewer p {
+    margin-bottom: 1.1rem;
+    color: #2d3748;
+}
+
+.markdown-viewer > *:last-child {
+    margin-bottom: 0;
+}
+
+/* ── Links ────────────────────────────────────────────────────── */
+.markdown-viewer a {
+    color: #174ea6;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    transition: color 0.15s;
+}
+
+.markdown-viewer a:hover {
+    color: #1a73e8;
+}
+
+/* ── Bold & Italic ────────────────────────────────────────────── */
+.markdown-viewer strong {
+    font-weight: 700;
+    color: #1e293b;
+}
+
+.markdown-viewer em {
+    font-style: italic;
+    color: #475569;
+}
+
+/* ── Lists ────────────────────────────────────────────────────── */
+.markdown-viewer ul,
+.markdown-viewer ol {
+    padding-left: 1.75rem;
+    margin-bottom: 1.1rem;
+}
+
+.markdown-viewer li {
+    margin-bottom: 0.4rem;
+    line-height: 1.75;
+}
+
+.markdown-viewer ul li::marker {
+    color: #174ea6;
+    font-size: 1.1em;
+}
+
+.markdown-viewer ol li::marker {
+    color: #174ea6;
+    font-weight: 700;
+}
+
+.markdown-viewer li > ul,
+.markdown-viewer li > ol {
+    margin-top: 0.25rem;
+    margin-bottom: 0.25rem;
+}
+
+/* ── Horizontal rule ──────────────────────────────────────────── */
+.markdown-viewer hr {
+    border: none;
+    border-top: 2px solid #e2e8f0;
+    margin: 2rem 0;
+}
+
+/* ── Blockquotes ──────────────────────────────────────────────── */
+.markdown-viewer blockquote {
+    border-left: 4px solid #174ea6;
+    background: #f0f4ff;
+    margin: 1.5rem 0;
+    padding: 1rem 1.25rem;
+    border-radius: 0 8px 8px 0;
+    color: #334155;
+    font-style: italic;
+}
+
+.markdown-viewer blockquote p:last-child {
+    margin-bottom: 0;
+}
+
+.markdown-viewer blockquote strong {
+    color: #174ea6;
+}
+
+/* ── Inline code ──────────────────────────────────────────────── */
+.markdown-viewer :not(pre) > code {
+    background: #f1f5f9;
+    color: #d63384;
+    padding: 0.15em 0.45em;
+    border-radius: 5px;
+    font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    font-size: 0.88em;
+    border: 1px solid #e2e8f0;
+    white-space: nowrap;
+}
+
+/* ── Code blocks ──────────────────────────────────────────────── */
+.markdown-viewer pre {
+    background: #1e1e2e;
+    border-radius: 10px;
+    padding: 1.25rem 1.5rem;
+    overflow-x: auto;
+    margin: 1.5rem 0;
+    border: 1px solid #2d2d44;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    position: relative;
+}
+
+.markdown-viewer pre code {
+    background: none;
+    color: #cdd6f4;
+    padding: 0;
+    font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    font-size: 0.88rem;
+    line-height: 1.65;
+    border: none;
+    white-space: pre;
+}
+
+/* Language label on code blocks */
+.markdown-viewer pre[class*="language-"]::before {
+    content: attr(data-language);
+    position: absolute;
+    top: 0.5rem;
+    right: 0.75rem;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #7f8cb6;
+    font-family: 'Outfit', sans-serif;
+    font-weight: 600;
+}
+
+/* ── Tables ───────────────────────────────────────────────────── */
+.markdown-viewer table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.5rem 0;
+    font-size: 0.95rem;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+.markdown-viewer th {
+    background: #174ea6;
+    color: white;
+    font-weight: 600;
+    text-align: left;
+    padding: 0.75rem 1rem;
+    font-size: 0.88rem;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.markdown-viewer td {
+    padding: 0.65rem 1rem;
+    border-bottom: 1px solid #e2e8f0;
+    color: #334155;
+}
+
+.markdown-viewer tr:nth-child(even) td {
+    background: #f8fafc;
+}
+
+.markdown-viewer tr:hover td {
+    background: #eff6ff;
+    transition: background 0.15s;
+}
+
+.markdown-viewer tr:last-child td {
+    border-bottom: none;
+}
+
+/* ── Images ───────────────────────────────────────────────────── */
+.markdown-viewer img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 10px;
+    margin: 1rem 0;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+    display: block;
+}
+
+/* ── Math (KaTeX) ─────────────────────────────────────────────── */
+.markdown-viewer .math {
+    overflow-x: auto;
+    padding: 0.5rem 0;
+}
+
+.markdown-viewer .math.math-display {
+    text-align: center;
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 1rem 0;
+    border: 1px solid #e2e8f0;
+}
+
+/* ── Task lists ───────────────────────────────────────────────── */
+.markdown-viewer .task-list-item {
+    list-style: none;
+    margin-left: -1.75rem;
+    padding-left: 0.25rem;
+}
+
+.markdown-viewer .task-list-item input[type="checkbox"] {
+    margin-right: 0.5rem;
+    accent-color: #174ea6;
+}
+
+/* ================================================================
+   TABLE OF CONTENTS (ToC)
+   ================================================================ */
+.cours-toc {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.cours-toc-title {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #64748b;
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.cours-toc-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.cours-toc-list li {
+    margin-bottom: 0.2rem;
+}
+
+.cours-toc-list a {
+    color: #334155;
+    text-decoration: none;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    display: block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    transition: all 0.15s;
+    border-left: 2px solid transparent;
+}
+
+.cours-toc-list a:hover {
+    color: #174ea6;
+    background: #eff6ff;
+    border-left-color: #174ea6;
+    text-decoration: none;
+}
+
+.cours-toc-list .toc-h1 { padding-left: 0.5rem; font-weight: 600; }
+.cours-toc-list .toc-h2 { padding-left: 1.25rem; }
+.cours-toc-list .toc-h3 { padding-left: 2rem; font-size: 0.85rem; color: #64748b; }
+.cours-toc-list .toc-h4 { padding-left: 2.75rem; font-size: 0.82rem; color: #94a3b8; }
+
+/* ── Sticky ToC sidebar (large screens) ──────────────────────── */
+.toc-sidebar {
+    position: sticky;
+    top: 1.5rem;
+    max-height: calc(100vh - 3rem);
+    overflow-y: auto;
+}
+
+.toc-sidebar::-webkit-scrollbar { width: 4px; }
+.toc-sidebar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
+
+/* ── Reading progress bar ─────────────────────────────────────── */
+.reading-progress-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #174ea6, #1a73e8);
+    z-index: 9999;
+    transition: width 0.1s linear;
+    border-radius: 0 2px 2px 0;
+}
+
+/* ── Print styles ─────────────────────────────────────────────── */
+@media print {
+    .markdown-viewer {
+        font-size: 11pt;
+        color: black;
+    }
+    .markdown-viewer pre {
+        background: #f5f5f5;
+        border: 1px solid #ccc;
+        box-shadow: none;
+    }
+    .markdown-viewer pre code {
+        color: black;
+    }
+}
+
+/* ── Responsive ───────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .markdown-viewer {
+        font-size: 0.97rem;
+    }
+    .markdown-viewer h1 { font-size: 1.6rem; }
+    .markdown-viewer h2 { font-size: 1.3rem; }
+    .markdown-viewer h3 { font-size: 1.1rem; }
+    .markdown-viewer pre {
+        font-size: 0.82rem;
+        padding: 1rem;
+    }
+    .markdown-viewer table {
+        font-size: 0.82rem;
+    }
+    .markdown-viewer td, .markdown-viewer th {
+        padding: 0.5rem 0.65rem;
+    }
+}

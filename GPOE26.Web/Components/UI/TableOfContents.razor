@@ -1,0 +1,71 @@
+@using System.Text.RegularExpressions
+
+@if (_headings.Count > 1)
+{
+    <nav class="cours-toc" aria-label="Table des matières">
+        <div class="cours-toc-title">
+            <span>📋</span> Table des matières
+        </div>
+        <ul class="cours-toc-list">
+            @foreach (var h in _headings)
+            {
+                <li>
+                    <a href="#@h.Id" class="toc-h@h.Level" @onclick="() => ScrollTo(h.Id)" @onclick:preventDefault="true">
+                        @h.Text
+                    </a>
+                </li>
+            }
+        </ul>
+    </nav>
+}
+
+@code {
+    [Parameter] public string Markdown { get; set; } = string.Empty;
+
+    private List<HeadingEntry> _headings = new();
+    private string _lastMarkdown = string.Empty;
+
+    protected override void OnParametersSet()
+    {
+        if (Markdown == _lastMarkdown) return;
+        _lastMarkdown = Markdown;
+        _headings = ParseHeadings(Markdown);
+    }
+
+    private static List<HeadingEntry> ParseHeadings(string markdown)
+    {
+        if (string.IsNullOrWhiteSpace(markdown)) return new();
+
+        var result = new List<HeadingEntry>();
+        var matches = Regex.Matches(markdown, @"^(#{1,4})\s+(.+?)(?:\s*#{1,4})?$", RegexOptions.Multiline);
+
+        foreach (Match m in matches)
+        {
+            int level = m.Groups[1].Value.Length;
+            string text = m.Groups[2].Value.Trim();
+            string id = ToGithubSlug(text);
+            result.Add(new HeadingEntry(level, text, id));
+        }
+
+        return result;
+    }
+
+    private static string ToGithubSlug(string text)
+    {
+        text = Regex.Replace(text, @"[^\w\s\-]", "");
+        text = text.Trim().ToLowerInvariant();
+        text = Regex.Replace(text, @"[\s_]+", "-");
+        text = Regex.Replace(text, @"-+", "-");
+        return text;
+    }
+
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    private async Task ScrollTo(string id)
+    {
+        await JS.InvokeVoidAsync("eval",
+            $"document.getElementById('{id}')?.scrollIntoView({{behavior:'smooth',block:'start'}})");
+    }
+
+    private record HeadingEntry(int Level, string Text, string Id);
+}

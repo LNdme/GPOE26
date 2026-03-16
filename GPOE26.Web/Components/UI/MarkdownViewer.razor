@@ -1,34 +1,50 @@
 @using Markdig
+@using Markdig.Extensions.AutoIdentifiers
 @inject IJSRuntime JSRuntime
 
-<div class="markdown-viewer" @ref="markdownContainer">
-    @((MarkupString)HtmlRendered)
+<div class="markdown-viewer" @ref="_container">
+    @((MarkupString)_html)
 </div>
 
 @code {
     [Parameter] public string Content { get; set; } = string.Empty;
-    
-    private string HtmlRendered => TransformMarkdownToHtml(Content);
-    private ElementReference markdownContainer;
 
-    private static MarkdownPipeline pipeline = new MarkdownPipelineBuilder()
+    private string _html = string.Empty;
+    private ElementReference _container;
+    private string _lastContent = string.Empty;
+
+    private static readonly MarkdownPipeline _pipeline = new MarkdownPipelineBuilder()
         .UseAdvancedExtensions()
         .UseMathematics()
+        .UseAutoIdentifiers(AutoIdentifierOptions.GitHub)
         .Build();
 
-    private string TransformMarkdownToHtml(string markdown)
+    protected override void OnParametersSet()
     {
-        if (string.IsNullOrWhiteSpace(markdown))
-            return string.Empty;
-            
-        return Markdown.ToHtml(markdown, pipeline);
+        if (Content != _lastContent)
+        {
+            _lastContent = Content;
+            _html = string.IsNullOrWhiteSpace(Content)
+                ? string.Empty
+                : Markdown.ToHtml(Content, _pipeline);
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!string.IsNullOrWhiteSpace(Content))
+        if (!string.IsNullOrWhiteSpace(_html))
         {
-            await JSRuntime.InvokeVoidAsync("markdownInterop.renderEffects", markdownContainer);
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("markdownInterop.renderEffects", _container);
+            }
+            catch { }
         }
+    }
+
+    public static string ToHtml(string markdown)
+    {
+        if (string.IsNullOrWhiteSpace(markdown)) return string.Empty;
+        return Markdown.ToHtml(markdown, _pipeline);
     }
 }

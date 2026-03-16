@@ -2,7 +2,6 @@ window.markdownInterop = {
     renderEffects: function (element) {
         if (!element) return;
 
-        // Render math with KaTeX explicitly over Markdig's `.math` elements
         const renderMath = () => {
             if (window.katex) {
                 const mathElements = element.querySelectorAll('.math');
@@ -10,7 +9,6 @@ window.markdownInterop = {
                     let text = el.textContent.trim();
                     let isDisplay = el.tagName.toLowerCase() === 'div';
 
-                    // Remove \( \) and \[ \] that Markdig adds if present
                     if (text.startsWith('\\(') && text.endsWith('\\)')) {
                         text = text.substring(2, text.length - 2);
                     } else if (text.startsWith('\\[') && text.endsWith('\\]')) {
@@ -27,16 +25,38 @@ window.markdownInterop = {
                     }
                 });
             } else {
-                // Retry after 100ms if KaTeX script is not fully loaded yet
                 setTimeout(renderMath, 100);
             }
         };
         renderMath();
 
-        // Render code blocks with Prism
         if (window.Prism) {
             window.Prism.highlightAllUnder(element);
         }
+
+        element.querySelectorAll('pre[class*="language-"]').forEach(pre => {
+            const cls = Array.from(pre.classList).find(c => c.startsWith('language-'));
+            if (cls) {
+                pre.setAttribute('data-language', cls.replace('language-', ''));
+            }
+        });
+    },
+
+    initReadingProgress: function () {
+        const bar = document.getElementById('reading-progress-bar');
+        if (!bar) return;
+
+        const update = () => {
+            const scrollTop = window.scrollY || document.documentElement.scrollTop;
+            const docHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+            const pct = docHeight > 0 ? Math.min((scrollTop / docHeight) * 100, 100) : 0;
+            bar.style.width = pct + '%';
+        };
+
+        window.removeEventListener('scroll', window._progressHandler);
+        window._progressHandler = update;
+        window.addEventListener('scroll', update, { passive: true });
+        update();
     },
 
     insertAtCursor: function (elementId, startTag, endTag) {
@@ -58,14 +78,12 @@ window.markdownInterop = {
         let endPos = field.selectionEnd;
         let currentText = field.value;
 
-        // Si on a sélectionné du texte, on l'entoure (ex: gras)
         if (strPos !== endPos) {
             let selectedText = currentText.substring(strPos, endPos);
             let insertion = startTag + selectedText + endTag;
             field.value = currentText.substring(0, strPos) + insertion + currentText.substring(endPos, currentText.length);
             strPos = strPos + insertion.length;
         } else {
-            // Sinon on insère vide et on place le curseur entre les balises
             let insertion = startTag + endTag;
             field.value = currentText.substring(0, strPos) + insertion + currentText.substring(strPos, currentText.length);
             strPos = strPos + startTag.length;
@@ -85,7 +103,6 @@ window.markdownInterop = {
             field.scrollTop = scrollPos;
         }
 
-        // Déclencher un événement 'input' pour que Blazor mette à jour son bind
         let event = new Event('input', { bubbles: true });
         field.dispatchEvent(event);
 
