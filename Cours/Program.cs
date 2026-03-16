@@ -79,7 +79,7 @@ using (var scope = app.Services.CreateScope())
             ""Title"" character varying(200) NOT NULL,
             ""Subject"" character varying(100) NOT NULL,
             ""Description"" text,
-            ""ContentType"" integer NOT NULL DEFAULT 0,
+            ""ContentType"" text NOT NULL DEFAULT 'Text',
             ""PdfPath"" text,
             ""ExtractedText"" text,
             ""OwnerId"" uuid NOT NULL,
@@ -88,16 +88,22 @@ using (var scope = app.Services.CreateScope())
             CONSTRAINT ""PK_Courses"" PRIMARY KEY (""Id"")
         )");
     await db.Database.ExecuteSqlRawAsync(
+        @"CREATE INDEX IF NOT EXISTS ""IX_Courses_OwnerId"" ON ""Courses"" (""OwnerId"")");
+    await db.Database.ExecuteSqlRawAsync(
+        @"CREATE INDEX IF NOT EXISTS ""IX_Courses_OwnerId_Subject"" ON ""Courses"" (""OwnerId"", ""Subject"")");
+    await db.Database.ExecuteSqlRawAsync(
         @"CREATE TABLE IF NOT EXISTS ""CourseSections"" (
             ""Id"" uuid NOT NULL,
             ""CourseId"" uuid NOT NULL,
-            ""Type"" integer NOT NULL DEFAULT 0,
+            ""Type"" text NOT NULL DEFAULT 'Paragraph',
             ""Content"" text NOT NULL,
             ""Order"" integer NOT NULL DEFAULT 0,
             ""Level"" integer NOT NULL DEFAULT 0,
             CONSTRAINT ""PK_CourseSections"" PRIMARY KEY (""Id""),
             CONSTRAINT ""FK_CourseSections_Courses_CourseId"" FOREIGN KEY (""CourseId"") REFERENCES ""Courses"" (""Id"") ON DELETE CASCADE
         )");
+    await db.Database.ExecuteSqlRawAsync(
+        @"CREATE INDEX IF NOT EXISTS ""IX_CourseSections_CourseId_Order"" ON ""CourseSections"" (""CourseId"", ""Order"")");
     await CoursSeeder.SeedAsync(db);
 }
 

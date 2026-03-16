@@ -52,7 +52,7 @@ QUIZPID=$!
 
 # Wait for backend services to start up
 echo "Waiting for backend services to start..."
-sleep 15
+sleep 30
 
 # Start Web frontend (port 5000)
 echo "Starting Web frontend on port 5000..."
