@@ -32,8 +32,8 @@ public class AuthService(ApiClient api, AuthTokenProvider tokenProvider)
     // ── Register ──────────────────────────────────────────────────
     public async Task<(bool ok, string? error)> RegisterAsync(RegisterRequest req)
     {
-        var auth = await api.RegisterAsync(req);
-        if (auth is null) return (false, "Erreur lors de la création du compte.");
+        var (auth, error) = await api.RegisterAsync(req);
+        if (auth is null) return (false, error ?? "Erreur lors de la création du compte.");
         SetAuth(auth);
         return (true, null);
     }

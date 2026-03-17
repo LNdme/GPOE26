@@ -619,20 +619,10 @@ namespace GPOE26.Web.Services
                     var result = await resp.Content.ReadFromJsonAsync<UploadResponse>();
                     if (result != null && !string.IsNullOrEmpty(result.Url))
                     {
-                        // Build absolute URL from the request URI (avoids the http+https:// scheme from Aspire)
-                        var requestUri = resp.RequestMessage?.RequestUri;
-                        if (requestUri != null)
-                        {
-                            return $"{requestUri.Scheme}://{requestUri.Host}:{requestUri.Port}{result.Url}";
-                        }
-                        // Fallback: use the base address if request URI is unavailable
-                        var baseAddress = client.BaseAddress?.ToString().TrimEnd('/');
-                        if (baseAddress != null)
-                        {
-                            // Strip any non-standard scheme (e.g., "https+http://")
-                            var uri = new Uri(baseAddress);
-                            return $"https://{uri.Host}:{uri.Port}{result.Url}";
-                        }
+                        // Return the relative path only — the Web frontend's proxy at
+                        // /uploads/images/{*path} will forward the request to the ApiService.
+                        // This makes the URL work in the browser regardless of the internal port.
+                        return result.Url;
                     }
                 }
                 _logger.LogWarning($"Image upload failed: {resp.StatusCode}");
@@ -784,19 +774,34 @@ namespace GPOE26.Web.Services
             }
         }
 
-        public async Task<AuthResponse?> RegisterAsync(RegisterRequest req)
+        public async Task<(AuthResponse? Auth, string? Error)> RegisterAsync(RegisterRequest req)
         {
             var client = _factory.CreateClient("user");
             try
             {
                 var resp = await client.PostAsJsonAsync("/auth/register", req);
-                if (!resp.IsSuccessStatusCode) return null;
-                return await resp.Content.ReadFromJsonAsync<AuthResponse>();
+                if (resp.IsSuccessStatusCode)
+                {
+                    var auth = await resp.Content.ReadFromJsonAsync<AuthResponse>();
+                    return (auth, null);
+                }
+
+                // Extract server error message (409 Conflict, 400 Bad Request, etc.)
+                try
+                {
+                    var body = await resp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+                    var msg = body.TryGetProperty("message", out var m) ? m.GetString() : null;
+                    return (null, msg ?? $"Erreur {(int)resp.StatusCode}");
+                }
+                catch
+                {
+                    return (null, $"Erreur {(int)resp.StatusCode}");
+                }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error registering");
-                return null;
+                return (null, "Impossible de contacter le serveur. Réessaie plus tard.");
             }
         }
 
