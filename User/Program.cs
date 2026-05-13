@@ -68,7 +68,7 @@ builder.Services.AddControllers().AddNewtonsoftJson();
 
 // ─── JWT ──────────────────────────────────────────────────────────────────────
 var jwtKey = builder.Configuration["Jwt:Key"]
-    ?? throw new InvalidOperationException("votre_cle_secrete_tres_longue_et_aleatoire_ici_changez_moi_en_production_cle_256_bits'");
+    ?? throw new InvalidOperationException("La configuration Jwt:Key est manquante. Définissez-la dans appsettings ou les variables d'environnement.");
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
