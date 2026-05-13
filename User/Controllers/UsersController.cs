@@ -43,7 +43,11 @@ namespace User.Controllers
             var value = User.FindFirstValue(ClaimTypes.NameIdentifier)
                         ?? User.FindFirstValue("sub")
                         ?? throw new UnauthorizedAccessException("Id introuvable dans le token.");
-            return Guid.Parse(value);
+
+            if (!Guid.TryParse(value, out var id))
+                throw new UnauthorizedAccessException("L'identifiant utilisateur dans le token est invalide.");
+
+            return id;
         }
 
         // ── PATCH /auth/me ────────────────────────────────────────────────────────

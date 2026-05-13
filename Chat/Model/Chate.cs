@@ -2,10 +2,13 @@
 {
     public record ChatMessageRequest(
       string Message,
-      List<ConversationMessage> History,
+      List<ConversationMessage>? History,
       string? CourseContent = null,
       string? CourseId = null
-  );
+  )
+    {
+        public List<ConversationMessage> History { get; init; } = History ?? [];
+    }
 
     public record ChatMessageResponse(
         string Reply,

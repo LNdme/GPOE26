@@ -206,7 +206,8 @@ cours.MapPost("/{id:guid}/upload", async (
     // Supprimer l'ancien PDF si existant
     if (course.PdfPath is not null)
     {
-        var oldPath = Path.Combine(env.WebRootPath, course.PdfPath);
+        var webRoot = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
+        var oldPath = Path.Combine(webRoot, course.PdfPath);
         if (File.Exists(oldPath)) File.Delete(oldPath);
     }
 
@@ -336,7 +337,8 @@ cours.MapDelete("/{id:guid}", async (
 
     if (course.PdfPath is not null)
     {
-        var fullPath = Path.Combine(env.WebRootPath, course.PdfPath);
+        var webRoot = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
+        var fullPath = Path.Combine(webRoot, course.PdfPath);
         if (File.Exists(fullPath)) File.Delete(fullPath);
     }
 
