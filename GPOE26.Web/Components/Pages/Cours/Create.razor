@@ -7,187 +7,488 @@
 <PageTitle>Créer un Cours – GPOE26</PageTitle>
 
 <style>
-    .text-navy { color: #174ea6 !important; }
-    .btn-navy { background-color: #174ea6; color: white; border: none; font-weight: 500; padding: 0.5rem 1.5rem; border-radius: 4px; }
-    .btn-navy:hover { background-color: #123d82; color: white; }
-    .form-section { max-width: 1000px; margin: 0 auto; }
-    .upload-zone { border: 2px dashed #dadce0; border-radius: 8px; padding: 2rem; text-align: center; cursor: pointer; transition: border-color 0.2s; }
-    .upload-zone:hover { border-color: #174ea6; }
-    
-    .md-editor-container {
-        display: flex;
-        gap: 1.5rem;
-        min-height: 400px;
+    /* ── Layout ──────────────────────────────────────────────── */
+    .create-layout {
+        display: grid;
+        grid-template-columns: 1fr 340px;
+        gap: 0;
+        min-height: calc(100vh - 68px);
+        background: #f8f9fa;
     }
+    .create-main {
+        padding: 2rem 2.5rem;
+        overflow-y: auto;
+    }
+    .ai-panel {
+        border-left: 1px solid #e8eaed;
+        background: white;
+        display: flex; flex-direction: column;
+        position: sticky; top: 68px;
+        height: calc(100vh - 68px);
+        overflow: hidden;
+    }
+
+    /* ── Form ────────────────────────────────────────────────── */
+    .page-title { font-size: 1.75rem; font-weight: 800; color: #202124; }
+    .field-label { font-weight: 600; font-size: 0.9rem; color: #3c4043; margin-bottom: 0.35rem; }
+    .field-hint { font-size: 0.8rem; color: #9aa0a6; margin-top: 0.2rem; }
+
+    .type-card {
+        border: 2px solid #e8eaed; border-radius: 10px;
+        padding: 0.9rem 1.1rem; cursor: pointer;
+        transition: all 0.18s; display: flex; align-items: center; gap: 0.75rem;
+    }
+    .type-card:hover { border-color: #174ea6; background: #f8fbff; }
+    .type-card.selected { border-color: #174ea6; background: #e8f0fe; }
+    .type-card-icon { font-size: 1.4rem; }
+    .type-card-title { font-weight: 600; font-size: 0.9rem; color: #202124; }
+    .type-card-desc { font-size: 0.78rem; color: #5f6368; }
+
+    /* ── Markdown editor ─────────────────────────────────────── */
+    .editor-wrapper {
+        border: 1px solid #dadce0; border-radius: 10px;
+        overflow: hidden; background: white;
+    }
+    .md-toolbar {
+        display: flex; flex-wrap: wrap; gap: 0.2rem;
+        padding: 0.5rem 0.75rem;
+        background: #f8f9fa; border-bottom: 1px solid #e8eaed;
+        align-items: center;
+    }
+    .toolbar-btn {
+        border: 1px solid #dadce0; background: white;
+        border-radius: 5px; padding: 0.2rem 0.55rem;
+        font-size: 0.82rem; cursor: pointer; color: #3c4043;
+        transition: all 0.15s; line-height: 1.4;
+    }
+    .toolbar-btn:hover { background: #e8f0fe; border-color: #174ea6; color: #174ea6; }
+    .toolbar-sep { width: 1px; height: 20px; background: #e8eaed; margin: 0 0.1rem; }
+
+    .md-split { display: flex; min-height: 420px; }
     .md-editor-pane {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
+        flex: 1; border-right: 1px solid #e8eaed;
+        display: flex; flex-direction: column;
     }
     .md-textarea {
-        flex: 1;
-        font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
-        font-size: 0.9rem;
-        resize: vertical;
-        border: 1px solid #dadce0;
-        border-radius: 8px;
-        padding: 1rem;
-        min-height: 400px;
+        flex: 1; font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
+        font-size: 0.88rem; resize: none;
+        border: none; outline: none; padding: 1rem 1.1rem;
+        min-height: 420px; color: #202124; line-height: 1.7;
+        background: white;
     }
     .md-preview-pane {
-        flex: 1;
-        border: 1px solid #dadce0;
-        border-radius: 8px;
-        padding: 1.5rem;
-        background: #fafafa;
-        overflow-y: auto;
-        min-height: 400px;
-        max-height: 800px;
+        flex: 1; padding: 1.25rem 1.5rem;
+        overflow-y: auto; max-height: 600px;
+        background: white;
+    }
+    .preview-empty {
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        height: 100%; color: #c4c7cc; text-align: center;
+    }
+    .preview-empty-icon { font-size: 2.5rem; margin-bottom: 0.5rem; }
+
+    /* ── PDF upload zone ─────────────────────────────────────── */
+    .pdf-dropzone {
+        border: 2px dashed #dadce0; border-radius: 10px;
+        padding: 2.5rem; text-align: center;
+        transition: all 0.2s; cursor: pointer; background: white;
+    }
+    .pdf-dropzone:hover { border-color: #174ea6; background: #f8fbff; }
+    .pdf-dropzone.has-file { border-color: #34a853; background: #f0fdf4; }
+
+    /* ── Feedback messages ───────────────────────────────────── */
+    .alert-inline {
+        border-radius: 8px; padding: 0.65rem 1rem;
+        font-size: 0.875rem; margin-bottom: 1rem;
+        display: flex; align-items: flex-start; gap: 0.5rem;
+    }
+    .alert-err { background: #fce8e6; color: #c5221f; border: 1px solid #f5c6c3; }
+    .alert-ok  { background: #e6f4ea; color: #137333; border: 1px solid #b7dfb8; }
+    .alert-inf { background: #e8f0fe; color: #174ea6; border: 1px solid #c4d3f8; }
+
+    /* ── Action buttons ──────────────────────────────────────── */
+    .btn-navy {
+        background: #174ea6; color: white; border: none;
+        border-radius: 8px; padding: 0.55rem 1.5rem;
+        font-weight: 600; cursor: pointer; transition: all 0.2s;
+        font-size: 0.9rem;
+    }
+    .btn-navy:hover:not(:disabled) { background: #123d82; transform: translateY(-1px); box-shadow: 0 3px 10px rgba(23,78,166,0.3); }
+    .btn-navy:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    /* ── AI panel ────────────────────────────────────────────── */
+    .ai-panel-header {
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid #f1f3f4;
+        display: flex; align-items: center; gap: 0.65rem;
+        flex-shrink: 0;
+    }
+    .ai-icon-circle {
+        width: 36px; height: 36px; border-radius: 50%;
+        background: linear-gradient(135deg, #174ea6, #7c3aed);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1rem; flex-shrink: 0;
+        box-shadow: 0 2px 6px rgba(23,78,166,0.25);
+    }
+    .ai-panel-title { font-weight: 700; font-size: 0.9rem; color: #202124; }
+    .ai-panel-subtitle { font-size: 0.75rem; color: #9aa0a6; }
+
+    .ai-panel-body {
+        flex: 1; overflow-y: auto; padding: 1rem 1.25rem;
+        display: flex; flex-direction: column; gap: 0.75rem;
+    }
+    .ai-panel-body::-webkit-scrollbar { width: 4px; }
+    .ai-panel-body::-webkit-scrollbar-thumb { background: #dadce0; border-radius: 2px; }
+
+    .ai-tip-card {
+        background: #f8f9fa; border-radius: 8px;
+        padding: 0.7rem 0.85rem; font-size: 0.83rem; color: #5f6368;
+        border-left: 3px solid #174ea6; line-height: 1.5;
+    }
+    .ai-tip-card strong { color: #174ea6; }
+
+    .ai-instructions-area {
+        border: 1px solid #dadce0; border-radius: 8px;
+        overflow: hidden;
+    }
+    .ai-instructions-label {
+        background: #f8f9fa; padding: 0.4rem 0.75rem;
+        font-size: 0.75rem; font-weight: 600; color: #9aa0a6;
+        text-transform: uppercase; letter-spacing: 0.5px;
+        border-bottom: 1px solid #e8eaed;
+    }
+    .ai-instructions-textarea {
+        width: 100%; border: none; outline: none; resize: none;
+        padding: 0.6rem 0.75rem; font-size: 0.85rem;
+        color: #3c4043; min-height: 80px; background: white;
+    }
+
+    .btn-ai-generate {
+        width: 100%; border: none; border-radius: 8px;
+        padding: 0.65rem; font-size: 0.9rem; font-weight: 700;
+        cursor: pointer; transition: all 0.2s;
+        background: linear-gradient(135deg, #174ea6, #7c3aed);
+        color: white;
+        display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+    }
+    .btn-ai-generate:hover:not(:disabled) { opacity: 0.92; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(23,78,166,0.35); }
+    .btn-ai-generate:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .ai-log {
+        background: #f8f9fa; border-radius: 8px;
+        padding: 0.75rem; font-size: 0.8rem; color: #5f6368;
+    }
+    .ai-log-step {
+        display: flex; align-items: center; gap: 0.5rem;
+        padding: 0.25rem 0; font-size: 0.8rem;
+    }
+    .ai-log-step .step-icon { font-size: 0.85rem; }
+    .ai-log-step.done { color: #137333; }
+    .ai-log-step.active { color: #174ea6; font-weight: 600; }
+
+    .ai-success-banner {
+        background: #e6f4ea; border: 1px solid #b7dfb8;
+        border-radius: 8px; padding: 0.65rem 0.85rem;
+        font-size: 0.83rem; color: #137333;
+        display: flex; align-items: center; gap: 0.4rem;
+    }
+
+    @@media (max-width: 992px) {
+        .create-layout { grid-template-columns: 1fr; }
+        .ai-panel { position: static; height: auto; border-left: none; border-top: 1px solid #e8eaed; }
+        .create-main { padding: 1.25rem; }
     }
 </style>
 
-<div class="container py-5">
-    <div class="form-section">
+<div class="create-layout">
+    <!-- ── MAIN FORM ──────────────────────────────────────────── -->
+    <div class="create-main">
+        <!-- Breadcrumb -->
         <nav aria-label="breadcrumb" class="mb-3">
             <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="/cours" class="text-navy text-decoration-none">Mes Cours</a></li>
-                <li class="breadcrumb-item active">Nouveau</li>
+                <li class="breadcrumb-item">
+                    <a href="/cours" style="color:#174ea6;text-decoration:none;">Mes Cours</a>
+                </li>
+                <li class="breadcrumb-item active">Nouveau cours</li>
             </ol>
         </nav>
 
-        <h1 class="fw-bold mb-4" style="font-size:1.8rem; color:#202124;">Créer un cours</h1>
+        <h1 class="page-title mb-1">Créer un cours</h1>
+        <p class="text-muted mb-4" style="font-size:0.9rem;">
+            Rédigez votre cours en Markdown ou importez un PDF. L'assistant IA vous aide à générer le contenu.
+        </p>
 
-        @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
+        <!-- Error / success -->
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="alert-inline alert-err">
+                <span>⚠️</span> <span>@_error</span>
+            </div>
+        }
+        @if (!string.IsNullOrEmpty(_successMsg))
+        {
+            <div class="alert-inline alert-ok">
+                <span>✅</span> <span>@_successMsg</span>
+            </div>
+        }
 
         <EditForm Model="_form" OnValidSubmit="Submit" FormName="CreateCourseForm">
             <DataAnnotationsValidator />
 
+            <!-- Titre -->
             <div class="mb-3">
-                <label class="form-label fw-semibold">Titre *</label>
-                <InputText @bind-Value="_form.Title" class="form-control" placeholder="ex: Introduction à l'algorithmique" />
+                <label class="field-label">Titre du cours *</label>
+                <InputText @bind-Value="_form.Title" class="form-control"
+                           placeholder="ex : Introduction à l'algorithmique" />
             </div>
 
+            <!-- Matière -->
             <div class="mb-3">
-                <label class="form-label fw-semibold">Matière *</label>
-                <InputText @bind-Value="_form.Subject" class="form-control" placeholder="ex: Informatique, Mathématiques..." />
+                <label class="field-label">Matière *</label>
+                <InputText @bind-Value="_form.Subject" class="form-control"
+                           placeholder="ex : Informatique, Mathématiques, Français…" />
+                <div class="field-hint">La matière aide l'IA à adapter le contenu.</div>
             </div>
 
+            <!-- Description -->
             <div class="mb-3">
-                <label class="form-label fw-semibold">Description</label>
-                <InputTextArea @bind-Value="_form.Description" class="form-control" rows="3" />
+                <label class="field-label">Description <span class="fw-normal text-muted">(optionnelle)</span></label>
+                <InputTextArea @bind-Value="_form.Description" class="form-control" rows="2"
+                               placeholder="Brève description du cours…" />
             </div>
 
-            <div class="mb-3">
-                <label class="form-label fw-semibold">Type de contenu</label>
+            <!-- Type de contenu -->
+            <div class="mb-4">
+                <label class="field-label mb-2">Type de contenu</label>
                 <div class="d-flex gap-3">
-                    <div class="form-check">
-                        <input class="form-check-input" type="radio" name="contentType" id="typeText" checked="@(!_isPdf)" @onchange="() => _isPdf = false" />
-                        <label class="form-check-label" for="typeText">📝 Saisir du contenu structuré</label>
+                    <div class="type-card @(!_isPdf ? "selected" : "")" @onclick="@(() => _isPdf = false)" style="flex:1;">
+                        <div class="type-card-icon">📝</div>
+                        <div>
+                            <div class="type-card-title">Saisir le contenu</div>
+                            <div class="type-card-desc">Éditeur Markdown avec assistant IA</div>
+                        </div>
                     </div>
-                    <div class="form-check">
-                        <input class="form-check-input" type="radio" name="contentType" id="typePdf" checked="@_isPdf" @onchange="() => _isPdf = true" />
-                        <label class="form-check-label" for="typePdf">📄 Uploader un PDF</label>
+                    <div class="type-card @(_isPdf ? "selected" : "")" @onclick="@(() => _isPdf = true)" style="flex:1;">
+                        <div class="type-card-icon">📄</div>
+                        <div>
+                            <div class="type-card-title">Importer un PDF</div>
+                            <div class="type-card-desc">Texte extrait automatiquement</div>
+                        </div>
                     </div>
                 </div>
             </div>
 
             @if (!_isPdf)
             {
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between align-items-end mb-2">
-                        <div>
-                            <label class="form-label fw-semibold mb-0">Contenu du cours (Markdown) *</label>
-                            <p class="text-muted small mb-0">Utilisez la syntaxe Markdown pour styliser le texte, ajouter des équations ($$) et du code.</p>
-                        </div>
-                        <div class="d-flex gap-2">
-                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="GenerateWithAI" disabled="@_isGeneratingAI">
-                                @if (_isGeneratingAI) { <span class="spinner-border spinner-border-sm"></span> }
-                                ✨ Générer le plan (IA)
-                            </button>
-                            <label class="btn btn-outline-secondary btn-sm mb-0 position-relative">
-                                📷 Insérer une image
-                                <InputFile OnChange="HandleDirectImageUpload" accept="image/*" class="position-absolute" style="opacity: 0; width: 0; height: 0;" />
-                            </label>
-                        </div>
-                    </div>
-                    
+                <!-- Markdown Editor -->
+                <div class="mb-4">
+                    <label class="field-label mb-2">Contenu du cours (Markdown)</label>
+
                     @if (_isUploadingImage)
                     {
-                        <div class="alert alert-info py-2 small">Téléchargement de l'image en cours...</div>
+                        <div class="alert-inline alert-inf mb-2">
+                            <span class="spinner-border spinner-border-sm"></span>
+                            <span>Téléchargement de l'image en cours…</span>
+                        </div>
                     }
 
-                    <div class="md-editor-container">
-                        <!-- Éditeur Markdown -->
-                        <div class="md-editor-pane">
-                            <div class="md-toolbar d-flex flex-wrap gap-1 p-2 bg-light border-bottom">
-                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="@(() => InsertMarkdown("md-editor", "# ", ""))" title="Titre 1">H1</button>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="@(() => InsertMarkdown("md-editor", "## ", ""))" title="Titre 2">H2</button>
-                                <div class="vr mx-1"></div>
-                                <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" @onclick="@(() => InsertMarkdown("md-editor", "**", "**"))" title="Gras">B</button>
-                                <button type="button" class="btn btn-sm btn-outline-secondary fst-italic" @onclick="@(() => InsertMarkdown("md-editor", "_", "_"))" title="Italique">I</button>
-                                <div class="vr mx-1"></div>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="@(() => InsertMarkdown("md-editor", "- ", ""))" title="Liste à puces">• Liste</button>
-                                <div class="vr mx-1"></div>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="@(() => InsertMarkdown("md-editor", "```\n", "\n```"))" title="Bloc de code">{'}'} Code</button>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="@(() => InsertMarkdown("md-editor", "$$ ", " $$"))" title="Formule mathématique">∑ Maths</button>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="@(() => InsertMarkdown("md-editor", "\n| Titre 1 | Titre 2 |\n|---|---|\n| Ligne 1 | Ligne 1 |\n", ""))" title="Tableau">⊞ Tab</button>
-                            </div>
-                            <textarea id="md-editor" class="md-textarea" 
-                                      placeholder="# Titre du cours&#10;&#10;Commencez à rédiger votre cours ici..."
-                                      @bind="_markdownContent" @bind:event="oninput"></textarea>
+                    <div class="editor-wrapper">
+                        <!-- Toolbar -->
+                        <div class="md-toolbar">
+                            <button type="button" class="toolbar-btn" @onclick="@(() => InsertMarkdown("# ", ""))" title="Titre 1">H1</button>
+                            <button type="button" class="toolbar-btn" @onclick="@(() => InsertMarkdown("## ", ""))" title="Titre 2">H2</button>
+                            <button type="button" class="toolbar-btn" @onclick="@(() => InsertMarkdown("### ", ""))" title="Titre 3">H3</button>
+                            <div class="toolbar-sep"></div>
+                            <button type="button" class="toolbar-btn fw-bold" @onclick="@(() => InsertMarkdown("**", "**"))" title="Gras">B</button>
+                            <button type="button" class="toolbar-btn fst-italic" @onclick="@(() => InsertMarkdown("_", "_"))" title="Italique">I</button>
+                            <button type="button" class="toolbar-btn" @onclick="@(() => InsertMarkdown("~~", "~~"))" title="Barré">S̶</button>
+                            <div class="toolbar-sep"></div>
+                            <button type="button" class="toolbar-btn" @onclick="@(() => InsertMarkdown("- ", ""))" title="Liste à puces">• Liste</button>
+                            <button type="button" class="toolbar-btn" @onclick="@(() => InsertMarkdown("1. ", ""))" title="Liste numérotée">1. Liste</button>
+                            <button type="button" class="toolbar-btn" @onclick="@(() => InsertMarkdown("> ", ""))" title="Citation">❝ Citer</button>
+                            <div class="toolbar-sep"></div>
+                            <button type="button" class="toolbar-btn" @onclick="@(() => InsertMarkdown("`", "`"))" title="Code inline">&lt;/&gt;</button>
+                            <button type="button" class="toolbar-btn" @onclick="@(() => InsertMarkdown("```\n", "\n```"))" title="Bloc de code">⌨ Bloc</button>
+                            <button type="button" class="toolbar-btn" @onclick="@(() => InsertMarkdown("$$ ", " $$"))" title="Formule mathématique">∑ Maths</button>
+                            <button type="button" class="toolbar-btn" @onclick="@(() => InsertMarkdown("\n| Col 1 | Col 2 |\n|---|---|\n| Valeur | Valeur |\n", ""))" title="Tableau">⊞ Tableau</button>
+                            <div class="toolbar-sep"></div>
+                            <label class="toolbar-btn mb-0 position-relative" title="Insérer une image" style="cursor:pointer;">
+                                🖼 Image
+                                <InputFile OnChange="HandleDirectImageUpload" accept="image/*"
+                                           class="position-absolute" style="opacity:0;width:0;height:0;" />
+                            </label>
                         </div>
-                        
-                        <!-- Prévisualisation en direct -->
-                        <div class="md-preview-pane">
-                            @if (string.IsNullOrWhiteSpace(_markdownContent))
-                            {
-                                <div class="text-muted text-center mt-5">Aperçu du rendu Markdown s'affichera ici.</div>
-                            }
-                            else
-                            {
-                                <GPOE26.Web.Components.UI.MarkdownViewer Content="@_markdownContent" />
-                            }
+                        <!-- Split editor / preview -->
+                        <div class="md-split">
+                            <div class="md-editor-pane">
+                                <textarea id="md-editor" class="md-textarea"
+                                          placeholder="# Titre du cours&#10;&#10;## Introduction&#10;&#10;Commencez à rédiger votre cours ici...&#10;&#10;Utilisez **gras**, _italique_, et `code`.&#10;Pour les maths : $$ E = mc^2 $$"
+                                          @bind="_markdownContent"
+                                          @bind:event="oninput"></textarea>
+                            </div>
+                            <div class="md-preview-pane">
+                                @if (string.IsNullOrWhiteSpace(_markdownContent))
+                                {
+                                    <div class="preview-empty">
+                                        <div class="preview-empty-icon">👁</div>
+                                        <p style="font-size:0.85rem;color:#9aa0a6;">L'aperçu apparaît ici pendant que vous écrivez</p>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <GPOE26.Web.Components.UI.MarkdownViewer Content="@_markdownContent" />
+                                }
+                            </div>
                         </div>
                     </div>
                 </div>
             }
             else
             {
-                <div class="mb-3">
-                    <label class="form-label fw-semibold">Fichier PDF</label>
-                    <div class="upload-zone">
+                <!-- PDF Upload -->
+                <div class="mb-4">
+                    <label class="field-label mb-2">Fichier PDF</label>
+                    <div class="pdf-dropzone @(_selectedFile is not null ? "has-file" : "")">
                         <InputFile OnChange="HandleFileSelected" accept=".pdf" />
                         @if (_selectedFile is not null)
                         {
-                            <p class="mt-2 mb-0 text-success">📄 @_selectedFile.Name (@FormatSize(_selectedFile.Size))</p>
+                            <div class="mt-2">
+                                <span style="color:#137333;font-size:1.5rem;">✅</span>
+                                <p class="mb-0 fw-semibold" style="color:#137333;">@_selectedFile.Name</p>
+                                <small class="text-muted">@FormatSize(_selectedFile.Size)</small>
+                            </div>
                         }
                         else
                         {
-                            <p class="text-muted mb-0">Cliquez ou glissez un fichier PDF ici</p>
+                            <div>
+                                <div style="font-size:2.5rem;margin-bottom:0.5rem;">📄</div>
+                                <p class="mb-1 fw-semibold" style="color:#5f6368;">Cliquez pour choisir un PDF</p>
+                                <small class="text-muted">Maximum 50 MB</small>
+                            </div>
                         }
                     </div>
                 </div>
             }
 
-            <div class="d-flex gap-2 mt-4">
-                <button type="submit" class="btn btn-navy" disabled="@_saving">
-                    @if (_saving) { <span class="spinner-border spinner-border-sm me-1"></span> } Créer le cours
+            <!-- Submit -->
+            <div class="d-flex gap-2 align-items-center">
+                <button type="submit" class="btn-navy" disabled="@_saving">
+                    @if (_saving)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2"></span>
+                        <span>Création en cours…</span>
+                    }
+                    else
+                    {
+                        <span>💾 Créer le cours</span>
+                    }
                 </button>
-                <a href="/cours" class="btn btn-outline-secondary">Annuler</a>
+                <a href="/cours" class="btn btn-outline-secondary" style="border-radius:8px;">Annuler</a>
             </div>
         </EditForm>
     </div>
+
+    <!-- ── AI ASSISTANT PANEL ─────────────────────────────────── -->
+    <aside class="ai-panel">
+        <div class="ai-panel-header">
+            <div class="ai-icon-circle">✨</div>
+            <div>
+                <div class="ai-panel-title">Assistant IA</div>
+                <div class="ai-panel-subtitle">Génération de cours par l'IA</div>
+            </div>
+        </div>
+
+        <div class="ai-panel-body">
+            <!-- Tip -->
+            <div class="ai-tip-card">
+                <strong>💡 Conseil :</strong> Remplissez d'abord le <strong>titre</strong> et la
+                <strong>matière</strong>, puis cliquez sur Générer. L'IA rédigera un cours complet
+                en Markdown avec titres, exemples et formules adaptés.
+            </div>
+
+            <!-- Instructions optionnelles -->
+            <div>
+                <div style="font-size:0.8rem;font-weight:600;color:#5f6368;margin-bottom:0.4rem;">
+                    Instructions supplémentaires <span style="font-weight:400;">(optionnel)</span>
+                </div>
+                <div class="ai-instructions-area">
+                    <div class="ai-instructions-label">Précisez votre demande</div>
+                    <textarea class="ai-instructions-textarea"
+                              placeholder="ex: inclure des exercices corrigés, niveau Terminale, insister sur les applications pratiques…"
+                              @bind="_aiInstructions"></textarea>
+                </div>
+            </div>
+
+            <!-- Generate button -->
+            <button class="btn-ai-generate" @onclick="GenerateWithAI" disabled="@_isGeneratingAI">
+                @if (_isGeneratingAI)
+                {
+                    <span class="spinner-border spinner-border-sm"></span>
+                    <span>Génération en cours…</span>
+                }
+                else
+                {
+                    <span>✨</span>
+                    <span>Générer le cours avec l'IA</span>
+                }
+            </button>
+
+            <!-- Generation log -->
+            @if (_isGeneratingAI || _generationLog.Any())
+            {
+                <div class="ai-log">
+                    @foreach (var (step, done) in _generationLog)
+                    {
+                        <div class="ai-log-step @(done ? "done" : "active")">
+                            <span class="step-icon">@(done ? "✅" : "⏳")</span>
+                            <span>@step</span>
+                        </div>
+                    }
+                </div>
+            }
+
+            <!-- Success -->
+            @if (_aiGenerated)
+            {
+                <div class="ai-success-banner">
+                    ✅ Cours généré avec succès ! Relisez et ajustez si besoin.
+                </div>
+                <button class="btn-ai-generate" style="background:linear-gradient(135deg,#0d652d,#137333);"
+                        @onclick="GenerateWithAI" disabled="@_isGeneratingAI">
+                    🔄 Régénérer le cours
+                </button>
+            }
+
+            <!-- Divider + extra tips -->
+            <hr style="border-color:#f1f3f4;margin:0.25rem 0;" />
+
+            <div style="font-size:0.78rem;color:#9aa0a6;line-height:1.6;">
+                <p class="mb-1">📌 <strong>Astuces Markdown :</strong></p>
+                <ul class="mb-0 ps-3">
+                    <li><code style="background:#f1f3f4;padding:0.05em 0.3em;border-radius:3px;">**texte**</code> → <strong>gras</strong></li>
+                    <li><code style="background:#f1f3f4;padding:0.05em 0.3em;border-radius:3px;">_texte_</code> → <em>italique</em></li>
+                    <li><code style="background:#f1f3f4;padding:0.05em 0.3em;border-radius:3px;">$$ E=mc^2 $$</code> → formule</li>
+                    <li><code style="background:#f1f3f4;padding:0.05em 0.3em;border-radius:3px;">```python</code> → bloc de code</li>
+                </ul>
+            </div>
+        </div>
+    </aside>
 </div>
 
 @code {
     private CourseFormModel _form = new();
-    private bool _isPdf = false;
+    private bool _isPdf;
     private bool _saving;
     private string? _error;
+    private string? _successMsg;
     private IBrowserFile? _selectedFile;
     private string _markdownContent = "";
-    private bool _isUploadingImage = false;
-    private bool _isGeneratingAI = false;
+    private bool _isUploadingImage;
+    private bool _isGeneratingAI;
+    private bool _aiGenerated;
+    private string _aiInstructions = "";
+    private List<(string Step, bool Done)> _generationLog = new();
 
     private class CourseFormModel
     {
@@ -202,29 +503,25 @@
     {
         _isUploadingImage = true;
         _error = null;
+        StateHasChanged();
         try
         {
             var file = e.File;
             if (file.Size > 5 * 1024 * 1024)
             {
-                _error = "L'image est trop volumineuse (max 5MB).";
+                _error = "L'image dépasse la limite de 5 MB.";
                 return;
             }
             using var stream = file.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024);
             var url = await Api.UploadImageAsync(stream, file.Name);
-            if (url != null) 
-            {
-                var imageMarkdown = $"\n![{file.Name}]({url})\n";
-                _markdownContent += imageMarkdown;
-            }
-            else 
-            {
+            if (url is not null)
+                _markdownContent += $"\n![{file.Name}]({url})\n";
+            else
                 _error = "Erreur lors du téléchargement de l'image.";
-            }
         }
         catch (Exception ex)
         {
-            _error = $"Erreur upload : {ex.Message}";
+            _error = $"Erreur upload image : {ex.Message}";
         }
         finally
         {
@@ -232,28 +529,56 @@
             StateHasChanged();
         }
     }
-    
-    private async Task InsertMarkdown(string elementId, string startTag, string endTag)
+
+    private async Task InsertMarkdown(string start, string end)
     {
-        var newValue = await JS.InvokeAsync<string>("markdownInterop.insertAtCursor", elementId, startTag, endTag);
+        var newValue = await JS.InvokeAsync<string>("markdownInterop.insertAtCursor", "md-editor", start, end);
         _markdownContent = newValue;
-        StateHasChanged();
     }
 
     private async Task GenerateWithAI()
     {
-        if (string.IsNullOrWhiteSpace(_form.Subject) || string.IsNullOrWhiteSpace(_form.Title))
+        if (string.IsNullOrWhiteSpace(_form.Title) && string.IsNullOrWhiteSpace(_form.Subject))
         {
-            await JS.InvokeVoidAsync("alert", "Veuillez préciser le titre du cours et le domaine d'enseignement matière avant de générer.");
+            _error = "Veuillez saisir le titre et la matière avant de générer.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_form.Title))
+        {
+            _error = "Veuillez saisir un titre pour le cours.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_form.Subject))
+        {
+            _error = "Veuillez préciser la matière.";
             return;
         }
 
+        _error = null;
+        _successMsg = null;
         _isGeneratingAI = true;
+        _aiGenerated = false;
+        _generationLog = new()
+        {
+            ("Analyse du sujet…", false),
+            ("Rédaction du plan…", false),
+            ("Génération du contenu Markdown…", false),
+            ("Finalisation…", false),
+        };
         StateHasChanged();
+
+        // Simulate step-by-step progress during the (long) API call
+        var logTask = AnimateGenerationSteps();
 
         try
         {
-            var draft = await Api.GenerateCourseDraftAsync(_form.Subject, $"Le nom du cours est précisement : {_form.Title}");
+            var instructions = string.IsNullOrWhiteSpace(_aiInstructions)
+                ? $"Le nom du cours est : {_form.Title}"
+                : $"Le nom du cours est : {_form.Title}. Instructions supplémentaires : {_aiInstructions}";
+
+            var draft = await Api.GenerateCourseDraftAsync(_form.Subject, instructions);
+
+            await logTask; // ensure animation finishes
 
             if (!string.IsNullOrWhiteSpace(draft))
             {
@@ -261,25 +586,52 @@
                     _markdownContent = draft;
                 else
                     _markdownContent += $"\n\n---\n\n{draft}";
+
+                _aiGenerated = true;
+                MarkAllLogsDone();
             }
             else
             {
-                await JS.InvokeVoidAsync("alert", "La génération du cours a échoué. Veuillez réessayer.");
+                _error = "La génération n'a retourné aucun contenu. Réessayez.";
+                _generationLog.Clear();
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", "Erreur réseau lors de la communication avec l'assistant virtuel.");
+            _error = $"Erreur lors de la communication avec l'assistant : {ex.Message}";
+            _generationLog.Clear();
         }
         finally
         {
             _isGeneratingAI = false;
+            StateHasChanged();
         }
+    }
+
+    private async Task AnimateGenerationSteps()
+    {
+        var delays = new[] { 900, 2500, 5000, 8500 };
+        for (int i = 0; i < _generationLog.Count; i++)
+        {
+            await Task.Delay(delays[i]);
+            if (!_isGeneratingAI) break;
+            _generationLog[i] = (_generationLog[i].Step, true);
+            StateHasChanged();
+        }
+    }
+
+    private void MarkAllLogsDone()
+    {
+        for (int i = 0; i < _generationLog.Count; i++)
+            _generationLog[i] = (_generationLog[i].Step, true);
     }
 
     private async Task Submit()
     {
-        _saving = true; _error = null;
+        _saving = true;
+        _error = null;
+        _successMsg = null;
+        StateHasChanged();
 
         if (string.IsNullOrWhiteSpace(_form.Title) || string.IsNullOrWhiteSpace(_form.Subject))
         {
@@ -290,7 +642,7 @@
 
         if (!_isPdf && string.IsNullOrWhiteSpace(_markdownContent))
         {
-            _error = "Le contenu du cours est vide.";
+            _error = "Le contenu du cours est vide. Rédigez-le ou utilisez l'assistant IA.";
             _saving = false;
             return;
         }
@@ -300,17 +652,12 @@
             new CreateSectionDto(SectionType.Paragraph, _markdownContent, 0, 0)
         };
 
-        var request = new CreateCourseRequest(
-            _form.Title,
-            _form.Subject,
-            _form.Description,
-            sections
-        );
-
+        var request = new CreateCourseRequest(_form.Title, _form.Subject, _form.Description, sections);
         var created = await Api.CreateCourseAsync(request);
+
         if (created is null)
         {
-            _error = "Erreur lors de la création du cours.";
+            _error = "Erreur lors de la création du cours. Vérifiez votre connexion et réessayez.";
             _saving = false;
             return;
         }
@@ -321,14 +668,15 @@
             var ok = await Api.UploadCoursePdfAsync(created.Id, stream, _selectedFile.Name);
             if (!ok)
             {
-                _error = "Le cours a été créé mais l'upload du PDF a échoué.";
+                _error = "Le cours a été créé mais l'upload du PDF a échoué. Modifiez le cours pour réessayer.";
                 _saving = false;
+                Navigation.NavigateTo("/cours");
                 return;
             }
         }
 
         _saving = false;
-        Nav.NavigateTo("/cours");
+        Navigation.NavigateTo("/cours");
     }
 
     private static string FormatSize(long bytes) => bytes switch

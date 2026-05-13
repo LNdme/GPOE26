@@ -1,4 +1,48 @@
 window.markdownInterop = {
+
+    // ── Scroll chat to bottom ──────────────────────────────────
+    scrollToBottom: function (elementId) {
+        const el = document.getElementById(elementId);
+        if (el) el.scrollTop = el.scrollHeight;
+    },
+
+    // ── Inject id attributes into headings for TOC anchors ────
+    injectHeadingIds: function (containerId) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        const headings = container.querySelectorAll('h1, h2, h3, h4');
+        const seen = {};
+        headings.forEach(h => {
+            const raw = h.textContent.trim().toLowerCase()
+                .replace(/[àâä]/g, 'a').replace(/[éèêë]/g, 'e')
+                .replace(/[ïî]/g, 'i').replace(/[ôö]/g, 'o')
+                .replace(/[ùûü]/g, 'u').replace(/ç/g, 'c')
+                .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+            let slug = 'h-' + raw;
+            // deduplicate
+            if (seen[slug]) { seen[slug]++; slug += '-' + seen[slug]; }
+            else seen[slug] = 1;
+            h.id = slug;
+            h.style.scrollMarginTop = '130px';
+        });
+    },
+
+    // ── Reading progress bar (window scroll) ──────────────────
+    setupReadingProgress: function (progressBarId) {
+        const bar = document.getElementById(progressBarId);
+        if (!bar) return;
+        const onScroll = () => {
+            const scrollTop = window.scrollY || document.documentElement.scrollTop;
+            const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+            const pct = docHeight > 0 ? Math.min(100, (scrollTop / docHeight) * 100) : 0;
+            bar.style.width = pct + '%';
+        };
+        window.removeEventListener('scroll', window._progressHandler);
+        window._progressHandler = onScroll;
+        window.addEventListener('scroll', onScroll, { passive: true });
+        onScroll();
+    },
+
     renderEffects: function (element) {
         if (!element) return;
 
