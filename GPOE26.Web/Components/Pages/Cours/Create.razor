@@ -79,19 +79,33 @@
 
             <div class="mb-3">
                 <label class="form-label fw-semibold">Type de contenu</label>
-                <div class="d-flex gap-3">
+                <div class="d-flex gap-3 flex-wrap">
                     <div class="form-check">
-                        <input class="form-check-input" type="radio" name="contentType" id="typeText" checked="@(!_isPdf)" @onchange="() => _isPdf = false" />
+                        <input class="form-check-input" type="radio" name="contentType" id="typeText"
+                               checked="@(_mode == InputMode.Text)" @onchange="() => _mode = InputMode.Text" />
                         <label class="form-check-label" for="typeText">📝 Saisir du contenu structuré</label>
                     </div>
                     <div class="form-check">
-                        <input class="form-check-input" type="radio" name="contentType" id="typePdf" checked="@_isPdf" @onchange="() => _isPdf = true" />
+                        <input class="form-check-input" type="radio" name="contentType" id="typePdf"
+                               checked="@(_mode == InputMode.Pdf)" @onchange="() => _mode = InputMode.Pdf" />
                         <label class="form-check-label" for="typePdf">📄 Uploader un PDF</label>
                     </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="contentType" id="typePhotos"
+                               checked="@(_mode == InputMode.Photos)" @onchange="() => _mode = InputMode.Photos" />
+                        <label class="form-check-label" for="typePhotos">📷 Photographier mon cours</label>
+                    </div>
                 </div>
+                @if (_mode != InputMode.Text)
+                {
+                    <p class="text-muted small mt-2 mb-0">
+                        Le cours sera automatiquement mis en forme après le dépôt : titres, définitions
+                        encadrées et formules. Cela prend quelques dizaines de secondes.
+                    </p>
+                }
             </div>
 
-            @if (!_isPdf)
+            @if (_mode == InputMode.Text)
             {
                 <div class="mb-3">
                     <div class="d-flex justify-content-between align-items-end mb-2">
@@ -151,19 +165,45 @@
                     </div>
                 </div>
             }
-            else
+            else if (_mode == InputMode.Pdf)
             {
                 <div class="mb-3">
                     <label class="form-label fw-semibold">Fichier PDF</label>
                     <div class="upload-zone">
-                        <InputFile OnChange="HandleFileSelected" accept=".pdf" />
-                        @if (_selectedFile is not null)
+                        <InputFile OnChange="HandleFilesSelected" accept=".pdf" />
+                        @if (_selectedFiles.Count > 0)
                         {
-                            <p class="mt-2 mb-0 text-success">📄 @_selectedFile.Name (@FormatSize(_selectedFile.Size))</p>
+                            <p class="mt-2 mb-0 text-success">
+                                📄 @_selectedFiles[0].Name (@FormatSize(_selectedFiles[0].Size))
+                            </p>
                         }
                         else
                         {
                             <p class="text-muted mb-0">Cliquez ou glissez un fichier PDF ici</p>
+                        }
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Photos du cours</label>
+                    <div class="upload-zone">
+                        <InputFile OnChange="HandleFilesSelected" accept="image/jpeg,image/png,image/webp" multiple />
+                        @if (_selectedFiles.Count > 0)
+                        {
+                            <ul class="list-unstyled mt-2 mb-0 small text-success">
+                                @for (var i = 0; i < _selectedFiles.Count; i++)
+                                {
+                                    <li>📷 Page @(i + 1) — @_selectedFiles[i].Name (@FormatSize(_selectedFiles[i].Size))</li>
+                                }
+                            </ul>
+                        }
+                        else
+                        {
+                            <p class="text-muted mb-0">
+                                Sélectionnez les pages de votre cours, dans l'ordre de lecture.
+                            </p>
                         }
                     </div>
                 </div>
@@ -181,13 +221,19 @@
 
 @code {
     private CourseFormModel _form = new();
-    private bool _isPdf = false;
+    private InputMode _mode = InputMode.Text;
     private bool _saving;
     private string? _error;
-    private IBrowserFile? _selectedFile;
+    private List<IBrowserFile> _selectedFiles = [];
     private string _markdownContent = "";
     private bool _isUploadingImage = false;
     private bool _isGeneratingAI = false;
+
+    /// <summary>Comment l'élève fournit son cours.</summary>
+    private enum InputMode { Text, Pdf, Photos }
+
+    /// <summary>Aligné sur la limite par fichier appliquée par l'API Cours.</summary>
+    private const long MaxFileSize = 10 * 1024 * 1024;
 
     private class CourseFormModel
     {
@@ -196,7 +242,18 @@
         public string? Description { get; set; }
     }
 
-    private void HandleFileSelected(InputFileChangeEventArgs e) => _selectedFile = e.File;
+    private void HandleFilesSelected(InputFileChangeEventArgs e)
+    {
+        // GetMultipleFiles a un plafond par défaut de 10 fichiers : un cours photographié
+        // en fait facilement davantage.
+        _selectedFiles = _mode == InputMode.Photos
+            ? e.GetMultipleFiles(maximumFileCount: 40).ToList()
+            : [e.File];
+
+        _error = _selectedFiles.FirstOrDefault(f => f.Size > MaxFileSize) is { } tooBig
+            ? $"« {tooBig.Name} » dépasse 10 Mo."
+            : null;
+    }
 
     private async Task HandleDirectImageUpload(InputFileChangeEventArgs e)
     {
@@ -288,14 +345,23 @@
             return;
         }
 
-        if (!_isPdf && string.IsNullOrWhiteSpace(_markdownContent))
+        if (_mode == InputMode.Text && string.IsNullOrWhiteSpace(_markdownContent))
         {
             _error = "Le contenu du cours est vide.";
             _saving = false;
             return;
         }
 
-        var sections = _isPdf ? null : new List<CreateSectionDto>
+        if (_mode != InputMode.Text && _selectedFiles.Count == 0)
+        {
+            _error = _mode == InputMode.Pdf
+                ? "Sélectionnez le fichier PDF du cours."
+                : "Sélectionnez au moins une photo du cours.";
+            _saving = false;
+            return;
+        }
+
+        var sections = _mode != InputMode.Text ? null : new List<CreateSectionDto>
         {
             new CreateSectionDto(SectionType.Paragraph, _markdownContent, 0, 0)
         };
@@ -315,20 +381,41 @@
             return;
         }
 
-        if (_isPdf && _selectedFile is not null)
+        if (_mode != InputMode.Text && _selectedFiles.Count > 0)
         {
-            using var stream = _selectedFile.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024);
-            var ok = await Api.UploadCoursePdfAsync(created.Id, stream, _selectedFile.Name);
-            if (!ok)
+            // Les flux doivent rester ouverts pendant l'envoi multipart : on les libère
+            // seulement une fois la requête terminée.
+            var streams = new List<Stream>(_selectedFiles.Count);
+            try
             {
-                _error = "Le cours a été créé mais l'upload du PDF a échoué.";
-                _saving = false;
-                return;
+                var uploads = new List<ApiClient.CourseUpload>(_selectedFiles.Count);
+
+                foreach (var file in _selectedFiles)
+                {
+                    var stream = file.OpenReadStream(maxAllowedSize: MaxFileSize);
+                    streams.Add(stream);
+                    uploads.Add(new ApiClient.CourseUpload(stream, file.Name, file.ContentType));
+                }
+
+                var (ok, error) = await Api.UploadCourseDocumentsAsync(created.Id, uploads);
+                if (!ok)
+                {
+                    _error = $"Le cours a été créé mais le dépôt a échoué : {error}";
+                    _saving = false;
+                    return;
+                }
+            }
+            finally
+            {
+                foreach (var stream in streams) await stream.DisposeAsync();
             }
         }
 
         _saving = false;
-        Nav.NavigateTo("/cours");
+
+        // Un cours déposé part directement en étude : c'est là que la mise en forme
+        // s'affiche au fur et à mesure.
+        Nav.NavigateTo(_mode == InputMode.Text ? "/cours" : $"/learning/course/{created.Id}");
     }
 
     private static string FormatSize(long bytes) => bytes switch

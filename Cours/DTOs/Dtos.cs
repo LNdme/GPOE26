@@ -1,4 +1,4 @@
-﻿using Cours.Model;
+using Cours.Model;
 using System.ComponentModel.DataAnnotations;
 
 namespace Cours.DTOs
@@ -36,11 +36,19 @@ namespace Cours.DTOs
         int Level = 0
     );
 
+    /// <summary>Requête de recherche sémantique dans un cours.</summary>
+    public record SearchCourseRequest(
+        [Required] string Query,
+        int K = 5
+    );
+
     // ── Réponses ──────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Détail complet d'un cours avec ses sections.
-    /// ExtractedText est toujours présent (calculé ou extrait du PDF).
+    /// Détail complet d'un cours.
+    ///
+    /// FormattedMarkdown est ce que l'élève lit ; ExtractedText reste le texte brut
+    /// (entrée de la mise en forme), conservé pour diagnostic et repli.
     /// </summary>
     public record CourseDto(
         Guid Id,
@@ -49,8 +57,13 @@ namespace Cours.DTOs
         string? Description,
         ContentType ContentType,
         string? ExtractedText,
+        string? FormattedMarkdown,
+        FormatStatus FormatStatus,
+        string? FormatError,
+        DateTime? FormattedAt,
         string? PdfPath,
         List<SectionDto> Sections,
+        List<AssetDto> Assets,
         DateTime CreatedAt,
         DateTime UpdatedAt
     )
@@ -62,10 +75,18 @@ namespace Cours.DTOs
             c.Description,
             c.ContentType,
             c.ExtractedText,
+            c.FormattedMarkdown,
+            c.FormatStatus,
+            c.FormatError,
+            c.FormattedAt,
             c.PdfPath,
             (c.Sections ?? new List<CourseSection>())
                 .OrderBy(s => s.Order)
                 .Select(s => new SectionDto(s.Id, s.Type, s.Content, s.Order, s.Level))
+                .ToList(),
+            (c.Assets ?? new List<CourseAsset>())
+                .OrderBy(a => a.Order)
+                .Select(a => new AssetDto(a.Id, a.Kind, a.Path, a.OriginalFileName, a.ContentType, a.Order))
                 .ToList(),
             c.CreatedAt,
             c.UpdatedAt
@@ -82,6 +103,28 @@ namespace Cours.DTOs
     );
 
     /// <summary>
+    /// Un document original. <paramref name="Path"/> est relatif à wwwroot ; le frontend
+    /// le sert via son proxy /uploads/cours/{path}.
+    /// </summary>
+    public record AssetDto(
+        Guid Id,
+        AssetKind Kind,
+        string Path,
+        string? OriginalFileName,
+        string ContentType,
+        int Order
+    );
+
+    /// <summary>Un fragment retrouvé par la recherche sémantique.</summary>
+    public record SearchHitDto(
+        Guid ChunkId,
+        string HeadingPath,
+        string Content,
+        int Order,
+        double Score
+    );
+
+    /// <summary>
     /// Version allégée pour la liste des cours (sans contenu ni sections)
     /// </summary>
     public record CourseSummaryDto(
@@ -90,6 +133,7 @@ namespace Cours.DTOs
         string Subject,
         string? Description,
         ContentType ContentType,
+        FormatStatus FormatStatus,
         DateTime CreatedAt
     )
     {
@@ -99,6 +143,7 @@ namespace Cours.DTOs
             c.Subject,
             c.Description,
             c.ContentType,
+            c.FormatStatus,
             c.CreatedAt
         )
         { }

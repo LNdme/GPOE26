@@ -583,22 +583,97 @@ namespace GPOE26.Web.Services
             }
         }
 
-        public async Task<bool> UploadCoursePdfAsync(Guid courseId, Stream fileStream, string fileName)
+        /// <summary>Un document à téléverser : PDF ou photo de cours.</summary>
+        public sealed record CourseUpload(Stream Content, string FileName, string ContentType);
+
+        /// <summary>
+        /// Téléverse un PDF ou une série de photos sur un cours.
+        ///
+        /// L'API répond dès que les fichiers sont écrits ; la transcription et la mise en
+        /// forme se poursuivent en tâche de fond (FormatStatus = Pending), sinon la requête
+        /// expirerait avant la fin du traitement.
+        /// </summary>
+        public async Task<(bool ok, string? error)> UploadCourseDocumentsAsync(
+            Guid courseId, IReadOnlyList<CourseUpload> files)
         {
+            if (files.Count == 0) return (false, "Aucun fichier sélectionné.");
+
             var client = CreateAuthClient("cours");
             try
             {
                 using var content = new MultipartFormDataContent();
-                var fileContent = new StreamContent(fileStream);
-                fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
-                content.Add(fileContent, "file", fileName);
+
+                foreach (var file in files)
+                {
+                    var part = new StreamContent(file.Content);
+                    part.Headers.ContentType = new MediaTypeHeaderValue(file.ContentType);
+                    // Le nom de champ "files" doit correspondre au binding IFormFileCollection
+                    // côté API ; le nom de fichier est conservé pour l'affichage.
+                    content.Add(part, "files", file.FileName);
+                }
+
                 var resp = await client.PostAsync($"/cours/{courseId}/upload", content);
+                if (resp.IsSuccessStatusCode) return (true, null);
+
+                var body = await resp.Content.ReadAsStringAsync();
+                _logger.LogWarning("Upload refusé pour le cours {CourseId} : {Status} {Body}",
+                    courseId, resp.StatusCode, body);
+
+                return (false, ExtractMessage(body) ?? "Le téléversement a échoué.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error uploading documents for course {courseId}");
+                return (false, "Le service de cours est injoignable.");
+            }
+        }
+
+        /// <summary>Relance la mise en forme et la réindexation (bouton « Régénérer »).</summary>
+        public async Task<bool> RequestCourseFormatAsync(Guid courseId)
+        {
+            var client = CreateAuthClient("cours");
+            try
+            {
+                var resp = await client.PostAsync($"/cours/{courseId}/format", content: null);
                 return resp.IsSuccessStatusCode;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error uploading PDF for course {courseId}");
+                _logger.LogError(ex, $"Error requesting formatting for course {courseId}");
                 return false;
+            }
+        }
+
+        /// <summary>Recherche sémantique dans un cours (diagnostic, et réutilisable côté UI).</summary>
+        public async Task<List<SearchHitDto>> SearchCourseAsync(Guid courseId, string query, int k = 5)
+        {
+            var client = CreateAuthClient("cours");
+            try
+            {
+                var resp = await client.PostAsJsonAsync($"/cours/{courseId}/search", new { Query = query, K = k });
+                resp.EnsureSuccessStatusCode();
+                return await resp.Content.ReadFromJsonAsync<List<SearchHitDto>>() ?? [];
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error searching course {courseId}");
+                return [];
+            }
+        }
+
+        /// <summary>Extrait le champ `message` d'une réponse d'erreur JSON de l'API.</summary>
+        private static string? ExtractMessage(string body)
+        {
+            try
+            {
+                using var document = System.Text.Json.JsonDocument.Parse(body);
+                return document.RootElement.TryGetProperty("message", out var message)
+                    ? message.GetString()
+                    : null;
+            }
+            catch
+            {
+                return null;
             }
         }
 
@@ -670,6 +745,83 @@ namespace GPOE26.Web.Services
             {
                 _logger.LogError(ex, "Error sending chat message");
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// Interroge le répétiteur multi-agents en flux (SSE).
+        ///
+        /// Le pipeline enchaîne plusieurs appels LLM : sans flux, l'élève attendrait
+        /// une dizaine de secondes devant un écran figé. On remonte donc les étapes
+        /// (« Recherche dans le cours… ») puis la réponse au fil de sa rédaction.
+        ///
+        /// Le contenu du cours n'est plus envoyé : le service Chat le récupère et n'en
+        /// retient que les passages pertinents.
+        /// </summary>
+        public async IAsyncEnumerable<TutorStreamEvent> StreamTutorAsync(
+            Guid courseId,
+            string message,
+            IReadOnlyList<ConversationMessage> history,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            var client = CreateAuthClient("chat");
+
+            var request = new HttpRequestMessage(HttpMethod.Post, "/chat/tuteur/stream")
+            {
+                Content = JsonContent.Create(new TutorRequest(courseId, message, history.ToList())),
+            };
+
+            HttpResponseMessage response;
+            try
+            {
+                response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Le service de répétition est injoignable");
+                yield return new TutorStreamEvent("error",
+                    Error: "Le répétiteur est momentanément injoignable. Réessayez dans un instant.");
+                yield break;
+            }
+
+            using (response)
+            {
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("Le répétiteur a répondu {Status}", response.StatusCode);
+                    yield return new TutorStreamEvent("error",
+                        Error: "Le répétiteur n'a pas pu traiter la question.");
+                    yield break;
+                }
+
+                await using var stream = await response.Content.ReadAsStreamAsync(ct);
+                using var reader = new StreamReader(stream);
+
+                while (!reader.EndOfStream)
+                {
+                    var line = await reader.ReadLineAsync(ct);
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+                    if (!line.StartsWith("data:", StringComparison.Ordinal)) continue;
+
+                    var payload = line[5..].Trim();
+                    if (payload is "[DONE]") yield break;
+
+                    TutorStreamEvent? evt = null;
+                    try
+                    {
+                        evt = System.Text.Json.JsonSerializer.Deserialize<TutorStreamEvent>(
+                            payload,
+                            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+                    }
+                    catch (System.Text.Json.JsonException ex)
+                    {
+                        // Fragment SSE illisible : on l'ignore plutôt que d'interrompre
+                        // une réponse déjà partiellement affichée.
+                        _logger.LogWarning(ex, "Évènement SSE illisible du répétiteur");
+                    }
+
+                    if (evt is not null) yield return evt;
+                }
             }
         }
 

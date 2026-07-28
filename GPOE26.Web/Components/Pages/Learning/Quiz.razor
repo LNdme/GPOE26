@@ -160,11 +160,15 @@
 
     private async Task GenerateQuiz()
     {
-        if (_course is null || string.IsNullOrEmpty(_course.ExtractedText)) return;
+        // On part du cours mis en forme quand il existe : sa structure (titres, définitions
+        // encadrées) donne de bien meilleures questions que le dump brut d'extraction PDF.
+        var source = _course?.ReadableContent;
+        if (_course is null || string.IsNullOrEmpty(source)) return;
+
         _generating = true; _error = null;
         StateHasChanged();
 
-        _quiz = await Api.GenerateQuizAsync(_course.Title, _course.ExtractedText, _numQuestions);
+        _quiz = await Api.GenerateQuizAsync(_course.Title, source, _numQuestions);
         _generating = false;
 
         if (_quiz is null)

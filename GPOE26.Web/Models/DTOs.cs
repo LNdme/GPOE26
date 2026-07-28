@@ -143,9 +143,14 @@ public record AuthResponse(
 //  DTOs Cours — modèle structuré avec sections
 // ══════════════════════════════════════════════════════════════════════════════
 
-public enum ContentType { Text, Pdf }
+public enum ContentType { Text, Pdf, Images }
 
 public enum SectionType { Heading, Paragraph, Image }
+
+public enum AssetKind { Pdf, Photo }
+
+/// <summary>État de la mise en forme automatique du cours par l'agent Structurateur.</summary>
+public enum FormatStatus { None, Pending, Ready, Failed }
 
 public record CreateCourseRequest(
     [Required, MaxLength(200)] string Title,
@@ -181,11 +186,33 @@ public record CourseDto(
     string? Description,
     ContentType ContentType,
     string? ExtractedText,
+    string? FormattedMarkdown,
+    FormatStatus FormatStatus,
+    string? FormatError,
+    DateTime? FormattedAt,
     string? PdfPath,
     List<SectionDto>? Sections,
+    List<AssetDto>? Assets,
     DateTime CreatedAt,
     DateTime UpdatedAt
-);
+)
+{
+    /// <summary>
+    /// Ce que le canvas de lecture affiche : le cours mis en forme si l'agent
+    /// Structurateur a produit un résultat, sinon le texte brut en repli.
+    /// </summary>
+    public string? ReadableContent =>
+        !string.IsNullOrWhiteSpace(FormattedMarkdown) ? FormattedMarkdown : ExtractedText;
+
+    public IEnumerable<AssetDto> Photos =>
+        (Assets ?? []).Where(a => a.Kind == AssetKind.Photo).OrderBy(a => a.Order);
+
+    public AssetDto? Pdf =>
+        (Assets ?? []).FirstOrDefault(a => a.Kind == AssetKind.Pdf);
+
+    /// <summary>Y a-t-il un document original à proposer à côté du cours mis en forme ?</summary>
+    public bool HasOriginalDocument => Pdf is not null || Photos.Any() || !string.IsNullOrEmpty(PdfPath);
+}
 
 public record SectionDto(
     Guid Id,
@@ -195,12 +222,34 @@ public record SectionDto(
     int Level
 );
 
+public record AssetDto(
+    Guid Id,
+    AssetKind Kind,
+    string Path,
+    string? OriginalFileName,
+    string ContentType,
+    int Order
+)
+{
+    /// <summary>URL servie par le proxy /uploads/cours du frontend.</summary>
+    public string Url => "/" + this.Path.TrimStart('/');
+}
+
+public record SearchHitDto(
+    Guid ChunkId,
+    string HeadingPath,
+    string Content,
+    int Order,
+    double Score
+);
+
 public record CourseSummaryDto(
     Guid Id,
     string Title,
     string Subject,
     string? Description,
     ContentType ContentType,
+    FormatStatus FormatStatus,
     DateTime CreatedAt
 );
 
@@ -235,6 +284,35 @@ public record CourseSummaryResponse(
 );
 
 public record CoursePart(string Title, string Summary);
+
+// --- Répétiteur multi-agents ---
+
+/// <summary>Question posée au pipeline d'agents. Le contenu du cours n'est plus transmis :
+/// le service Chat va le chercher lui-même et n'en récupère que les passages utiles.</summary>
+public record TutorRequest(
+    Guid CourseId,
+    string Message,
+    List<ConversationMessage> History
+);
+
+/// <summary>
+/// Un évènement du flux SSE du répétiteur.
+///
+/// <c>Type</c> vaut :
+///   • "step"  → une étape du pipeline vient de commencer (<c>Step</c>)
+///   • "token" → un fragment de la réponse (<c>Token</c>)
+///   • "done"  → réponse complète (<c>Reply</c>) et passages cités (<c>Citations</c>)
+///   • "error" → échec (<c>Error</c>)
+/// </summary>
+public record TutorStreamEvent(
+    string Type,
+    string? Step = null,
+    string? Token = null,
+    string? Reply = null,
+    List<string>? Citations = null,
+    string? Intent = null,
+    string? Error = null
+);
 
 #endregion
 

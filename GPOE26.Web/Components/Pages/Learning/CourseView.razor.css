@@ -1,0 +1,545 @@
+/* ══════════════════════════════════════════════════════════════════════════════
+   Chrome de la page d'étude : rails, barre d'outils, répétiteur.
+   ──────────────────────────────────────────────────────────────────────────────
+   La typographie du COURS n'est pas ici mais dans wwwroot/css/reading.css : le CSS
+   scoped ne peut pas atteindre le contenu injecté via MarkupString.
+   Les couleurs reprennent les tokens --rd-* posés par reading.css, pour que le
+   chrome suive le thème de lecture choisi par l'élève.
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+.study-shell {
+    display: flex;
+    flex-direction: column;
+    /* La page d'étude occupe la fenêtre : c'est le canvas qui défile, pas le document,
+       sinon la barre de progression et les rails perdraient tout sens. */
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+    background: var(--rd-bg);
+    color: var(--rd-text);
+}
+
+/* ── Barre de progression ─────────────────────────────────────────────────── */
+
+.study-progress {
+    height: 3px;
+    background: var(--rd-border);
+    flex: 0 0 auto;
+}
+
+.study-progress-bar {
+    height: 100%;
+    width: 0;
+    background: var(--rd-accent);
+    transition: width .1s linear;
+}
+
+/* ── En-tête ──────────────────────────────────────────────────────────────── */
+
+.study-bar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .75rem 1.25rem;
+    border-bottom: 1px solid var(--rd-border);
+    background: var(--rd-bg);
+}
+
+.study-bar-left {
+    display: flex;
+    align-items: center;
+    gap: .85rem;
+    min-width: 0;
+}
+
+.study-back {
+    display: grid;
+    place-items: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 8px;
+    color: var(--rd-text-soft);
+    text-decoration: none;
+    flex: 0 0 auto;
+}
+
+.study-back:hover { background: var(--rd-surface); color: var(--rd-accent); }
+
+.study-identity { min-width: 0; }
+
+.study-subject {
+    display: inline-block;
+    font-size: .72rem;
+    font-weight: 650;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--rd-accent);
+}
+
+.study-title {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--rd-heading);
+    /* Un titre long ne doit pas repousser les actions hors de l'écran. */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.study-bar-actions {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    flex: 0 0 auto;
+}
+
+.study-icon-btn {
+    display: grid;
+    place-items: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--rd-text-soft);
+    font-size: 1rem;
+    transition: background .15s, color .15s;
+}
+
+.study-icon-btn:hover { background: var(--rd-surface); color: var(--rd-text); }
+
+.study-icon-btn.is-on {
+    background: var(--rd-accent-soft);
+    border-color: var(--rd-accent);
+    color: var(--rd-accent);
+}
+
+/* ── Réglages de lecture ──────────────────────────────────────────────────── */
+
+.study-settings { position: relative; }
+
+.study-popover {
+    position: absolute;
+    top: calc(100% + .5rem);
+    right: 0;
+    z-index: 30;
+    width: 16rem;
+    padding: .9rem 1rem 1rem;
+    border: 1px solid var(--rd-border);
+    border-radius: 12px;
+    background: var(--rd-bg);
+    box-shadow: 0 12px 32px rgba(15, 23, 42, .16);
+}
+
+.study-popover-label {
+    margin: .75rem 0 .4rem;
+    font-size: .7rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--rd-text-soft);
+}
+
+.study-popover-label:first-child { margin-top: 0; }
+
+.study-choices { display: flex; flex-wrap: wrap; gap: .35rem; }
+
+.study-choice {
+    padding: .3rem .6rem;
+    border: 1px solid var(--rd-border);
+    border-radius: 7px;
+    background: transparent;
+    color: var(--rd-text);
+    font-size: .8rem;
+}
+
+.study-choice:hover { background: var(--rd-surface); }
+
+.study-choice.is-active {
+    background: var(--rd-accent);
+    border-color: var(--rd-accent);
+    color: #fff;
+}
+
+.study-choice-serif { font-family: Georgia, 'Times New Roman', serif; }
+
+/* ── Corps : sommaire | canvas | répétiteur ───────────────────────────────── */
+
+.study-body {
+    flex: 1 1 auto;
+    display: grid;
+    grid-template-columns: 16rem minmax(0, 1fr) 23rem;
+    min-height: 0;
+}
+
+/* Rails repliés → mode focus : le canvas prend toute la largeur. */
+.study-body.no-outline { grid-template-columns: 0 minmax(0, 1fr) 23rem; }
+.study-body.no-tutor { grid-template-columns: 16rem minmax(0, 1fr) 0; }
+.study-body.no-outline.no-tutor { grid-template-columns: 0 minmax(0, 1fr) 0; }
+
+.study-rail {
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    background: var(--rd-surface);
+    transition: opacity .15s;
+}
+
+.study-body.no-outline .study-outline,
+.study-body.no-tutor .study-tutor {
+    /* Largeur de colonne à 0 : on masque le contenu sans le démonter, pour que
+       replier/déplier ne perde ni la position de scroll ni la conversation. */
+    opacity: 0;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.study-outline { border-right: 1px solid var(--rd-border); padding: 1.25rem 0 3rem; }
+.study-tutor { border-left: 1px solid var(--rd-border); display: flex; flex-direction: column; }
+
+.study-rail-title {
+    margin: 0 0 .75rem;
+    padding: 0 1.15rem;
+    font-size: .7rem;
+    font-weight: 700;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: var(--rd-text-soft);
+}
+
+.study-rail-empty {
+    padding: 0 1.15rem;
+    font-size: .85rem;
+    color: var(--rd-text-soft);
+}
+
+/* ── Sommaire ─────────────────────────────────────────────────────────────── */
+
+.study-toc-link {
+    display: block;
+    width: 100%;
+    padding: .38rem 1.15rem .38rem 1rem;
+    border: 0;
+    border-left: 3px solid transparent;
+    background: transparent;
+    color: var(--rd-text-soft);
+    font-size: .875rem;
+    line-height: 1.45;
+    text-align: left;
+    transition: color .12s, background .12s, border-color .12s;
+}
+
+.study-toc-link:hover { background: var(--rd-bg); color: var(--rd-text); }
+
+/* Posée par reading-interop.js au fil du défilement, sans aller-retour serveur. */
+.study-toc-link.is-active {
+    border-left-color: var(--rd-accent);
+    color: var(--rd-accent);
+    font-weight: 600;
+}
+
+.study-toc-l1 { font-weight: 650; color: var(--rd-heading); }
+.study-toc-l2 { padding-left: 1.5rem; }
+.study-toc-l3 { padding-left: 2.25rem; font-size: .825rem; }
+
+/* ── Canvas ───────────────────────────────────────────────────────────────── */
+
+.study-main {
+    min-height: 0;
+    overflow-y: auto;
+    scroll-behavior: smooth;
+    padding-top: 1.5rem;
+}
+
+.study-tabs {
+    display: flex;
+    gap: .25rem;
+    max-width: var(--rd-measure);
+    margin: 0 auto 1.5rem;
+    padding: 0 1.25rem;
+}
+
+.study-tab {
+    padding: .4rem .9rem;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--rd-text-soft);
+    font-size: .875rem;
+    font-weight: 550;
+}
+
+.study-tab:hover { background: var(--rd-surface); color: var(--rd-text); }
+
+.study-tab.is-active {
+    background: var(--rd-accent-soft);
+    border-color: var(--rd-accent);
+    color: var(--rd-accent);
+}
+
+.study-state {
+    max-width: 34rem;
+    margin: 4rem auto;
+    padding: 0 1.25rem;
+    text-align: center;
+    color: var(--rd-text);
+}
+
+.study-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    max-width: var(--rd-measure);
+    margin: 0 auto 1.5rem;
+    padding: .65rem 1rem;
+    border: 1px solid #f5c26b;
+    border-radius: 10px;
+    background: #fef6e7;
+    color: #7c4a03;
+    font-size: .875rem;
+}
+
+.study-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    max-width: var(--rd-measure);
+    margin: 0 auto;
+    padding: 1.5rem 1.25rem 4rem;
+    border-top: 1px solid var(--rd-border);
+}
+
+/* ── Document original ────────────────────────────────────────────────────── */
+
+.study-original { height: calc(100% - 1.5rem); padding: 0 1.25rem 2rem; }
+
+.study-pdf {
+    width: 100%;
+    height: 100%;
+    min-height: 32rem;
+    border: 1px solid var(--rd-border);
+    border-radius: 10px;
+    background: #fff;
+}
+
+.study-photos {
+    max-width: 52rem;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1.75rem;
+}
+
+.study-photos figure { margin: 0; }
+
+.study-photos img {
+    width: 100%;
+    height: auto;
+    border: 1px solid var(--rd-border);
+    border-radius: 10px;
+    background: #fff;
+}
+
+.study-photos figcaption {
+    margin-top: .5rem;
+    text-align: center;
+    font-size: .8rem;
+    color: var(--rd-text-soft);
+}
+
+/* ── Répétiteur ───────────────────────────────────────────────────────────── */
+
+.study-tutor-head {
+    flex: 0 0 auto;
+    padding: 1.25rem 1.15rem .75rem;
+    border-bottom: 1px solid var(--rd-border);
+}
+
+.study-tutor-sub { font-size: .78rem; color: var(--rd-text-soft); }
+
+.study-messages {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 1rem 1.15rem;
+    display: flex;
+    flex-direction: column;
+    gap: .75rem;
+}
+
+.study-tutor-empty {
+    margin: auto 0;
+    text-align: center;
+    color: var(--rd-text-soft);
+}
+
+.study-tutor-emoji { font-size: 2.25rem; margin-bottom: .5rem; }
+
+.study-suggestions { display: flex; flex-direction: column; gap: .4rem; }
+
+.study-suggestion {
+    padding: .5rem .75rem;
+    border: 1px solid var(--rd-border);
+    border-radius: 9px;
+    background: var(--rd-bg);
+    color: var(--rd-text);
+    font-size: .82rem;
+    text-align: left;
+}
+
+.study-suggestion:hover { border-color: var(--rd-accent); color: var(--rd-accent); }
+
+.study-msg { display: flex; }
+.study-msg.is-user { justify-content: flex-end; }
+
+.study-bubble {
+    max-width: 92%;
+    padding: .65rem .9rem;
+    border-radius: 14px;
+    font-size: .9rem;
+    line-height: 1.6;
+    overflow-wrap: break-word;
+}
+
+.study-bubble-user {
+    background: var(--rd-accent);
+    color: #fff;
+    border-bottom-right-radius: 4px;
+}
+
+.study-bubble-ai {
+    background: var(--rd-bg);
+    border: 1px solid var(--rd-border);
+    color: var(--rd-text);
+    border-bottom-left-radius: 4px;
+}
+
+/* Étape courante du pipeline d'agents, en attendant les premiers tokens. */
+.study-step {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    color: var(--rd-text-soft);
+    font-size: .85rem;
+}
+
+.study-step-dot {
+    width: .5rem;
+    height: .5rem;
+    border-radius: 50%;
+    background: var(--rd-accent);
+    animation: study-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes study-pulse {
+    0%, 100% { opacity: .3; transform: scale(.8); }
+    50% { opacity: 1; transform: scale(1); }
+}
+
+.study-citations {
+    padding-top: .5rem;
+    border-top: 1px dashed var(--rd-border);
+}
+
+.study-citations-title {
+    margin: 0 0 .4rem;
+    font-size: .7rem;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: var(--rd-text-soft);
+}
+
+.study-citation {
+    display: block;
+    width: 100%;
+    margin-bottom: .3rem;
+    padding: .35rem .6rem;
+    border: 1px solid var(--rd-border);
+    border-radius: 7px;
+    background: transparent;
+    color: var(--rd-text-soft);
+    font-size: .78rem;
+    text-align: left;
+}
+
+.study-citation:hover { border-color: var(--rd-accent); color: var(--rd-accent); }
+
+.study-composer {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: flex-end;
+    gap: .5rem;
+    padding: .75rem 1rem 1rem;
+    border-top: 1px solid var(--rd-border);
+}
+
+.study-input {
+    flex: 1 1 auto;
+    max-height: 8rem;
+    padding: .55rem .75rem;
+    border: 1px solid var(--rd-border);
+    border-radius: 10px;
+    background: var(--rd-bg);
+    color: var(--rd-text);
+    font-size: .875rem;
+    font-family: inherit;
+    resize: vertical;
+}
+
+.study-input:focus {
+    outline: none;
+    border-color: var(--rd-accent);
+    box-shadow: 0 0 0 3px var(--rd-accent-soft);
+}
+
+.study-send {
+    display: grid;
+    place-items: center;
+    width: 2.4rem;
+    height: 2.4rem;
+    flex: 0 0 auto;
+    border: 0;
+    border-radius: 10px;
+    background: var(--rd-accent);
+    color: #fff;
+}
+
+.study-send:disabled { opacity: .45; }
+
+/* ── Écrans étroits ───────────────────────────────────────────────────────── */
+
+@media (max-width: 1200px) {
+    .study-body { grid-template-columns: 0 minmax(0, 1fr) 21rem; }
+    .study-outline { opacity: 0; pointer-events: none; overflow: hidden; }
+}
+
+@media (max-width: 900px) {
+    .study-shell { height: auto; min-height: 100dvh; overflow: visible; }
+
+    /* Sur mobile, empiler et rendre le document au flux normal : deux zones de
+       défilement imbriquées y sont impraticables. */
+    .study-body,
+    .study-body.no-outline,
+    .study-body.no-tutor,
+    .study-body.no-outline.no-tutor { display: block; }
+
+    .study-main { overflow: visible; }
+    .study-outline { display: none; }
+
+    .study-tutor {
+        border-left: 0;
+        border-top: 1px solid var(--rd-border);
+        height: 70vh;
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    .study-body.no-tutor .study-tutor { display: none; }
+}

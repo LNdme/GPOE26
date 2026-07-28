@@ -1,471 +1,623 @@
 @page "/learning/course/{Id:guid}"
 @rendermode InteractiveServer
+@implements IAsyncDisposable
+@using GPOE26.Web.Components.UI
 @inject GPOE26.Web.Services.ApiClient Api
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
-<PageTitle>Étude – GPOE26</PageTitle>
+<PageTitle>@(_course?.Title ?? "Étude") – GPOE26</PageTitle>
 
-<style>
-    /* ── Palette ─────────────────────────────────────────── */
-    .text-navy { color: #174ea6 !important; }
-    .btn-navy { background-color: #174ea6; color: white; border: none; font-weight: 500; padding: 0.5rem 1.5rem; border-radius: 8px; transition: all 0.2s; }
-    .btn-navy:hover { background-color: #123d82; color: white; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(23,78,166,0.3); }
-    .card-clean { border: 1px solid #dadce0; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); background: white; }
+@if (_loading)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border text-brand-dark"></div>
+        <p class="text-muted-chic mt-2">Ouverture du cours…</p>
+    </div>
+}
+else if (_course is null)
+{
+    <div class="container py-5 text-center">
+        <div class="display-1 mb-3">🔍</div>
+        <h4 class="mb-3">Cours introuvable</h4>
+        <a href="/learning" class="btn btn-brand">Retour à l'espace d'apprentissage</a>
+    </div>
+}
+else
+{
+    <div class="reading-root study-shell" @ref="_rootElement">
 
-    /* ── Course content styling ──────────────────────────── */
-    .course-content h1 { font-size: 1.8rem; font-weight: 700; color: #202124; margin: 1.5rem 0 0.75rem; }
-    .course-content h2 { font-size: 1.4rem; font-weight: 600; color: #174ea6; margin: 1.2rem 0 0.5rem; border-bottom: 2px solid #e8f0fe; padding-bottom: 0.3rem; }
-    .course-content h3 { font-size: 1.15rem; font-weight: 600; color: #5f6368; margin: 1rem 0 0.4rem; }
-    .course-content p { line-height: 1.8; color: #3c4043; margin-bottom: 1rem; }
-    .course-content img { max-width: 100%; border-radius: 8px; margin: 1rem 0; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-
-    /* ── Chat panel ──────────────────────────────────────── */
-    .chat-panel {
-        border: 1px solid #dadce0;
-        border-radius: 12px;
-        background: #ffffff;
-        display: flex;
-        flex-direction: column;
-        height: calc(100vh - 10rem);
-        min-height: 500px;
-        position: sticky;
-        top: 5rem;
-        box-shadow: 0 2px 12px rgba(0,0,0,0.06);
-    }
-
-    .chat-header {
-        padding: 1rem 1.25rem;
-        border-bottom: 1px solid #e8eaed;
-        background: linear-gradient(135deg, #174ea6 0%, #1a73e8 100%);
-        border-radius: 12px 12px 0 0;
-        color: white;
-    }
-
-    .chat-header h5 { margin: 0; font-weight: 600; font-size: 1.05rem; }
-    .chat-header p { margin: 0; opacity: 0.85; font-size: 0.8rem; }
-
-    .chat-messages {
-        flex: 1;
-        overflow-y: auto;
-        padding: 1rem 1.25rem;
-        background: #f8f9fa;
-        scroll-behavior: smooth;
-    }
-
-    .chat-messages::-webkit-scrollbar { width: 6px; }
-    .chat-messages::-webkit-scrollbar-track { background: transparent; }
-    .chat-messages::-webkit-scrollbar-thumb { background: #c4c7cc; border-radius: 3px; }
-
-    .chat-empty {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        height: 100%;
-        color: #9aa0a6;
-    }
-
-    .chat-empty .icon { font-size: 3rem; margin-bottom: 0.75rem; }
-
-    .msg-row { display: flex; margin-bottom: 0.75rem; }
-    .msg-row.user { justify-content: flex-end; }
-
-    .msg-bubble {
-        max-width: 88%;
-        padding: 0.75rem 1rem;
-        border-radius: 16px;
-        font-size: 0.93rem;
-        line-height: 1.6;
-        word-wrap: break-word;
-    }
-
-    .msg-bubble.user-msg {
-        background: linear-gradient(135deg, #174ea6, #1a73e8);
-        color: white;
-        border-bottom-right-radius: 4px;
-    }
-
-    .msg-bubble.ai-msg {
-        background: white;
-        color: #202124;
-        border: 1px solid #e8eaed;
-        border-bottom-left-radius: 4px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-    }
-
-    /* ── Markdown dans les messages IA ──────────────────── */
-    .msg-bubble.ai-msg h1, .msg-bubble.ai-msg h2, .msg-bubble.ai-msg h3,
-    .msg-bubble.ai-msg h4, .msg-bubble.ai-msg h5, .msg-bubble.ai-msg h6 {
-        margin: 0.75rem 0 0.4rem;
-        color: #174ea6;
-        font-weight: 700;
-    }
-    .msg-bubble.ai-msg h1 { font-size: 1.15rem; }
-    .msg-bubble.ai-msg h2 { font-size: 1.05rem; }
-    .msg-bubble.ai-msg h3 { font-size: 0.95rem; }
-
-    .msg-bubble.ai-msg p { margin-bottom: 0.5rem; line-height: 1.6; }
-    .msg-bubble.ai-msg p:last-child { margin-bottom: 0; }
-
-    .msg-bubble.ai-msg strong { color: #174ea6; font-weight: 700; }
-    .msg-bubble.ai-msg em { font-style: italic; color: #5f6368; }
-
-    .msg-bubble.ai-msg code {
-        background: #f1f3f4;
-        padding: 0.15rem 0.4rem;
-        border-radius: 4px;
-        font-family: 'Fira Code', 'Cascadia Code', monospace;
-        font-size: 0.85em;
-        color: #d93025;
-    }
-
-    .msg-bubble.ai-msg pre {
-        background: #1e1e2e;
-        color: #cdd6f4;
-        padding: 0.75rem 1rem;
-        border-radius: 8px;
-        overflow-x: auto;
-        margin: 0.5rem 0;
-        font-size: 0.85em;
-        line-height: 1.5;
-    }
-    .msg-bubble.ai-msg pre code {
-        background: none;
-        color: inherit;
-        padding: 0;
-        font-size: inherit;
-    }
-
-    .msg-bubble.ai-msg ul, .msg-bubble.ai-msg ol {
-        margin: 0.4rem 0;
-        padding-left: 1.5rem;
-    }
-    .msg-bubble.ai-msg li { margin-bottom: 0.2rem; }
-
-    .msg-bubble.ai-msg blockquote {
-        border-left: 3px solid #174ea6;
-        padding: 0.3rem 0.75rem;
-        margin: 0.5rem 0;
-        background: #e8f0fe;
-        border-radius: 0 6px 6px 0;
-        color: #3c4043;
-    }
-
-    .msg-bubble.ai-msg table {
-        width: 100%;
-        border-collapse: collapse;
-        margin: 0.5rem 0;
-        font-size: 0.88em;
-    }
-    .msg-bubble.ai-msg th, .msg-bubble.ai-msg td {
-        padding: 0.35rem 0.5rem;
-        border: 1px solid #dadce0;
-        text-align: left;
-    }
-    .msg-bubble.ai-msg th {
-        background: #e8f0fe;
-        font-weight: 600;
-        color: #174ea6;
-    }
-
-    .msg-label {
-        font-size: 0.72rem;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        margin-bottom: 0.2rem;
-        font-weight: 600;
-    }
-    .msg-label.user-label { color: #174ea6; text-align: right; }
-    .msg-label.ai-label { color: #5f6368; }
-
-    /* ── Typing indicator ────────────────────────────────── */
-    .typing-indicator {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        padding: 0.75rem 1rem;
-        background: white;
-        border: 1px solid #e8eaed;
-        border-radius: 16px;
-        border-bottom-left-radius: 4px;
-        max-width: 88%;
-    }
-
-    .typing-indicator .dot {
-        width: 8px;
-        height: 8px;
-        background: #9aa0a6;
-        border-radius: 50%;
-        animation: typing-bounce 1.4s infinite;
-    }
-    .typing-indicator .dot:nth-child(2) { animation-delay: 0.2s; }
-    .typing-indicator .dot:nth-child(3) { animation-delay: 0.4s; }
-
-    @@keyframes typing-bounce {
-        0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-        30% { transform: translateY(-6px); opacity: 1; }
-    }
-
-    /* ── Input area ──────────────────────────────────────── */
-    .chat-input-area {
-        padding: 0.75rem 1rem;
-        border-top: 1px solid #e8eaed;
-        background: white;
-        border-radius: 0 0 12px 12px;
-    }
-
-    .chat-input-area .input-group {
-        border: 2px solid #dadce0;
-        border-radius: 24px;
-        overflow: hidden;
-        transition: border-color 0.2s;
-    }
-    .chat-input-area .input-group:focus-within {
-        border-color: #174ea6;
-        box-shadow: 0 0 0 3px rgba(23,78,166,0.12);
-    }
-
-    .chat-input-area input {
-        border: none;
-        padding: 0.65rem 1rem;
-        font-size: 0.93rem;
-        outline: none;
-        background: transparent;
-    }
-    .chat-input-area input:focus { box-shadow: none; }
-
-    .chat-input-area .btn-send {
-        background: #174ea6;
-        color: white;
-        border: none;
-        border-radius: 0 22px 22px 0;
-        padding: 0 1.25rem;
-        font-weight: 600;
-        transition: background 0.2s;
-    }
-    .chat-input-area .btn-send:hover:not(:disabled) { background: #123d82; }
-    .chat-input-area .btn-send:disabled { opacity: 0.5; cursor: not-allowed; }
-</style>
-
-<div class="container-fluid py-4 px-4">
-    @if (_loading)
-    {
-        <div class="text-center py-5"><div class="spinner-border text-navy"></div></div>
-    }
-    else if (_course is null)
-    {
-        <div class="alert alert-warning text-center">
-            <h4>Cours introuvable</h4>
-            <a href="/learning" class="btn btn-navy mt-2">Retour au dashboard</a>
+        <div class="study-progress" aria-hidden="true">
+            <div class="study-progress-bar" @ref="_progressElement"></div>
         </div>
-    }
-    else
-    {
-        <nav aria-label="breadcrumb" class="mb-3">
-            <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="/learning" class="text-navy text-decoration-none">Apprentissage</a></li>
-                <li class="breadcrumb-item active">@_course.Title</li>
-            </ol>
-        </nav>
 
-        <div class="row g-4">
-            <!-- Contenu du cours -->
-            <div class="col-lg-7">
-                <div class="card-clean p-4">
-                    <div class="d-flex justify-content-between align-items-start mb-3">
-                        <div>
-                            <h1 class="fw-bold mb-1" style="font-size:1.8rem; color:#202124;">@_course.Title</h1>
-                            <span class="badge" style="background-color:#e8f0fe; color:#174ea6;">@_course.Subject</span>
-                        </div>
-                        <a href="/learning/quiz/@_course.Id" class="btn btn-navy btn-sm">🎯 Quiz</a>
-                    </div>
+        <header class="study-bar">
+            <div class="study-bar-left">
+                <a href="/learning" class="study-back" title="Retour à l'espace d'apprentissage">
+                    <i class="bi bi-arrow-left"></i>
+                </a>
+                <div class="study-identity">
+                    <span class="study-subject">@_course.Subject</span>
+                    <h1 class="study-title">@_course.Title</h1>
+                </div>
+            </div>
 
-                    @if (!string.IsNullOrEmpty(_course.Description))
+            <div class="study-bar-actions">
+                <button class="study-icon-btn @(_showOutline ? "is-on" : "")"
+                        @onclick="() => _showOutline = !_showOutline"
+                        title="Sommaire">
+                    <i class="bi bi-list-nested"></i>
+                </button>
+
+                <div class="study-settings">
+                    <button class="study-icon-btn @(_showSettings ? "is-on" : "")"
+                            @onclick="() => _showSettings = !_showSettings"
+                            title="Confort de lecture">
+                        <i class="bi bi-fonts"></i>
+                    </button>
+
+                    @if (_showSettings)
                     {
-                        <p class="text-muted mb-4" style="font-style: italic;">@_course.Description</p>
-                    }
-
-                    <hr />
-
-                    <div class="course-content">
-                        @if (_course.ContentType == ContentType.Text || _course.Sections is { Count: > 0 })
-                        {
-                            <GPOE26.Web.Components.UI.MarkdownViewer Content="@GetCourseMarkdown()" />
-                        }
-                        else if (!string.IsNullOrEmpty(_course.ExtractedText))
-                        {
-                            <div style="white-space: pre-wrap; line-height:1.8; color:#3c4043;">
-                                @_course.ExtractedText
+                        <div class="study-popover">
+                            <p class="study-popover-label">Thème</p>
+                            <div class="study-choices">
+                                @foreach (var theme in Themes)
+                                {
+                                    <button class="study-choice @(_prefs.Theme == theme.Value ? "is-active" : "")"
+                                            @onclick="@(() => SetPreference("theme", theme.Value))">@theme.Label</button>
+                                }
                             </div>
+
+                            <p class="study-popover-label">Taille du texte</p>
+                            <div class="study-choices">
+                                @foreach (var size in Sizes)
+                                {
+                                    <button class="study-choice @(_prefs.Size == size.Value ? "is-active" : "")"
+                                            @onclick="@(() => SetPreference("size", size.Value))">@size.Label</button>
+                                }
+                            </div>
+
+                            <p class="study-popover-label">Largeur</p>
+                            <div class="study-choices">
+                                @foreach (var width in Widths)
+                                {
+                                    <button class="study-choice @(_prefs.Width == width.Value ? "is-active" : "")"
+                                            @onclick="@(() => SetPreference("width", width.Value))">@width.Label</button>
+                                }
+                            </div>
+
+                            <p class="study-popover-label">Police</p>
+                            <div class="study-choices">
+                                <button class="study-choice @(_prefs.Font == "sans" ? "is-active" : "")"
+                                        @onclick="@(() => SetPreference("font", "sans"))">Sans serif</button>
+                                <button class="study-choice study-choice-serif @(_prefs.Font == "serif" ? "is-active" : "")"
+                                        @onclick="@(() => SetPreference("font", "serif"))">Serif</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <a href="/learning/quiz/@_course.Id" class="btn btn-brand btn-sm">
+                    <i class="bi bi-bullseye"></i> Quiz
+                </a>
+
+                <button class="study-icon-btn @(_showTutor ? "is-on" : "")"
+                        @onclick="() => _showTutor = !_showTutor"
+                        title="Répétiteur">
+                    <i class="bi bi-chat-dots"></i>
+                </button>
+            </div>
+        </header>
+
+        <div class="study-body @(_showOutline ? "" : "no-outline") @(_showTutor ? "" : "no-tutor")">
+
+            <!-- ── Sommaire ─────────────────────────────────────────────── -->
+            <aside class="study-rail study-outline">
+                <p class="study-rail-title">Sommaire</p>
+                @if (_outline.Count == 0)
+                {
+                    <p class="study-rail-empty">Le sommaire apparaîtra une fois le cours mis en forme.</p>
+                }
+                else
+                {
+                    <nav>
+                        @foreach (var entry in _outline)
+                        {
+                            <button type="button"
+                                    class="study-toc-link study-toc-l@(entry.Level)"
+                                    data-toc-target="@entry.Id"
+                                    @onclick="() => ScrollTo(entry.Id)">@entry.Text</button>
+                        }
+                    </nav>
+                }
+            </aside>
+
+            <!-- ── Canvas de lecture ────────────────────────────────────── -->
+            <main class="study-main" @ref="_scrollerElement">
+
+                @if (_course.HasOriginalDocument)
+                {
+                    <div class="study-tabs">
+                        <button class="study-tab @(_tab == Tab.Course ? "is-active" : "")"
+                                @onclick="() => _tab = Tab.Course">Cours</button>
+                        <button class="study-tab @(_tab == Tab.Original ? "is-active" : "")"
+                                @onclick="() => _tab = Tab.Original">Document original</button>
+                    </div>
+                }
+
+                @if (_tab == Tab.Course)
+                {
+                    @if (_course.FormatStatus == FormatStatus.Pending)
+                    {
+                        <div class="study-state">
+                            <div class="spinner-border text-brand-dark mb-3"></div>
+                            <h5>Mise en forme du cours en cours…</h5>
+                            <p class="text-muted-chic">
+                                @(_course.ContentType == ContentType.Images
+                                    ? "Vos photos sont en cours de lecture, puis le cours sera structuré."
+                                    : "Le cours est en cours de structuration : titres, définitions, formules.")
+                            </p>
+                            <p class="text-muted-chic small">Cela prend généralement moins d'une minute.</p>
+                        </div>
+                    }
+                    else if (_course.FormatStatus == FormatStatus.Failed && string.IsNullOrWhiteSpace(_course.FormattedMarkdown))
+                    {
+                        <div class="study-state">
+                            <div class="display-6 mb-2">⚠️</div>
+                            <h5>La mise en forme a échoué</h5>
+                            <p class="text-muted-chic">@(_course.FormatError ?? "Une erreur est survenue.")</p>
+                            <button class="btn btn-brand mt-2" @onclick="RegenerateAsync" disabled="@_regenerating">
+                                @if (_regenerating) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                Réessayer
+                            </button>
+                        </div>
+                    }
+                    else if (string.IsNullOrWhiteSpace(_course.ReadableContent))
+                    {
+                        <div class="study-state">
+                            <div class="display-6 mb-2">📄</div>
+                            <h5>Aucun contenu disponible</h5>
+                            <p class="text-muted-chic">Ce cours ne contient encore ni texte ni document.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        @if (_course.FormatStatus == FormatStatus.Failed)
+                        {
+                            <div class="study-banner">
+                                <span>⚠️ La dernière mise en forme a échoué — voici la version précédente.</span>
+                                <button class="btn btn-sm btn-brand-outline" @onclick="RegenerateAsync" disabled="@_regenerating">
+                                    Régénérer
+                                </button>
+                            </div>
+                        }
+
+                        <article class="course-canvas">
+                            <MarkdownViewer Content="@_course.ReadableContent" />
+                        </article>
+
+                        <footer class="study-footer">
+                            <span class="text-muted-chic small">
+                                @if (_course.FormattedAt is { } formattedAt)
+                                {
+                                    <text>Mis en forme le @formattedAt.ToLocalTime().ToString("dd MMM yyyy à HH:mm")</text>
+                                }
+                                else
+                                {
+                                    <text>Contenu d'origine, non mis en forme</text>
+                                }
+                            </span>
+                            <button class="btn btn-sm btn-brand-outline" @onclick="RegenerateAsync" disabled="@_regenerating">
+                                @if (_regenerating) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                                <i class="bi bi-arrow-clockwise"></i> Régénérer la mise en forme
+                            </button>
+                        </footer>
+                    }
+                }
+                else
+                {
+                    <div class="study-original">
+                        @if (_course.Pdf is { } pdf)
+                        {
+                            <iframe class="study-pdf" src="@pdf.Url" title="Document original"></iframe>
+                        }
+                        else if (!string.IsNullOrEmpty(_course.PdfPath))
+                        {
+                            <iframe class="study-pdf" src="@("/" + _course.PdfPath.TrimStart('/'))" title="Document original"></iframe>
                         }
                         else
                         {
-                            <p class="text-muted">Aucun contenu disponible pour ce cours.</p>
+                            <div class="study-photos">
+                                @foreach (var (photo, index) in _course.Photos.Select((p, i) => (p, i)))
+                                {
+                                    <figure>
+                                        <img src="@photo.Url" alt="@($"Page {index + 1} du cours")" loading="lazy" />
+                                        <figcaption>Page @(index + 1)</figcaption>
+                                    </figure>
+                                }
+                            </div>
                         }
                     </div>
+                }
+            </main>
+
+            <!-- ── Répétiteur ───────────────────────────────────────────── -->
+            <aside class="study-rail study-tutor">
+                <div class="study-tutor-head">
+                    <p class="study-rail-title mb-0">Répétiteur</p>
+                    <span class="study-tutor-sub">Il répond à partir de votre cours</span>
                 </div>
-            </div>
 
-            <!-- Chat IA -->
-            <div class="col-lg-5">
-                <div class="chat-panel">
-                    <div class="chat-header">
-                        <h5>🤖 Tuteur IA</h5>
-                        <p>Posez vos questions sur le cours, l'IA utilise le contenu comme contexte</p>
-                    </div>
-
-                    <div class="chat-messages" id="chatMessages">
-                        @if (!_messages.Any())
-                        {
-                            <div class="chat-empty">
-                                <div class="icon">💬</div>
-                                <p class="fw-semibold mb-1">Commencez la conversation</p>
-                                <p class="small">Posez n'importe quelle question sur le cours</p>
+                <div class="study-messages">
+                    @if (_messages.Count == 0 && !_chatting)
+                    {
+                        <div class="study-tutor-empty">
+                            <div class="study-tutor-emoji">💬</div>
+                            <p class="fw-semibold mb-1">Posez votre première question</p>
+                            <p class="small mb-3">Le répétiteur cherche la réponse dans votre cours et cite ses sources.</p>
+                            <div class="study-suggestions">
+                                @foreach (var suggestion in Suggestions)
+                                {
+                                    <button class="study-suggestion" @onclick="() => SendAsync(suggestion)">@suggestion</button>
+                                }
                             </div>
-                        }
-
-                        @foreach (var msg in _messages)
-                        {
-                            <div class="msg-row @(msg.Role == "user" ? "user" : "")">
-                                <div>
-                                    <div class="msg-label @(msg.Role == "user" ? "user-label" : "ai-label")">
-                                        @(msg.Role == "user" ? "Vous" : "IA")
-                                    </div>
-                                    @if (msg.Role == "user")
-                                    {
-                                        <div class="msg-bubble user-msg">@msg.Content</div>
-                                    }
-                                    else
-                                    {
-                                        <div class="msg-bubble ai-msg p-2">
-                                            <GPOE26.Web.Components.UI.MarkdownViewer Content="@msg.Content" />
-                                        </div>
-                                    }
-                                </div>
-                            </div>
-                        }
-
-                        @if (_chatting)
-                        {
-                            <div class="msg-row">
-                                <div>
-                                    <div class="msg-label ai-label">IA</div>
-                                    <div class="typing-indicator">
-                                        <div class="dot"></div>
-                                        <div class="dot"></div>
-                                        <div class="dot"></div>
-                                    </div>
-                                </div>
-                            </div>
-                        }
-                    </div>
-
-                    <div class="chat-input-area">
-                        <div class="input-group">
-                            <input type="text" class="form-control" placeholder="Posez votre question..."
-                                   @bind="_chatInput" @bind:event="oninput"
-                                   @onkeydown="HandleChatKeyDown"
-                                   disabled="@_chatting" />
-                            <button class="btn-send" @onclick="SendChat"
-                                    disabled="@(_chatting || string.IsNullOrWhiteSpace(_chatInput))">
-                                Envoyer
-                            </button>
                         </div>
-                    </div>
+                    }
+
+                    @foreach (var message in _messages)
+                    {
+                        <div class="study-msg @(message.Role == "user" ? "is-user" : "is-ai")">
+                            @if (message.Role == "user")
+                            {
+                                <div class="study-bubble study-bubble-user">@message.Content</div>
+                            }
+                            else
+                            {
+                                <div class="study-bubble study-bubble-ai">
+                                    <MarkdownViewer Content="@message.Content" />
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @if (_chatting)
+                    {
+                        <div class="study-msg is-ai">
+                            <div class="study-bubble study-bubble-ai">
+                                @if (!string.IsNullOrEmpty(_streamingReply))
+                                {
+                                    <MarkdownViewer Content="@_streamingReply" />
+                                }
+                                else
+                                {
+                                    <div class="study-step">
+                                        <span class="study-step-dot"></span>
+                                        <span>@(_currentStep ?? "Réflexion…")</span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @if (_citations.Count > 0 && !_chatting)
+                    {
+                        <div class="study-citations">
+                            <p class="study-citations-title">Passages utilisés</p>
+                            @foreach (var citation in _citations)
+                            {
+                                <button class="study-citation" @onclick="() => ScrollToHeadingText(citation)">
+                                    <i class="bi bi-bookmark"></i> @citation
+                                </button>
+                            }
+                        </div>
+                    }
                 </div>
-            </div>
+
+                <div class="study-composer">
+                    <textarea class="study-input"
+                              placeholder="Une question sur ce cours…"
+                              rows="1"
+                              @bind="_input"
+                              @bind:event="onchange"
+                              @onkeydown="HandleKeyDown"
+                              disabled="@_chatting"></textarea>
+                    <button class="study-send"
+                            @onclick="() => SendAsync(_input)"
+                            disabled="@(_chatting || string.IsNullOrWhiteSpace(_input))"
+                            title="Envoyer">
+                        <i class="bi bi-send"></i>
+                    </button>
+                </div>
+            </aside>
         </div>
-    }
-</div>
+    </div>
+}
 
 @code {
     [Parameter] public Guid Id { get; set; }
+
+    private enum Tab { Course, Original }
+
     private CourseDto? _course;
     private bool _loading = true;
-    private List<ConversationMessage> _messages = new();
-    private string _chatInput = "";
-    private bool _chatting;
+    private bool _regenerating;
+    private Tab _tab = Tab.Course;
 
-    private static readonly Markdig.MarkdownPipeline _mdPipeline =
-        Markdig.MarkdownExtensions.UseAdvancedExtensions(
-            new Markdig.MarkdownPipelineBuilder()
-        ).Build();
+    // Rails et réglages
+    private bool _showOutline = true;
+    private bool _showTutor = true;
+    private bool _showSettings;
+    private ReadingPreferences _prefs = new();
+
+    // Sommaire
+    private IReadOnlyList<MarkdownViewer.OutlineEntry> _outline = [];
+
+    // Répétiteur
+    private readonly List<ConversationMessage> _messages = [];
+    private readonly List<string> _citations = [];
+    private string _input = "";
+    private bool _chatting;
+    private string? _currentStep;
+    private string _streamingReply = "";
+
+    // Interop
+    private ElementReference _rootElement;
+    private ElementReference _scrollerElement;
+    private ElementReference _progressElement;
+    private bool _interopReady;
+    private string? _renderedContent;
+
+    // Suivi de la mise en forme en tâche de fond
+    private CancellationTokenSource? _pollingCts;
+
+    private static readonly (string Value, string Label)[] Themes =
+        [("light", "Clair"), ("sepia", "Sépia"), ("dark", "Sombre")];
+
+    private static readonly (string Value, string Label)[] Sizes =
+        [("sm", "Petite"), ("md", "Normale"), ("lg", "Grande"), ("xl", "Très grande")];
+
+    private static readonly (string Value, string Label)[] Widths =
+        [("narrow", "Étroite"), ("default", "Normale"), ("wide", "Large")];
+
+    private static readonly string[] Suggestions =
+    [
+        "Résume-moi ce cours",
+        "Explique la partie que je n'ai pas comprise",
+        "Donne-moi un exercice",
+    ];
+
+    private sealed class ReadingPreferences
+    {
+        public string Theme { get; set; } = "light";
+        public string Size { get; set; } = "md";
+        public string Width { get; set; } = "default";
+        public string Font { get; set; } = "sans";
+    }
 
     protected override async Task OnInitializedAsync()
     {
-        _course = await Api.GetCourseAsync(Id);
+        await LoadAsync();
         _loading = false;
     }
 
-    private async Task HandleChatKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    private async Task LoadAsync()
     {
-        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_chatInput) && !_chatting)
-            await SendChat();
+        _course = await Api.GetCourseAsync(Id);
+        _outline = MarkdownViewer.BuildOutline(_course?.ReadableContent);
+
+        // Un cours déposé arrive en Pending : on suit son avancement pour basculer
+        // automatiquement sur le contenu dès qu'il est prêt, sans que l'élève recharge.
+        if (_course?.FormatStatus == FormatStatus.Pending) StartPolling();
     }
 
-    private async Task SendChat()
-    {
-        if (string.IsNullOrWhiteSpace(_chatInput) || _course is null) return;
+    // ── Suivi de la mise en forme ────────────────────────────────────────────
 
-        var userMsg = _chatInput.Trim();
-        _chatInput = "";
-        // On n'ajoute plus le message manuellement ici, car l'API nous retourne l'historique mis à jour complet.
+    private void StartPolling()
+    {
+        _pollingCts?.Cancel();
+        _pollingCts = new CancellationTokenSource();
+        var token = _pollingCts.Token;
+
+        _ = Task.Run(async () =>
+        {
+            // La transcription puis la structuration prennent des dizaines de secondes ;
+            // un sondage toutes les 3 s reste discret et suffit largement.
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+            var attempts = 0;
+
+            try
+            {
+                while (await timer.WaitForNextTickAsync(token))
+                {
+                    // Garde-fou : au bout de ~5 minutes, on arrête de sonder plutôt que
+                    // de laisser une boucle tourner indéfiniment sur un traitement bloqué.
+                    if (++attempts > 100) break;
+
+                    var refreshed = await Api.GetCourseAsync(Id);
+                    if (refreshed is null || refreshed.FormatStatus == FormatStatus.Pending) continue;
+
+                    _course = refreshed;
+                    _outline = MarkdownViewer.BuildOutline(refreshed.ReadableContent);
+
+                    await InvokeAsync(StateHasChanged);
+                    break;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Navigation hors de la page : rien à signaler.
+            }
+        }, token);
+    }
+
+    private async Task RegenerateAsync()
+    {
+        if (_course is null || _regenerating) return;
+
+        _regenerating = true;
+        var accepted = await Api.RequestCourseFormatAsync(_course.Id);
+        _regenerating = false;
+
+        if (!accepted) return;
+
+        _course = _course with { FormatStatus = FormatStatus.Pending, FormatError = null };
+        StartPolling();
+    }
+
+    // ── Confort de lecture ───────────────────────────────────────────────────
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_course is null) return;
+
+        if (!_interopReady)
+        {
+            _interopReady = true;
+            var prefs = await JS.InvokeAsync<ReadingPreferences>(
+                "readingInterop.init", Id.ToString(), _rootElement, _scrollerElement, _progressElement);
+
+            if (prefs is not null)
+            {
+                _prefs = prefs;
+                StateHasChanged();
+            }
+
+            _renderedContent = _course.ReadableContent;
+            return;
+        }
+
+        // Le contenu a changé (fin de la mise en forme) : les titres et les liens du
+        // sommaire sont de nouveaux nœuds DOM, l'interop doit les retrouver.
+        if (_renderedContent != _course.ReadableContent)
+        {
+            _renderedContent = _course.ReadableContent;
+            await JS.InvokeVoidAsync("readingInterop.rescan");
+        }
+    }
+
+    private async Task SetPreference(string key, string value)
+    {
+        var prefs = await JS.InvokeAsync<ReadingPreferences>(
+            "readingInterop.setPreference", _rootElement, key, value);
+
+        if (prefs is not null) _prefs = prefs;
+    }
+
+    private async Task ScrollTo(string headingId) =>
+        await JS.InvokeVoidAsync("readingInterop.scrollToHeading", _scrollerElement, headingId);
+
+    /// <summary>
+    /// Amène l'élève au passage cité par le répétiteur. La citation est un chemin de
+    /// titres (« Les dérivées › Nombre dérivé ») : on cible le dernier segment, qui
+    /// correspond au titre le plus profond.
+    /// </summary>
+    private async Task ScrollToHeadingText(string headingPath)
+    {
+        var leaf = headingPath.Split('›').LastOrDefault()?.Trim();
+        if (string.IsNullOrEmpty(leaf)) return;
+
+        var match = _outline.FirstOrDefault(e =>
+            string.Equals(e.Text, leaf, StringComparison.OrdinalIgnoreCase));
+
+        if (match is not null) await ScrollTo(match.Id);
+    }
+
+    // ── Répétiteur ───────────────────────────────────────────────────────────
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        // Entrée envoie, Maj+Entrée passe à la ligne — convention attendue d'un chat.
+        if (e.Key == "Enter" && !e.ShiftKey && !_chatting && !string.IsNullOrWhiteSpace(_input))
+            await SendAsync(_input);
+    }
+
+    private async Task SendAsync(string message)
+    {
+        if (_course is null || _chatting || string.IsNullOrWhiteSpace(message)) return;
+
+        var question = message.Trim();
+        _input = "";
+        _citations.Clear();
+        _streamingReply = "";
+        _currentStep = null;
         _chatting = true;
+
+        // L'historique envoyé s'arrête AVANT la question courante : le pipeline la
+        // rajoute lui-même en dernier tour. L'inclure ici la ferait apparaître deux fois
+        // dans le prompt.
+        var history = _messages.ToList();
+
+        _messages.Add(new ConversationMessage("user", question));
         StateHasChanged();
 
-        try 
+        try
         {
-            var response = await Api.SendChatMessageAsync(
-                userMsg,
-                _messages,
-                _course.ExtractedText,
-                _course.Id.ToString()
-            );
+            await foreach (var evt in Api.StreamTutorAsync(_course.Id, question, history))
+            {
+                switch (evt.Type)
+                {
+                    case "step":
+                        _currentStep = evt.Step;
+                        break;
 
-            if (response is not null)
-            {
-                _messages = response.UpdatedHistory;
-            }
-            else
-            {
-                _messages.Add(new ConversationMessage("assistant", "Désolé, une erreur s'est produite lors de la connexion à l'IA."));
+                    case "token":
+                        _streamingReply += evt.Token;
+                        break;
+
+                    case "done":
+                        // Reply fait autorité sur le texte streamé : si le Relecteur a
+                        // imposé une révision, c'est la version corrigée qui arrive ici.
+                        _messages.Add(new ConversationMessage("assistant",
+                            string.IsNullOrWhiteSpace(evt.Reply) ? _streamingReply : evt.Reply!));
+
+                        if (evt.Citations is { Count: > 0 }) _citations.AddRange(evt.Citations);
+
+                        // Le pipeline continue après « done » (mise à jour de la fiche de
+                        // suivi) : on rend la main tout de suite, sinon l'indicateur de
+                        // frappe resterait affiché pour un travail que l'élève n'attend pas.
+                        _chatting = false;
+                        _streamingReply = "";
+                        _currentStep = null;
+                        break;
+
+                    case "error":
+                        _messages.Add(new ConversationMessage("assistant",
+                            evt.Error ?? "Une erreur est survenue. Réessayez dans un instant."));
+
+                        _chatting = false;
+                        _streamingReply = "";
+                        break;
+                }
+
+                StateHasChanged();
             }
         }
         catch (Exception)
         {
-            _messages.Add(new ConversationMessage("assistant", "⚠️ Erreur réseau ou service IA indisponible. Veuillez réessayer plus tard."));
+            _messages.Add(new ConversationMessage("assistant",
+                "⚠️ Le répétiteur est momentanément injoignable. Réessayez dans un instant."));
         }
         finally
         {
             _chatting = false;
+            _streamingReply = "";
+            _currentStep = null;
+            StateHasChanged();
         }
     }
 
-    private string GetCourseMarkdown()
+    public async ValueTask DisposeAsync()
     {
-        if (_course?.Sections is { Count: > 0 })
-        {
-            if (_course.Sections.Count == 1 && _course.Sections[0].Type == SectionType.Paragraph)
-                return _course.Sections[0].Content;
+        _pollingCts?.Cancel();
+        _pollingCts?.Dispose();
 
-            var sb = new System.Text.StringBuilder();
-            foreach (var sec in _course.Sections.OrderBy(s => s.Order))
-            {
-                switch (sec.Type)
-                {
-                    case SectionType.Heading:
-                        sb.AppendLine($"{new string('#', sec.Level > 0 ? sec.Level : 1)} {sec.Content}\n\n");
-                        break;
-                    case SectionType.Paragraph:
-                        sb.AppendLine($"{sec.Content}\n\n");
-                        break;
-                    case SectionType.Image:
-                        sb.AppendLine($"![Illustration]({sec.Content})\n\n");
-                        break;
-                }
-            }
-            return sb.ToString().Trim();
+        try
+        {
+            if (_interopReady) await JS.InvokeVoidAsync("readingInterop.dispose");
         }
-        return _course?.ExtractedText ?? "";
+        catch (JSDisconnectedException)
+        {
+            // Le circuit est déjà fermé : il n'y a plus de navigateur à nettoyer.
+        }
     }
 }

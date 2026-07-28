@@ -2,10 +2,15 @@ window.markdownInterop = {
     renderEffects: function (element) {
         if (!element) return;
 
-        // Render math with KaTeX explicitly over Markdig's `.math` elements
+        // Render math with KaTeX explicitly over Markdig's `.math` elements.
+        //
+        // KaTeX replaces the *contents* of the `.math` node but leaves the class in
+        // place, so a second pass would feed already-rendered KaTeX markup back into
+        // katex.render and corrupt the formula. Every processed node is therefore
+        // stamped with data-katex-done and skipped on later passes.
         const renderMath = () => {
             if (window.katex) {
-                const mathElements = element.querySelectorAll('.math');
+                const mathElements = element.querySelectorAll('.math:not([data-katex-done])');
                 mathElements.forEach(el => {
                     let text = el.textContent.trim();
                     let isDisplay = el.tagName.toLowerCase() === 'div';
@@ -22,7 +27,11 @@ window.markdownInterop = {
                             displayMode: isDisplay,
                             throwOnError: false
                         });
+                        el.setAttribute('data-katex-done', '');
                     } catch (e) {
+                        // Stamp failures too, otherwise a malformed formula is retried on
+                        // every single re-render of the component.
+                        el.setAttribute('data-katex-done', '');
                         console.error('KaTeX error:', e);
                     }
                 });
@@ -33,9 +42,13 @@ window.markdownInterop = {
         };
         renderMath();
 
-        // Render code blocks with Prism
+        // Render code blocks with Prism — same idempotence concern: highlightAllUnder
+        // would re-tokenize markup Prism itself produced.
         if (window.Prism) {
-            window.Prism.highlightAllUnder(element);
+            element.querySelectorAll('pre > code:not([data-prism-done])').forEach(el => {
+                el.setAttribute('data-prism-done', '');
+                window.Prism.highlightElement(el);
+            });
         }
     },
 

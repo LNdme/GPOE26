@@ -1,22 +1,20 @@
-﻿
+
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Content;
 
 namespace Cours.Service
 {
-
-
     /// <summary>
-    /// Service d'extraction de texte depuis un PDF via la librairie PdfPig.
+    /// Extraction de texte depuis un PDF (PdfPig) et stockage des documents déposés.
     ///
     /// PdfPig est 100% .NET, pas de dépendance native, fonctionne partout.
-    /// C'est lui qui transforme un PDF en texte brut que le LLM peut lire.
+    /// Il produit du texte brut, sans mise en forme : c'est l'agent Structurateur qui
+    /// transforme ensuite ce dump en cours lisible.
     ///
     /// Flux :
-    ///   Client uploade PDF → PdfExtractorService extrait le texte
-    ///   → ExtractedText stocké en DB → Chat service envoie au LLM
+    ///   Upload → SaveAssetAsync (disque) → ExtractText (PDF) ou TranscriptionAgent (photos)
+    ///   → StructurateurAgent → FormattedMarkdown → chunks + embeddings
     /// </summary>
-    /// 
     public class PdfExtractorService
     {
         /// <summary>
@@ -38,7 +36,7 @@ namespace Cours.Service
 
         /// <summary>
         /// Extrait le texte depuis un fichier déjà enregistré sur le disque.
-        /// Utilisé si on a besoin de ré-extraire sans re-upload.
+        /// Utilisé pour ré-extraire sans re-upload (bouton « Régénérer la mise en forme »).
         /// </summary>
         public string ExtractTextFromPath(string filePath)
         {
@@ -47,22 +45,31 @@ namespace Cours.Service
         }
 
         /// <summary>
-        /// Sauvegarde le PDF sur le disque et retourne le chemin.
-        /// Les fichiers sont stockés dans wwwroot/uploads/cours/.
+        /// Sauvegarde un document déposé et retourne son chemin relatif à wwwroot.
+        /// Accepte PDF et images : c'est ce qui permet de déposer les photos d'un cours.
         /// </summary>
-        public async Task<string> SavePdfAsync(IFormFile file, string uploadFolder)
+        public async Task<string> SaveAssetAsync(IFormFile file, string uploadFolder, CancellationToken ct = default)
         {
             Directory.CreateDirectory(uploadFolder);
 
-            var fileName = $"{Guid.NewGuid()}.pdf";
+            // L'extension vient du nom de fichier fourni par le client : ne jamais la
+            // réutiliser telle quelle dans un chemin. On la valide contre une liste fermée.
+            var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+            if (!AllowedExtensions.Contains(extension))
+                throw new ArgumentException($"Extension non autorisée : {extension}", nameof(file));
+
+            var fileName = $"{Guid.NewGuid()}{extension}";
             var filePath = Path.Combine(uploadFolder, fileName);
 
-            using var stream = File.Create(filePath);
-            await file.CopyToAsync(stream);
+            await using var stream = File.Create(filePath);
+            await file.CopyToAsync(stream, ct);
 
-            // Retourner le chemin relatif (pas absolu) pour la portabilité
+            // Chemin relatif (pas absolu) pour la portabilité et pour être servable par
+            // UseStaticFiles / le proxy /uploads/cours du frontend.
             return Path.Combine("uploads", "cours", fileName).Replace("\\", "/");
         }
-    
-}
+
+        private static readonly HashSet<string> AllowedExtensions =
+            new(StringComparer.OrdinalIgnoreCase) { ".pdf", ".jpg", ".jpeg", ".png", ".webp" };
+    }
 }
