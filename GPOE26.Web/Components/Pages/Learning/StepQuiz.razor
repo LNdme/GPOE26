@@ -1,0 +1,360 @@
+@using GPOE26.Web.Components.UI
+@using GPOE26.Web.Models
+@implements IAsyncDisposable
+@inject GPOE26.Web.Services.ApiClient Api
+@inject IJSRuntime JS
+
+@*
+    L'étape « Comprendre » : une question à la fois, corrigée immédiatement.
+
+    C'est le moment où l'élève se trompe qui compte : l'explication arrive tout de
+    suite, lisible et écoutable, plutôt qu'à la fin d'un test qu'il aura déjà oublié.
+*@
+
+<div class="quiz">
+
+    @if (_loading)
+    {
+        <div class="quiz-state">
+            <div class="spinner-border text-brand-dark mb-3"></div>
+            <h5>Préparation de votre test…</h5>
+            <p class="text-muted-chic">Les questions sont générées à partir de votre cours.</p>
+        </div>
+    }
+    else if (_error is not null)
+    {
+        <div class="quiz-state">
+            <div class="display-6 mb-2">⚠️</div>
+            <h5>Le test n'a pas pu être préparé</h5>
+            <p class="text-muted-chic">@_error</p>
+            <button class="btn btn-brand mt-2" @onclick="StartAsync">Réessayer</button>
+        </div>
+    }
+    else if (_finished)
+    {
+        var passed = Percentage >= PassThresholdPercent;
+
+        <div class="quiz-result @(passed ? "is-passed" : "is-failed")">
+            <div class="quiz-result-badge">@(passed ? "🎉" : "💪")</div>
+            <h4>@(passed ? "Test validé" : "Presque —  il faut consolider")</h4>
+            <p class="quiz-score">@_correctCount / @_questions.Count<span> · @($"{Percentage:0}") %</span></p>
+
+            @if (!passed)
+            {
+                <p class="text-muted-chic">
+                    Il faut @($"{PassThresholdPercent:0}") % pour débloquer la suite.
+                    Revoyez les passages ci-dessous, puis refaites le test — les questions changeront.
+                </p>
+
+                @if (WeakHeadings.Count > 0)
+                {
+                    <div class="quiz-weak">
+                        <p class="quiz-weak-title">À revoir dans votre cours</p>
+                        @foreach (var heading in WeakHeadings)
+                        {
+                            <button class="quiz-weak-link" @onclick="() => OnGoToSection.InvokeAsync(heading)">
+                                <i class="bi bi-arrow-return-left"></i> @heading
+                            </button>
+                        }
+                    </div>
+                }
+
+                <button class="btn btn-brand mt-3" @onclick="StartAsync">Refaire le test</button>
+            }
+            else
+            {
+                <p class="text-muted-chic">Vous pouvez passer à la suite du parcours.</p>
+            }
+        </div>
+    }
+    else if (Current is { } question)
+    {
+        <div class="quiz-head">
+            <span class="quiz-counter">Question @(_index + 1) sur @_questions.Count</span>
+            <div class="quiz-progress">
+                <div class="quiz-progress-bar" style="@ProgressStyle"></div>
+            </div>
+        </div>
+
+        <p class="quiz-question">@question.Text</p>
+
+        <div class="quiz-options">
+            @for (var i = 0; i < question.Options.Count; i++)
+            {
+                var index = i;
+                <button type="button"
+                        class="quiz-option @OptionClass(index)"
+                        disabled="@(_feedback is not null)"
+                        @onclick="() => AnswerAsync(index)">
+                    <span class="quiz-option-letter">@((char)('A' + index))</span>
+                    <span>@question.Options[index]</span>
+                </button>
+            }
+        </div>
+
+        @if (_feedback is { } feedback)
+        {
+            <div class="quiz-feedback @(feedback.IsCorrect ? "is-correct" : "is-wrong")">
+                <p class="quiz-feedback-title">
+                    @(feedback.IsCorrect ? "✓ Bonne réponse" : "✗ Ce n'est pas la bonne réponse")
+                </p>
+
+                @if (!string.IsNullOrWhiteSpace(feedback.Explanation))
+                {
+                    <div class="quiz-explanation">
+                        <MarkdownViewer Content="@feedback.Explanation" />
+                    </div>
+                }
+
+                @if (!feedback.IsCorrect)
+                {
+                    <div class="quiz-feedback-actions">
+                        <button class="btn btn-sm btn-brand-outline" @onclick="SpeakAsync" disabled="@_speaking">
+                            @if (_speaking)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                                <text>Lecture…</text>
+                            }
+                            else
+                            {
+                                <text>🔊 Écouter</text>
+                            }
+                        </button>
+
+                        @if (_playing)
+                        {
+                            <button class="btn btn-sm btn-brand-outline" @onclick="StopSpeakingAsync">⏹ Arrêter</button>
+                        }
+
+                        <button class="btn btn-sm btn-brand-outline" @onclick="AskTutorAsync">
+                            <i class="bi bi-chat-dots"></i> Demander au répétiteur
+                        </button>
+                    </div>
+                }
+
+                <button class="btn btn-brand mt-3" @onclick="NextAsync">
+                    @(_index + 1 < _questions.Count ? "Question suivante" : "Voir mon résultat")
+                </button>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CourseDto Course { get; set; } = null!;
+    [Parameter, EditorRequired] public StepDto Step { get; set; } = null!;
+    [Parameter] public double PassThresholdPercent { get; set; } = 70;
+
+    /// <summary>Remonte le résultat au parcours, qui applique le seuil et déverrouille.</summary>
+    [Parameter] public EventCallback<StepResultRequest> OnCompleted { get; set; }
+
+    [Parameter] public EventCallback<string> OnAskTutor { get; set; }
+    [Parameter] public EventCallback<string> OnGoToSection { get; set; }
+
+    private bool _loading = true;
+    private string? _error;
+
+    private Guid _quizId;
+    private List<QuestionDto> _questions = [];
+    private int _index;
+    private int _correctCount;
+    private bool _finished;
+
+    private AnswerFeedback? _feedback;
+    private int? _selected;
+
+    // Sections des questions ratées, pour renvoyer l'élève au bon endroit du cours.
+    private readonly List<string> _weak = [];
+
+    private bool _speaking;
+    private bool _playing;
+    private DotNetObjectReference<StepQuiz>? _selfRef;
+
+    private QuestionDto? Current => _index < _questions.Count ? _questions[_index] : null;
+
+    private double Percentage => _questions.Count == 0 ? 0 : _correctCount * 100.0 / _questions.Count;
+
+    /// <summary>
+    /// Largeur de la barre d'avancement. Calculée ici plutôt qu'en ligne : une chaîne
+    /// interpolée entre guillemets dans un attribut Razor est un nid à surprises.
+    /// La culture invariante évite qu'une virgule décimale ne casse le CSS.
+    /// </summary>
+    private string ProgressStyle
+    {
+        get
+        {
+            var ratio = _questions.Count == 0 ? 0 : _index * 100.0 / _questions.Count;
+            return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"width:{ratio:0.#}%");
+        }
+    }
+
+    private List<string> WeakHeadings => _weak.Distinct().ToList();
+
+    /// <summary>
+    /// Recharge le test quand l'élève change d'étape sans quitter la page — sinon il
+    /// verrait les questions de l'étape précédente.
+    /// </summary>
+    private Guid _loadedStepId;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedStepId == Step.Id) return;
+
+        _loadedStepId = Step.Id;
+        await StartAsync();
+    }
+
+    private async Task StartAsync()
+    {
+        _loading = true;
+        _error = null;
+        _finished = false;
+        _index = 0;
+        _correctCount = 0;
+        _feedback = null;
+        _selected = null;
+        _weak.Clear();
+        StateHasChanged();
+
+        // Le test porte sur la partie de l'étape quand le parcours est découpé,
+        // sur le cours entier sinon.
+        var source = Step.HeadingPath is { } path
+            ? MarkdownViewer.ExtractPart(Course.ReadableContent, path)
+            : Course.ReadableContent;
+
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            _error = "Le cours ne contient pas encore de contenu exploitable.";
+            _loading = false;
+            return;
+        }
+
+        var count = Step.QuestionCount > 0 ? Step.QuestionCount : 5;
+        var title = string.IsNullOrWhiteSpace(Step.Title) ? Course.Title : Step.Title;
+
+        var quiz = await Api.GenerateQuizAsync(title, source, count);
+
+        if (quiz is null || quiz.Questions.Count == 0)
+        {
+            _error = "Le générateur de questions n'a rien renvoyé. Réessayez dans un instant.";
+            _loading = false;
+            return;
+        }
+
+        _quizId = quiz.QuizId;
+        _questions = quiz.Questions;
+        _loading = false;
+    }
+
+    private async Task AnswerAsync(int optionIndex)
+    {
+        if (_feedback is not null || Current is null) return;
+
+        _selected = optionIndex;
+
+        // Correction immédiate, question par question : c'est ce qui permet d'expliquer
+        // au moment où l'élève se trompe.
+        _feedback = await Api.AnswerQuizQuestionAsync(_quizId, Current.Id, optionIndex);
+
+        if (_feedback is null)
+        {
+            _error = "La correction n'a pas pu être récupérée.";
+            return;
+        }
+
+        if (_feedback.IsCorrect) _correctCount++;
+        else if (Step.HeadingPath is { } path) _weak.Add(path);
+    }
+
+    private async Task NextAsync()
+    {
+        await StopSpeakingAsync();
+
+        _feedback = null;
+        _selected = null;
+
+        if (_index + 1 < _questions.Count)
+        {
+            _index++;
+            return;
+        }
+
+        _finished = true;
+
+        // Le seuil est appliqué côté API : on remonte les faits, pas le verdict.
+        await OnCompleted.InvokeAsync(new StepResultRequest(_correctCount, _questions.Count, WeakHeadings));
+    }
+
+    private string OptionClass(int index)
+    {
+        if (_feedback is null) return _selected == index ? "is-selected" : "";
+        if (index == _feedback.CorrectOptionIndex) return "is-correct";
+        if (index == _selected) return "is-wrong";
+        return "is-dimmed";
+    }
+
+    // ── Voix ─────────────────────────────────────────────────────────────────
+
+    private async Task SpeakAsync()
+    {
+        if (_feedback is null || string.IsNullOrWhiteSpace(_feedback.Explanation) || _speaking) return;
+
+        _speaking = true;
+        var audio = await Api.SpeakAsync(_feedback.Explanation);
+        _speaking = false;
+
+        if (audio is null) return;
+
+        _selfRef ??= DotNetObjectReference.Create(this);
+        _playing = true;
+        await JS.InvokeVoidAsync("voiceInterop.play", audio, _selfRef);
+    }
+
+    private async Task StopSpeakingAsync()
+    {
+        if (!_playing) return;
+
+        _playing = false;
+        await JS.InvokeVoidAsync("voiceInterop.stop");
+    }
+
+    [JSInvokable]
+    public Task OnSpeechEnded()
+    {
+        _playing = false;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task AskTutorAsync()
+    {
+        if (_feedback is null || Current is null) return;
+
+        var correct = _feedback.CorrectOptionIndex >= 0 && _feedback.CorrectOptionIndex < Current.Options.Count
+            ? Current.Options[_feedback.CorrectOptionIndex]
+            : null;
+
+        // On donne au répétiteur la question ET la bonne réponse : sans elles il
+        // repartirait de zéro et pourrait expliquer autre chose.
+        var prompt = correct is null
+            ? $"Je n'ai pas compris cette question de mon cours : « {Current.Text} ». Peux-tu me l'expliquer ?"
+            : $"Je me suis trompé sur cette question : « {Current.Text} ». La bonne réponse était « {correct} ». Explique-moi pourquoi.";
+
+        await OnAskTutor.InvokeAsync(prompt);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (_playing) await JS.InvokeVoidAsync("voiceInterop.stop");
+        }
+        catch (JSDisconnectedException)
+        {
+            // Circuit déjà fermé : il n'y a plus de navigateur à faire taire.
+        }
+        finally
+        {
+            _selfRef?.Dispose();
+        }
+    }
+}

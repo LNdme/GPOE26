@@ -65,6 +65,7 @@ public sealed class CourseFormattingService(
             course.FormattedMarkdown = structured;
 
             await ReindexAsync(course, structured, ct);
+            await RebuildJourneyAsync(course, structured, ct);
 
             course.FormatStatus = FormatStatus.Ready;
             course.FormattedAt = DateTime.UtcNow;
@@ -184,6 +185,79 @@ public sealed class CourseFormattingService(
 
         db.CourseChunks.AddRange(chunks);
         course.Chunks = chunks;
+    }
+
+    // ── Parcours d'apprentissage ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// (Re)construit les étapes du parcours à partir du cours mis en forme.
+    ///
+    /// Le travail déjà accompli est reporté sur les étapes équivalentes : régénérer la
+    /// mise en forme ne doit pas effacer les tests qu'un élève a validés. L'équivalence
+    /// se fait sur le couple (nature de l'étape, section couverte) — si une partie du
+    /// cours disparaît à la réécriture, son étape disparaît avec, ce qui est correct.
+    /// </summary>
+    private async Task RebuildJourneyAsync(Course course, string markdown, CancellationToken ct)
+    {
+        var previous = await db.CourseSteps
+            .Where(s => s.CourseId == course.Id)
+            .ToListAsync(ct);
+
+        var (mode, steps) = CourseJourneyBuilder.Build(course.Id, markdown);
+
+        foreach (var step in steps)
+        {
+            var match = previous.FirstOrDefault(p =>
+                p.Kind == step.Kind &&
+                string.Equals(p.HeadingPath, step.HeadingPath, StringComparison.Ordinal));
+
+            if (match is null) continue;
+
+            step.Status = match.Status;
+            step.Score = match.Score;
+            step.Total = match.Total;
+            step.Attempts = match.Attempts;
+            step.CompletedAt = match.CompletedAt;
+            step.WeakHeadings = match.WeakHeadings;
+        }
+
+        // Après report, on réapplique la règle d'ouverture : la première étape non
+        // validée doit être accessible, sinon un élève à jour se retrouverait devant
+        // un parcours entièrement verrouillé.
+        UnlockNext(steps);
+
+        db.CourseSteps.RemoveRange(previous);
+        db.CourseSteps.AddRange(steps);
+
+        course.JourneyMode = mode;
+        course.Steps = steps;
+
+        logger.LogInformation("Parcours du cours {CourseId} : mode {Mode}, {Count} étapes",
+            course.Id, mode, steps.Count);
+    }
+
+    /// <summary>
+    /// Ouvre la première étape non validée et verrouille celles qui suivent.
+    /// Une étape échouée reste accessible : l'élève doit pouvoir refaire son test.
+    /// </summary>
+    internal static void UnlockNext(IReadOnlyList<CourseStep> steps)
+    {
+        var opened = false;
+
+        foreach (var step in steps.OrderBy(s => s.Order))
+        {
+            if (step.Status == StepStatus.Passed) continue;
+
+            if (!opened)
+            {
+                if (step.Status == StepStatus.Locked) step.Status = StepStatus.Available;
+                opened = true;
+            }
+            else if (step.Status is not (StepStatus.Failed or StepStatus.InProgress))
+            {
+                step.Status = StepStatus.Locked;
+            }
+        }
     }
 
     private static string Truncate(string value, int max) =>

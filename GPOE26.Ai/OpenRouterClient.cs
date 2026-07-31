@@ -180,6 +180,54 @@ public sealed class OpenRouterClient(
         return vectors;
     }
 
+    // ── Synthèse vocale ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Lit un texte à voix haute et renvoie l'audio MP3.
+    ///
+    /// Contrairement aux autres appels, la réponse est **binaire** : l'endpoint renvoie
+    /// le flux audio directement, pas du JSON. Une erreur, elle, revient bien en JSON —
+    /// d'où la vérification du code HTTP avant de lire les octets.
+    /// </summary>
+    public async Task<byte[]> SynthesizeSpeechAsync(string text, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return [];
+
+        // Garde-fou de coût : le TTS se facture au caractère.
+        if (text.Length > _options.MaxSpeechCharacters)
+            text = text[.._options.MaxSpeechCharacters];
+
+        var model = _options.ModelFor(AgentKind.Voix);
+
+        var body = new
+        {
+            model,
+            input = text,
+            voice = _options.Voice,
+            response_format = "mp3",
+        };
+
+        using var http = CreateClient();
+        using var response = await http.PostAsJsonAsync("audio/speech", body, SerializerOptions, ct);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync(ct);
+            logger.LogError("Synthèse vocale ({Model}) → HTTP {Status} : {Payload}",
+                model, (int)response.StatusCode, Truncate(error));
+
+            throw new OpenRouterException(
+                $"La synthèse vocale a échoué ({(int)response.StatusCode}) : {Truncate(error)}");
+        }
+
+        var audio = await response.Content.ReadAsByteArrayAsync(ct);
+
+        logger.LogInformation("Synthèse vocale via {Model} : {Characters} caractères → {Bytes} octets",
+            model, text.Length, audio.Length);
+
+        return audio;
+    }
+
     // ── Catalogue ─────────────────────────────────────────────────────────────────
 
     /// <summary>Liste les modèles disponibles, pour permettre de les choisir depuis l'application.</summary>

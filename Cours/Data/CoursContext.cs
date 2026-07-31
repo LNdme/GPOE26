@@ -19,6 +19,7 @@ namespace Cours.Data
         public DbSet<CourseSection> CourseSections => Set<CourseSection>();
         public DbSet<CourseAsset> CourseAssets => Set<CourseAsset>();
         public DbSet<CourseChunk> CourseChunks => Set<CourseChunk>();
+        public DbSet<CourseStep> CourseSteps => Set<CourseStep>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -55,6 +56,13 @@ namespace Cours.Data
                       .WithOne(k => k.Course)
                       .HasForeignKey(k => k.CourseId)
                       .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasMany(c => c.Steps)
+                      .WithOne(s => s.Course)
+                      .HasForeignKey(s => s.CourseId)
+                      .OnDelete(DeleteBehavior.Cascade);
+
+                entity.Property(c => c.JourneyMode).HasConversion<string>();
             });
 
             modelBuilder.Entity<CourseSection>(entity =>
@@ -70,6 +78,15 @@ namespace Cours.Data
                 entity.Property(a => a.OriginalFileName).HasMaxLength(260);
                 entity.Property(a => a.ContentType).HasMaxLength(100);
                 entity.HasIndex(a => new { a.CourseId, a.Order });
+            });
+
+            modelBuilder.Entity<CourseStep>(entity =>
+            {
+                entity.Property(s => s.Kind).HasConversion<string>().HasMaxLength(20);
+                entity.Property(s => s.Status).HasConversion<string>().HasMaxLength(20);
+                entity.Property(s => s.Title).HasMaxLength(300);
+                entity.Property(s => s.HeadingPath).HasMaxLength(500);
+                entity.HasIndex(s => new { s.CourseId, s.Order });
             });
 
             modelBuilder.Entity<CourseChunk>(entity =>

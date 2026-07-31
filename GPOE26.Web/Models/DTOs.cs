@@ -243,6 +243,103 @@ public record SearchHitDto(
     double Score
 );
 
+// ── Parcours d'apprentissage ──────────────────────────────────────────────────
+
+public enum StepKind { Lecture, MiniTest, TestFinal, ExerciceOuvert, QcmApplication }
+
+public enum StepStatus { Locked, Available, InProgress, Passed, Failed }
+
+public enum JourneyMode { Whole, PerSection }
+
+public record StepDto(
+    Guid Id,
+    StepKind Kind,
+    int Order,
+    string Title,
+    string? HeadingPath,
+    StepStatus Status,
+    int? Score,
+    int? Total,
+    int Attempts,
+    DateTime? CompletedAt,
+    List<string> WeakHeadings,
+    int QuestionCount
+)
+{
+    public bool IsReading => Kind == StepKind.Lecture;
+    public bool IsQuiz => Kind is StepKind.MiniTest or StepKind.TestFinal or StepKind.QcmApplication;
+    public bool IsOpenExercise => Kind == StepKind.ExerciceOuvert;
+
+    public bool IsLocked => Status == StepStatus.Locked;
+    public bool IsPassed => Status == StepStatus.Passed;
+
+    /// <summary>Les trois temps du parcours, pour la barre de progression.</summary>
+    public JourneyPhase Phase => Kind switch
+    {
+        StepKind.Lecture => JourneyPhase.Lire,
+        StepKind.MiniTest or StepKind.TestFinal => JourneyPhase.Comprendre,
+        _ => JourneyPhase.Consolider,
+    };
+
+    public string ScoreLabel => Score is { } s && Total is { } t ? $"{s}/{t}" : "";
+}
+
+/// <summary>Les trois temps affichés dans la barre de parcours.</summary>
+public enum JourneyPhase { Lire, Comprendre, Consolider }
+
+public record JourneyDto(
+    Guid CourseId,
+    JourneyMode Mode,
+    List<StepDto> Steps,
+    Guid? ActiveStepId,
+    int PassedCount,
+    double PassThresholdPercent
+)
+{
+    public StepDto? Active => Steps.FirstOrDefault(s => s.Id == ActiveStepId);
+
+    public StepDto? StepById(Guid id) => Steps.FirstOrDefault(s => s.Id == id);
+
+    /// <summary>État global d'un des trois temps, pour la barre de parcours.</summary>
+    public StepStatus PhaseStatus(JourneyPhase phase)
+    {
+        var steps = Steps.Where(s => s.Phase == phase).ToList();
+        if (steps.Count == 0) return StepStatus.Locked;
+
+        if (steps.All(s => s.IsPassed)) return StepStatus.Passed;
+        if (steps.All(s => s.IsLocked)) return StepStatus.Locked;
+
+        return steps.Any(s => s.Status == StepStatus.Failed) ? StepStatus.Failed : StepStatus.InProgress;
+    }
+
+    /// <summary>« Partie 2 sur 5 », pour un parcours découpé.</summary>
+    public string? PartLabel(StepDto step)
+    {
+        if (Mode != JourneyMode.PerSection || step.HeadingPath is null) return null;
+
+        var parts = Steps.Where(s => s.Kind == StepKind.Lecture).ToList();
+        var index = parts.FindIndex(s => s.HeadingPath == step.HeadingPath);
+
+        return index >= 0 ? $"Partie {index + 1} sur {parts.Count}" : null;
+    }
+}
+
+public record StepResultRequest(int Score, int Total, List<string>? WeakHeadings);
+
+// ── Exercice de consolidation ─────────────────────────────────────────────────
+
+public record ExerciceResponse(string Statement);
+
+/// <param name="Acquis">L'essentiel de l'attendu est-il là ?</param>
+public record ExerciseCorrection(
+    bool Acquis,
+    int Score,
+    List<string> PointsForts,
+    List<string> PointsManquants,
+    string Correction,
+    string? Conseil
+);
+
 public record CourseSummaryDto(
     Guid Id,
     string Title,

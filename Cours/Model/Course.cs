@@ -63,6 +63,19 @@ namespace Cours.Model
         /// <summary>Fragments vectorisés du cours, pour la recherche sémantique.</summary>
         public List<CourseChunk> Chunks { get; set; } = new();
 
+        // ─── Parcours d'apprentissage ─────────────────────────────────────────────
+
+        /// <summary>
+        /// Rythme du parcours, déduit de la longueur du cours à la mise en forme.
+        /// </summary>
+        public JourneyMode JourneyMode { get; set; } = JourneyMode.Whole;
+
+        /// <summary>
+        /// Les étapes ordonnées : Lire → Comprendre → Consolider, éventuellement
+        /// répétées par partie pour un cours long.
+        /// </summary>
+        public List<CourseStep> Steps { get; set; } = new();
+
         // ─── Propriétaire ─────────────────────────────────────────────────────────
 
         /// <summary>
@@ -185,6 +198,112 @@ namespace Cours.Model
         /// changer de modèle d'embedding impose une migration et une réindexation.
         /// </summary>
         public Vector? Embedding { get; set; }
+    }
+
+    /// <summary>
+    /// Une étape du parcours de l'élève sur ce cours.
+    ///
+    /// C'est aussi la trace de sa progression : score, nombre de tentatives, date de
+    /// validation. Ces trois informations, jointes au <see cref="HeadingPath"/>, sont la
+    /// matière première du modèle de maîtrise qui suivra l'élève sur l'année — d'où
+    /// l'insistance à toujours les renseigner, même quand l'étape porte sur tout le cours.
+    /// </summary>
+    public class CourseStep
+    {
+        public Guid Id { get; set; } = Guid.NewGuid();
+
+        public Guid CourseId { get; set; }
+        public Course Course { get; set; } = null!;
+
+        public StepKind Kind { get; set; }
+
+        /// <summary>Position dans le parcours (0-based, croissant).</summary>
+        public int Order { get; set; }
+
+        /// <summary>Libellé affiché, ex. « Partie 2 — Le coefficient directeur ».</summary>
+        public string Title { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Section du cours couverte par l'étape, ex. « Les dérivées › Nombre dérivé ».
+        /// Vide pour une étape portant sur le cours entier.
+        /// </summary>
+        public string? HeadingPath { get; set; }
+
+        public StepStatus Status { get; set; } = StepStatus.Locked;
+
+        // ─── Résultat ─────────────────────────────────────────────────────────────
+
+        public int? Score { get; set; }
+        public int? Total { get; set; }
+
+        /// <summary>Nombre de tentatives, pour distinguer l'acquis du réussi de justesse.</summary>
+        public int Attempts { get; set; }
+
+        /// <summary>
+        /// Date de validation. Sans horodatage, aucune décroissance de maîtrise ne sera
+        /// calculable rétroactivement quand le suivi annuel arrivera.
+        /// </summary>
+        public DateTime? CompletedAt { get; set; }
+
+        /// <summary>
+        /// Sections sur lesquelles l'élève a échoué au dernier essai, séparées par « | ».
+        /// Sert à le renvoyer au bon endroit du cours, et plus tard à cibler les rappels.
+        /// </summary>
+        public string? WeakHeadings { get; set; }
+
+        /// <summary>Seuil de validation d'une étape évaluée.</summary>
+        public const double PassThreshold = 0.7;
+
+        public bool IsEvaluated => Kind != StepKind.Lecture;
+
+        public double? Percentage =>
+            Score is { } score && Total is > 0 ? (double)score / Total.Value : null;
+    }
+
+    public enum StepKind
+    {
+        /// <summary>Lire le cours, ou une partie du cours.</summary>
+        Lecture,
+
+        /// <summary>Court test de compréhension sur une partie.</summary>
+        MiniTest,
+
+        /// <summary>Test de compréhension sur l'ensemble du cours.</summary>
+        TestFinal,
+
+        /// <summary>Exercice à rédiger, corrigé par l'agent.</summary>
+        ExerciceOuvert,
+
+        /// <summary>QCM d'application, plus exigeant que le test de compréhension.</summary>
+        QcmApplication
+    }
+
+    public enum StepStatus
+    {
+        /// <summary>Pas encore accessible : l'étape précédente n'est pas validée.</summary>
+        Locked,
+
+        /// <summary>Accessible, jamais commencée.</summary>
+        Available,
+
+        /// <summary>Commencée mais pas terminée.</summary>
+        InProgress,
+
+        /// <summary>Validée.</summary>
+        Passed,
+
+        /// <summary>Tentée sans atteindre le seuil.</summary>
+        Failed
+    }
+
+    /// <summary>Rythme du parcours, déduit de la longueur du cours.</summary>
+    public enum JourneyMode
+    {
+        /// <summary>Cours court : on lit tout, puis on teste, puis on consolide.</summary>
+        Whole,
+
+        /// <summary>Cours long : lecture et mini-test partie par partie.</summary>
+        PerSection
     }
 
     public enum ContentType

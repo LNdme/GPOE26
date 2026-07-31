@@ -1,0 +1,149 @@
+/* Étape « Consolider », exercice ouvert. Tokens --rd-* de reading.css, comme le
+   reste du parcours : l'élève ne change pas d'univers visuel en changeant d'étape. */
+
+.exercise {
+    max-width: 46rem;
+    margin: 0 auto;
+    padding: 0 1.25rem 4rem;
+    color: var(--rd-text);
+}
+
+.exercise-state { margin: 3rem auto; text-align: center; }
+
+/* ── Énoncé ───────────────────────────────────────────────────────────────── */
+
+.exercise-statement {
+    padding: 1.25rem 1.5rem;
+    border: 1px solid var(--rd-border);
+    border-left: 4px solid var(--rd-accent);
+    border-radius: 12px;
+    background: var(--rd-surface);
+    font-size: .97rem;
+    line-height: 1.7;
+}
+
+/* ── Rédaction ────────────────────────────────────────────────────────────── */
+
+.exercise-answer { margin-top: 1.5rem; }
+
+.exercise-label {
+    display: block;
+    margin-bottom: .5rem;
+    font-size: .75rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--rd-text-soft);
+}
+
+.exercise-input {
+    width: 100%;
+    padding: .85rem 1rem;
+    border: 1px solid var(--rd-border);
+    border-radius: 10px;
+    background: var(--rd-bg);
+    color: var(--rd-text);
+    font-family: inherit;
+    font-size: .95rem;
+    line-height: 1.7;
+    resize: vertical;
+}
+
+.exercise-input:focus {
+    outline: none;
+    border-color: var(--rd-accent);
+    box-shadow: 0 0 0 3px var(--rd-accent-soft);
+}
+
+.exercise-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-top: .75rem;
+}
+
+/* ── Correction ───────────────────────────────────────────────────────────── */
+
+.exercise-correction {
+    margin-top: 1.5rem;
+    padding: 1.25rem 1.5rem;
+    border: 1px solid var(--rd-border);
+    border-radius: 12px;
+    background: var(--rd-surface);
+}
+
+.exercise-correction.is-acquired { border-color: #059669; }
+.exercise-correction.is-partial { border-color: #d97706; }
+
+.exercise-verdict {
+    display: flex;
+    align-items: flex-start;
+    gap: .85rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--rd-border);
+}
+
+.exercise-verdict-badge {
+    display: grid;
+    place-items: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+.is-acquired .exercise-verdict-badge { background: #059669; }
+.is-partial .exercise-verdict-badge { background: #d97706; }
+
+.exercise-verdict-title {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--rd-heading);
+}
+
+.exercise-verdict-hint { margin: .2rem 0 0; font-size: .88rem; color: var(--rd-text-soft); }
+
+.exercise-points { margin-top: 1rem; }
+
+.exercise-points-title {
+    margin: 0 0 .4rem;
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+}
+
+.exercise-points.is-strong .exercise-points-title { color: #059669; }
+.exercise-points.is-missing .exercise-points-title { color: #d97706; }
+
+.exercise-points ul { margin: 0; padding-left: 1.25rem; font-size: .92rem; line-height: 1.6; }
+
+.exercise-points li { margin-bottom: .25rem; }
+
+.exercise-solution {
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+    border-top: 1px dashed var(--rd-border);
+}
+
+.exercise-solution summary {
+    cursor: pointer;
+    font-size: .85rem;
+    font-weight: 650;
+    color: var(--rd-accent);
+}
+
+.exercise-solution[open] summary { margin-bottom: .75rem; }
+
+.exercise-correction-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    margin-top: 1.25rem;
+}

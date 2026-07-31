@@ -109,26 +109,57 @@ else
             </div>
         </header>
 
+        @if (_journey is not null && _journey.Steps.Count > 0)
+        {
+            <JourneyBar Journey="_journey" CurrentStep="_step" OnSelect="GoToStepAsync" />
+        }
+
         <div class="study-body @(_showOutline ? "" : "no-outline") @(_showTutor ? "" : "no-tutor")">
 
-            <!-- ── Sommaire ─────────────────────────────────────────────── -->
+            <!-- ── Rail gauche : étapes du parcours, ou sommaire du cours ──── -->
             <aside class="study-rail study-outline">
-                <p class="study-rail-title">Sommaire</p>
-                @if (_outline.Count == 0)
+                @if (_journey is { Mode: JourneyMode.PerSection, Steps.Count: > 0 })
                 {
-                    <p class="study-rail-empty">Le sommaire apparaîtra une fois le cours mis en forme.</p>
+                    <p class="study-rail-title">Étapes</p>
+                    <nav>
+                        @foreach (var step in _journey.Steps)
+                        {
+                            <button type="button"
+                                    class="study-step-link @StepLinkClass(step)"
+                                    disabled="@step.IsLocked"
+                                    title="@(step.IsLocked ? LockedHint : step.Title)"
+                                    @onclick="() => GoToStepAsync(step)">
+                                <span class="study-step-icon">@StepIcon(step)</span>
+                                <span class="study-step-text">
+                                    <span class="study-step-title">@step.Title</span>
+                                    @if (step.Score is not null)
+                                    {
+                                        <span class="study-step-score">@step.ScoreLabel</span>
+                                    }
+                                </span>
+                            </button>
+                        }
+                    </nav>
                 }
                 else
                 {
-                    <nav>
-                        @foreach (var entry in _outline)
-                        {
-                            <button type="button"
-                                    class="study-toc-link study-toc-l@(entry.Level)"
-                                    data-toc-target="@entry.Id"
-                                    @onclick="() => ScrollTo(entry.Id)">@entry.Text</button>
-                        }
-                    </nav>
+                    <p class="study-rail-title">Sommaire</p>
+                    @if (_outline.Count == 0)
+                    {
+                        <p class="study-rail-empty">Le sommaire apparaîtra une fois le cours mis en forme.</p>
+                    }
+                    else
+                    {
+                        <nav>
+                            @foreach (var entry in _outline)
+                            {
+                                <button type="button"
+                                        class="study-toc-link study-toc-l@(entry.Level)"
+                                        data-toc-target="@entry.Id"
+                                        @onclick="() => ScrollTo(entry.Id)">@entry.Text</button>
+                            }
+                        </nav>
+                    }
                 }
             </aside>
 
@@ -180,6 +211,22 @@ else
                             <p class="text-muted-chic">Ce cours ne contient encore ni texte ni document.</p>
                         </div>
                     }
+                    else if (_step is { IsQuiz: true } quizStep)
+                    {
+                        <StepQuiz Course="_course"
+                                  Step="quizStep"
+                                  PassThresholdPercent="_journey!.PassThresholdPercent"
+                                  OnCompleted="OnStepResultAsync"
+                                  OnAskTutor="AskTutorAboutAsync"
+                                  OnGoToSection="ScrollToHeadingText" />
+                    }
+                    else if (_step is { IsOpenExercise: true } exerciseStep)
+                    {
+                        <StepExercise Course="_course"
+                                      Step="exerciseStep"
+                                      OnCompleted="OnStepResultAsync"
+                                      OnAskTutor="AskTutorAboutAsync" />
+                    }
                     else
                     {
                         @if (_course.FormatStatus == FormatStatus.Failed)
@@ -192,8 +239,13 @@ else
                             </div>
                         }
 
+                        @if (_journey?.PartLabel(_step!) is { } partLabel)
+                        {
+                            <p class="study-part-label">@partLabel</p>
+                        }
+
                         <article class="course-canvas">
-                            <MarkdownViewer Content="@_course.ReadableContent" />
+                            <MarkdownViewer Content="@ReadingContent" />
                         </article>
 
                         <footer class="study-footer">
@@ -330,6 +382,48 @@ else
                 </div>
             </aside>
         </div>
+
+        @*
+            Barre d'action : le fil que l'élève suit sans réfléchir. Toujours visible,
+            son libellé dépend de l'étape en cours.
+        *@
+        @if (_journey is not null && _step is not null && _tab == Tab.Course)
+        {
+            <footer class="study-action">
+                <span class="study-action-context">
+                    @if (_step.IsLocked)
+                    {
+                        <text>🔒 @LockedHint</text>
+                    }
+                    else
+                    {
+                        @_step.Title
+                        @if (_journey.PartLabel(_step) is { } label)
+                        {
+                            <span class="study-action-sub"> · @label</span>
+                        }
+                    }
+                </span>
+
+                @if (_step.IsReading && !_step.IsPassed)
+                {
+                    <button class="btn btn-brand" disabled="@(!_readingComplete || _advancing)" @onclick="MarkReadAsync">
+                        @if (_advancing) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                        @(_readingComplete ? NextLabel : "Lisez le cours jusqu'au bout")
+                    </button>
+                }
+                else if (NextStep is { } next)
+                {
+                    <button class="btn btn-brand" disabled="@next.IsLocked" @onclick="() => GoToStepAsync(next)">
+                        @NextLabel
+                    </button>
+                }
+                else if (_journey.Steps.All(s => s.IsPassed))
+                {
+                    <span class="study-action-done">🎉 Parcours terminé</span>
+                }
+            </footer>
+        }
     </div>
 }
 
@@ -352,6 +446,12 @@ else
     // Sommaire
     private IReadOnlyList<MarkdownViewer.OutlineEntry> _outline = [];
 
+    // Parcours
+    private JourneyDto? _journey;
+    private StepDto? _step;
+    private bool _readingComplete;
+    private bool _advancing;
+
     // Répétiteur
     private readonly List<ConversationMessage> _messages = [];
     private readonly List<string> _citations = [];
@@ -366,6 +466,9 @@ else
     private ElementReference _progressElement;
     private bool _interopReady;
     private string? _renderedContent;
+
+    /// <summary>Référence passée au JS pour qu'il signale le franchissement du seuil de lecture.</summary>
+    private DotNetObjectReference<CourseView>? _selfRef;
 
     // Suivi de la mise en forme en tâche de fond
     private CancellationTokenSource? _pollingCts;
@@ -405,9 +508,164 @@ else
         _course = await Api.GetCourseAsync(Id);
         _outline = MarkdownViewer.BuildOutline(_course?.ReadableContent);
 
+        await LoadJourneyAsync();
+
         // Un cours déposé arrive en Pending : on suit son avancement pour basculer
         // automatiquement sur le contenu dès qu'il est prêt, sans que l'élève recharge.
         if (_course?.FormatStatus == FormatStatus.Pending) StartPolling();
+    }
+
+    private async Task LoadJourneyAsync()
+    {
+        if (_course is null) return;
+
+        _journey = await Api.GetJourneyAsync(_course.Id);
+        ApplyJourney(_journey?.Active);
+    }
+
+    /// <summary>
+    /// Positionne l'étape courante et réinitialise l'état de lecture qui en dépend.
+    /// Une étape déjà validée est consultable : on n'oblige personne à relire pour
+    /// revenir en arrière.
+    /// </summary>
+    private void ApplyJourney(StepDto? step)
+    {
+        _step = step;
+        _readingComplete = step is null || !step.IsReading || step.IsPassed;
+        _outline = MarkdownViewer.BuildOutline(ReadingContent);
+    }
+
+    // ── Contenu et navigation du parcours ────────────────────────────────────
+
+    /// <summary>
+    /// Ce que le canvas affiche : le cours entier, ou la seule partie de l'étape
+    /// quand le parcours se lit partie par partie.
+    /// </summary>
+    private string? ReadingContent =>
+        _journey?.Mode == JourneyMode.PerSection && _step?.HeadingPath is { } path
+            ? MarkdownViewer.ExtractPart(_course?.ReadableContent, path)
+            : _course?.ReadableContent;
+
+    private StepDto? NextStep =>
+        _journey?.Steps.FirstOrDefault(s => _step is not null && s.Order > _step.Order);
+
+    /// <summary>Message affiché sur une étape encore verrouillée.</summary>
+    private string LockedHint =>
+        $"Validez l'étape précédente à {(_journey?.PassThresholdPercent ?? 70):0} % pour débloquer";
+
+    private string NextLabel => _step?.Kind switch
+    {
+        StepKind.Lecture when NextStep?.IsQuiz == true => "J'ai lu — passer au test",
+        StepKind.Lecture => "J'ai lu — continuer",
+        StepKind.MiniTest or StepKind.TestFinal when NextStep?.IsReading == true => "Partie suivante",
+        StepKind.MiniTest or StepKind.TestFinal => "Passer aux exercices",
+        StepKind.ExerciceOuvert => "Passer au QCM d'application",
+        _ => "Continuer",
+    };
+
+    private async Task GoToStepAsync(StepDto step)
+    {
+        if (step.IsLocked) return;
+
+        ApplyJourney(step);
+        _tab = Tab.Course;
+
+        // Nouveau texte à l'écran : le suivi de lecture doit repartir de zéro, sinon
+        // la partie suivante serait considérée comme lue dès son ouverture.
+        if (_interopReady)
+        {
+            _renderedContent = ReadingContent;
+            await JS.InvokeVoidAsync("readingInterop.rescan", true);
+        }
+
+        StateHasChanged();
+    }
+
+    /// <summary>Appelé par reading-interop.js une seule fois, au franchissement de 90 %.</summary>
+    [JSInvokable]
+    public Task OnReadingThresholdReached()
+    {
+        if (_readingComplete) return Task.CompletedTask;
+
+        _readingComplete = true;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task MarkReadAsync()
+    {
+        if (_course is null || _step is null || _advancing) return;
+
+        _advancing = true;
+        var updated = await Api.MarkStepReadAsync(_course.Id, _step.Id);
+        _advancing = false;
+
+        if (updated is null) return;
+
+        _journey = updated;
+        await GoToStepOrRefresh(updated.Active);
+    }
+
+    /// <summary>Résultat d'une étape évaluée, remonté par StepQuiz ou StepExercise.</summary>
+    private async Task OnStepResultAsync(StepResultRequest result)
+    {
+        if (_course is null || _step is null) return;
+
+        var updated = await Api.SubmitStepResultAsync(
+            _course.Id, _step.Id, result.Score, result.Total, result.WeakHeadings);
+
+        if (updated is null) return;
+
+        _journey = updated;
+
+        // Étape ratée : on reste dessus pour que l'élève voie sa correction et puisse
+        // refaire le test. Réussie : on l'emmène à la suite.
+        var current = updated.StepById(_step.Id);
+        if (current is { IsPassed: false })
+        {
+            ApplyJourney(current);
+            StateHasChanged();
+            return;
+        }
+
+        await GoToStepOrRefresh(updated.Active);
+    }
+
+    private async Task GoToStepOrRefresh(StepDto? next)
+    {
+        if (next is not null) await GoToStepAsync(next);
+        else { ApplyJourney(_journey?.Active); StateHasChanged(); }
+    }
+
+    /// <summary>
+    /// Pousse une question ratée dans le rail du répétiteur, avec son contexte, pour
+    /// que l'élève obtienne une explication sans avoir à la retaper.
+    /// </summary>
+    private async Task AskTutorAboutAsync(string question)
+    {
+        _showTutor = true;
+        await SendAsync(question);
+    }
+
+    private static string StepLinkClass(StepDto step) => step.Status switch
+    {
+        StepStatus.Passed => "is-passed",
+        StepStatus.Failed => "is-failed",
+        StepStatus.Locked => "is-locked",
+        _ => "is-open",
+    };
+
+    private string StepIcon(StepDto step)
+    {
+        if (step.IsPassed) return "✓";
+        if (step.IsLocked) return "🔒";
+        if (step.Id == _step?.Id) return "●";
+
+        return step.Kind switch
+        {
+            StepKind.Lecture => "📖",
+            StepKind.ExerciceOuvert => "✍️",
+            _ => "🎯",
+        };
     }
 
     // ── Suivi de la mise en forme ────────────────────────────────────────────
@@ -437,7 +695,10 @@ else
                     if (refreshed is null || refreshed.FormatStatus == FormatStatus.Pending) continue;
 
                     _course = refreshed;
-                    _outline = MarkdownViewer.BuildOutline(refreshed.ReadableContent);
+
+                    // Les étapes du parcours sont générées à la fin de la mise en forme :
+                    // il faut donc le recharger, pas seulement le contenu.
+                    await LoadJourneyAsync();
 
                     await InvokeAsync(StateHasChanged);
                     break;
@@ -473,8 +734,10 @@ else
         if (!_interopReady)
         {
             _interopReady = true;
+            _selfRef = DotNetObjectReference.Create(this);
+
             var prefs = await JS.InvokeAsync<ReadingPreferences>(
-                "readingInterop.init", Id.ToString(), _rootElement, _scrollerElement, _progressElement);
+                "readingInterop.init", Id.ToString(), _rootElement, _scrollerElement, _progressElement, _selfRef);
 
             if (prefs is not null)
             {
@@ -482,16 +745,18 @@ else
                 StateHasChanged();
             }
 
-            _renderedContent = _course.ReadableContent;
+            _renderedContent = ReadingContent;
             return;
         }
 
-        // Le contenu a changé (fin de la mise en forme) : les titres et les liens du
-        // sommaire sont de nouveaux nœuds DOM, l'interop doit les retrouver.
-        if (_renderedContent != _course.ReadableContent)
+        // Le contenu a changé (fin de la mise en forme, ou changement d'étape) : les
+        // titres et les liens du sommaire sont de nouveaux nœuds DOM, l'interop doit
+        // les retrouver. On ne réarme pas le seuil de lecture ici — GoToStepAsync s'en
+        // charge, lui seul sait qu'il s'agit d'un nouveau texte à lire.
+        if (_renderedContent != ReadingContent)
         {
-            _renderedContent = _course.ReadableContent;
-            await JS.InvokeVoidAsync("readingInterop.rescan");
+            _renderedContent = ReadingContent;
+            await JS.InvokeVoidAsync("readingInterop.rescan", false);
         }
     }
 
@@ -618,6 +883,12 @@ else
         catch (JSDisconnectedException)
         {
             // Le circuit est déjà fermé : il n'y a plus de navigateur à nettoyer.
+        }
+        finally
+        {
+            // À libérer dans tous les cas : la référence maintient le composant en vie
+            // côté .NET tant qu'elle n'est pas disposée.
+            _selfRef?.Dispose();
         }
     }
 }

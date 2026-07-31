@@ -1,0 +1,198 @@
+/* Étape « Comprendre ». Reprend les tokens --rd-* de reading.css : le test suit le
+   thème de lecture choisi par l'élève, il ne bascule pas sur un autre univers visuel. */
+
+.quiz {
+    max-width: 46rem;
+    margin: 0 auto;
+    padding: 0 1.25rem 4rem;
+    color: var(--rd-text);
+}
+
+.quiz-state {
+    margin: 3rem auto;
+    text-align: center;
+}
+
+/* ── Progression ──────────────────────────────────────────────────────────── */
+
+.quiz-head { margin-bottom: 1.5rem; }
+
+.quiz-counter {
+    display: block;
+    margin-bottom: .5rem;
+    font-size: .75rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--rd-text-soft);
+}
+
+.quiz-progress {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--rd-border);
+    overflow: hidden;
+}
+
+.quiz-progress-bar {
+    height: 100%;
+    background: var(--rd-accent);
+    transition: width .25s ease;
+}
+
+/* ── Question ─────────────────────────────────────────────────────────────── */
+
+.quiz-question {
+    margin: 0 0 1.5rem;
+    font-size: 1.15rem;
+    font-weight: 600;
+    line-height: 1.5;
+    color: var(--rd-heading);
+    text-wrap: balance;
+}
+
+.quiz-options { display: flex; flex-direction: column; gap: .6rem; }
+
+.quiz-option {
+    display: flex;
+    align-items: flex-start;
+    gap: .75rem;
+    width: 100%;
+    padding: .8rem 1rem;
+    border: 1px solid var(--rd-border);
+    border-radius: 10px;
+    background: var(--rd-bg);
+    color: var(--rd-text);
+    font-size: .95rem;
+    line-height: 1.5;
+    text-align: left;
+    transition: border-color .15s, background .15s;
+}
+
+.quiz-option:not(:disabled):hover {
+    border-color: var(--rd-accent);
+    background: var(--rd-accent-soft);
+}
+
+.quiz-option-letter {
+    display: grid;
+    place-items: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    flex: 0 0 auto;
+    border: 1px solid var(--rd-border);
+    border-radius: 50%;
+    font-size: .8rem;
+    font-weight: 700;
+}
+
+.quiz-option.is-selected { border-color: var(--rd-accent); background: var(--rd-accent-soft); }
+
+/* Après correction : la bonne réponse est toujours montrée, y compris quand
+   l'élève a juste — voir ce qu'on a validé fait partie de l'apprentissage. */
+.quiz-option.is-correct {
+    border-color: #059669;
+    background: color-mix(in srgb, #059669 10%, var(--rd-bg));
+}
+
+.quiz-option.is-correct .quiz-option-letter { border-color: #059669; background: #059669; color: #fff; }
+
+.quiz-option.is-wrong {
+    border-color: #dc2626;
+    background: color-mix(in srgb, #dc2626 8%, var(--rd-bg));
+}
+
+.quiz-option.is-wrong .quiz-option-letter { border-color: #dc2626; background: #dc2626; color: #fff; }
+
+.quiz-option.is-dimmed { opacity: .5; }
+
+.quiz-option:disabled { cursor: default; }
+
+/* ── Correction ───────────────────────────────────────────────────────────── */
+
+.quiz-feedback {
+    margin-top: 1.5rem;
+    padding: 1rem 1.15rem;
+    border: 1px solid var(--rd-border);
+    border-left: 4px solid var(--rd-border);
+    border-radius: 10px;
+    background: var(--rd-surface);
+}
+
+.quiz-feedback.is-correct { border-left-color: #059669; }
+.quiz-feedback.is-wrong { border-left-color: #dc2626; }
+
+.quiz-feedback-title {
+    margin: 0 0 .5rem;
+    font-weight: 700;
+    font-size: .95rem;
+}
+
+.quiz-feedback.is-correct .quiz-feedback-title { color: #059669; }
+.quiz-feedback.is-wrong .quiz-feedback-title { color: #dc2626; }
+
+.quiz-explanation { font-size: .93rem; line-height: 1.65; }
+
+.quiz-feedback-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    margin-top: .75rem;
+}
+
+/* ── Résultat ─────────────────────────────────────────────────────────────── */
+
+.quiz-result {
+    margin: 2rem auto;
+    padding: 2rem 1.5rem;
+    max-width: 34rem;
+    border: 1px solid var(--rd-border);
+    border-radius: 14px;
+    background: var(--rd-surface);
+    text-align: center;
+}
+
+.quiz-result.is-passed { border-color: #059669; }
+.quiz-result.is-failed { border-color: #d97706; }
+
+.quiz-result-badge { font-size: 2.5rem; line-height: 1; margin-bottom: .5rem; }
+
+.quiz-score {
+    margin: .5rem 0 1rem;
+    font-size: 1.75rem;
+    font-weight: 800;
+    color: var(--rd-heading);
+}
+
+.quiz-score span { font-size: 1rem; font-weight: 500; color: var(--rd-text-soft); }
+
+.quiz-weak {
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+    border-top: 1px dashed var(--rd-border);
+    text-align: left;
+}
+
+.quiz-weak-title {
+    margin: 0 0 .5rem;
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: var(--rd-text-soft);
+}
+
+.quiz-weak-link {
+    display: block;
+    width: 100%;
+    margin-bottom: .35rem;
+    padding: .45rem .7rem;
+    border: 1px solid var(--rd-border);
+    border-radius: 8px;
+    background: var(--rd-bg);
+    color: var(--rd-text);
+    font-size: .85rem;
+    text-align: left;
+}
+
+.quiz-weak-link:hover { border-color: var(--rd-accent); color: var(--rd-accent); }

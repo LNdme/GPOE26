@@ -100,6 +100,33 @@
         public List<ConversationMessage> History { get; init; } = History ?? [];
     }
 
+    /// <summary>Texte à lire à voix haute.</summary>
+    public record SpeakRequest(string Text);
+
+    // --- Exercice de consolidation ---
+
+    /// <summary>Demande d'un exercice ouvert sur un cours, éventuellement sur une seule partie.</summary>
+    public record ExerciceRequest(Guid CourseId, string? HeadingPath);
+
+    public record ExerciceResponse(string Statement);
+
+    /// <summary>Réponse rédigée par l'élève, à corriger.</summary>
+    public record CorrectionRequest(Guid CourseId, string? HeadingPath, string Statement, string Answer);
+
+    /// <summary>
+    /// Correction d'un exercice ouvert.
+    /// </summary>
+    /// <param name="Acquis">L'essentiel de l'attendu est-il là ?</param>
+    /// <param name="Score">Appréciation sur 100, pour alimenter la progression.</param>
+    public record ExerciseCorrection(
+        bool Acquis,
+        int Score,
+        List<string> PointsForts,
+        List<string> PointsManquants,
+        string Correction,
+        string? Conseil
+    );
+
     /// <summary>
     /// Évènement du flux SSE. <c>Type</c> vaut "step", "token", "done" ou "error".
     /// </summary>

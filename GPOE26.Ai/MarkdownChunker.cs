@@ -31,6 +31,54 @@ public static class MarkdownChunker
     /// <summary>En deçà, un fragment est fusionné avec le suivant plutôt que vectorisé seul.</summary>
     private const int MinimumSize = 120;
 
+    /// <summary>
+    /// Une grande partie du cours : un titre de niveau 2.
+    /// </summary>
+    /// <param name="Title">Le titre seul, ex. « Le coefficient directeur ».</param>
+    /// <param name="Path">Le chemin complet, ex. « Les fonctions affines › Le coefficient directeur ».</param>
+    public readonly record struct CoursePart(string Title, string Path);
+
+    /// <summary>
+    /// Les grandes parties du cours, dans l'ordre.
+    ///
+    /// Sert à décider du rythme du parcours (un cours à quatre parties ou plus se lit
+    /// partie par partie) et à donner leur titre aux étapes. On s'appuie sur les mêmes
+    /// règles de titres que le découpage, blocs de code compris.
+    /// </summary>
+    public static IReadOnlyList<CoursePart> TopParts(string markdown)
+    {
+        if (string.IsNullOrWhiteSpace(markdown)) return [];
+
+        var parts = new List<CoursePart>();
+        var currentH1 = string.Empty;
+        var inFence = false;
+
+        foreach (var line in markdown.Replace("\r\n", "\n").Split('\n'))
+        {
+            if (line.StartsWith("```", StringComparison.Ordinal) || line.StartsWith("~~~", StringComparison.Ordinal))
+            {
+                inFence = !inFence;
+                continue;
+            }
+
+            if (inFence) continue;
+
+            var level = HeadingLevel(line);
+            if (level == 1) currentH1 = line[1..].Trim();
+            else if (level == 2)
+            {
+                var title = line[2..].Trim();
+                if (title.Length == 0) continue;
+
+                parts.Add(new CoursePart(
+                    title,
+                    currentH1.Length > 0 ? $"{currentH1} › {title}" : title));
+            }
+        }
+
+        return parts;
+    }
+
     public static IReadOnlyList<CourseChunkDraft> Split(string markdown)
     {
         if (string.IsNullOrWhiteSpace(markdown)) return [];

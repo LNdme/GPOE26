@@ -1,0 +1,103 @@
+/* Barre de parcours — reprend les tokens --rd-* posés par reading.css,
+   donc elle suit le thème de lecture choisi par l'élève. */
+
+.journey {
+    /* Bande fixe entre l'en-tête et le corps : elle ne doit ni s'étirer ni se comprimer
+       quand le canvas défile. */
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    padding: .6rem 1.25rem;
+    border-bottom: 1px solid var(--rd-border);
+    background: var(--rd-surface);
+    overflow-x: auto;
+}
+
+.journey-phase {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    padding: .4rem .75rem;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--rd-text-soft);
+    text-align: left;
+    white-space: nowrap;
+    transition: background .15s, color .15s, border-color .15s;
+}
+
+.journey-phase:not(:disabled):hover { background: var(--rd-bg); color: var(--rd-text); }
+
+.journey-phase:disabled { opacity: .55; cursor: not-allowed; }
+
+.journey-marker {
+    display: grid;
+    place-items: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    flex: 0 0 auto;
+    border: 1px solid var(--rd-border);
+    border-radius: 50%;
+    background: var(--rd-bg);
+    font-size: .8rem;
+    font-weight: 700;
+}
+
+.journey-labels { display: flex; flex-direction: column; line-height: 1.25; }
+
+.journey-name { font-size: .9rem; font-weight: 600; }
+
+.journey-hint { font-size: .72rem; opacity: .85; }
+
+/* Le trait qui relie deux temps : plein une fois le temps atteint. */
+.journey-link {
+    flex: 1 1 1.5rem;
+    min-width: 1rem;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--rd-border);
+}
+
+.journey-link.is-reached { background: var(--rd-accent); }
+
+/* ── États ─────────────────────────────────────────────────────────────────── */
+
+.journey-phase.is-open { color: var(--rd-text); }
+
+.journey-phase.is-open .journey-marker {
+    border-color: var(--rd-accent);
+    color: var(--rd-accent);
+}
+
+.journey-phase.is-passed { color: var(--rd-text); }
+
+.journey-phase.is-passed .journey-marker {
+    border-color: #059669;
+    background: #059669;
+    color: #fff;
+}
+
+.journey-phase.is-failed .journey-marker {
+    border-color: #dc2626;
+    color: #dc2626;
+}
+
+.journey-phase.is-failed .journey-hint { color: #dc2626; }
+
+/* Le temps affiché à l'écran : c'est le repère principal de l'élève. */
+.journey-phase.is-current {
+    background: var(--rd-accent-soft);
+    border-color: var(--rd-accent);
+    color: var(--rd-accent);
+}
+
+.journey-phase.is-current .journey-name { font-weight: 700; }
+
+@media (max-width: 700px) {
+    /* Sur mobile, l'intitulé du temps suffit — les indices passent à la trappe
+       plutôt que de faire déborder la barre. */
+    .journey-hint { display: none; }
+    .journey { padding: .5rem .75rem; }
+}

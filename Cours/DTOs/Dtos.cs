@@ -115,6 +115,62 @@ namespace Cours.DTOs
         int Order
     );
 
+    // ── Parcours d'apprentissage ──────────────────────────────────────────────────
+
+    /// <summary>Enregistrement du résultat d'une étape évaluée.</summary>
+    /// <param name="WeakHeadings">Sections sur lesquelles l'élève a échoué, pour l'y renvoyer.</param>
+    public record StepResultRequest(
+        int Score,
+        int Total,
+        List<string>? WeakHeadings
+    );
+
+    /// <param name="QuestionCount">Nombre de questions à générer ; 0 si l'étape n'est pas un QCM.</param>
+    public record StepDto(
+        Guid Id,
+        StepKind Kind,
+        int Order,
+        string Title,
+        string? HeadingPath,
+        StepStatus Status,
+        int? Score,
+        int? Total,
+        int Attempts,
+        DateTime? CompletedAt,
+        List<string> WeakHeadings,
+        int QuestionCount
+    )
+    {
+        public StepDto(CourseStep s) : this(
+            s.Id,
+            s.Kind,
+            s.Order,
+            s.Title,
+            s.HeadingPath,
+            s.Status,
+            s.Score,
+            s.Total,
+            s.Attempts,
+            s.CompletedAt,
+            string.IsNullOrWhiteSpace(s.WeakHeadings)
+                ? []
+                : s.WeakHeadings.Split(" | ", StringSplitOptions.RemoveEmptyEntries).ToList(),
+            Service.CourseJourneyBuilder.QuestionCountFor(s.Kind)
+        )
+        { }
+    }
+
+    /// <summary>Le parcours complet d'un cours et l'étape où l'élève en est.</summary>
+    /// <param name="ActiveStepId">Première étape non validée : celle sur laquelle ouvrir la page.</param>
+    public record JourneyDto(
+        Guid CourseId,
+        JourneyMode Mode,
+        List<StepDto> Steps,
+        Guid? ActiveStepId,
+        int PassedCount,
+        double PassThresholdPercent
+    );
+
     /// <summary>Un fragment retrouvé par la recherche sémantique.</summary>
     public record SearchHitDto(
         Guid ChunkId,

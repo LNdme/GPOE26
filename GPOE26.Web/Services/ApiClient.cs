@@ -661,6 +661,61 @@ namespace GPOE26.Web.Services
             }
         }
 
+        // ── Parcours d'apprentissage ────────────────────────────────────────────
+
+        public async Task<JourneyDto?> GetJourneyAsync(Guid courseId)
+        {
+            var client = CreateAuthClient("cours");
+            try
+            {
+                return await client.GetFromJsonAsync<JourneyDto>($"/cours/{courseId}/parcours");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error fetching journey for course {courseId}");
+                return null;
+            }
+        }
+
+        /// <summary>Marque une étape de lecture comme faite et renvoie le parcours à jour.</summary>
+        public async Task<JourneyDto?> MarkStepReadAsync(Guid courseId, Guid stepId)
+        {
+            var client = CreateAuthClient("cours");
+            try
+            {
+                var resp = await client.PostAsync($"/cours/{courseId}/parcours/{stepId}/lu", content: null);
+                resp.EnsureSuccessStatusCode();
+                return await resp.Content.ReadFromJsonAsync<JourneyDto>();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error marking step {stepId} as read");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Enregistre le résultat d'une étape évaluée. Le seuil est appliqué côté API :
+        /// le parcours renvoyé dit ce qui s'est déverrouillé.
+        /// </summary>
+        public async Task<JourneyDto?> SubmitStepResultAsync(
+            Guid courseId, Guid stepId, int score, int total, IEnumerable<string>? weakHeadings = null)
+        {
+            var client = CreateAuthClient("cours");
+            try
+            {
+                var request = new StepResultRequest(score, total, weakHeadings?.ToList());
+                var resp = await client.PostAsJsonAsync($"/cours/{courseId}/parcours/{stepId}/resultat", request);
+                resp.EnsureSuccessStatusCode();
+                return await resp.Content.ReadFromJsonAsync<JourneyDto>();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error submitting result for step {stepId}");
+                return null;
+            }
+        }
+
         /// <summary>Extrait le champ `message` d'une réponse d'erreur JSON de l'API.</summary>
         private static string? ExtractMessage(string body)
         {
@@ -825,6 +880,76 @@ namespace GPOE26.Web.Services
             }
         }
 
+        /// <summary>Demande un exercice ouvert sur un cours, ou sur une de ses parties.</summary>
+        public async Task<string?> GenerateExerciseAsync(Guid courseId, string? headingPath)
+        {
+            var client = CreateAuthClient("chat");
+            try
+            {
+                var resp = await client.PostAsJsonAsync("/chat/exercice",
+                    new { CourseId = courseId, HeadingPath = headingPath });
+
+                resp.EnsureSuccessStatusCode();
+                var body = await resp.Content.ReadFromJsonAsync<ExerciceResponse>();
+                return body?.Statement;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error generating exercise for course {courseId}");
+                return null;
+            }
+        }
+
+        /// <summary>Fait corriger la réponse rédigée par l'élève.</summary>
+        public async Task<ExerciseCorrection?> CorrectExerciseAsync(
+            Guid courseId, string? headingPath, string statement, string answer)
+        {
+            var client = CreateAuthClient("chat");
+            try
+            {
+                var resp = await client.PostAsJsonAsync("/chat/exercice/corriger",
+                    new { CourseId = courseId, HeadingPath = headingPath, Statement = statement, Answer = answer });
+
+                resp.EnsureSuccessStatusCode();
+                return await resp.Content.ReadFromJsonAsync<ExerciseCorrection>();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error correcting exercise for course {courseId}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Récupère la lecture à voix haute d'un texte, en base64 prêt à être joué.
+        ///
+        /// L'audio transite par le circuit Blazor plutôt que par une URL directe :
+        /// l'explication est courte, et cela évite d'exposer une seconde route
+        /// authentifiée au navigateur.
+        /// </summary>
+        public async Task<string?> SpeakAsync(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null;
+
+            var client = CreateAuthClient("chat");
+            try
+            {
+                var resp = await client.PostAsJsonAsync("/chat/voix", new { Text = text });
+                if (!resp.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("Synthèse vocale refusée : {Status}", resp.StatusCode);
+                    return null;
+                }
+
+                return Convert.ToBase64String(await resp.Content.ReadAsByteArrayAsync());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error requesting speech synthesis");
+                return null;
+            }
+        }
+
         public async Task<CourseSummaryResponse?> GetCourseSummaryAsync(string? courseContent = null, string? courseId = null)
         {
             var client = CreateAuthClient("chat");
@@ -894,6 +1019,29 @@ namespace GPOE26.Web.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, $"Error fetching quiz {id}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Corrige une seule question, pour expliquer à l'élève au moment où il se
+        /// trompe plutôt qu'à la fin du test.
+        /// </summary>
+        public async Task<AnswerFeedback?> AnswerQuizQuestionAsync(Guid quizId, Guid questionId, int selectedIndex)
+        {
+            var client = CreateAuthClient("quiz");
+            try
+            {
+                var resp = await client.PostAsJsonAsync(
+                    $"/api/quiz/{quizId}/questions/{questionId}/answer",
+                    new { SelectedOptionIndex = selectedIndex });
+
+                resp.EnsureSuccessStatusCode();
+                return await resp.Content.ReadFromJsonAsync<AnswerFeedback>();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error answering question {questionId} of quiz {quizId}");
                 return null;
             }
         }

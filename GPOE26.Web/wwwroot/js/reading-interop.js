@@ -58,6 +58,9 @@ window.readingInterop = (() => {
 
     // ── Sommaire actif + barre de progression ─────────────────────────────────
 
+    /** Part du texte à partir de laquelle on considère le cours lu. */
+    const READ_THRESHOLD = 0.9;
+
     function refresh() {
         if (!state) return;
 
@@ -67,6 +70,16 @@ window.readingInterop = (() => {
         const scrollable = scroller.scrollHeight - scroller.clientHeight;
         const ratio = scrollable > 0 ? Math.min(scroller.scrollTop / scrollable, 1) : 0;
         if (progressBar) progressBar.style.width = `${(ratio * 100).toFixed(1)}%`;
+
+        // Franchissement du seuil de lecture : UN SEUL aller-retour vers .NET, jamais
+        // un par pixel — en Blazor Server chaque appel traverse le circuit SignalR.
+        // Un cours plus court que la fenêtre n'est jamais défilable : il compte comme lu.
+        if (!state.readNotified && state.onRead && (ratio >= READ_THRESHOLD || scrollable <= 0)) {
+            state.readNotified = true;
+            state.onRead.invokeMethodAsync('OnReadingThresholdReached').catch(() => {
+                // Circuit fermé entre-temps : sans importance, la page n'existe plus.
+            });
+        }
 
         // Titre courant : le dernier passé sous la ligne de lecture, à un tiers de l'écran.
         const line = scroller.getBoundingClientRect().top + scroller.clientHeight / 3;
@@ -98,7 +111,7 @@ window.readingInterop = (() => {
          * Prépare le canvas : applique les préférences, branche le suivi du scroll
          * et restaure la position de lecture précédente.
          */
-        init(courseId, root, scroller, progressBar) {
+        init(courseId, root, scroller, progressBar, onRead) {
             this.dispose();
             if (!root || !scroller) return loadPreferences();
 
@@ -110,6 +123,8 @@ window.readingInterop = (() => {
                 root,
                 scroller,
                 progressBar,
+                onRead,
+                readNotified: false,
                 headings: Array.from(scroller.querySelectorAll('.course-canvas h1[id], .course-canvas h2[id], .course-canvas h3[id]')),
                 tocLinks: Array.from(root.querySelectorAll('[data-toc-target]')),
                 activeId: null,
@@ -169,14 +184,21 @@ window.readingInterop = (() => {
         },
 
         /**
-         * À rappeler quand le contenu du cours change (fin de la mise en forme) :
-         * les titres et les liens du sommaire ne sont plus les mêmes objets DOM.
+         * À rappeler quand le contenu du cours change (fin de la mise en forme, ou
+         * passage à une autre partie) : les titres et les liens du sommaire ne sont
+         * plus les mêmes objets DOM, et un nouveau texte est à relire depuis le début.
          */
-        rescan() {
+        rescan(resetReadState) {
             if (!state) return;
             state.headings = Array.from(state.scroller.querySelectorAll('.course-canvas h1[id], .course-canvas h2[id], .course-canvas h3[id]'));
             state.tocLinks = Array.from(state.root.querySelectorAll('[data-toc-target]'));
             state.activeId = null;
+
+            if (resetReadState) {
+                state.readNotified = false;
+                state.scroller.scrollTop = 0;
+            }
+
             refresh();
         },
 

@@ -59,11 +59,17 @@ builder.Services.AddScoped<CoursClient>();
 // ─── Passerelle IA + agents ───────────────────────────────────────────────────
 builder.Services.AddGpoeAi(builder.Configuration);
 
+// Cache des audios de synthèse vocale. La taille est exprimée en octets d'audio
+// (voir l'entrée posée par /chat/voix) : ~64 Mo, soit largement de quoi couvrir les
+// explications réécoutées d'une session, sans laisser le cache grossir sans fin.
+builder.Services.AddMemoryCache(options => options.SizeLimit = 64L * 1024 * 1024);
+
 builder.Services.AddScoped<RouteurAgent>();
 builder.Services.AddScoped<RetrieverAgent>();
 builder.Services.AddScoped<TuteurAgent>();
 builder.Services.AddScoped<ExerciceAgent>();
 builder.Services.AddScoped<RelecteurAgent>();
+builder.Services.AddScoped<CorrecteurAgent>();
 builder.Services.AddScoped<MemoireAgent>();
 builder.Services.AddScoped<RepetiteurOrchestrator>();
 

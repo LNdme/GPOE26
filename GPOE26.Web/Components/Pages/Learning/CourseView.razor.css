@@ -245,7 +245,86 @@
 .study-toc-l2 { padding-left: 1.5rem; }
 .study-toc-l3 { padding-left: 2.25rem; font-size: .825rem; }
 
+/* ── Rail des étapes (parcours découpé par partie) ────────────────────────── */
+
+.study-step-link {
+    display: flex;
+    align-items: flex-start;
+    gap: .6rem;
+    width: 100%;
+    padding: .5rem 1.15rem .5rem 1rem;
+    border: 0;
+    border-left: 3px solid transparent;
+    background: transparent;
+    color: var(--rd-text-soft);
+    font-size: .85rem;
+    line-height: 1.4;
+    text-align: left;
+}
+
+.study-step-link:not(:disabled):hover { background: var(--rd-bg); color: var(--rd-text); }
+
+.study-step-link:disabled { opacity: .5; cursor: not-allowed; }
+
+.study-step-icon { flex: 0 0 1.1rem; font-size: .8rem; line-height: 1.5; }
+
+.study-step-text { display: flex; flex-direction: column; min-width: 0; }
+
+.study-step-title { overflow-wrap: anywhere; }
+
+.study-step-score { font-size: .72rem; opacity: .8; }
+
+.study-step-link.is-open {
+    border-left-color: var(--rd-accent);
+    color: var(--rd-accent);
+    font-weight: 600;
+}
+
+.study-step-link.is-passed .study-step-icon { color: #059669; }
+
+.study-step-link.is-failed { color: #dc2626; }
+.study-step-link.is-failed .study-step-icon { color: #dc2626; }
+
 /* ── Canvas ───────────────────────────────────────────────────────────────── */
+
+.study-part-label {
+    max-width: var(--rd-measure);
+    margin: 0 auto .5rem;
+    padding: 0 1.25rem;
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--rd-accent);
+}
+
+/* ── Barre d'action ───────────────────────────────────────────────────────── */
+
+.study-action {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .7rem 1.25rem;
+    border-top: 1px solid var(--rd-border);
+    background: var(--rd-surface);
+}
+
+.study-action-context {
+    min-width: 0;
+    font-size: .875rem;
+    font-weight: 600;
+    color: var(--rd-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.study-action-sub { font-weight: 400; color: var(--rd-text-soft); }
+
+.study-action-done { font-size: .95rem; font-weight: 600; color: #059669; }
+
 
 .study-main {
     min-height: 0;

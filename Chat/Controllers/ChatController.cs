@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Chat.Agents;
@@ -7,6 +8,7 @@ using Chat.Service;
 using GPOE26.Ai;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Chat.Controllers;
 
@@ -93,6 +95,126 @@ public class ChatController(ILlmService llmService) : ControllerBase
 
         await Response.WriteAsync("data: [DONE]\n\n", cancellationToken);
         await Response.Body.FlushAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Produit un exercice ouvert sur un cours, ou sur une de ses parties.
+    /// </summary>
+    [Authorize]
+    [HttpPost("exercice")]
+    public async Task<ActionResult<ExerciceResponse>> GenerateExercise(
+        [FromBody] ExerciceRequest request,
+        [FromServices] ExerciceAgent exercice,
+        [FromServices] CoursClient cours,
+        CancellationToken cancellationToken)
+    {
+        var course = await cours.GetCourseAsync(request.CourseId, cancellationToken);
+        if (course is null) return NotFound(new { message = "Cours introuvable." });
+
+        var passages = await FindPassagesAsync(cours, request.CourseId, course.Title, request.HeadingPath, cancellationToken);
+
+        // On agrège le flux : l'énoncé est court, et l'élève ne gagnerait rien à le voir
+        // s'écrire mot à mot avant de pouvoir répondre.
+        var builder = new StringBuilder();
+        await foreach (var token in exercice.StreamExerciseAsync(
+            BuildExercisePrompt(request.HeadingPath), passages, course.Title, cancellationToken))
+        {
+            builder.Append(token);
+        }
+
+        var statement = builder.ToString().Trim();
+
+        return statement.Length == 0
+            ? StatusCode(StatusCodes.Status502BadGateway, new { message = "Aucun exercice n'a pu être produit." })
+            : Ok(new ExerciceResponse(statement));
+    }
+
+    /// <summary>
+    /// Corrige la réponse rédigée par l'élève à un exercice ouvert.
+    /// </summary>
+    [Authorize]
+    [HttpPost("exercice/corriger")]
+    public async Task<ActionResult<ExerciseCorrection>> CorrectExercise(
+        [FromBody] CorrectionRequest request,
+        [FromServices] CorrecteurAgent correcteur,
+        [FromServices] CoursClient cours,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Answer))
+            return BadRequest(new { message = "La réponse est vide." });
+
+        var course = await cours.GetCourseAsync(request.CourseId, cancellationToken);
+        if (course is null) return NotFound(new { message = "Cours introuvable." });
+
+        // La correction s'appuie sur les passages qui traitent de l'énoncé, pas sur la
+        // seule section : un exercice mobilise souvent plusieurs notions du cours.
+        var passages = await cours.SearchAsync(request.CourseId, request.Statement, 6, cancellationToken);
+
+        if (passages.Count == 0)
+            passages = await FindPassagesAsync(cours, request.CourseId, course.Title, request.HeadingPath, cancellationToken);
+
+        return Ok(await correcteur.CorrectAsync(request.Statement, request.Answer, passages, cancellationToken));
+    }
+
+    private static string BuildExercisePrompt(string? headingPath) =>
+        string.IsNullOrWhiteSpace(headingPath)
+            ? "Propose un exercice de consolidation sur l'ensemble de ce cours."
+            : $"Propose un exercice de consolidation sur la partie « {headingPath.Split('›').Last().Trim()} » de ce cours.";
+
+    private static Task<IReadOnlyList<CoursePassage>> FindPassagesAsync(
+        CoursClient cours, Guid courseId, string courseTitle, string? headingPath, CancellationToken ct) =>
+        cours.SearchAsync(
+            courseId,
+            string.IsNullOrWhiteSpace(headingPath) ? courseTitle : headingPath,
+            string.IsNullOrWhiteSpace(headingPath) ? 10 : 6,
+            ct);
+
+    /// <summary>
+    /// Lit une explication à voix haute.
+    ///
+    /// Le résultat est mis en cache sur l'empreinte du texte : un élève réécoute
+    /// volontiers la même explication deux ou trois fois, et le TTS se facture au
+    /// caractère — sans cache, on paierait chaque écoute.
+    /// </summary>
+    [Authorize]
+    [HttpPost("voix")]
+    [Produces("audio/mpeg")]
+    public async Task<IActionResult> Speak(
+        [FromBody] SpeakRequest request,
+        [FromServices] OpenRouterClient client,
+        [FromServices] IMemoryCache cache,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Text))
+            return BadRequest(new { message = "Le texte à lire est vide." });
+
+        var key = "voix:" + Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes(request.Text)));
+
+        if (!cache.TryGetValue(key, out byte[]? audio))
+        {
+            try
+            {
+                audio = await client.SynthesizeSpeechAsync(request.Text, cancellationToken);
+            }
+            catch (OpenRouterException ex)
+            {
+                return StatusCode(StatusCodes.Status502BadGateway, new { message = ex.Message });
+            }
+
+            if (audio is not { Length: > 0 })
+                return StatusCode(StatusCodes.Status502BadGateway, new { message = "Aucun audio n'a été produit." });
+
+            cache.Set(key, audio, new MemoryCacheEntryOptions
+            {
+                // Glissante : une explication réécoutée reste chaude, une explication
+                // oubliée libère sa place.
+                SlidingExpiration = TimeSpan.FromHours(2),
+                Size = audio.Length,
+            });
+        }
+
+        return File(audio!, "audio/mpeg");
     }
 
     /// <summary>Liste les modèles disponibles sur OpenRouter, pour les choisir depuis l'application.</summary>

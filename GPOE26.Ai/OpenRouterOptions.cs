@@ -51,6 +51,20 @@ public sealed class OpenRouterOptions
     /// <summary>Plafond de tokens en sortie, par défaut, pour les appels de rédaction.</summary>
     public int DefaultMaxTokens { get; set; } = 2048;
 
+    /// <summary>
+    /// Voix de synthèse. Les identifiants dépendent du modèle choisi pour
+    /// <see cref="AgentKind.Voix"/> — voir la fiche du modèle sur openrouter.ai.
+    /// </summary>
+    public string Voice { get; set; } = "alloy";
+
+    /// <summary>
+    /// Longueur maximale d'un texte envoyé à la synthèse vocale.
+    ///
+    /// Le TTS se facture au caractère : une garde évite qu'un collage malencontreux
+    /// n'envoie un cours entier à lire.
+    /// </summary>
+    public int MaxSpeechCharacters { get; set; } = 2_000;
+
     public string ModelFor(AgentKind kind) =>
         Models.TryGetValue(kind.ToString(), out var model) && !string.IsNullOrWhiteSpace(model)
             ? model

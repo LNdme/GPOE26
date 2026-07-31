@@ -35,4 +35,7 @@ public enum AgentKind
 
     /// <summary>Vectorisation du cours et des questions.</summary>
     Embedding,
+
+    /// <summary>Lecture à voix haute des explications (synthèse vocale).</summary>
+    Voix,
 }

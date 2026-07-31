@@ -90,6 +90,55 @@
     }
 
     /// <summary>
+    /// Extrait une grande partie du cours (un titre de niveau 2 et tout ce qui en dépend),
+    /// pour un parcours qui se lit partie par partie.
+    ///
+    /// <paramref name="headingPath"/> est le chemin produit par le découpage
+    /// (« Les fonctions affines › Le coefficient directeur ») ; seul le dernier segment
+    /// est comparé, puisque c'est lui qui porte le titre de la partie.
+    /// Renvoie le cours entier si la partie n'est pas retrouvée — mieux vaut trop montrer
+    /// qu'une page vide.
+    /// </summary>
+    public static string ExtractPart(string? markdown, string? headingPath)
+    {
+        if (string.IsNullOrWhiteSpace(markdown)) return string.Empty;
+        if (string.IsNullOrWhiteSpace(headingPath)) return markdown;
+
+        var target = headingPath.Split('›').Last().Trim();
+        if (target.Length == 0) return markdown;
+
+        var lines = markdown.Replace("\r\n", "\n").Split('\n');
+        var collected = new List<string>();
+        var inPart = false;
+        var inFence = false;
+
+        foreach (var line in lines)
+        {
+            if (line.StartsWith("```", StringComparison.Ordinal) || line.StartsWith("~~~", StringComparison.Ordinal))
+                inFence = !inFence;
+
+            if (!inFence && line.StartsWith("## ", StringComparison.Ordinal))
+            {
+                var title = line[3..].Trim();
+
+                if (inPart) break;                  // partie suivante : on s'arrête
+                if (!string.Equals(title, target, StringComparison.OrdinalIgnoreCase)) continue;
+
+                inPart = true;
+                collected.Add(line);
+                continue;
+            }
+
+            // Un nouveau titre de niveau 1 clôt aussi la partie.
+            if (inPart && !inFence && line.StartsWith("# ", StringComparison.Ordinal)) break;
+
+            if (inPart) collected.Add(line);
+        }
+
+        return collected.Count > 0 ? string.Join("\n", collected).Trim() : markdown;
+    }
+
+    /// <summary>
     /// Retouches appliquées au HTML produit par Markdig, et non au Markdown source :
     /// DisableHtml() échapperait tout balisage injecté en amont.
     /// </summary>

@@ -1,0 +1,219 @@
+@using GPOE26.Web.Components.UI
+@using GPOE26.Web.Models
+@inject GPOE26.Web.Services.ApiClient Api
+
+@*
+    L'étape « Consolider », premier temps : un exercice à rédiger.
+
+    L'élève produit au lieu de reconnaître — c'est ce qui distingue cette étape du
+    QCM qui suit. Le corrigé reste masqué tant qu'il n'a pas soumis : le révéler
+    avant viderait l'exercice de son sens.
+*@
+
+<div class="exercise">
+
+    @if (_loading)
+    {
+        <div class="exercise-state">
+            <div class="spinner-border text-brand-dark mb-3"></div>
+            <h5>Préparation de votre exercice…</h5>
+            <p class="text-muted-chic">Il portera sur ce que vous venez d'étudier.</p>
+        </div>
+    }
+    else if (_statement is null)
+    {
+        <div class="exercise-state">
+            <div class="display-6 mb-2">⚠️</div>
+            <h5>L'exercice n'a pas pu être préparé</h5>
+            <p class="text-muted-chic">@(_error ?? "Réessayez dans un instant.")</p>
+            <button class="btn btn-brand mt-2" @onclick="StartAsync">Réessayer</button>
+        </div>
+    }
+    else
+    {
+        <section class="exercise-statement">
+            <MarkdownViewer Content="@_statement" />
+        </section>
+
+        @if (_correction is null)
+        {
+            <div class="exercise-answer">
+                <label class="exercise-label" for="exercise-answer">Votre réponse</label>
+                <textarea id="exercise-answer"
+                          class="exercise-input"
+                          rows="10"
+                          placeholder="Rédigez votre raisonnement, étape par étape…"
+                          @bind="_answer"
+                          @bind:event="oninput"
+                          disabled="@_correcting"></textarea>
+
+                <div class="exercise-actions">
+                    <span class="text-muted-chic small">
+                        @if (_answer.Length > 0)
+                        {
+                            <text>@_answer.Length caractères</text>
+                        }
+                        else
+                        {
+                            <text>Prenez le temps : la correction détaillera ce qui manque.</text>
+                        }
+                    </span>
+
+                    <button class="btn btn-brand"
+                            disabled="@(_correcting || string.IsNullOrWhiteSpace(_answer))"
+                            @onclick="SubmitAsync">
+                        @if (_correcting)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                            <text>Correction en cours…</text>
+                        }
+                        else
+                        {
+                            <text>Valider ma réponse</text>
+                        }
+                    </button>
+                </div>
+            </div>
+        }
+        else
+        {
+            var correction = _correction;
+
+            <div class="exercise-correction @(correction.Acquis ? "is-acquired" : "is-partial")">
+                <div class="exercise-verdict">
+                    <span class="exercise-verdict-badge">@(correction.Acquis ? "✓" : "◐")</span>
+                    <div>
+                        <p class="exercise-verdict-title">
+                            @(correction.Acquis ? "C'est acquis" : "Partiellement acquis")
+                        </p>
+                        @if (correction.Conseil is { Length: > 0 } conseil)
+                        {
+                            <p class="exercise-verdict-hint">@conseil</p>
+                        }
+                    </div>
+                </div>
+
+                @if (correction.PointsForts.Count > 0)
+                {
+                    <div class="exercise-points is-strong">
+                        <p class="exercise-points-title">Ce que vous avez réussi</p>
+                        <ul>
+                            @foreach (var point in correction.PointsForts)
+                            {
+                                <li>@point</li>
+                            }
+                        </ul>
+                    </div>
+                }
+
+                @if (correction.PointsManquants.Count > 0)
+                {
+                    <div class="exercise-points is-missing">
+                        <p class="exercise-points-title">Ce qui manque</p>
+                        <ul>
+                            @foreach (var point in correction.PointsManquants)
+                            {
+                                <li>@point</li>
+                            }
+                        </ul>
+                    </div>
+                }
+
+                <details class="exercise-solution" open="@(!correction.Acquis)">
+                    <summary>Voir la correction attendue</summary>
+                    <MarkdownViewer Content="@correction.Correction" />
+                </details>
+
+                <div class="exercise-correction-actions">
+                    <button class="btn btn-sm btn-brand-outline" @onclick="AskTutorAsync">
+                        <i class="bi bi-chat-dots"></i> Demander au répétiteur
+                    </button>
+                    <button class="btn btn-sm btn-brand-outline" @onclick="RetryAsync">
+                        Refaire un exercice
+                    </button>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CourseDto Course { get; set; } = null!;
+    [Parameter, EditorRequired] public StepDto Step { get; set; } = null!;
+
+    [Parameter] public EventCallback<StepResultRequest> OnCompleted { get; set; }
+    [Parameter] public EventCallback<string> OnAskTutor { get; set; }
+
+    private bool _loading = true;
+    private bool _correcting;
+    private string? _error;
+
+    private string? _statement;
+    private string _answer = "";
+    private ExerciseCorrection? _correction;
+
+    private Guid _loadedStepId;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedStepId == Step.Id) return;
+
+        _loadedStepId = Step.Id;
+        await StartAsync();
+    }
+
+    private async Task StartAsync()
+    {
+        _loading = true;
+        _error = null;
+        _statement = null;
+        _answer = "";
+        _correction = null;
+        StateHasChanged();
+
+        _statement = await Api.GenerateExerciseAsync(Course.Id, Step.HeadingPath);
+
+        if (_statement is null)
+            _error = "Le générateur d'exercices n'a rien renvoyé.";
+
+        _loading = false;
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (_statement is null || string.IsNullOrWhiteSpace(_answer) || _correcting) return;
+
+        _correcting = true;
+        _correction = await Api.CorrectExerciseAsync(Course.Id, Step.HeadingPath, _statement, _answer);
+        _correcting = false;
+
+        if (_correction is null)
+        {
+            _error = "La correction n'a pas pu être établie.";
+            return;
+        }
+
+        // Le score de l'agent est sur 100 : on le remonte tel quel, le seuil de
+        // validation est appliqué côté API comme pour les QCM.
+        await OnCompleted.InvokeAsync(new StepResultRequest(_correction.Score, 100, null));
+    }
+
+    /// <summary>Un nouvel exercice sur la même notion, pour s'entraîner davantage.</summary>
+    private Task RetryAsync() => StartAsync();
+
+    private async Task AskTutorAsync()
+    {
+        if (_statement is null) return;
+
+        var manquants = _correction?.PointsManquants ?? [];
+        var detail = manquants.Count > 0
+            ? $" On m'a dit qu'il me manquait : {string.Join(" ; ", manquants)}."
+            : "";
+
+        await OnAskTutor.InvokeAsync(
+            $"J'ai fait cet exercice : « {Shorten(_statement)} ».{detail} Peux-tu m'expliquer ce que je n'ai pas compris ?");
+    }
+
+    private static string Shorten(string value) =>
+        value.Length <= 300 ? value : value[..300] + "…";
+}

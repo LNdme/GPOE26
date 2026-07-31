@@ -1,0 +1,108 @@
+@using GPOE26.Web.Models
+
+@*
+    La barre de parcours : les trois temps de l'étude d'une leçon.
+
+    Elle ne montre pas les étapes une par une — un cours en cinq parties en compte
+    treize, et l'élève s'y perdrait. Elle montre où il en est dans « Lire, Comprendre,
+    Consolider », et le détail vit dans le rail de gauche.
+*@
+
+<nav class="journey" aria-label="Parcours d'apprentissage">
+    @for (var i = 0; i < Phases.Length; i++)
+    {
+        var phase = Phases[i];
+        var status = Journey.PhaseStatus(phase.Value);
+        var isCurrent = CurrentPhase == phase.Value;
+
+        @if (i > 0)
+        {
+            <span class="journey-link @(status is StepStatus.Passed or StepStatus.InProgress or StepStatus.Failed ? "is-reached" : "")"></span>
+        }
+
+        <button type="button"
+                class="journey-phase @StatusClass(status) @(isCurrent ? "is-current" : "")"
+                disabled="@(FirstReachableStep(phase.Value) is null)"
+                @onclick="() => SelectAsync(phase.Value)"
+                title="@Tooltip(phase.Value, status)">
+            <span class="journey-marker">@Marker(status, i + 1)</span>
+            <span class="journey-labels">
+                <span class="journey-name">@phase.Label</span>
+                <span class="journey-hint">@Hint(phase.Value, status)</span>
+            </span>
+        </button>
+    }
+</nav>
+
+@code {
+    [Parameter, EditorRequired] public JourneyDto Journey { get; set; } = null!;
+
+    /// <summary>Étape affichée actuellement, pour souligner le temps correspondant.</summary>
+    [Parameter] public StepDto? CurrentStep { get; set; }
+
+    [Parameter] public EventCallback<StepDto> OnSelect { get; set; }
+
+    private static readonly (JourneyPhase Value, string Label)[] Phases =
+    [
+        (JourneyPhase.Lire, "Lire"),
+        (JourneyPhase.Comprendre, "Comprendre"),
+        (JourneyPhase.Consolider, "Consolider"),
+    ];
+
+    private JourneyPhase? CurrentPhase => CurrentStep?.Phase;
+
+    /// <summary>
+    /// Première étape du temps demandé sur laquelle l'élève peut effectivement aller :
+    /// une étape validée reste consultable, une étape verrouillée non.
+    /// </summary>
+    private StepDto? FirstReachableStep(JourneyPhase phase) =>
+        Journey.Steps.FirstOrDefault(s => s.Phase == phase && !s.IsLocked && !s.IsPassed)
+        ?? Journey.Steps.LastOrDefault(s => s.Phase == phase && s.IsPassed);
+
+    private async Task SelectAsync(JourneyPhase phase)
+    {
+        var step = FirstReachableStep(phase);
+        if (step is not null) await OnSelect.InvokeAsync(step);
+    }
+
+    private static string StatusClass(StepStatus status) => status switch
+    {
+        StepStatus.Passed => "is-passed",
+        StepStatus.Failed => "is-failed",
+        StepStatus.Locked => "is-locked",
+        _ => "is-open",
+    };
+
+    private static string Marker(StepStatus status, int position) => status switch
+    {
+        StepStatus.Passed => "✓",
+        StepStatus.Locked => "🔒",
+        _ => position.ToString(),
+    };
+
+    private string Hint(JourneyPhase phase, StepStatus status)
+    {
+        if (status == StepStatus.Locked)
+            return phase == JourneyPhase.Comprendre ? "Lisez d'abord le cours" : "À débloquer";
+
+        var steps = Journey.Steps.Where(s => s.Phase == phase).ToList();
+        if (steps.Count == 0) return "";
+
+        if (status == StepStatus.Passed)
+        {
+            // Sur un test, le score en dit plus qu'un simple « terminé ».
+            var scored = steps.LastOrDefault(s => s.Score is not null);
+            return scored is not null ? $"Validé · {scored.ScoreLabel}" : "Terminé";
+        }
+
+        if (status == StepStatus.Failed) return "À refaire";
+
+        var done = steps.Count(s => s.IsPassed);
+        return steps.Count > 1 ? $"{done} sur {steps.Count}" : "En cours";
+    }
+
+    private string Tooltip(JourneyPhase phase, StepStatus status) =>
+        status == StepStatus.Locked
+            ? $"Validez l'étape précédente à {Journey.PassThresholdPercent:0}% pour débloquer"
+            : $"{phase} — {Hint(phase, status)}";
+}

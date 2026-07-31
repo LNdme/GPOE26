@@ -76,6 +76,36 @@ public class QuizController : ControllerBase
     }
 
     /// <summary>
+    /// Corrige UNE question, sans clore le quiz.
+    ///
+    /// Le parcours d'apprentissage a besoin de dire à l'élève qu'il s'est trompé au
+    /// moment où il se trompe, et de lui montrer l'explication tout de suite — attendre
+    /// la fin du test pour expliquer, c'est expliquer quand il a déjà décroché.
+    /// L'appel ne modifie pas la session : le score global reste établi par /submit.
+    /// </summary>
+    [HttpPost("{id:guid}/questions/{questionId:guid}/answer")]
+    [ProducesResponseType<AnswerFeedback>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public IActionResult AnswerQuestion(Guid id, Guid questionId, [FromBody] AnswerQuestionRequest request)
+    {
+        var session = _store.Get(id);
+        if (session is null) return NotFound();
+
+        var question = session.Questions.FirstOrDefault(q => q.Id == questionId);
+        if (question is null) return NotFound();
+
+        return Ok(new AnswerFeedback
+        {
+            QuestionId = question.Id,
+            QuestionText = question.Text,
+            SelectedOptionIndex = request.SelectedOptionIndex,
+            CorrectOptionIndex = question.CorrectOptionIndex,
+            IsCorrect = request.SelectedOptionIndex == question.CorrectOptionIndex,
+            Explanation = question.Explanation
+        });
+    }
+
+    /// <summary>
     /// Soumet les réponses d'un élève et retourne la correction avec le score.
     /// </summary>
     [HttpPost("{id:guid}/submit")]

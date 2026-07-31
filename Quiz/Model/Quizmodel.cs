@@ -57,6 +57,11 @@ public record StudentAnswer(
     int SelectedOptionIndex
 );
 
+/// <summary>Réponse à une seule question, corrigée immédiatement.</summary>
+public record AnswerQuestionRequest(
+    int SelectedOptionIndex
+);
+
 // --- DTOs Réponses ---
 
 public record GenerateQuizResponse(

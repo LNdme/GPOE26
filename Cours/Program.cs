@@ -410,6 +410,138 @@ cours.MapPost("/{id:guid}/search", async (
 .Produces(400)
 .Produces(404);
 
+// ══════════════════════════════════════════════════════════════════════════════
+//  Parcours d'apprentissage : Lire → Comprendre → Consolider
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── GET /cours/{id}/parcours ──────────────────────────────────────────────────
+cours.MapGet("/{id:guid}/parcours", async (Guid id, ClaimsPrincipal principal, CoursContext db) =>
+{
+    var ownerId = ClaimsHelper.GetUserId(principal);
+    if (ownerId is null) return Results.Unauthorized();
+
+    var course = await db.Courses
+        .Include(c => c.Steps.OrderBy(s => s.Order))
+        .FirstOrDefaultAsync(c => c.Id == id && c.OwnerId == ownerId);
+
+    return course is null
+        ? Results.NotFound(new { message = "Cours introuvable." })
+        : Results.Ok(BuildJourney(course));
+})
+.WithSummary("Le parcours d'un cours et l'étape en cours")
+.Produces<JourneyDto>()
+.Produces(404);
+
+// ── POST /cours/{id}/parcours/{stepId}/lu ─────────────────────────────────────
+//
+// Déclenché par le bouton « J'ai lu », lui-même allumé au franchissement de 90 %
+// du défilement. Une étape de lecture n'a pas de score : elle se valide en étant faite.
+cours.MapPost("/{id:guid}/parcours/{stepId:guid}/lu", async (
+    Guid id,
+    Guid stepId,
+    ClaimsPrincipal principal,
+    CoursContext db) =>
+{
+    var ownerId = ClaimsHelper.GetUserId(principal);
+    if (ownerId is null) return Results.Unauthorized();
+
+    var course = await db.Courses
+        .Include(c => c.Steps.OrderBy(s => s.Order))
+        .FirstOrDefaultAsync(c => c.Id == id && c.OwnerId == ownerId);
+
+    if (course is null) return Results.NotFound(new { message = "Cours introuvable." });
+
+    var step = course.Steps.FirstOrDefault(s => s.Id == stepId);
+    if (step is null) return Results.NotFound(new { message = "Étape introuvable." });
+
+    if (step.Kind != StepKind.Lecture)
+        return Results.BadRequest(new { message = "Cette étape n'est pas une étape de lecture." });
+
+    if (step.Status == StepStatus.Locked)
+        return Results.BadRequest(new { message = "Cette étape n'est pas encore accessible." });
+
+    step.Status = StepStatus.Passed;
+    step.CompletedAt = DateTime.UtcNow;
+    step.Attempts++;
+
+    CourseFormattingService.UnlockNext(course.Steps);
+    course.UpdatedAt = DateTime.UtcNow;
+
+    await db.SaveChangesAsync();
+    return Results.Ok(BuildJourney(course));
+})
+.WithSummary("Marquer une étape de lecture comme faite")
+.Produces<JourneyDto>()
+.Produces(400)
+.Produces(404);
+
+// ── POST /cours/{id}/parcours/{stepId}/resultat ───────────────────────────────
+//
+// Enregistre le résultat d'une étape évaluée et applique le seuil. C'est ici que se
+// décide le déverrouillage de la suite du parcours.
+cours.MapPost("/{id:guid}/parcours/{stepId:guid}/resultat", async (
+    Guid id,
+    Guid stepId,
+    StepResultRequest req,
+    ClaimsPrincipal principal,
+    CoursContext db) =>
+{
+    var ownerId = ClaimsHelper.GetUserId(principal);
+    if (ownerId is null) return Results.Unauthorized();
+
+    if (req.Total <= 0 || req.Score < 0 || req.Score > req.Total)
+        return Results.BadRequest(new { message = "Score invalide." });
+
+    var course = await db.Courses
+        .Include(c => c.Steps.OrderBy(s => s.Order))
+        .FirstOrDefaultAsync(c => c.Id == id && c.OwnerId == ownerId);
+
+    if (course is null) return Results.NotFound(new { message = "Cours introuvable." });
+
+    var step = course.Steps.FirstOrDefault(s => s.Id == stepId);
+    if (step is null) return Results.NotFound(new { message = "Étape introuvable." });
+
+    if (!step.IsEvaluated)
+        return Results.BadRequest(new { message = "Cette étape ne se valide pas par un score." });
+
+    if (step.Status == StepStatus.Locked)
+        return Results.BadRequest(new { message = "Cette étape n'est pas encore accessible." });
+
+    step.Score = req.Score;
+    step.Total = req.Total;
+    step.Attempts++;
+
+    // Les sections ratées servent à renvoyer l'élève au bon endroit du cours, et
+    // porteront plus tard la granularité du suivi de maîtrise sur l'année.
+    step.WeakHeadings = req.WeakHeadings is { Count: > 0 }
+        ? string.Join(" | ", req.WeakHeadings.Distinct())
+        : null;
+
+    var passed = (double)req.Score / req.Total >= CourseStep.PassThreshold;
+
+    if (passed)
+    {
+        step.Status = StepStatus.Passed;
+        step.CompletedAt = DateTime.UtcNow;
+        CourseFormattingService.UnlockNext(course.Steps);
+    }
+    else
+    {
+        // L'étape reste accessible : l'élève doit pouvoir refaire son test.
+        step.Status = StepStatus.Failed;
+        step.CompletedAt = null;
+    }
+
+    course.UpdatedAt = DateTime.UtcNow;
+    await db.SaveChangesAsync();
+
+    return Results.Ok(BuildJourney(course));
+})
+.WithSummary("Enregistrer le résultat d'une étape évaluée")
+.Produces<JourneyDto>()
+.Produces(400)
+.Produces(404);
+
 // ── PUT /cours/{id} ───────────────────────────────────────────────────────────
 cours.MapPut("/{id:guid}", async (
     Guid id,
@@ -547,3 +679,25 @@ cours.MapDelete("/{id:guid}", async (
 .Produces(404);
 
 app.Run();
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// <summary>
+/// Projette le parcours d'un cours, en désignant l'étape sur laquelle ouvrir la page :
+/// la première qui n'est pas encore validée.
+/// </summary>
+static JourneyDto BuildJourney(Course course)
+{
+    var steps = course.Steps.OrderBy(s => s.Order).ToList();
+
+    var active = steps.FirstOrDefault(s => s.Status is StepStatus.Available or StepStatus.InProgress or StepStatus.Failed)
+                 ?? steps.LastOrDefault();
+
+    return new JourneyDto(
+        course.Id,
+        course.JourneyMode,
+        steps.Select(s => new StepDto(s)).ToList(),
+        active?.Id,
+        steps.Count(s => s.Status == StepStatus.Passed),
+        CourseStep.PassThreshold * 100);
+}
