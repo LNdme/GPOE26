@@ -11,6 +11,8 @@
     "@theia/messages": "1.74.0",
     "@theia/monaco": "1.74.0",
     "@theia/navigator": "1.74.0",
+    "@theia/plugin-ext": "1.74.0",
+    "@theia/plugin-ext-vscode": "1.74.0",
     "@theia/preferences": "1.74.0",
     "@theia/workspace": "1.74.0",
     "gpoe26-core": "0.1.0",
@@ -18,13 +20,14 @@
   },
   "devDependencies": {
     "@theia/cli": "1.74.0",
-    "electron": "^30.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "42.3.0",
     "electron-builder": "^24.13.3"
   },
   "scripts": {
     "clean": "theia clean",
     "build": "theia build --mode development",
-    "start": "theia start --plugins=local-dir:../plugins",
+    "start": "cross-env THEIA_PLUGINS=local-dir:../plugins theia start",
     "watch": "theia build --watch --mode development",
     "package": "electron-builder --config electron-builder.yml"
   },

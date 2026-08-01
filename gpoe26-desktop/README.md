@@ -13,12 +13,14 @@ n'écrit que ce qui relève de GPOE26.
 ```
 extensions/gpoe26-core      Client du harness, identité, magasin local, synchronisation
 extensions/gpoe26-lecture   Le canvas de lecture
+plugins/gpoe26-python       Premier type d'exercice — isolé, voir plus bas
+exemples/exercice-python    Un exercice à ouvrir pour essayer
 browser-app                 Cible navigateur — pour développer et vérifier
 electron-app                Cible installable — Windows et Mac
 ```
 
 **Extensions Theia** (dans le processus) pour notre interface ; les **types d'exercice**
-seront des *plugins* (API VS Code, processus séparé). La frontière passe entre ce que nous
+sont des *plugins* (API VS Code, processus séparé). La frontière passe entre ce que nous
 écrivons et ce qui peut planter sans emporter l'atelier.
 
 ## Construire et lancer
@@ -71,8 +73,31 @@ maximal entre deux signaux — à l'heure déclarée.
 **La file n'est purgée que de ce que le serveur confirme.** Perdre du travail est pire que
 le remonter deux fois ; ces signaux sont idempotents côté serveur.
 
+## Les exercices de code, et pourquoi deux enveloppes
+
+Un type d'exercice est un **plugin** (API VS Code), pas une extension : il tourne dans
+l'hôte des plugins, un processus séparé de l'atelier. Le cœur ne le cite nulle part — on
+en ajoute un en le déposant dans `plugins/`.
+
+Le code de l'élève, lui, tourne un cran plus loin encore : dans un **fil d'exécution** du
+plugin, avec un délai de dix secondes. Ce n'est pas une précaution de confort. On ne peut
+pas interrompre du JavaScript ni du WASM synchrone : aucun minuteur ne reprend la main
+tant que le code tourne. Seul `worker.terminate()` y met fin, et il faut donc que ce code
+tourne dans un fil qu'on puisse tuer. Un élève qui écrit `while True: pass` fige son
+exercice — mesuré, interrompu à 8 secondes — pas son application.
+
+Python vient de **Pyodide**, en local : les tests tournent sur la machine de l'élève,
+sans réseau, et le système de fichiers que voit son code est virtuel.
+
+⚠️ **Ce qui tourne chez l'élève est falsifiable.** Un verdict produit sur son appareil ne
+vaut pas une note vérifiée : il remonte marqué `selfAssessed`, et le bilan parent le dit
+en toutes lettres. La réexécution serveur reste à faire.
+
+Pour essayer : ouvrir `exemples/exercice-python` comme dossier de travail, puis Ctrl+Entrée.
+
 ## Ce qui reste à faire
 
-- Les **plugins de type d'exercice**, à commencer par Python via Pyodide.
+- La **réexécution serveur** des tests, pour qu'un résultat compte comme une note vérifiée.
+- D'autres types d'exercice : SQL, C, mathématiques symboliques.
 - Le **rail du parcours** et le **panneau du répétiteur** — le client sait déjà jouer un tour en flux, il manque l'interface.
 - Le **trousseau du système** pour le jeton de rafraîchissement : aujourd'hui un fichier en `0600`, ce qui protège des autres comptes de la machine mais pas d'un logiciel malveillant qui tournerait sous celui de l'élève. `safeStorage` d'Electron est le bon outil, et il n'existe que sur la cible Electron.

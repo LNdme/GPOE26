@@ -1,0 +1,49 @@
+{
+  "name": "gpoe26-python",
+  "displayName": "Exercices Python",
+  "description": "Écrire du code, l'exécuter et le vérifier — sur sa machine, sans réseau",
+  "version": "0.1.0",
+  "publisher": "gpoe26",
+  "license": "MIT",
+  "engines": { "vscode": "^1.90.0" },
+  "categories": ["Education"],
+  "main": "lib/extension.js",
+  "activationEvents": ["workspaceContains:exercice.json"],
+  "contributes": {
+    "commands": [
+      {
+        "command": "gpoe26.python.executerTests",
+        "title": "Lancer les tests",
+        "category": "Exercice"
+      },
+      {
+        "command": "gpoe26.python.ouvrirExercice",
+        "title": "Rouvrir l'énoncé",
+        "category": "Exercice"
+      },
+      {
+        "command": "gpoe26.python.demanderAide",
+        "title": "Demander de l'aide au répétiteur",
+        "category": "Exercice"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "gpoe26.python.executerTests",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter"
+      }
+    ]
+  },
+  "dependencies": { "pyodide": "314.0.3" },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.90.0",
+    "typescript": "~5.5.4"
+  },
+  "scripts": {
+    "clean": "rimraf lib",
+    "build": "tsc -p . && cp src/worker.mjs lib/worker.mjs",
+    "watch": "tsc -p . -w"
+  }
+}

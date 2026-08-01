@@ -1,9 +1,10 @@
-import { RpcProxyFactory } from '@theia/core/lib/common';
+import { CommandContribution, RpcProxyFactory } from '@theia/core/lib/common';
 import { WebSocketConnectionProvider } from '@theia/core/lib/browser/messaging';
 import { ContainerModule } from '@theia/core/shared/inversify';
 import { LOCAL_STORE_PATH, LocalStore } from '../common/store-protocol';
 import { HarnessClient, HarnessConfig } from './harness-client';
 import { SyncService } from './sync-service';
+import { TutorBridge } from './tutor-bridge';
 
 /**
  * Le socle, côté interface.
@@ -25,6 +26,11 @@ export default new ContainerModule(bind => {
 
     bind(HarnessClient).toSelf().inSingletonScope();
     bind(SyncService).toSelf().inSingletonScope();
+
+    // Le pont vers les plugins d'exercice : ils ne peuvent atteindre les services
+    // de l'atelier que par une commande, l'isolation étant précisément le but.
+    bind(TutorBridge).toSelf().inSingletonScope();
+    bind(CommandContribution).toService(TutorBridge);
 });
 
 /**

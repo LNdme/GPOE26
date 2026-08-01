@@ -1,0 +1,11 @@
+{
+  "id": "demo-fonctions-01",
+  "courseId": "00000000-0000-0000-0000-000000000001",
+  "titre": "Une fonction qui compte",
+  "enonce": "Écris la fonction `moyenne(notes)` qui renvoie la moyenne d'une liste de notes.\n\nSi la liste est vide, elle renvoie 0 — et non une erreur : un élève sans note n'a pas une moyenne indéfinie, il n'en a pas.\n\nLance les tests avec Ctrl+Entrée.",
+  "fichierEleve": "solution.py",
+  "fichiers": {
+    "solution.py": "def moyenne(notes):\n    # À toi de jouer.\n    return 0\n",
+    "test_exercice.py": "import unittest\nfrom solution import moyenne\n\n\nclass TestMoyenne(unittest.TestCase):\n\n    def test_trois_notes(self):\n        self.assertEqual(moyenne([10, 12, 14]), 12)\n\n    def test_une_seule_note(self):\n        self.assertEqual(moyenne([15]), 15)\n\n    def test_liste_vide(self):\n        self.assertEqual(moyenne([]), 0)\n"
+  }
+}
