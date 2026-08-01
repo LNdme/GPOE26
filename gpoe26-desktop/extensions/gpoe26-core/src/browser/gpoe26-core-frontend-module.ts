@@ -21,7 +21,8 @@ export default new ContainerModule(bind => {
 
     bind(HarnessConfig).toConstantValue({
         harnessUrl: readEndpoint('gpoe26.harnessUrl', 'http://localhost:5200'),
-        userUrl: readEndpoint('gpoe26.userUrl', 'http://localhost:5100')
+        userUrl: readEndpoint('gpoe26.userUrl', 'http://localhost:5100'),
+        coursUrl: readEndpoint('gpoe26.coursUrl', 'http://localhost:5000')
     });
 
     bind(HarnessClient).toSelf().inSingletonScope();

@@ -280,6 +280,28 @@ namespace Cours.DTOs
         List<WrittenAnswerDto> WrittenAnswers
     );
 
+    // ── Rendu du cours ────────────────────────────────────────────────────────────
+
+    /// <summary>Une entrée du sommaire.</summary>
+    /// <param name="Anchor">Ancre du titre dans le HTML, pour le défilement.</param>
+    public record OutlineEntryDto(int Level, string Title, string Anchor);
+
+    /// <summary>
+    /// Un cours rendu, prêt à afficher.
+    ///
+    /// Le Web et l'application bureau montrent le même cours : le rendre deux fois, c'est
+    /// garantir qu'ils divergeront — et la divergence porterait sur les ancres du
+    /// sommaire, donc sur des liens morts d'un seul côté.
+    /// </summary>
+    public record RenderedCourseDto(
+        Guid CourseId,
+        string Title,
+        string Subject,
+        string Html,
+        List<OutlineEntryDto> Outline,
+        DateTime RenderedAt
+    );
+
     /// <summary>Un fragment retrouvé par la recherche sémantique.</summary>
     public record SearchHitDto(
         Guid ChunkId,

@@ -1,0 +1,22 @@
+{
+  "name": "gpoe26-harness-node",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Harness B — le challenger, en TypeScript",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc -p .",
+    "start": "node lib/server.js",
+    "dev": "tsc -p . && node lib/server.js"
+  },
+  "dependencies": {
+    "fastify": "^5.2.0",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/pg": "^8.11.10",
+    "typescript": "~5.5.4"
+  }
+}

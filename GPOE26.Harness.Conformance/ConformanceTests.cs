@@ -227,20 +227,15 @@ public class ConformanceTests(HarnessTarget target)
 
     // ── Le rendu du cours et la synchronisation ───────────────────────────────
 
-    [Fact]
-    public async Task Le_cours_rendu_porte_son_sommaire_et_des_ancres_qui_existent()
-    {
-        var rendered = await target.AsStudent(Eleve)
-            .GetFromJsonAsync<RenderedCourseDto>($"cours/{Cours}/rendu", Json);
-
-        Assert.NotNull(rendered);
-        Assert.False(string.IsNullOrWhiteSpace(rendered!.Html));
-
-        // Une entrée de sommaire dont l'ancre n'est pas dans le HTML donne un lien mort :
-        // l'élève clique et rien ne bouge.
-        Assert.All(rendered.Outline, entry =>
-            Assert.Contains($"id=\"{entry.Anchor}\"", rendered.Html));
-    }
+    // Le rendu du cours a quitté ce contrat.
+    //
+    // C'est le match entre les deux implémentations qui l'a montré : le harness B ne
+    // pouvait honorer /cours/{id}/rendu sans embarquer un second moteur de rendu, ce
+    // qu'on cherchait justement à éviter. Rendre un cours n'est pas une affaire d'agent
+    // mais de contenu — l'endpoint vit désormais dans le service Cours, qui le possède.
+    //
+    // C'est exactement ce à quoi sert une seconde implémentation : révéler ce que la
+    // première avait mis là par commodité.
 
     [Fact]
     public async Task La_synchronisation_accepte_un_lot_et_dit_ce_qu_elle_a_retenu()

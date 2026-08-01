@@ -595,6 +595,41 @@ cours.MapPost("/{id:guid}/parcours/{stepId:guid}/resultat", async (
 .Produces(400)
 .Produces(404);
 
+// ── GET /cours/{id}/rendu ─────────────────────────────────────────────────────
+//
+// Le cours rendu en HTML, pour le Web et pour l'application bureau.
+//
+// ⚠️ Cet endpoint a d'abord vécu dans le harness, et c'est le match entre les deux
+// implémentations qui a montré l'erreur : le harness B ne pouvait l'honorer sans
+// embarquer un second moteur de rendu — exactement ce qu'on cherchait à éviter. Rendre
+// un cours n'est pas une affaire d'agent mais de contenu, et le contenu est ici. Une
+// implémentation concurrente n'aurait jamais dû avoir à réimplémenter Markdig.
+cours.MapGet("/{id:guid}/rendu", async (Guid id, ClaimsPrincipal principal, CoursContext db) =>
+{
+    var ownerId = ClaimsHelper.GetUserId(principal);
+    if (ownerId is null) return Results.Unauthorized();
+
+    var course = await db.Courses.FirstOrDefaultAsync(c => c.Id == id && c.OwnerId == ownerId);
+    if (course is null) return Results.NotFound(new { message = "Cours introuvable." });
+
+    var markdown = course.ReadableContent;
+
+    if (string.IsNullOrWhiteSpace(markdown))
+        return Results.Ok(new RenderedCourseDto(
+            id, course.Title, course.Subject, string.Empty, [], DateTime.UtcNow));
+
+    var outline = GPOE26.Markdown.CourseRenderer.BuildOutline(markdown)
+        .Select(e => new OutlineEntryDto(e.Level, e.Text, e.Id))
+        .ToList();
+
+    return Results.Ok(new RenderedCourseDto(
+        id, course.Title, course.Subject,
+        GPOE26.Markdown.CourseRenderer.ToHtml(markdown), outline, DateTime.UtcNow));
+})
+.WithSummary("Cours rendu en HTML, avec son sommaire")
+.Produces<RenderedCourseDto>()
+.Produces(404);
+
 // ══════════════════════════════════════════════════════════════════════════════
 //  Suivi parental
 // ══════════════════════════════════════════════════════════════════════════════

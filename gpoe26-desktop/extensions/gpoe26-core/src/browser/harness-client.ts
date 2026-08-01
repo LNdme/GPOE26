@@ -11,6 +11,13 @@ export const HarnessConfig = Symbol('HarnessConfig');
 export interface HarnessConfig {
     harnessUrl: string;
     userUrl: string;
+    /**
+     * Le service Cours, qui sert le cours rendu.
+     *
+     * Pas le harness : rendre un cours est une affaire de contenu, pas d'agent. Le
+     * comprendre a demandé d'écrire un second harness et de le voir buter dessus.
+     */
+    coursUrl: string;
 }
 
 /**
@@ -149,7 +156,7 @@ export class HarnessClient {
 
         if (token) {
             try {
-                const response = await fetch(`${this.config.harnessUrl}/cours/${courseId}/rendu`, {
+                const response = await fetch(`${this.config.coursUrl}/cours/${courseId}/rendu`, {
                     headers: { authorization: `Bearer ${token}` }
                 });
 

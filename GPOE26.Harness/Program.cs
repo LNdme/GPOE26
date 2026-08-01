@@ -9,7 +9,6 @@ using GPOE26.Harness.Data;
 using GPOE26.Harness.Model;
 using GPOE26.Harness.Service;
 using GPOE26.Harness.Tools;
-using GPOE26.Markdown;
 using GPOE26.ServiceDefaults;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -260,33 +259,6 @@ app.MapPost("/sessions/{id:guid}/compacter", async (
 })
 .RequireAuthorization()
 .WithSummary("Compacter le contexte d'une session");
-
-// ── GET /cours/{id}/rendu ─────────────────────────────────────────────────────
-//
-// Le cours rendu une seule fois, pour deux surfaces. Le Web l'affiche dans un composant
-// Blazor, l'application bureau dans un conteneur ordinaire : c'est le même HTML, les
-// mêmes ancres, la même feuille de style. Rendre deux fois, c'est se garantir que les
-// deux finiront par différer — et la divergence porterait sur les ancres du sommaire,
-// donc sur des liens qui cessent de fonctionner d'un seul côté.
-app.MapGet("/cours/{id:guid}/rendu", async (Guid id, CoursClient cours, CancellationToken ct) =>
-{
-    var course = await cours.GetCourseAsync(id, ct);
-    if (course is null) return Results.NotFound(new { message = "Cours introuvable." });
-
-    var markdown = course.Content;
-    if (string.IsNullOrWhiteSpace(markdown))
-        return Results.Ok(new RenderedCourseDto(
-            id, course.Title, course.Subject, string.Empty, [], DateTime.UtcNow));
-
-    var outline = CourseRenderer.BuildOutline(markdown)
-        .Select(e => new OutlineEntryDto(e.Level, e.Text, e.Id))
-        .ToList();
-
-    return Results.Ok(new RenderedCourseDto(
-        id, course.Title, course.Subject, CourseRenderer.ToHtml(markdown), outline, DateTime.UtcNow));
-})
-.RequireAuthorization()
-.WithSummary("Cours rendu en HTML, avec son sommaire");
 
 // ── GET /voix/{key} ───────────────────────────────────────────────────────────
 //
