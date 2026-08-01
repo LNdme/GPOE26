@@ -181,8 +181,13 @@ namespace Cours.DTOs
 
     // ── Séances de révision ───────────────────────────────────────────────────────
 
-    /// <summary>Signal d'activité émis par la page d'étude.</summary>
-    public record ActivityRequest(StudyActivity Activity);
+    /// <summary>Signal d'activité émis par la page d'étude ou par l'application bureau.</summary>
+    /// <param name="OccurredAt">
+    /// Quand le signal a eu lieu. Omis pour un signal émis en direct ; renseigné pour un
+    /// signal rejoué après une période hors ligne, sans quoi il serait daté de la
+    /// synchronisation et ferait apparaître une nuit de révision.
+    /// </param>
+    public record ActivityRequest(StudyActivity Activity, DateTime? OccurredAt = null);
 
     /// <summary>Une séance de révision, telle que la voit un parent.</summary>
     public record StudySessionDto(

@@ -13,6 +13,7 @@ namespace User.Data
 
         public DbSet<StudentLinkCode> StudentLinkCodes => Set<StudentLinkCode>();
         public DbSet<ParentChild> ParentChildren => Set<ParentChild>();
+        public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -57,6 +58,23 @@ namespace User.Data
                       .WithMany()
                       .HasForeignKey(l => l.StudentId)
                       .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<RefreshToken>(entity =>
+            {
+                // L'empreinte est ce qu'on reçoit et ce qu'on cherche : elle doit être
+                // indexée, et unique — deux jetons distincts ne peuvent pas partager
+                // la même empreinte sans que quelque chose aille très mal.
+                entity.Property(t => t.TokenHash).HasMaxLength(64);
+                entity.HasIndex(t => t.TokenHash).IsUnique();
+
+                // Pour révoquer toute la chaîne d'un utilisateur en une requête.
+                entity.HasIndex(t => new { t.UserId, t.ExpiresAt });
+
+                entity.HasOne(t => t.User)
+                      .WithMany()
+                      .HasForeignKey(t => t.UserId)
+                      .OnDelete(DeleteBehavior.Cascade);
             });
         }
     }

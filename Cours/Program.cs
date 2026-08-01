@@ -454,7 +454,7 @@ cours.MapPost("/{id:guid}/seance/activite", async (
     var owns = await db.Courses.AnyAsync(c => c.Id == id && c.OwnerId == studentId);
     if (!owns) return Results.NotFound(new { message = "Cours introuvable." });
 
-    await sessions.RecordAsync(studentId.Value, id, req.Activity);
+    await sessions.RecordAsync(studentId.Value, id, req.Activity, req.OccurredAt);
     return Results.NoContent();
 })
 .WithSummary("Signaler une activité d'étude")

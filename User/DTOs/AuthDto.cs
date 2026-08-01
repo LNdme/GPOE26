@@ -63,11 +63,24 @@ public record ChildSummaryDto(
 /// <summary>Un parent vu depuis le profil de l'élève, pour qu'il sache qui le suit.</summary>
 public record LinkedParentDto(Guid Id, string Username, string Email, DateTime LinkedAt);
 
+/// <param name="RefreshToken">
+/// De quoi renouveler le jeton d'accès sans redemander le mot de passe.
+///
+/// Nécessaire à l'application bureau, qui doit fonctionner plusieurs jours hors ligne :
+/// sans lui, l'élève devrait trouver du réseau chaque matin avant de pouvoir réviser. Le
+/// serveur n'en garde que l'empreinte — à conserver côté client dans le trousseau du
+/// système, jamais en clair sur le disque.
+/// </param>
 public record AuthResponse(
     string Token,
     DateTime ExpiresAt,
-    UserProfileDto Profile
+    UserProfileDto Profile,
+    string? RefreshToken = null,
+    DateTime? RefreshExpiresAt = null
 );
+
+/// <summary>Échange d'un jeton de rafraîchissement contre un jeton d'accès neuf.</summary>
+public record RefreshRequest([Required] string RefreshToken);
 
 public record UserProfileDto(
     Guid Id,

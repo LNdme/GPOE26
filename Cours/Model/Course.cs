@@ -355,6 +355,30 @@ namespace Cours.Model
         public const int MaxSecondsPerSignal = 90;
 
         public bool IsOpenAt(DateTime now) => now - LastActivityAt < IdleTimeout;
+
+        /// <summary>
+        /// L'heure à retenir pour un signal.
+        ///
+        /// Un signal rejoué après une période hors ligne porte sa propre date, et c'est
+        /// elle qui compte : la dater de la synchronisation ferait apparaître une nuit
+        /// entière de révision. Un horodatage dans le futur est en revanche refusé —
+        /// il ne peut venir que d'une horloge déréglée ou d'une tentative de gonfler un
+        /// temps de travail. La minute de tolérance absorbe les décalages ordinaires.
+        /// </summary>
+        public static DateTime ResolveSignalTime(DateTime? declared, DateTime now) =>
+            declared is { } d && d <= now.AddMinutes(1)
+                ? DateTime.SpecifyKind(d, DateTimeKind.Utc)
+                : now;
+
+        /// <summary>
+        /// Temps à créditer pour un signal reçu à <paramref name="at"/>.
+        ///
+        /// Plafonné, parce qu'un signal tardif — onglet en arrière-plan, machine en
+        /// veille, lot rejoué — ne doit pas gonfler la durée d'un seul coup. Jamais
+        /// négatif, parce qu'une horloge peut reculer.
+        /// </summary>
+        public int CreditFor(DateTime at) =>
+            Math.Clamp((int)(at - LastActivityAt).TotalSeconds, 0, MaxSecondsPerSignal);
     }
 
     /// <summary>Nature d'un signal d'activité, pour savoir ce qui a été fait dans la séance.</summary>

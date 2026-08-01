@@ -174,8 +174,7 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
     db.AppUsers.Add(user);
     await db.SaveChangesAsync();
 
-    var (token, expiresAt) = jwt.GenerateToken(user);
-    return Results.Created("/auth/me", new AuthResponse(token, expiresAt, new UserProfileDto(user)));
+    return Results.Created("/auth/me", await IssueAsync(db, jwt, user));
 })
 .WithSummary("Créer un compte")
 .Produces<AuthResponse>(201)
@@ -195,12 +194,75 @@ auth.MapPost("/login", async (LoginRequest req, UserContext db, Jwtservice jwt) 
     user.LastLoginAt = DateTime.UtcNow;
     await db.SaveChangesAsync();
 
-    var (token, expiresAt) = jwt.GenerateToken(user, await LoadChildrenAsync(db, user));
-    return Results.Ok(new AuthResponse(token, expiresAt, new UserProfileDto(user)));
+    return Results.Ok(await IssueAsync(db, jwt, user));
 })
 .WithSummary("Se connecter")
 .Produces<AuthResponse>()
 .Produces(401);
+
+// ── POST /auth/refresh ────────────────────────────────────────────────────────
+//
+// Renouvelle le jeton d'accès sans redemander le mot de passe. C'est ce qui permet à
+// l'application bureau de fonctionner plusieurs jours sans réseau puis de repartir.
+//
+// Rotation systématique : le jeton présenté est consommé, un neuf est émis. Un jeton qui
+// se représente après usage signale qu'une copie circule — on révoque alors toute la
+// chaîne de l'utilisateur plutôt que de laisser deux porteurs coexister.
+auth.MapPost("/refresh", async (RefreshRequest req, UserContext db, Jwtservice jwt) =>
+{
+    if (string.IsNullOrWhiteSpace(req.RefreshToken)) return Results.Unauthorized();
+
+    var hash = RefreshToken.Hash(req.RefreshToken);
+    var stored = await db.RefreshTokens
+        .Include(t => t.User)
+        .FirstOrDefaultAsync(t => t.TokenHash == hash);
+
+    if (stored is null) return Results.Unauthorized();
+
+    var now = DateTime.UtcNow;
+
+    if (!stored.IsUsable(now))
+    {
+        // Rejeu d'un jeton déjà consommé : la copie et l'original ne peuvent pas être
+        // départagés, donc on invalide tout et l'utilisateur se reconnecte.
+        if (stored.UsedAt is not null)
+        {
+            await db.RefreshTokens
+                .Where(t => t.UserId == stored.UserId && t.RevokedAt == null)
+                .ExecuteUpdateAsync(s => s.SetProperty(t => t.RevokedAt, now));
+
+            app.Logger.LogWarning(
+                "Jeton de rafraîchissement rejoué pour l'utilisateur {UserId} : chaîne révoquée",
+                stored.UserId);
+        }
+
+        return Results.Unauthorized();
+    }
+
+    var issued = await IssueAsync(db, jwt, stored.User, replacing: stored);
+    return Results.Ok(issued);
+})
+.WithSummary("Renouveler le jeton d'accès")
+.Produces<AuthResponse>()
+.Produces(401);
+
+// ── POST /auth/deconnexion ────────────────────────────────────────────────────
+//
+// Révoque les jetons de rafraîchissement de l'appareil. Le jeton d'accès, lui, reste
+// valable jusqu'à son expiration : c'est la contrepartie assumée d'une autorisation qui
+// se lit sans toucher la base.
+auth.MapPost("/deconnexion", async (RefreshRequest req, UserContext db) =>
+{
+    var hash = RefreshToken.Hash(req.RefreshToken ?? string.Empty);
+
+    await db.RefreshTokens
+        .Where(t => t.TokenHash == hash && t.RevokedAt == null)
+        .ExecuteUpdateAsync(s => s.SetProperty(t => t.RevokedAt, DateTime.UtcNow));
+
+    return Results.NoContent();
+})
+.WithSummary("Révoquer un jeton de rafraîchissement")
+.Produces(204);
 
 // ── GET /auth/me ──────────────────────────────────────────────────────────────
 // Endpoint protégé : le client envoie le JWT dans le header Authorization: Bearer <token>
@@ -501,3 +563,40 @@ static async Task<List<Guid>> LoadChildrenAsync(UserContext db, AppUser user) =>
             .Where(l => l.ParentId == user.Id)
             .Select(l => l.StudentId)
             .ToListAsync();
+
+/// <summary>
+/// Émet un jeton d'accès et un jeton de rafraîchissement.
+///
+/// Un seul endroit pour les trois portes d'entrée — inscription, connexion,
+/// rafraîchissement — parce qu'une seule qui oublierait le jeton de rafraîchissement
+/// donnerait un compte qui marche partout sauf hors ligne, et le défaut ne se verrait
+/// qu'une fois le réseau coupé.
+/// </summary>
+static async Task<AuthResponse> IssueAsync(
+    UserContext db, Jwtservice jwt, AppUser user, RefreshToken? replacing = null)
+{
+    var (accessToken, expiresAt) = jwt.GenerateToken(user, await LoadChildrenAsync(db, user));
+
+    var (refresh, hash) = RefreshToken.Create();
+    var stored = new RefreshToken
+    {
+        UserId = user.Id,
+        TokenHash = hash,
+        ExpiresAt = DateTime.UtcNow.Add(RefreshToken.Lifetime),
+    };
+
+    db.RefreshTokens.Add(stored);
+
+    // Rotation : le jeton présenté est consommé au moment même où son remplaçant est
+    // émis, et on garde le lien entre les deux pour détecter un rejeu.
+    if (replacing is not null)
+    {
+        replacing.UsedAt = DateTime.UtcNow;
+        replacing.ReplacedBy = stored.Id;
+    }
+
+    await db.SaveChangesAsync();
+
+    return new AuthResponse(
+        accessToken, expiresAt, new UserProfileDto(user), refresh, stored.ExpiresAt);
+}

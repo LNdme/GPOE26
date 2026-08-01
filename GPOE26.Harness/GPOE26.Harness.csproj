@@ -26,6 +26,7 @@
   <ItemGroup>
     <ProjectReference Include="..\GPOE26.Ai\GPOE26.Ai.csproj" />
     <ProjectReference Include="..\GPOE26.Harness.Contract\GPOE26.Harness.Contract.csproj" />
+    <ProjectReference Include="..\GPOE26.Markdown\GPOE26.Markdown.csproj" />
     <ProjectReference Include="..\GPOE26.ServiceDefaults\GPOE26.ServiceDefaults.csproj" />
   </ItemGroup>
 

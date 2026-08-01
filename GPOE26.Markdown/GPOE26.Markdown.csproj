@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Markdig" Version="1.1.1" />
+  </ItemGroup>
+
+  <!--
+    Le rendu du cours, écrit une fois.
+
+    Le Web l'affiche dans un composant Blazor, le harness le sert en HTML à l'application
+    bureau. Deux moteurs de rendu finiraient par diverger — et la divergence porterait sur
+    les ancres du sommaire, donc sur des liens qui cessent de fonctionner d'un côté
+    seulement, ce qui est le pire endroit où la découvrir.
+  -->
+
+</Project>

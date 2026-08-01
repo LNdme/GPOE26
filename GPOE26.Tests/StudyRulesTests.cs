@@ -156,8 +156,94 @@ public class StudySessionTests
     [InlineData(-5, 0)]       // horloge qui recule : jamais négatif
     public void Le_credit_entre_deux_signaux_est_plafonne(int elapsedSeconds, int expected)
     {
-        var credited = Math.Clamp(elapsedSeconds, 0, StudySession.MaxSecondsPerSignal);
-        Assert.Equal(expected, credited);
+        var last = DateTime.UtcNow;
+        var session = new StudySession { LastActivityAt = last };
+
+        Assert.Equal(expected, session.CreditFor(last.AddSeconds(elapsedSeconds)));
+    }
+
+    // ── Rejeu d'une période hors ligne ────────────────────────────────────────
+
+    /// <summary>
+    /// Le défaut que le hors ligne met au jour : sans horodatage propre, un signal
+    /// d'hier soir rejoué ce matin compterait toute la nuit.
+    /// </summary>
+    [Fact]
+    public void Un_signal_rejoue_garde_l_heure_ou_il_a_eu_lieu()
+    {
+        var now = DateTime.UtcNow;
+        var hierSoir = now.AddHours(-14);
+
+        Assert.Equal(hierSoir, StudySession.ResolveSignalTime(hierSoir, now));
+    }
+
+    [Fact]
+    public void Un_signal_sans_horodatage_est_date_de_maintenant()
+    {
+        var now = DateTime.UtcNow;
+        Assert.Equal(now, StudySession.ResolveSignalTime(null, now));
+    }
+
+    /// <summary>
+    /// Un horodatage dans le futur ne peut venir que d'une horloge déréglée ou d'une
+    /// tentative de gonfler un temps de travail : on le remplace par l'heure réelle.
+    /// </summary>
+    [Fact]
+    public void Un_horodatage_dans_le_futur_est_refuse()
+    {
+        var now = DateTime.UtcNow;
+        Assert.Equal(now, StudySession.ResolveSignalTime(now.AddHours(3), now));
+    }
+
+    [Fact]
+    public void Un_leger_decalage_d_horloge_reste_accepte()
+    {
+        // Trente secondes d'avance sont ordinaires entre deux machines : les refuser
+        // ferait retomber tous les signaux d'un appareil mal réglé sur l'heure serveur.
+        var now = DateTime.UtcNow;
+        var slightlyAhead = now.AddSeconds(30);
+
+        Assert.Equal(slightlyAhead, StudySession.ResolveSignalTime(slightlyAhead, now));
+    }
+
+    /// <summary>
+    /// Une soirée de travail hors ligne, rejouée le lendemain : les signaux se suivent à
+    /// la minute, donc la séance reste une seule séance et la durée reflète le travail
+    /// réel — pas les quatorze heures écoulées jusqu'à la synchronisation.
+    /// </summary>
+    [Fact]
+    public void Une_soiree_hors_ligne_rejouee_donne_une_seance_de_la_bonne_duree()
+    {
+        var soiree = DateTime.UtcNow.AddHours(-14);
+        var session = new StudySession { StartedAt = soiree, LastActivityAt = soiree };
+
+        // Vingt signaux d'une minute, comme les émet la page pendant la lecture.
+        for (var minute = 1; minute <= 20; minute++)
+        {
+            var at = soiree.AddMinutes(minute);
+
+            Assert.True(session.IsOpenAt(at), "La séance ne doit pas se refermer entre deux signaux d'une minute.");
+
+            session.ActiveSeconds += session.CreditFor(at);
+            session.LastActivityAt = at;
+        }
+
+        Assert.Equal(20 * 60, session.ActiveSeconds);
+    }
+
+    /// <summary>
+    /// Deux séances séparées par un sommeil restent deux séances, même rejouées d'un
+    /// seul lot : c'est l'heure déclarée qui décide, pas l'ordre d'arrivée.
+    /// </summary>
+    [Fact]
+    public void Deux_periodes_hors_ligne_eloignees_restent_deux_seances()
+    {
+        var soir = DateTime.UtcNow.AddHours(-14);
+        var matin = DateTime.UtcNow.AddHours(-2);
+
+        var session = new StudySession { StartedAt = soir, LastActivityAt = soir.AddMinutes(20) };
+
+        Assert.False(session.IsOpenAt(matin));
     }
 
     [Fact]
