@@ -1,4 +1,5 @@
 @page "/famille/{ChildId:guid}"
+@page "/eleve/{ChildId:guid}"
 @using GPOE26.Web.Components.UI
 @* Api et Nav viennent de _Imports.razor. *@
 @inject GPOE26.Web.Services.AuthService Auth
@@ -7,19 +8,29 @@
 <PageTitle>Suivi – GPOE26</PageTitle>
 
 @*
-    Le détail d'un enfant : ses cours, ses séances, ce qu'il a écrit, et le bilan rédigé.
+    Le détail d'un élève : ses cours, ses séances, ce qu'il a écrit, et le bilan rédigé.
 
     Rien ici ne vient de ses échanges avec le répétiteur. Ce qui remonte est du travail
     scolaire — les réponses qu'il a rédigées pour son cours — et des faits mesurés.
     Le bilan lui-même parle de notions, jamais de propos.
+
+    Deux routes, une seule page. Un parent arrive par /famille/{id}, un enseignant par
+    /eleve/{id}?classe={classId} depuis le tableau de sa classe. Le contenu est le même
+    parce que la garantie est la même : ce qu'un enfant écrit pour son cours remonte, ce
+    qu'il dit au répétiteur jamais. Dupliquer la page ferait diverger cette garantie —
+    et c'est la copie oubliée qui finirait par fuir.
+
+    Seule l'autorisation diffère, et elle est côté serveur : le parent se décide sur son
+    jeton, l'enseignant sur l'effectif de ses classes. Ni l'un ni l'autre ne dépend de
+    ce que cette page affiche.
 *@
 
 <div class="enfant">
 
-    @if (!Auth.IsAuthenticated || !Auth.IsParent)
+    @if (!Auth.IsAuthenticated || (!Auth.IsParent && !Auth.IsTeacher))
     {
         <div class="enfant-empty">
-            <h5>Cet espace est réservé aux comptes parents</h5>
+            <h5>Cet espace est réservé aux comptes parents et enseignants</h5>
             <a class="btn btn-brand mt-2" href="/login">Se connecter</a>
         </div>
     }
@@ -36,15 +47,17 @@
             <div class="display-6 mb-2">🔒</div>
             <h5>Suivi indisponible</h5>
             <p class="text-muted-chic">
-                Cet enfant n'est pas rattaché à votre compte, ou le service est injoignable.
+                @(Auth.IsTeacher
+                    ? "Cet élève n'est dans aucune de vos classes, ou le service est injoignable."
+                    : "Cet enfant n'est pas rattaché à votre compte, ou le service est injoignable.")
             </p>
-            <a class="btn btn-brand mt-2" href="/famille">Retour à l'espace famille</a>
+            <a class="btn btn-brand mt-2" href="@BackHref">@BackLabel</a>
         </div>
     }
     else
     {
         <header class="enfant-head">
-            <a class="enfant-back" href="/famille">← Espace famille</a>
+            <a class="enfant-back" href="@BackHref">← @BackLabel</a>
             <h1 class="enfant-title">@(_child?.Username ?? "Suivi de l'élève")</h1>
             <p class="enfant-subtitle">
                 @_overview.CoursesStarted @(_overview.CoursesStarted > 1 ? "cours commencés" : "cours commencé"),
@@ -250,6 +263,15 @@
     [SupplyParameterFromQuery(Name = "cours")]
     public Guid? CourseId { get; set; }
 
+    /// <summary>
+    /// La classe d'où vient l'enseignant. Elle sert à deux choses et à rien d'autre :
+    /// retrouver le nom de l'élève en un appel plutôt qu'en parcourant toutes les
+    /// classes, et savoir où renvoyer le bouton retour. Aucune autorisation ne s'y
+    /// appuie — celle-là est côté serveur, sur l'effectif réel.
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "classe")]
+    public Guid? ClassId { get; set; }
+
     private enum Tab { Cours, Seances }
 
     private static readonly JourneyPhase[] Phases =
@@ -270,12 +292,15 @@
     private Guid _loadedChildId;
     private Guid? _selectedCourseId;
 
+    /// <summary>La classe retrouvée quand l'URL ne la portait pas, pour le bouton retour.</summary>
+    private Guid? _resolvedClassId;
+
     protected override async Task OnParametersSetAsync()
     {
         if (_loadedChildId == ChildId) return;
         _loadedChildId = ChildId;
 
-        if (!Auth.IsAuthenticated || !Auth.IsParent)
+        if (!Auth.IsAuthenticated || (!Auth.IsParent && !Auth.IsTeacher))
         {
             _loading = false;
             return;
@@ -283,10 +308,10 @@
 
         _loading = true;
 
-        // Les enfants viennent du service User, le suivi du service Cours : le premier dit
-        // qui est cet enfant, le second ce qu'il a fait.
-        var children = await Api.GetChildrenAsync();
-        _child = children.FirstOrDefault(c => c.Id == ChildId);
+        // Le nom vient du service User, le suivi du service Cours : le premier dit qui est
+        // cet élève, le second ce qu'il a fait. Cours ne connaît que des identifiants, et
+        // c'est ce qui lui permet d'ignorer le modèle scolaire.
+        _child = await ResolveStudentAsync();
 
         _overview = await Api.GetChildOverviewAsync(ChildId);
         _sessions = await Api.GetChildSessionsAsync(ChildId);
@@ -332,7 +357,69 @@
         _bilanLoading = false;
     }
 
+    /// <summary>
+    /// Qui est cet élève ? Deux chemins, selon qui demande.
+    ///
+    /// Un parent le trouve parmi ses enfants rattachés. Un enseignant le trouve dans
+    /// l'effectif de la classe d'où il vient — un seul appel. Sans cette classe (lien
+    /// collé, favori), on parcourt les classes jusqu'à le trouver ; c'est plus coûteux,
+    /// mais c'est le cas rare, et refuser d'afficher un nom serait pire.
+    ///
+    /// Échouer ici ne ferme aucune porte et n'en ouvre aucune : le titre affiche
+    /// « Suivi de l'élève », et c'est le serveur qui décide de tout le reste.
+    /// </summary>
+    private async Task<ChildSummaryDto?> ResolveStudentAsync()
+    {
+        if (Auth.IsParent)
+        {
+            var children = await Api.GetChildrenAsync();
+            return children.FirstOrDefault(c => c.Id == ChildId);
+        }
+
+        if (!Auth.IsTeacher) return null;
+
+        if (ClassId is { } known)
+            return await FindInClassAsync(known);
+
+        foreach (var schoolClass in await Api.GetMyClassesAsync())
+        {
+            if (await FindInClassAsync(schoolClass.Id) is { } found)
+            {
+                _resolvedClassId = schoolClass.Id;
+                return found;
+            }
+        }
+
+        return null;
+    }
+
+    private async Task<ChildSummaryDto?> FindInClassAsync(Guid classId)
+    {
+        var members = await Api.GetClassMembersAsync(classId);
+        var member = members.FirstOrDefault(m => m.Id == ChildId);
+
+        return member is null
+            ? null
+            : new ChildSummaryDto(member.Id, member.Username, member.Level, member.Filiere, member.JoinedAt);
+    }
+
     // ── Affichage ────────────────────────────────────────────────────────────
+
+    /// <summary>Où renvoie le bouton retour : à la classe pour un enseignant, à l'espace famille pour un parent.</summary>
+    private string BackHref
+    {
+        get
+        {
+            if (!Auth.IsTeacher) return "/famille";
+
+            var classId = ClassId ?? _resolvedClassId;
+            return classId is { } id ? $"/classe/{id}" : "/classe";
+        }
+    }
+
+    private string BackLabel => Auth.IsTeacher
+        ? (ClassId ?? _resolvedClassId) is null ? "Mes classes" : "La classe"
+        : "Espace famille";
 
     // Extraits en méthodes : un littéral de chaîne imbriqué dans un attribut Razor
     // n'est pas analysable de façon fiable.

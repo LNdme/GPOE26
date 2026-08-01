@@ -1,0 +1,184 @@
+/* Mes classes. Mêmes tokens --rd-* que reading.css et l'espace famille : l'élève, le
+   parent et l'enseignant doivent avoir l'impression d'ouvrir la même application. */
+
+.classes {
+    max-width: 58rem;
+    margin: 0 auto;
+    padding: 2.5rem 1.25rem 4rem;
+    color: var(--rd-text, #1f2430);
+}
+
+.classes-empty {
+    margin: 3.5rem auto;
+    text-align: center;
+}
+
+/* ── En-tête ──────────────────────────────────────────────────────────────── */
+
+.classes-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.75rem;
+}
+
+.classes-title {
+    margin: 0;
+    font-size: 1.6rem;
+    font-weight: 700;
+}
+
+.classes-subtitle {
+    margin: .25rem 0 0;
+    font-size: .92rem;
+    color: var(--rd-text-soft, #6b7280);
+}
+
+.classes-section-title {
+    margin: 0 0 .9rem;
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.classes-error { margin: .75rem 0 0; font-size: .85rem; color: #b42318; }
+
+.classes-note {
+    margin: 1.75rem 0 0;
+    font-size: .84rem;
+    line-height: 1.65;
+    color: var(--rd-text-soft, #6b7280);
+}
+
+/* ── Création ─────────────────────────────────────────────────────────────── */
+
+.classes-form {
+    padding: 1.35rem 1.5rem;
+    margin-bottom: 2rem;
+    border: 1px solid var(--rd-border, #e3e6ec);
+    border-radius: 12px;
+    background: var(--rd-surface, #fbfbfd);
+}
+
+.classes-form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    gap: .9rem;
+}
+
+.classes-form-grid label {
+    display: flex;
+    flex-direction: column;
+    gap: .3rem;
+    font-size: .82rem;
+    font-weight: 600;
+    color: var(--rd-text-soft, #6b7280);
+}
+
+.classes-form-grid label em {
+    font-style: normal;
+    font-weight: 400;
+    opacity: .75;
+}
+
+.classes-input {
+    padding: .55rem .8rem;
+    font-size: .92rem;
+    font-weight: 400;
+    color: var(--rd-text, #1f2430);
+    border: 1px solid var(--rd-border, #e3e6ec);
+    border-radius: 8px;
+    background: #fff;
+}
+
+.classes-input:focus {
+    outline: none;
+    border-color: var(--rd-accent, #2f6feb);
+    box-shadow: 0 0 0 3px rgba(47, 111, 235, .12);
+}
+
+/* ── La liste ─────────────────────────────────────────────────────────────── */
+
+.classes-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: .85rem;
+}
+
+.classes-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+    padding: 1.1rem 1.35rem;
+    border: 1px solid var(--rd-border, #e3e6ec);
+    border-radius: 12px;
+    background: #fff;
+}
+
+.classes-card-main { flex: 1 1 15rem; min-width: 0; }
+
+.classes-card-name {
+    font-size: 1.02rem;
+    font-weight: 700;
+    color: var(--rd-text, #1f2430);
+    text-decoration: none;
+}
+
+.classes-card-name:hover { text-decoration: underline; }
+
+.classes-card-meta {
+    margin: .2rem 0 0;
+    font-size: .84rem;
+    color: var(--rd-text-soft, #6b7280);
+}
+
+/* Le code se recopie caractère par caractère depuis le fond de la salle : chasse fixe,
+   lettres espacées, et assez gros pour se lire de loin. */
+.classes-card-code {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .15rem;
+}
+
+.classes-code {
+    font-family: ui-monospace, "SFMono-Regular", "Cascadia Mono", Menlo, monospace;
+    font-size: 1.22rem;
+    font-weight: 700;
+    letter-spacing: .18em;
+    padding: .3rem .7rem;
+    border-radius: 8px;
+    background: var(--rd-surface, #f4f6fa);
+    color: var(--rd-text, #1f2430);
+}
+
+.classes-code.is-closed {
+    font-size: .95rem;
+    letter-spacing: normal;
+    color: #b42318;
+    background: #fef3f2;
+}
+
+.classes-code-label {
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--rd-text-soft, #6b7280);
+}
+
+.classes-card-actions {
+    display: flex;
+    gap: .45rem;
+    flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+    .classes-card { align-items: flex-start; }
+    .classes-card-code { align-items: flex-start; }
+}

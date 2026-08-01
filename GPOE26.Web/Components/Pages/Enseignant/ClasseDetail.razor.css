@@ -1,0 +1,234 @@
+/* Le tableau d'une classe. Mêmes tokens --rd-* que le reste de l'application. */
+
+.classe {
+    max-width: 64rem;
+    margin: 0 auto;
+    padding: 2.5rem 1.25rem 4rem;
+    color: var(--rd-text, #1f2430);
+}
+
+.classe-empty {
+    margin: 3.5rem auto;
+    text-align: center;
+}
+
+/* ── En-tête ──────────────────────────────────────────────────────────────── */
+
+.classe-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 2rem;
+}
+
+.classe-back {
+    display: inline-block;
+    margin-bottom: .5rem;
+    font-size: .85rem;
+    color: var(--rd-text-soft, #6b7280);
+    text-decoration: none;
+}
+
+.classe-back:hover { color: var(--rd-text, #1f2430); }
+
+.classe-title {
+    margin: 0;
+    font-size: 1.6rem;
+    font-weight: 700;
+}
+
+.classe-subtitle {
+    margin: .25rem 0 0;
+    font-size: .92rem;
+    color: var(--rd-text-soft, #6b7280);
+}
+
+.classe-section-title {
+    margin: 0 0 .5rem;
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.classe-hint {
+    margin: 0 0 1rem;
+    font-size: .86rem;
+    line-height: 1.6;
+    color: var(--rd-text-soft, #6b7280);
+}
+
+.classe-code-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .15rem;
+}
+
+.classe-code {
+    font-family: ui-monospace, "SFMono-Regular", "Cascadia Mono", Menlo, monospace;
+    font-size: 1.22rem;
+    font-weight: 700;
+    letter-spacing: .18em;
+    padding: .3rem .7rem;
+    border-radius: 8px;
+    background: var(--rd-surface, #f4f6fa);
+}
+
+.classe-code-label {
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--rd-text-soft, #6b7280);
+}
+
+/* ── Notions fragiles ─────────────────────────────────────────────────────── */
+
+.classe-weak {
+    padding: 1.35rem 1.5rem;
+    margin-bottom: 2rem;
+    border: 1px solid var(--rd-border, #e3e6ec);
+    border-radius: 12px;
+    background: var(--rd-surface, #fbfbfd);
+}
+
+.classe-weak-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: .8rem;
+}
+
+.classe-weak-list li {
+    display: flex;
+    align-items: center;
+    gap: .9rem;
+}
+
+/* La barre d'abord, le texte ensuite : l'œil compare des longueurs bien plus vite que
+   des nombres, et c'est un classement qu'on lit ici, pas une mesure. */
+.classe-weak-bar {
+    flex: 0 0 8rem;
+    height: 9px;
+    border-radius: 999px;
+    background: #eceff4;
+    overflow: hidden;
+}
+
+.classe-weak-bar span {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #f79009, #d92d20);
+}
+
+.classe-weak-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.classe-weak-heading {
+    font-size: .94rem;
+    font-weight: 600;
+}
+
+.classe-weak-meta {
+    font-size: .81rem;
+    color: var(--rd-text-soft, #6b7280);
+}
+
+/* ── Le tableau ───────────────────────────────────────────────────────────── */
+
+.classe-students-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.classe-week-badge {
+    font-size: .81rem;
+    padding: .2rem .6rem;
+    border-radius: 999px;
+    background: var(--rd-surface, #f4f6fa);
+    color: var(--rd-text-soft, #6b7280);
+}
+
+/* Trente lignes et six colonnes ne tiennent pas sur un téléphone : le tableau défile
+   dans son propre cadre, jamais la page. */
+.classe-table-scroll {
+    overflow-x: auto;
+    border: 1px solid var(--rd-border, #e3e6ec);
+    border-radius: 12px;
+    background: #fff;
+}
+
+.classe-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .89rem;
+    white-space: nowrap;
+}
+
+.classe-table th {
+    padding: .7rem .9rem;
+    text-align: left;
+    font-size: .76rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--rd-text-soft, #6b7280);
+    border-bottom: 1px solid var(--rd-border, #e3e6ec);
+}
+
+.classe-table td {
+    padding: .7rem .9rem;
+    border-bottom: 1px solid #f1f3f7;
+}
+
+.classe-table tbody tr:last-child td { border-bottom: none; }
+
+.classe-table .num { text-align: right; }
+
+/* Un liseré, pas un fond rouge : trente élèves dont la moitié décroche donnerait une
+   page entièrement alarmante, qui ne se lit plus. */
+.classe-table tr.needs-attention td:first-child {
+    box-shadow: inset 3px 0 0 #f79009;
+}
+
+.classe-student-name {
+    font-weight: 600;
+    color: var(--rd-text, #1f2430);
+    text-decoration: none;
+}
+
+.classe-student-name:hover { text-decoration: underline; }
+
+.classe-flag {
+    margin-left: .45rem;
+    font-size: .72rem;
+    font-weight: 600;
+    padding: .1rem .45rem;
+    border-radius: 999px;
+    background: #fef0c7;
+    color: #b54708;
+}
+
+.classe-failed {
+    font-size: .79rem;
+    color: #b42318;
+}
+
+.classe-nodata {
+    font-size: .84rem;
+    font-style: italic;
+    color: var(--rd-text-soft, #9aa1ad);
+}
+
+@media (max-width: 640px) {
+    .classe-weak-bar { flex-basis: 5rem; }
+}

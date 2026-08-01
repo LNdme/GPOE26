@@ -60,8 +60,80 @@
                 <a class="btn btn-brand btn-sm" href="/famille">Ouvrir l'espace famille</a>
             </section>
         }
+        else if (Auth.IsTeacher)
+        {
+            @* Un enseignant n'a ni parent à rattacher ni classe à rejoindre : il en tient. *@
+            <section class="profil-card">
+                <h2 class="profil-card-title">Mes classes</h2>
+                <p class="profil-card-hint">
+                    Le suivi de vos élèves se trouve dans vos classes.
+                </p>
+                <a class="btn btn-brand btn-sm" href="/classe">Ouvrir mes classes</a>
+            </section>
+        }
         else
         {
+            @* ── Rejoindre une classe ────────────────────────────────────────── *@
+            <section class="profil-card">
+                <h2 class="profil-card-title">Rejoindre une classe</h2>
+                <p class="profil-card-hint">
+                    Saisissez le code que votre professeur vous a donné. Il verra votre
+                    progression — temps de travail, étapes validées, notions difficiles —
+                    mais <strong>jamais vos échanges avec le répétiteur</strong>.
+                </p>
+
+                <div class="profil-join">
+                    <input class="profil-join-input"
+                           maxlength="6"
+                           placeholder="Code à 6 caractères"
+                           @bind="_classCode"
+                           @bind:event="oninput"
+                           disabled="@_joining" />
+
+                    <button class="btn btn-brand btn-sm"
+                            disabled="@(_joining || string.IsNullOrWhiteSpace(_classCode))"
+                            @onclick="JoinClassAsync">
+                        @if (_joining)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        Rejoindre
+                    </button>
+                </div>
+
+                @if (_classError is not null)
+                {
+                    <p class="profil-error">@_classError</p>
+                }
+
+                @if (_loadingClasses)
+                {
+                    <p class="profil-card-hint mt-3">Chargement…</p>
+                }
+                else if (_classes.Count > 0)
+                {
+                    <ul class="profil-list mt-3">
+                        @foreach (var c in _classes)
+                        {
+                            <li>
+                                <div>
+                                    <span class="profil-list-name">@c.Name</span>
+                                    <span class="profil-list-meta">
+                                        @c.Subject · @c.TeacherName · depuis le
+                                        @c.JoinedAt.ToLocalTime().ToString("d MMMM yyyy")
+                                    </span>
+                                </div>
+                                <button class="btn btn-sm btn-outline-danger"
+                                        @onclick="() => LeaveClassAsync(c)"
+                                        disabled="@(_leaving == c.Id)">
+                                    Quitter
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                }
+            </section>
+
             <section class="profil-card">
                 <h2 class="profil-card-title">Laisser un parent suivre ma progression</h2>
                 <p class="profil-card-hint">
@@ -141,22 +213,74 @@
 @code {
     private LinkCodeResponse? _code;
     private List<LinkedParentDto> _parents = [];
+    private List<MyClassDto> _classes = [];
 
     private bool _generating;
     private bool _loadingParents = true;
+    private bool _loadingClasses = true;
     private Guid? _unlinking;
     private string? _error;
 
+    private string _classCode = "";
+    private bool _joining;
+    private Guid? _leaving;
+    private string? _classError;
+
     protected override async Task OnInitializedAsync()
     {
-        if (!Auth.IsAuthenticated || Auth.IsParent)
+        if (!Auth.IsAuthenticated || Auth.IsParent || Auth.IsTeacher)
         {
             _loadingParents = false;
+            _loadingClasses = false;
             return;
         }
 
-        _parents = await Api.GetMyParentsAsync();
+        // Les deux listes en parallèle : elles vont au même service et ne dépendent pas
+        // l'une de l'autre.
+        var parents = Api.GetMyParentsAsync();
+        var classes = Api.GetMyEnrolledClassesAsync();
+
+        _parents = await parents;
         _loadingParents = false;
+
+        _classes = await classes;
+        _loadingClasses = false;
+    }
+
+    private async Task JoinClassAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_classCode) || _joining) return;
+
+        _joining = true;
+        _classError = null;
+
+        var (joined, error) = await Api.JoinClassAsync(_classCode.Trim().ToUpperInvariant());
+
+        if (joined is null)
+        {
+            _classError = error;
+            _joining = false;
+            return;
+        }
+
+        // Aucun jeton à rafraîchir, contrairement au rattachement d'un parent : le droit
+        // de l'enseignant ne vit pas dans un claim, il se lit dans l'effectif de ses
+        // classes au moment où il consulte.
+        _classCode = "";
+        _classes = [joined, .. _classes.Where(c => c.Id != joined.Id)];
+        _joining = false;
+    }
+
+    private async Task LeaveClassAsync(MyClassDto schoolClass)
+    {
+        _leaving = schoolClass.Id;
+
+        if (await Api.LeaveClassAsync(schoolClass.Id))
+            _classes = _classes.Where(c => c.Id != schoolClass.Id).ToList();
+        else
+            _classError = "Vous n'avez pas pu quitter cette classe.";
+
+        _leaving = null;
     }
 
     private async Task GenerateCodeAsync()

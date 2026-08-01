@@ -131,8 +131,21 @@
 
     protected override void OnInitialized()
     {
-        if (Auth.IsAuthenticated) Nav.NavigateTo(Auth.IsParent ? "/famille" : "/cours");
+        if (Auth.IsAuthenticated) Nav.NavigateTo(HomeFor(Auth.Profile?.Role));
     }
+
+    /// <summary>
+    /// Où atterrit un compte après connexion ou inscription.
+    ///
+    /// Ni un parent ni un enseignant n'a de cours à lui : les envoyer sur /cours les
+    /// ferait arriver sur une page vide au premier écran qu'ils voient du produit.
+    /// </summary>
+    private static string HomeFor(string? role) => role switch
+    {
+        "Parent" => "/famille",
+        "Teacher" => "/classe",
+        _ => "/cours",
+    };
 
     private async Task DoRegister()
     {
@@ -164,7 +177,6 @@
 
         if (!ok) { _error = err; return; }
 
-        // Un parent n'a pas de cours à lui : on l'emmène là où son compte a un sens.
-        Nav.NavigateTo(isParent ? "/famille" : "/cours");
+        Nav.NavigateTo(HomeFor(_role));
     }
 }

@@ -69,7 +69,12 @@
     }
 
     /// <summary>Un parent n'a pas de cours à lui : sa page d'accueil est l'espace famille.</summary>
-    private string HomeRoute => Auth.IsParent ? "/famille" : "/cours";
+    // Ni un parent ni un enseignant n'a de cours à lui : les envoyer sur /cours les
+    // ferait arriver sur une page vide juste après s'être connectés.
+    private string HomeRoute =>
+        Auth.IsParent ? "/famille"
+        : Auth.IsTeacher ? "/classe"
+        : "/cours";
 
     private async Task OnKey(KeyboardEventArgs e)
     {

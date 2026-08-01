@@ -1338,7 +1338,178 @@ namespace GPOE26.Web.Services
             }
         }
 
-        // ── Suivi parental ───────────────────────────────────────────────────────
+        // ── Classes ──────────────────────────────────────────────────────────────
+
+        /// <summary>Les classes de l'enseignant connecté, code compris.</summary>
+        public async Task<List<SchoolClassDto>> GetMyClassesAsync()
+        {
+            if (string.IsNullOrEmpty(_tokenProvider.Token)) return [];
+
+            var client = CreateAuthClient("user");
+            try
+            {
+                return await client.GetFromJsonAsync<List<SchoolClassDto>>("/auth/classes") ?? [];
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching teacher classes");
+                return [];
+            }
+        }
+
+        public async Task<(SchoolClassDto? created, string? error)> CreateClassAsync(CreateClassRequest req)
+        {
+            var client = CreateAuthClient("user");
+            try
+            {
+                var resp = await client.PostAsJsonAsync("/auth/classes", req);
+
+                if (!resp.IsSuccessStatusCode)
+                    return (null, await ReadProblemAsync(resp) ?? "La classe n'a pas pu être créée.");
+
+                return (await resp.Content.ReadFromJsonAsync<SchoolClassDto>(), null);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating class");
+                return (null, "Le service est injoignable.");
+            }
+        }
+
+        /// <summary>L'effectif d'une classe. Les noms viennent d'ici, jamais du service Cours.</summary>
+        public async Task<List<ClassMemberDto>> GetClassMembersAsync(Guid classId)
+        {
+            var client = CreateAuthClient("user");
+            try
+            {
+                return await client.GetFromJsonAsync<List<ClassMemberDto>>(
+                    $"/auth/classes/{classId}/eleves") ?? [];
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error fetching members of class {classId}");
+                return [];
+            }
+        }
+
+        /// <summary>
+        /// Régénère le code : l'ancien cesse aussitôt de fonctionner, et l'entrée rouvre.
+        ///
+        /// C'est aussi la seule façon de rouvrir une classe fermée, et c'est voulu :
+        /// rouvrir avec le code qui a fuité annulerait la raison de l'avoir fermée.
+        /// </summary>
+        public async Task<SchoolClassDto?> RegenerateClassCodeAsync(Guid classId)
+        {
+            var client = CreateAuthClient("user");
+            try
+            {
+                var resp = await client.PostAsync($"/auth/classes/{classId}/code", content: null);
+                resp.EnsureSuccessStatusCode();
+                return await resp.Content.ReadFromJsonAsync<SchoolClassDto>();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error regenerating code for class {classId}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Coupe l'entrée, sans toucher aux élèves déjà inscrits : la classe continue de
+        /// vivre, plus personne n'y entre.
+        /// </summary>
+        public async Task<bool> CloseClassJoinAsync(Guid classId)
+        {
+            var client = CreateAuthClient("user");
+            try
+            {
+                var resp = await client.DeleteAsync($"/auth/classes/{classId}/code");
+                return resp.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error closing join for class {classId}");
+                return false;
+            }
+        }
+
+        /// <summary>Côté élève : rejoindre une classe par son code.</summary>
+        public async Task<(MyClassDto? joined, string? error)> JoinClassAsync(string code)
+        {
+            var client = CreateAuthClient("user");
+            try
+            {
+                var resp = await client.PostAsJsonAsync("/auth/me/classes", new { Code = code });
+
+                if (!resp.IsSuccessStatusCode)
+                    return (null, await ReadProblemAsync(resp) ?? "Ce code de classe n'est pas valide.");
+
+                return (await resp.Content.ReadFromJsonAsync<MyClassDto>(), null);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error joining class");
+                return (null, "Le service est injoignable.");
+            }
+        }
+
+        public async Task<List<MyClassDto>> GetMyEnrolledClassesAsync()
+        {
+            if (string.IsNullOrEmpty(_tokenProvider.Token)) return [];
+
+            var client = CreateAuthClient("user");
+            try
+            {
+                return await client.GetFromJsonAsync<List<MyClassDto>>("/auth/me/classes") ?? [];
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching enrolled classes");
+                return [];
+            }
+        }
+
+        public async Task<bool> LeaveClassAsync(Guid classId)
+        {
+            var client = CreateAuthClient("user");
+            try
+            {
+                var resp = await client.DeleteAsync($"/auth/me/classes/{classId}");
+                return resp.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error leaving class {classId}");
+                return false;
+            }
+        }
+
+        // ── Suivi parental et enseignant ─────────────────────────────────────────
+
+        /// <summary>
+        /// Le tableau d'une classe : une ligne par élève, et les notions fragiles.
+        ///
+        /// Un seul appel pour toute la classe — trente élèves ne doivent pas coûter trente
+        /// requêtes, ni côté Cours, ni côté annuaire.
+        /// </summary>
+        public async Task<ClassOverviewDto?> GetClassOverviewAsync(
+            IEnumerable<Guid> studentIds, int jours = 7)
+        {
+            var client = CreateAuthClient("cours");
+            try
+            {
+                var resp = await client.PostAsJsonAsync("/suivi/classe",
+                    new ClassOverviewRequest(studentIds.ToList(), jours));
+
+                resp.EnsureSuccessStatusCode();
+                return await resp.Content.ReadFromJsonAsync<ClassOverviewDto>();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching class overview");
+                return null;
+            }
+        }
 
         /// <summary>Vue d'ensemble d'un enfant : a-t-il travaillé, combien, sur quoi.</summary>
         public async Task<ChildOverviewDto?> GetChildOverviewAsync(Guid studentId, int jours = 7)

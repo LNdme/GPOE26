@@ -44,14 +44,20 @@
                 </li>
 
                 @*
-                    Un parent n'a ni cours ni parcours : lui proposer « Mes Cours » et
-                    « Apprentissage » l'enverrait sur deux pages vides. Il a l'espace
-                    famille à la place.
+                    Ni un parent ni un enseignant n'a de cours ni de parcours : leur
+                    proposer « Mes Cours » et « Apprentissage » les enverrait sur deux
+                    pages vides. Chacun a son espace de suivi à la place.
                 *@
                 @if (Auth.IsAuthenticated && Auth.IsParent)
                 {
                     <li class="nav-item">
                         <NavLink class="nav-link px-3" href="/famille">Espace famille</NavLink>
+                    </li>
+                }
+                else if (Auth.IsAuthenticated && Auth.IsTeacher)
+                {
+                    <li class="nav-item">
+                        <NavLink class="nav-link px-3" href="/classe">Mes classes</NavLink>
                     </li>
                 }
                 else if (Auth.IsAuthenticated)
@@ -79,6 +85,10 @@
                             @if (Auth.IsParent)
                             {
                                 <li><a class="dropdown-item py-2" href="/famille"><i class="bi bi-people me-2 text-brand-dark"></i> Espace famille</a></li>
+                            }
+                            else if (Auth.IsTeacher)
+                            {
+                                <li><a class="dropdown-item py-2" href="/classe"><i class="bi bi-mortarboard me-2 text-brand-dark"></i> Mes classes</a></li>
                             }
                             else
                             {

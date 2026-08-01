@@ -102,7 +102,43 @@
     color: var(--rd-text-soft, #6b7280);
 }
 
-/* ── Liste des parents ────────────────────────────────────────────────────── */
+/* ── Rejoindre une classe ─────────────────────────────────────────────────── */
+
+.profil-join {
+    display: flex;
+    gap: .6rem;
+    flex-wrap: wrap;
+}
+
+/* Le code est recopié caractère par caractère depuis le tableau : chasse fixe, lettres
+   espacées, et saisie en majuscules pour qu'il ressemble à ce qui est écrit. */
+.profil-join-input {
+    flex: 1 1 12rem;
+    padding: .5rem .8rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 1rem;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    border: 1px solid var(--rd-border, #e3e6ec);
+    border-radius: 8px;
+    background: var(--rd-bg, #fff);
+    color: var(--rd-text, #1f2430);
+}
+
+.profil-join-input::placeholder {
+    letter-spacing: normal;
+    text-transform: none;
+    font-family: inherit;
+    font-size: .88rem;
+}
+
+.profil-join-input:focus {
+    outline: none;
+    border-color: var(--rd-accent, #174ea6);
+    box-shadow: 0 0 0 3px rgba(23, 78, 166, .12);
+}
+
+/* ── Liste des parents et des classes ─────────────────────────────────────── */
 
 .profil-list {
     margin: 0;

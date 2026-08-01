@@ -1,0 +1,289 @@
+@page "/classe"
+@* Api et Nav viennent de _Imports.razor. *@
+@inject GPOE26.Web.Services.AuthService Auth
+@rendermode InteractiveServer
+
+<PageTitle>Mes classes – GPOE26</PageTitle>
+
+@*
+    Les classes d'un enseignant.
+
+    Cette page ne montre volontairement aucun chiffre d'étude : elle sert à créer une
+    classe et à en tenir le code. Le travail des élèves est dans /classe/{id}, parce
+    qu'empiler cinq tableaux de trente lignes sur une page d'accueil ne se lit pas.
+*@
+
+<div class="classes">
+
+    @if (!Auth.IsAuthenticated)
+    {
+        <div class="classes-empty">
+            <h5>Vous n'êtes pas connecté</h5>
+            <a class="btn btn-brand mt-2" href="/login">Se connecter</a>
+        </div>
+    }
+    else if (!Auth.IsTeacher)
+    {
+        <div class="classes-empty">
+            <div class="display-6 mb-2">🎓</div>
+            <h5>Cet espace est réservé aux comptes enseignants</h5>
+            <p class="text-muted-chic">
+                Si votre professeur vous a donné un code de classe, vous pouvez le saisir
+                depuis votre profil.
+            </p>
+            <a class="btn btn-brand mt-2" href="/profil">Aller à mon profil</a>
+        </div>
+    }
+    else
+    {
+        <header class="classes-head">
+            <div>
+                <h1 class="classes-title">Mes classes</h1>
+                <p class="classes-subtitle">
+                    Le code se dicte à vos élèves ; il reste valable toute l'année.
+                </p>
+            </div>
+            <button class="btn btn-brand" @onclick="() => _creating = !_creating">
+                @(_creating ? "Annuler" : "Créer une classe")
+            </button>
+        </header>
+
+        @if (_creating)
+        {
+            <section class="classes-form">
+                <h2 class="classes-section-title">Nouvelle classe</h2>
+
+                <div class="classes-form-grid">
+                    <label>
+                        <span>Nom</span>
+                        <input class="classes-input" placeholder="Terminale C" @bind="_name" />
+                    </label>
+                    <label>
+                        <span>Matière</span>
+                        <input class="classes-input" placeholder="Mathématiques" @bind="_subject" />
+                    </label>
+                    <label>
+                        <span>Niveau <em>(facultatif)</em></span>
+                        <input class="classes-input" placeholder="Terminale" @bind="_level" />
+                    </label>
+                    <label>
+                        <span>Année scolaire</span>
+                        <input class="classes-input" placeholder="2025-2026" @bind="_year" />
+                    </label>
+                </div>
+
+                <button class="btn btn-brand mt-3"
+                        disabled="@(_saving || !CanSubmit)"
+                        @onclick="CreateAsync">
+                    @if (_saving)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                    }
+                    Créer
+                </button>
+
+                @if (_error is not null)
+                {
+                    <p class="classes-error">@_error</p>
+                }
+            </section>
+        }
+
+        @if (_loading)
+        {
+            <div class="classes-empty">
+                <div class="spinner-border text-brand-dark mb-3"></div>
+                <p class="text-muted-chic">Chargement de vos classes…</p>
+            </div>
+        }
+        else if (_classes.Count == 0)
+        {
+            <div class="classes-empty">
+                <div class="display-6 mb-2">📋</div>
+                <h5>Aucune classe pour l'instant</h5>
+                <p class="text-muted-chic">
+                    Créez-en une, puis donnez le code à vos élèves : ils la rejoindront
+                    depuis leur profil.
+                </p>
+            </div>
+        }
+        else
+        {
+            <ul class="classes-list">
+                @foreach (var c in _classes)
+                {
+                    <li class="classes-card">
+                        <div class="classes-card-main">
+                            <a class="classes-card-name" href="@ClassLink(c)">@c.Name</a>
+                            <p class="classes-card-meta">
+                                @c.Description · @c.SchoolYear ·
+                                @c.StudentCount @(c.StudentCount > 1 ? "élèves" : "élève")
+                            </p>
+                        </div>
+
+                        <div class="classes-card-code">
+                            @if (c.JoinEnabled)
+                            {
+                                <span class="classes-code">@c.Code</span>
+                                <span class="classes-code-label">code d'accès</span>
+                            }
+                            else
+                            {
+                                <span class="classes-code is-closed">fermée</span>
+                                <span class="classes-code-label">plus personne n'entre</span>
+                            }
+                        </div>
+
+                        <div class="classes-card-actions">
+                            <a class="btn btn-sm btn-brand-outline" href="@ClassLink(c)">
+                                Voir la classe
+                            </a>
+
+                            <button class="btn btn-sm btn-outline-secondary"
+                                    disabled="@(_busy == c.Id)"
+                                    @onclick="() => RegenerateAsync(c)">
+                                @(c.JoinEnabled ? "Nouveau code" : "Rouvrir")
+                            </button>
+
+                            @if (c.JoinEnabled)
+                            {
+                                <button class="btn btn-sm btn-outline-danger"
+                                        disabled="@(_busy == c.Id)"
+                                        @onclick="() => CloseAsync(c)">
+                                    Fermer l'entrée
+                                </button>
+                            }
+                        </div>
+                    </li>
+                }
+            </ul>
+
+            @*
+                Dit une fois, en bas : un code de classe circule, et l'enseignant doit
+                savoir qu'il a de quoi le couper — sinon il ne le cherchera pas le jour
+                où il en aura besoin.
+            *@
+            <p class="classes-note">
+                Un code écrit au tableau finit par sortir de la classe. « Nouveau code »
+                invalide l'ancien sans toucher aux élèves déjà inscrits ; rouvrir une
+                classe fermée en génère forcément un nouveau, pour que le code qui a
+                circulé ne resserve pas.
+            </p>
+        }
+    }
+</div>
+
+@code {
+    private List<SchoolClassDto> _classes = [];
+
+    private bool _loading = true;
+    private bool _creating;
+    private bool _saving;
+    private Guid? _busy;
+    private string? _error;
+
+    private string _name = "";
+    private string _subject = "";
+    private string _level = "";
+    private string _year = DefaultSchoolYear();
+
+    private bool CanSubmit =>
+        !string.IsNullOrWhiteSpace(_name)
+        && !string.IsNullOrWhiteSpace(_subject)
+        && !string.IsNullOrWhiteSpace(_year);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Auth.IsAuthenticated || !Auth.IsTeacher)
+        {
+            _loading = false;
+            return;
+        }
+
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        _classes = await Api.GetMyClassesAsync();
+        _loading = false;
+    }
+
+    private async Task CreateAsync()
+    {
+        if (!CanSubmit || _saving) return;
+
+        _saving = true;
+        _error = null;
+
+        var (created, error) = await Api.CreateClassAsync(new CreateClassRequest(
+            _name.Trim(),
+            _subject.Trim(),
+            string.IsNullOrWhiteSpace(_level) ? null : _level.Trim(),
+            _year.Trim()));
+
+        if (created is null)
+        {
+            _error = error;
+            _saving = false;
+            return;
+        }
+
+        _name = _subject = _level = "";
+        _creating = false;
+        _saving = false;
+
+        await ReloadAsync();
+    }
+
+    private async Task RegenerateAsync(SchoolClassDto schoolClass)
+    {
+        _busy = schoolClass.Id;
+
+        var updated = await Api.RegenerateClassCodeAsync(schoolClass.Id);
+        if (updated is not null) Replace(updated);
+        else _error = "Le code n'a pas pu être régénéré.";
+
+        _busy = null;
+    }
+
+    private async Task CloseAsync(SchoolClassDto schoolClass)
+    {
+        _busy = schoolClass.Id;
+
+        if (await Api.CloseClassJoinAsync(schoolClass.Id))
+        {
+            // L'endpoint répond 204 : il n'y a pas de classe à recharger, on reflète
+            // localement le seul champ qui change.
+            Replace(schoolClass with { JoinEnabled = false });
+        }
+        else
+        {
+            _error = "L'entrée n'a pas pu être fermée.";
+        }
+
+        _busy = null;
+    }
+
+    private void Replace(SchoolClassDto updated)
+    {
+        var index = _classes.FindIndex(c => c.Id == updated.Id);
+        if (index >= 0) _classes[index] = updated;
+    }
+
+    // Extrait en méthode : un littéral de chaîne imbriqué dans un attribut Razor n'est
+    // pas analysable de façon fiable.
+    private static string ClassLink(SchoolClassDto schoolClass) => $"/classe/{schoolClass.Id}";
+
+    /// <summary>
+    /// L'année scolaire en cours, pré-remplie. Elle bascule en août, pas en janvier :
+    /// une classe créée en septembre appartient à l'année qui commence.
+    /// </summary>
+    private static string DefaultSchoolYear()
+    {
+        var now = DateTime.Now;
+        var start = now.Month >= 8 ? now.Year : now.Year - 1;
+        return $"{start}-{start + 1}";
+    }
+}

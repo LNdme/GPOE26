@@ -22,6 +22,7 @@ public class AuthService(ApiClient api, AuthTokenProvider tokenProvider)
 
     public bool IsParent => string.Equals(_profile?.Role, "Parent", StringComparison.OrdinalIgnoreCase);
     public bool IsStudent => string.Equals(_profile?.Role, "Student", StringComparison.OrdinalIgnoreCase);
+    public bool IsTeacher => string.Equals(_profile?.Role, "Teacher", StringComparison.OrdinalIgnoreCase);
 
     // ── Login ─────────────────────────────────────────────────────
     public async Task<(bool ok, string? error)> LoginAsync(string email, string password)

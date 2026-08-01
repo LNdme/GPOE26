@@ -1,0 +1,280 @@
+@page "/classe/{ClassId:guid}"
+@* Api et Nav viennent de _Imports.razor. *@
+@inject GPOE26.Web.Services.AuthService Auth
+@rendermode InteractiveServer
+
+<PageTitle>@(_class?.Name ?? "Classe") – GPOE26</PageTitle>
+
+@*
+    Le tableau d'une classe.
+
+    Deux choses seulement, et l'ordre est le message : les notions sur lesquelles la
+    classe achoppe d'abord, la liste des élèves ensuite. Les notions fragiles sont la
+    seule information de tout le produit sur laquelle un enseignant peut agir pour
+    trente élèves à la fois ; les mettre après une liste de trente lignes reviendrait
+    à les cacher.
+
+    Ce que cette page ne montrera jamais, exactement comme l'espace famille : les
+    échanges d'un élève avec le répétiteur. Un élève qui sait que ses « je n'ai rien
+    compris » remontent à son professeur cesse de les écrire.
+*@
+
+<div class="classe">
+
+    @if (!Auth.IsAuthenticated || !Auth.IsTeacher)
+    {
+        <div class="classe-empty">
+            <div class="display-6 mb-2">🎓</div>
+            <h5>Cet espace est réservé aux comptes enseignants</h5>
+            <a class="btn btn-brand mt-2" href="/">Retour à l'accueil</a>
+        </div>
+    }
+    else if (_loading)
+    {
+        <div class="classe-empty">
+            <div class="spinner-border text-brand-dark mb-3"></div>
+            <p class="text-muted-chic">Chargement de la classe…</p>
+        </div>
+    }
+    else if (_class is null)
+    {
+        <div class="classe-empty">
+            <div class="display-6 mb-2">🔍</div>
+            <h5>Classe introuvable</h5>
+            <p class="text-muted-chic">Elle n'existe plus, ou elle n'est pas la vôtre.</p>
+            <a class="btn btn-brand mt-2" href="/classe">Mes classes</a>
+        </div>
+    }
+    else
+    {
+        <header class="classe-head">
+            <div>
+                <a class="classe-back" href="/classe">← Mes classes</a>
+                <h1 class="classe-title">@_class.Name</h1>
+                <p class="classe-subtitle">
+                    @_class.Description · @_class.SchoolYear ·
+                    @_members.Count @(_members.Count > 1 ? "élèves" : "élève")
+                </p>
+            </div>
+
+            @if (_class.JoinEnabled)
+            {
+                <div class="classe-code-box">
+                    <span class="classe-code">@_class.Code</span>
+                    <span class="classe-code-label">code d'accès</span>
+                </div>
+            }
+        </header>
+
+        @if (_members.Count == 0)
+        {
+            <div class="classe-empty">
+                <div class="display-6 mb-2">🪑</div>
+                <h5>Personne n'a encore rejoint</h5>
+                <p class="text-muted-chic">
+                    Dictez le code <strong>@_class.Code</strong> à vos élèves : ils le
+                    saisiront depuis leur profil.
+                </p>
+            </div>
+        }
+        else
+        {
+            @* ── Ce sur quoi la classe achoppe ───────────────────────────────── *@
+            <section class="classe-weak">
+                <h2 class="classe-section-title">Ce sur quoi la classe achoppe</h2>
+
+                @if (_overview is null)
+                {
+                    <p class="classe-hint">Suivi indisponible pour le moment.</p>
+                }
+                else if (_overview.WeakSpots.Count == 0)
+                {
+                    <p class="classe-hint">
+                        Aucune notion ne bloque plusieurs élèves à la fois. Les difficultés
+                        sont individuelles — voyez la liste ci-dessous.
+                    </p>
+                }
+                else
+                {
+                    <ul class="classe-weak-list">
+                        @foreach (var spot in _overview.WeakSpots)
+                        {
+                            <li>
+                                <div class="classe-weak-bar">
+                                    <span style="@BarStyle(spot)"></span>
+                                </div>
+                                <div class="classe-weak-text">
+                                    <span class="classe-weak-heading">@spot.Heading</span>
+                                    <span class="classe-weak-meta">
+                                        @spot.CourseTitle ·
+                                        <strong>@spot.StudentCount</strong> élèves sur @_members.Count
+                                    </span>
+                                </div>
+                            </li>
+                        }
+                    </ul>
+
+                    <p class="classe-hint mt-3">
+                        Comptés par élève, pas par échec : un élève qui bute trois fois sur
+                        la même notion compte pour un.
+                    </p>
+                }
+            </section>
+
+            @* ── Les élèves ──────────────────────────────────────────────────── *@
+            <section class="classe-students">
+                <div class="classe-students-head">
+                    <h2 class="classe-section-title">Les élèves</h2>
+                    @if (_overview is not null)
+                    {
+                        <span class="classe-week-badge">
+                            @_overview.StudiedThisWeek sur @_overview.StudentCount ont travaillé cette semaine
+                        </span>
+                    }
+                </div>
+
+                <p class="classe-hint">
+                    Ceux qui décrochent en tête : n'ont pas travaillé cette semaine, ou
+                    butent sur une étape sans avancer.
+                </p>
+
+                <div class="classe-table-scroll">
+                    <table class="classe-table">
+                        <thead>
+                            <tr>
+                                <th>Élève</th>
+                                <th class="num">Cette semaine</th>
+                                <th class="num">Séances</th>
+                                <th class="num">Exercices</th>
+                                <th class="num">Étapes</th>
+                                <th>Dernière séance</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in Rows())
+                            {
+                                <tr class="@RowClass(row.Stats)">
+                                    <td>
+                                        <a class="classe-student-name" href="@StudentLink(row.Member)">
+                                            @row.Member.Username
+                                        </a>
+                                        @if (row.Stats?.NeedsAttention == true)
+                                        {
+                                            <span class="classe-flag">à voir</span>
+                                        }
+                                    </td>
+
+                                    @if (row.Stats is null)
+                                    {
+                                        <td colspan="5" class="classe-nodata">Aucune donnée</td>
+                                    }
+                                    else
+                                    {
+                                        <td class="num">@row.Stats.WeeklyDuration</td>
+                                        <td class="num">@row.Stats.SessionsThisWeek</td>
+                                        <td class="num">@row.Stats.ExercisesThisWeek</td>
+                                        <td class="num">
+                                            @row.Stats.StepsPassed
+                                            @if (row.Stats.StepsFailed > 0)
+                                            {
+                                                <span class="classe-failed">
+                                                    · @row.Stats.StepsFailed en échec
+                                                </span>
+                                            }
+                                        </td>
+                                        <td>@LastSeen(row.Stats)</td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public Guid ClassId { get; set; }
+
+    private SchoolClassDto? _class;
+    private List<ClassMemberDto> _members = [];
+    private ClassOverviewDto? _overview;
+    private Dictionary<Guid, ClassStudentRowDto> _stats = [];
+
+    private bool _loading = true;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!Auth.IsAuthenticated || !Auth.IsTeacher)
+        {
+            _loading = false;
+            return;
+        }
+
+        _loading = true;
+
+        // La classe et son effectif viennent de User — c'est lui qui tient les noms.
+        // Le service Cours ne connaît que des identifiants, et c'est ce qui lui permet
+        // de ne rien savoir du modèle scolaire.
+        var classes = await Api.GetMyClassesAsync();
+        _class = classes.FirstOrDefault(c => c.Id == ClassId);
+
+        if (_class is null)
+        {
+            _loading = false;
+            return;
+        }
+
+        _members = await Api.GetClassMembersAsync(ClassId);
+
+        if (_members.Count > 0)
+        {
+            // Un seul appel pour toute la classe. Trente élèves ne doivent pas coûter
+            // trente requêtes — c'est la raison d'être de l'endpoint.
+            _overview = await Api.GetClassOverviewAsync(_members.Select(m => m.Id));
+
+            _stats = _overview?.Students.ToDictionary(s => s.StudentId) ?? [];
+        }
+
+        _loading = false;
+    }
+
+    /// <summary>
+    /// L'effectif et les chiffres se rejoignent ici, sur l'identifiant.
+    ///
+    /// L'ordre vient du serveur : ceux qui décrochent d'abord. Un élève absent du tableau
+    /// (jamais connecté, ou hors du cache d'effectif) est rangé en fin de liste plutôt
+    /// qu'omis — un élève qui n'a rien fait est justement celui qu'il faut voir.
+    /// </summary>
+    private IEnumerable<(ClassMemberDto Member, ClassStudentRowDto? Stats)> Rows()
+    {
+        var order = _overview?.Students
+            .Select((s, index) => (s.StudentId, index))
+            .ToDictionary(x => x.StudentId, x => x.index) ?? [];
+
+        return _members
+            .Select(m => (Member: m, Stats: _stats.GetValueOrDefault(m.Id)))
+            .OrderBy(r => order.TryGetValue(r.Member.Id, out var i) ? i : int.MaxValue)
+            .ThenBy(r => r.Member.Username);
+    }
+
+    private static string RowClass(ClassStudentRowDto? stats) =>
+        stats?.NeedsAttention == true ? "needs-attention" : "";
+
+    // La classe voyage dans l'URL : elle évite à la page de détail de parcourir toutes
+    // les classes pour retrouver un nom, et lui dit où renvoyer le bouton retour.
+    private string StudentLink(ClassMemberDto member) => $"/eleve/{member.Id}?classe={ClassId}";
+
+    private static string LastSeen(ClassStudentRowDto stats) =>
+        stats.LastStudiedAt is { } last ? last.ToLocalTime().ToString("d MMM") : "—";
+
+    /// <summary>Largeur de la barre, proportionnelle à la notion la plus ratée.</summary>
+    private string BarStyle(ClassWeakSpotDto spot)
+    {
+        var worst = _overview?.WeakSpots.Max(w => w.StudentCount) ?? 1;
+        var percent = worst == 0 ? 0 : spot.StudentCount * 100.0 / worst;
+
+        return FormattableString.Invariant($"width:{percent:0}%");
+    }
+}

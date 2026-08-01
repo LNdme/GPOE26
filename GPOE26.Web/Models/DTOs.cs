@@ -169,6 +169,52 @@ public record RefreshedTokenResponse(string Token, DateTime ExpiresAt);
 /// <summary>Un parent vu depuis le profil de l'élève, pour qu'il sache qui le suit.</summary>
 public record LinkedParentDto(Guid Id, string Username, string Email, DateTime LinkedAt);
 
+// ── Classes ───────────────────────────────────────────────────────────────────
+
+public record CreateClassRequest(string Name, string Subject, string? Level, string SchoolYear);
+
+/// <summary>
+/// Une classe vue par son enseignant.
+///
+/// <c>Code</c> ne sort jamais de cette vue : c'est lui qui ouvre l'entrée dans la classe,
+/// et l'afficher ailleurs reviendrait à laisser n'importe qui la rejoindre.
+/// </summary>
+public record SchoolClassDto(
+    Guid Id,
+    string Name,
+    string Subject,
+    string? Level,
+    string SchoolYear,
+    string Code,
+    bool JoinEnabled,
+    int StudentCount,
+    DateTime CreatedAt
+)
+{
+    public string Description =>
+        string.IsNullOrWhiteSpace(Level) ? Subject : $"{Subject} · {Level}";
+}
+
+/// <summary>Une classe vue par un élève : sans le code, qui ne le concerne plus.</summary>
+public record MyClassDto(
+    Guid Id,
+    string Name,
+    string Subject,
+    string? Level,
+    string SchoolYear,
+    string TeacherName,
+    DateTime JoinedAt
+);
+
+/// <summary>Un élève inscrit. Aucune donnée d'étude ici — elle vient du service Cours.</summary>
+public record ClassMemberDto(
+    Guid Id,
+    string Username,
+    string? Level,
+    string? Filiere,
+    DateTime JoinedAt
+);
+
 #endregion
 
 #region  COURS App DTOs
@@ -490,6 +536,52 @@ public record ChildCourseDetailDto(
 
 /// <summary>Le bilan rédigé par l'agent. Du texte, et rien d'autre.</summary>
 public record BilanResponse(string Text, DateTime GeneratedAt);
+
+// ── Suivi de classe ───────────────────────────────────────────────────────────
+
+/// <summary>
+/// La liste des élèves dont on demande le tableau.
+///
+/// Elle vient du client parce que le service Cours ne connaît pas les classes — c'est
+/// User qui les tient. Elle n'est pas pour autant de confiance : Cours la recoupe avec
+/// l'effectif réel de l'enseignant, et un identifiant étranger glissé dedans ne
+/// ressortirait pas.
+/// </summary>
+public record ClassOverviewRequest(List<Guid> StudentIds, int? Jours = null);
+
+/// <summary>Un élève dans le tableau de sa classe. Une ligne, lisible d'un coup d'œil.</summary>
+public record ClassStudentRowDto(
+    Guid StudentId,
+    int ActiveSecondsThisWeek,
+    int SessionsThisWeek,
+    int ExercisesThisWeek,
+    int StepsPassed,
+    int StepsFailed,
+    DateTime? LastStudiedAt,
+    bool NeedsAttention
+)
+{
+    public int ActiveMinutesThisWeek => (int)Math.Round(ActiveSecondsThisWeek / 60.0);
+
+    public string WeeklyDuration => ChildCourseProgressDto.FormatDuration(ActiveSecondsThisWeek);
+}
+
+/// <summary>
+/// Une notion sur laquelle la classe achoppe.
+///
+/// <c>StudentCount</c> compte des élèves distincts, pas des échecs : un élève qui rate
+/// trois fois la même notion reste un élève.
+/// </summary>
+public record ClassWeakSpotDto(string Heading, string CourseTitle, int StudentCount);
+
+/// <summary>Le tableau d'une classe.</summary>
+public record ClassOverviewDto(
+    DateTime Since,
+    int StudentCount,
+    int StudiedThisWeek,
+    List<ClassStudentRowDto> Students,
+    List<ClassWeakSpotDto> WeakSpots
+);
 
 // ── Exercice de consolidation ─────────────────────────────────────────────────
 
