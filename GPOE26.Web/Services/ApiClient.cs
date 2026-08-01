@@ -825,14 +825,24 @@ namespace GPOE26.Web.Services
         }
 
         /// <summary>
-        /// Interroge le répétiteur multi-agents en flux (SSE).
+        /// Sessions ouvertes sur le harness, une par cours.
         ///
-        /// Le pipeline enchaîne plusieurs appels LLM : sans flux, l'élève attendrait
-        /// une dizaine de secondes devant un écran figé. On remonte donc les étapes
-        /// (« Recherche dans le cours… ») puis la réponse au fil de sa rédaction.
+        /// L'ApiClient est scoped, donc lié au circuit Blazor : le cache vit le temps de
+        /// la visite de l'élève. Une session perdue n'est pas grave — on en rouvre une, et
+        /// le harness conserve l'historique de son côté.
+        /// </summary>
+        private readonly Dictionary<Guid, Guid> _harnessSessions = [];
+
+        /// <summary>
+        /// Interroge le répétiteur en flux (SSE), via le harness.
         ///
-        /// Le contenu du cours n'est plus envoyé : le service Chat le récupère et n'en
-        /// retient que les passages pertinents.
+        /// Le tour enchaîne plusieurs appels de modèle : sans flux, l'élève attendrait une
+        /// dizaine de secondes devant un écran figé. On remonte donc les étapes
+        /// (« Recherche dans votre cours… ») puis la réponse au fil de sa rédaction.
+        ///
+        /// ⚠️ L'historique n'est plus envoyé : le harness tient la session. Le paramètre
+        /// reste dans la signature pour ne pas toucher aux appelants — c'est ce qui permet
+        /// à cette bascule d'être invisible pour l'élève.
         /// </summary>
         public async IAsyncEnumerable<TutorStreamEvent> StreamTutorAsync(
             Guid courseId,
@@ -840,11 +850,19 @@ namespace GPOE26.Web.Services
             IReadOnlyList<ConversationMessage> history,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
         {
-            var client = CreateAuthClient("chat");
+            var client = CreateAuthClient("harness");
 
-            var request = new HttpRequestMessage(HttpMethod.Post, "/chat/tuteur/stream")
+            var sessionId = await EnsureHarnessSessionAsync(client, courseId, ct);
+            if (sessionId is null)
             {
-                Content = JsonContent.Create(new TutorRequest(courseId, message, history.ToList())),
+                yield return new TutorStreamEvent("error",
+                    Error: "Le répétiteur est momentanément injoignable. Réessayez dans un instant.");
+                yield break;
+            }
+
+            var request = new HttpRequestMessage(HttpMethod.Post, $"/sessions/{sessionId}/tour")
+            {
+                Content = JsonContent.Create(new { Message = message }),
             };
 
             // On ne peut pas céder une valeur depuis un bloc catch : l'échec est retenu,
@@ -870,6 +888,17 @@ namespace GPOE26.Web.Services
 
             using (response)
             {
+                // Session inconnue du harness — il a redémarré depuis qu'on l'a ouverte.
+                // On oublie la nôtre : le tour suivant en rouvrira une, sans que l'élève
+                // ait à recharger sa page.
+                if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                    _harnessSessions.Remove(courseId);
+                    yield return new TutorStreamEvent("error",
+                        Error: "La session a expiré. Reposez votre question.");
+                    yield break;
+                }
+
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Le répétiteur a répondu {Status}", response.StatusCode);
@@ -881,9 +910,10 @@ namespace GPOE26.Web.Services
                 await using var stream = await response.Content.ReadAsStreamAsync(ct);
                 using var reader = new StreamReader(stream);
 
-                while (!reader.EndOfStream)
+                // ReadLineAsync jusqu'à null plutôt que EndOfStream : ce dernier lit de
+                // façon bloquante et immobiliserait le circuit Blazor le temps d'un tour.
+                while (await reader.ReadLineAsync(ct) is { } line)
                 {
-                    var line = await reader.ReadLineAsync(ct);
                     if (string.IsNullOrWhiteSpace(line)) continue;
                     if (!line.StartsWith("data:", StringComparison.Ordinal)) continue;
 
@@ -908,6 +938,48 @@ namespace GPOE26.Web.Services
                 }
             }
         }
+
+        /// <summary>
+        /// La session du harness pour ce cours, ouverte au premier besoin.
+        ///
+        /// Une session par cours et non par question : c'est ce qui donne au répétiteur la
+        /// mémoire de ce qui a déjà été expliqué. L'élève qui demande « et si la condition
+        /// n'était pas remplie ? » parle de ce dont il était question au tour précédent.
+        /// </summary>
+        private async Task<Guid?> EnsureHarnessSessionAsync(
+            HttpClient client, Guid courseId, CancellationToken ct)
+        {
+            if (_harnessSessions.TryGetValue(courseId, out var known)) return known;
+
+            try
+            {
+                // Nature Lecture : le rail du répétiteur sert à comprendre son cours. Les
+                // exercices passent par leurs propres endpoints, et le Web n'ouvre jamais
+                // de session de code — l'espace de travail vit dans l'application bureau.
+                var response = await client.PostAsJsonAsync(
+                    "/sessions", new { CourseId = courseId, Kind = 0 }, ct);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("Ouverture de session refusée par le harness : {Status}", response.StatusCode);
+                    return null;
+                }
+
+                var session = await response.Content.ReadFromJsonAsync<HarnessSessionDto>(cancellationToken: ct);
+                if (session is null) return null;
+
+                _harnessSessions[courseId] = session.Id;
+                return session.Id;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Le harness est injoignable");
+                return null;
+            }
+        }
+
+        /// <summary>Ce que le Web retient d'une session : son identifiant.</summary>
+        private sealed record HarnessSessionDto(Guid Id);
 
         /// <summary>Demande un exercice ouvert sur un cours, ou sur une de ses parties.</summary>
         public async Task<string?> GenerateExerciseAsync(Guid courseId, string? headingPath)

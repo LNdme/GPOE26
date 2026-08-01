@@ -5,6 +5,7 @@
   <Project Path="GPOE26.ApiService/GPOE26.ApiService.csproj" />
   <Project Path="GPOE26.AppHost/GPOE26.AppHost.csproj" />
   <Project Path="GPOE26.Harness.Conformance/GPOE26.Harness.Conformance.csproj" />
+  <Project Path="GPOE26.Harness/GPOE26.Harness.csproj" />
   <Project Path="GPOE26.Harness.Contract/GPOE26.Harness.Contract.csproj" />
   <Project Path="GPOE26.Harness.Stub/GPOE26.Harness.Stub.csproj" />
   <Project Path="GPOE26.ServiceDefaults/GPOE26.ServiceDefaults.csproj" />

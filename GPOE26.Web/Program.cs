@@ -52,6 +52,15 @@ builder.Services.AddHttpClient("apiservice", client =>
     client.BaseAddress = new Uri("https+http://apiservice"))
     .AddStandardResilienceHandler();
 
+// Le harness : même profil de lenteur que Chat, puisqu'il enchaîne plusieurs appels de
+// modèle par tour. Sans politique de reprise sur le flux — rejouer un tour déjà
+// partiellement diffusé afficherait deux fois la même réponse à l'élève.
+builder.Services.AddHttpClient("harness", client =>
+{
+    client.BaseAddress = new Uri("https+http://harness");
+    client.Timeout = TimeSpan.FromMinutes(3);
+});
+
 // ── Services métier ────────────────────────────────────────────
 // IMPORTANT : Scoped = un par circuit Blazor Server = un par utilisateur
 builder.Services.AddScoped<ApiClient>();

@@ -32,6 +32,7 @@ var postgres = builder.AddPostgres("postgres")
 var userDb = postgres.AddDatabase("userdb");
 var coursDb = postgres.AddDatabase("coursdb");
 var chatDb = postgres.AddDatabase("chatdb");
+var harnessDb = postgres.AddDatabase("harnessdb");
 var schoolDb = postgres.AddDatabase("LyceeDB");  // ApiService
 // Quiz reste InMemory pour l'instant.
 
@@ -70,6 +71,19 @@ var chatService = builder.AddProject<Projects.Chat>("chat")
     .WithReference(coursService)
     .WaitFor(coursService);
 
+// Le harness : la boucle à outils qui remplace peu à peu le pipeline figé de Chat.
+// Comme Chat, il lit les cours via le service Cours en relayant le JWT de l'élève —
+// référence à sens unique, donc pas de cycle.
+var harnessService = builder.AddProject<Projects.GPOE26_Harness>("harness")
+    .WithEnvironment("Jwt__Key", jwtKeyValue)
+    .WithEnvironment("Jwt__Issuer", jwtIssuer)
+    .WithEnvironment("Jwt__Audience", jwtAudience)
+    .WithEnvironment("OpenRouter__ApiKey", openRouterApiKey)
+    .WithReference(harnessDb)
+    .WaitFor(harnessDb)
+    .WithReference(coursService)
+    .WaitFor(coursService);
+
 var quizService = builder.AddProject<Projects.Quiz>("quiz");
 
 builder.AddProject<Projects.GPOE26_Web>("webfrontend")
@@ -83,6 +97,8 @@ builder.AddProject<Projects.GPOE26_Web>("webfrontend")
     .WaitFor(coursService)
     .WithReference(chatService)
     .WaitFor(chatService)
+    .WithReference(harnessService)
+    .WaitFor(harnessService)
     .WithReference(quizService)
     .WaitFor(quizService);
 

@@ -11,6 +11,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Chat\Chat.csproj" />
     <ProjectReference Include="..\Cours\Cours.csproj" />
+    <ProjectReference Include="..\GPOE26.Harness\GPOE26.Harness.csproj" />
     <ProjectReference Include="..\GPOE26.ApiService\GPOE26.ApiService.csproj" />
     <ProjectReference Include="..\GPOE26.Web\GPOE26.Web.csproj" />
     <ProjectReference Include="..\Quiz\Quiz.csproj" />
