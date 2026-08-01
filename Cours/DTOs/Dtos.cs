@@ -272,6 +272,59 @@ namespace Cours.DTOs
         public bool StudiedThisWeek => SessionsThisWeek > 0;
     }
 
+    // ── Suivi enseignant ──────────────────────────────────────────────────────────
+    //
+    // Un parent suit trois enfants, un enseignant cent cinquante. Empiler cent cinquante
+    // fiches serait inutilisable : sa vue première est la classe.
+
+    /// <summary>
+    /// Les élèves dont on veut le tableau.
+    ///
+    /// La liste vient de l'appelant parce que le service Cours ne connaît pas les classes :
+    /// c'est User qui les tient. Chaque identifiant est vérifié contre l'effectif réel de
+    /// l'enseignant — en fournir un étranger ne donne rien.
+    /// </summary>
+    public record ClassOverviewRequest(List<Guid> StudentIds, int? Jours = null);
+
+    /// <summary>Un élève dans le tableau de sa classe. Une ligne, lisible d'un coup d'œil.</summary>
+    /// <param name="NeedsAttention">
+    /// Cet élève décroche-t-il ? Calculé côté serveur pour que le tri soit le même partout,
+    /// et parce que la règle a vocation à s'affiner sans toucher aux interfaces.
+    /// </param>
+    public record ClassStudentRowDto(
+        Guid StudentId,
+        int ActiveSecondsThisWeek,
+        int SessionsThisWeek,
+        int ExercisesThisWeek,
+        int StepsPassed,
+        int StepsFailed,
+        DateTime? LastStudiedAt,
+        bool NeedsAttention
+    )
+    {
+        public int ActiveMinutesThisWeek => (int)Math.Round(ActiveSecondsThisWeek / 60.0);
+    }
+
+    /// <summary>
+    /// Une notion sur laquelle la classe achoppe.
+    ///
+    /// C'est la seule information de tout le produit sur laquelle un enseignant peut agir
+    /// pour trente élèves à la fois — et aucune vue parent ne la fournit. Elle justifie à
+    /// elle seule d'avoir une vue de classe.
+    /// </summary>
+    public record ClassWeakSpotDto(string Heading, string CourseTitle, int StudentCount);
+
+    /// <summary>Le tableau d'une classe.</summary>
+    /// <param name="Students">Triés : ceux qui décrochent en tête.</param>
+    /// <param name="WeakSpots">Les notions les plus ratées, la plus fréquente d'abord.</param>
+    public record ClassOverviewDto(
+        DateTime Since,
+        int StudentCount,
+        int StudiedThisWeek,
+        List<ClassStudentRowDto> Students,
+        List<ClassWeakSpotDto> WeakSpots
+    );
+
     /// <summary>Le détail d'un cours pour un parent : le parcours et les séances qui l'ont produit.</summary>
     public record ChildCourseDetailDto(
         ChildCourseProgressDto Progress,

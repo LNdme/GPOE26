@@ -57,6 +57,11 @@ builder.Services.AddGpoeAi(builder.Configuration);
 builder.Services.AddScoped<CourseFormattingService>();
 builder.Services.AddScoped<CourseSearchService>();
 builder.Services.AddScoped<StudySessionService>();
+
+// L'annuaire des effectifs, pour le suivi enseignant. Il introduit une dépendance de
+// Cours vers User à l'exécution — inévitable : aucun jeton ne peut porter cent cinquante
+// identifiants d'élèves.
+builder.Services.AddStudentDirectory();
 builder.Services.AddSingleton<CourseFormattingQueue>();
 builder.Services.AddHostedService<CourseFormattingWorker>();
 
@@ -648,7 +653,7 @@ cours.MapGet("/{id:guid}/rendu", async (Guid id, ClaimsPrincipal principal, Cour
 // ici, elle finirait par diverger de celle du Chat, et c'est exactement le genre de
 // divergence qui ouvre l'accès aux données d'un enfant qui n'est pas le sien.
 var suivi = app.MapGroup("/suivi")
-    .WithTags("Suivi parental")
+    .WithTags("Suivi parental et enseignant")
     .RequireAuthorization();
 
 // ── GET /suivi/{studentId}/resume ─────────────────────────────────────────────
@@ -659,9 +664,11 @@ suivi.MapGet("/{studentId:guid}/resume", async (
     Guid studentId,
     ClaimsPrincipal principal,
     CoursContext db,
-    int? jours) =>
+    StudentDirectory directory,
+    int? jours,
+    CancellationToken ct) =>
 {
-    if (Deny(principal, studentId) is { } refusal) return refusal;
+    if (await DenyAsync(principal, studentId, directory, ct) is { } refusal) return refusal;
 
     // Fenêtre glissante plutôt que semaine calendaire : le lundi matin, une semaine
     // calendaire afficherait « 0 minute » alors que l'enfant a travaillé la veille.
@@ -725,6 +732,112 @@ suivi.MapGet("/{studentId:guid}/resume", async (
 .Produces(401)
 .Produces(403);
 
+// ── POST /suivi/classe ────────────────────────────────────────────────────────
+//
+// Le tableau d'une classe. En POST parce que la liste des élèves vient dans le corps :
+// le service Cours ne connaît pas les classes — c'est User qui les tient — et la lui
+// faire deviner reviendrait à dupliquer le modèle scolaire ici.
+//
+// L'appelant est l'enseignant, et l'annuaire vérifie que chaque élève demandé est bien
+// dans un de ses effectifs. Un enseignant qui glisserait un identifiant étranger dans la
+// liste ne le verrait pas passer.
+suivi.MapPost("/classe", async (
+    ClassOverviewRequest req,
+    ClaimsPrincipal principal,
+    CoursContext db,
+    StudentDirectory directory,
+    CancellationToken ct) =>
+{
+    if (principal.GetUserId() is null) return Results.Unauthorized();
+    if (!principal.IsTeacher()) return Results.Forbid();
+
+    // Un seul appel à l'annuaire pour toute la classe : trente élèves ne doivent pas
+    // produire trente requêtes.
+    var roster = await directory.RosterAsync(principal, ct);
+
+    var students = req.StudentIds.Where(roster.Contains).Distinct().ToList();
+    if (students.Count == 0)
+        return Results.Ok(new ClassOverviewDto(DateTime.UtcNow, 0, 0, [], []));
+
+    var since = DateTime.UtcNow.AddDays(-Math.Clamp(req.Jours ?? 7, 1, 90));
+
+    var weekly = await db.StudySessions
+        .Where(s => students.Contains(s.StudentId) && s.StartedAt >= since)
+        .GroupBy(s => s.StudentId)
+        .Select(g => new
+        {
+            StudentId = g.Key,
+            ActiveSeconds = g.Sum(s => s.ActiveSeconds),
+            Sessions = g.Count(),
+            Exercises = g.Sum(s => s.ExercisesDone),
+            LastStudiedAt = g.Max(s => s.LastActivityAt),
+        })
+        .ToDictionaryAsync(x => x.StudentId, ct);
+
+    var steps = await db.CourseSteps
+        .Where(s => students.Contains(s.Course.OwnerId))
+        .Select(s => new
+        {
+            s.Course.OwnerId,
+            s.Course.Title,
+            s.Status,
+            s.WeakHeadings,
+        })
+        .ToListAsync(ct);
+
+    var rows = students.Select(studentId =>
+    {
+        weekly.TryGetValue(studentId, out var week);
+        var mine = steps.Where(s => s.OwnerId == studentId).ToList();
+
+        var passed = mine.Count(s => s.Status == StepStatus.Passed);
+        var failed = mine.Count(s => s.Status == StepStatus.Failed);
+
+        // « Décroche » se juge sur ce qui se voit d'une semaine à l'autre : n'a pas
+        // travaillé, ou bute sur quelque chose sans avancer. Deux signaux simples, parce
+        // qu'un indicateur qu'un enseignant ne peut pas expliquer à un élève ne sert à rien.
+        var needsAttention = week is null || failed > 0;
+
+        return new ClassStudentRowDto(
+            studentId,
+            week?.ActiveSeconds ?? 0,
+            week?.Sessions ?? 0,
+            week?.Exercises ?? 0,
+            passed,
+            failed,
+            week?.LastStudiedAt,
+            needsAttention);
+    })
+    // Ceux qui décrochent d'abord, puis les moins actifs : un enseignant ouvre cette page
+    // pour trouver qui aider, pas pour féliciter les premiers de la liste.
+    .OrderByDescending(r => r.NeedsAttention)
+    .ThenBy(r => r.ActiveSecondsThisWeek)
+    .ToList();
+
+    var weakSpots = steps
+        .Where(s => !string.IsNullOrWhiteSpace(s.WeakHeadings))
+        .SelectMany(s => s.WeakHeadings!
+            .Split(" | ", StringSplitOptions.RemoveEmptyEntries)
+            .Select(h => new { Heading = h.Trim(), s.Title, s.OwnerId }))
+        .Where(x => x.Heading.Length > 0)
+        // On compte des ÉLÈVES, pas des échecs : un élève qui rate trois fois la même
+        // notion reste un élève, et le confondre avec trois élèves ferait croire à un
+        // problème de classe là où il y a un élève à aider.
+        .GroupBy(x => new { x.Heading, x.Title })
+        .Select(g => new ClassWeakSpotDto(g.Key.Heading, g.Key.Title, g.Select(x => x.OwnerId).Distinct().Count()))
+        .Where(w => w.StudentCount > 1)
+        .OrderByDescending(w => w.StudentCount)
+        .Take(10)
+        .ToList();
+
+    return Results.Ok(new ClassOverviewDto(
+        since, students.Count, rows.Count(r => r.SessionsThisWeek > 0), rows, weakSpots));
+})
+.WithSummary("Le tableau d'une classe, pour son enseignant")
+.Produces<ClassOverviewDto>()
+.Produces(401)
+.Produces(403);
+
 // ── GET /suivi/{studentId}/seances ────────────────────────────────────────────
 //
 // L'historique des séances : la question « est-ce qu'il a étudié hier soir ? » se
@@ -733,9 +846,11 @@ suivi.MapGet("/{studentId:guid}/seances", async (
     Guid studentId,
     ClaimsPrincipal principal,
     CoursContext db,
-    int? take) =>
+    StudentDirectory directory,
+    int? take,
+    CancellationToken ct) =>
 {
-    if (Deny(principal, studentId) is { } refusal) return refusal;
+    if (await DenyAsync(principal, studentId, directory, ct) is { } refusal) return refusal;
 
     var sessions = await db.StudySessions
         .Where(s => s.StudentId == studentId)
@@ -762,9 +877,11 @@ suivi.MapGet("/{studentId:guid}/cours/{courseId:guid}", async (
     Guid studentId,
     Guid courseId,
     ClaimsPrincipal principal,
-    CoursContext db) =>
+    CoursContext db,
+    StudentDirectory directory,
+    CancellationToken ct) =>
 {
-    if (Deny(principal, studentId) is { } refusal) return refusal;
+    if (await DenyAsync(principal, studentId, directory, ct) is { } refusal) return refusal;
 
     var course = await db.Courses
         .Include(c => c.Steps.OrderBy(s => s.Order))
@@ -968,12 +1085,21 @@ static JourneyDto BuildJourney(Course course)
 /// On distingue les deux refus : 401 dit « je ne sais pas qui tu es », 403 dit « je
 /// sais qui tu es, et ce n'est pas ton enfant ». Confondre les deux ferait chercher
 /// un problème de session là où il y a un problème de droits.
+///
+/// Trois appelants légitimes, et l'ordre compte : l'élève et son parent se décident
+/// sur le jeton seul, sans réseau ; l'enseignant seulement ensuite, parce que lui
+/// exige l'annuaire. Un enseignant dont l'effectif est illisible est refusé — une
+/// autorisation qui s'ouvre quand elle ne peut pas vérifier n'en est pas une.
 /// </summary>
-static IResult? Deny(ClaimsPrincipal principal, Guid studentId)
+static async Task<IResult?> DenyAsync(
+    ClaimsPrincipal principal,
+    Guid studentId,
+    StudentDirectory directory,
+    CancellationToken ct = default)
 {
     if (principal.GetUserId() is null) return Results.Unauthorized();
 
-    return principal.CanViewStudent(studentId)
+    return await directory.CanViewAsync(principal, studentId, ct)
         ? null
         : Results.Forbid();
 }

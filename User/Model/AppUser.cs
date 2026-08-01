@@ -93,11 +93,11 @@
         /// </summary>
         private const string Alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
-        public static string NewCode()
-        {
-            var buffer = System.Security.Cryptography.RandomNumberGenerator.GetBytes(8);
-            return string.Concat(buffer.Select(b => Alphabet[b % Alphabet.Length]));
-        }
+        // GetString plutôt qu'un modulo sur des octets : 31 ne divise pas 256, donc
+        // « octet % 31 » rendrait les huit premières lettres de l'alphabet plus
+        // fréquentes que les autres.
+        public static string NewCode() =>
+            System.Security.Cryptography.RandomNumberGenerator.GetString(Alphabet, 8);
     }
 
     /// <summary>Lien de suivi entre un parent et un élève.</summary>

@@ -50,13 +50,23 @@ var userService = builder.AddProject<Projects.User>("user")
 
 // Cours porte le contenu ET son index vectoriel : il appelle OpenRouter pour
 // transcrire les photos, mettre en forme le cours et vectoriser les fragments.
+//
+// Il référence aussi User, pour le suivi enseignant seul : aucun jeton ne peut porter
+// les cent cinquante élèves d'un professeur, donc `StudentDirectory` va demander son
+// effectif à `GET /auth/classes/mes-eleves`. Référence à sens unique — User n'appelle
+// pas Cours — donc pas de cycle.
+//
+// Pas de `WaitFor` : la dépendance est par requête et se referme d'elle-même. Si User
+// n'est pas là, un enseignant est refusé et tout le reste de Cours fonctionne ; le faire
+// attendre au démarrage coûterait de la disponibilité sans rien protéger.
 var coursService = builder.AddProject<Projects.Cours>("cours")
     .WithEnvironment("Jwt__Key", jwtKeyValue)
     .WithEnvironment("Jwt__Issuer", jwtIssuer)
     .WithEnvironment("Jwt__Audience", jwtAudience)
     .WithEnvironment("OpenRouter__ApiKey", openRouterApiKey)
     .WithReference(coursDb)
-    .WaitFor(coursDb);
+    .WaitFor(coursDb)
+    .WithReference(userService);
 
 // Chat orchestre les agents répétiteurs. Il lit les cours via le service Cours
 // (référence à sens unique : c'est la bibliothèque partagée GPOE26.Ai qui évite

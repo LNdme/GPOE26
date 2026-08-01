@@ -63,6 +63,54 @@ public record ChildSummaryDto(
 /// <summary>Un parent vu depuis le profil de l'élève, pour qu'il sache qui le suit.</summary>
 public record LinkedParentDto(Guid Id, string Username, string Email, DateTime LinkedAt);
 
+// ── Classes ───────────────────────────────────────────────────────────────────
+
+public record CreateClassRequest(
+    [Required, MaxLength(100)] string Name,
+    [Required, MaxLength(100)] string Subject,
+    string? Level,
+    [Required, MaxLength(20)] string SchoolYear
+);
+
+/// <summary>Une classe vue par son enseignant.</summary>
+/// <param name="Code">
+/// Visible du seul enseignant. Il le dicte à ses élèves ; l'exposer ailleurs reviendrait
+/// à laisser n'importe qui rejoindre n'importe quelle classe.
+/// </param>
+public record SchoolClassDto(
+    Guid Id,
+    string Name,
+    string Subject,
+    string? Level,
+    string SchoolYear,
+    string Code,
+    bool JoinEnabled,
+    int StudentCount,
+    DateTime CreatedAt
+);
+
+/// <summary>Une classe vue par un élève : sans le code, qui ne le concerne plus.</summary>
+public record MyClassDto(
+    Guid Id,
+    string Name,
+    string Subject,
+    string? Level,
+    string SchoolYear,
+    string TeacherName,
+    DateTime JoinedAt
+);
+
+/// <summary>Un élève inscrit dans une classe. Aucune donnée d'étude ici — voir le service Cours.</summary>
+public record ClassMemberDto(
+    Guid Id,
+    string Username,
+    string? Level,
+    string? Filiere,
+    DateTime JoinedAt
+);
+
+public record JoinClassRequest([Required] string Code);
+
 /// <param name="RefreshToken">
 /// De quoi renouveler le jeton d'accès sans redemander le mot de passe.
 ///

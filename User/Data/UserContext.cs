@@ -14,6 +14,8 @@ namespace User.Data
         public DbSet<StudentLinkCode> StudentLinkCodes => Set<StudentLinkCode>();
         public DbSet<ParentChild> ParentChildren => Set<ParentChild>();
         public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+        public DbSet<SchoolClass> SchoolClasses => Set<SchoolClass>();
+        public DbSet<ClassEnrollment> ClassEnrollments => Set<ClassEnrollment>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -75,6 +77,48 @@ namespace User.Data
                       .WithMany()
                       .HasForeignKey(t => t.UserId)
                       .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<SchoolClass>(entity =>
+            {
+                entity.Property(c => c.Name).HasMaxLength(100);
+                entity.Property(c => c.Subject).HasMaxLength(100);
+                entity.Property(c => c.Level).HasMaxLength(50);
+                entity.Property(c => c.SchoolYear).HasMaxLength(20);
+                entity.Property(c => c.Code).HasMaxLength(12);
+
+                // Le code est ce qu'un élève saisit : il doit se retrouver en une requête,
+                // et deux classes ne peuvent pas le partager.
+                entity.HasIndex(c => c.Code).IsUnique();
+                entity.HasIndex(c => new { c.TeacherId, c.SchoolYear });
+
+                entity.HasOne(c => c.Teacher)
+                      .WithMany()
+                      .HasForeignKey(c => c.TeacherId)
+                      .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<ClassEnrollment>(entity =>
+            {
+                // Un élève ne rejoint pas deux fois la même classe.
+                entity.HasIndex(e => new { e.ClassId, e.StudentId }).IsUnique();
+
+                // L'accès dominant du suivi : « tous les élèves de mes classes », en une
+                // requête. Sans cet index, un enseignant de cent cinquante élèves ferait
+                // parcourir la table entière à chaque consultation.
+                entity.HasIndex(e => e.StudentId);
+
+                entity.HasOne(e => e.Class)
+                      .WithMany(c => c.Enrollments)
+                      .HasForeignKey(e => e.ClassId)
+                      .OnDelete(DeleteBehavior.Cascade);
+
+                // Restrict côté élève, comme pour ParentChild : supprimer un compte élève
+                // ne doit pas effacer silencieusement l'inscription par une seconde cascade.
+                entity.HasOne(e => e.Student)
+                      .WithMany()
+                      .HasForeignKey(e => e.StudentId)
+                      .OnDelete(DeleteBehavior.Restrict);
             });
         }
     }

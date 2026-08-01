@@ -523,6 +523,255 @@ auth.MapDelete("/me/parents/{parentId:guid}", async (
 .Produces(204)
 .Produces(404);
 
+// ══════════════════════════════════════════════════════════════════════════════
+//  Classes
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Le suivi enseignant passe par la classe, pas par l'élève. Un parent se rattache à
+// trois enfants nommément ; un enseignant en suit cent cinquante, et les désigner un par
+// un n'aurait de sens ni pour lui, ni pour un jeton qui devrait les porter.
+
+// ── POST /auth/classes ────────────────────────────────────────────────────────
+auth.MapPost("/classes", async (CreateClassRequest req, ClaimsPrincipal principal, UserContext db) =>
+{
+    var teacher = await CurrentUserAsync(principal, db);
+    if (teacher is null) return Results.Unauthorized();
+
+    if (teacher.Role != UserRole.Teacher)
+        return Results.Forbid();
+
+    var schoolClass = new SchoolClass
+    {
+        TeacherId = teacher.Id,
+        Name = req.Name,
+        Subject = req.Subject,
+        Level = req.Level,
+        SchoolYear = req.SchoolYear,
+        Code = await UniqueCodeAsync(db),
+    };
+
+    db.SchoolClasses.Add(schoolClass);
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/auth/classes/{schoolClass.Id}", ToDto(schoolClass, 0));
+})
+.RequireAuthorization()
+.WithSummary("Créer une classe")
+.Produces<SchoolClassDto>(201)
+.Produces(403);
+
+// ── GET /auth/classes ─────────────────────────────────────────────────────────
+auth.MapGet("/classes", async (ClaimsPrincipal principal, UserContext db) =>
+{
+    var teacher = await CurrentUserAsync(principal, db);
+    if (teacher is null) return Results.Unauthorized();
+
+    var classes = await db.SchoolClasses
+        .Where(c => c.TeacherId == teacher.Id)
+        .OrderByDescending(c => c.CreatedAt)
+        .Select(c => new SchoolClassDto(
+            c.Id, c.Name, c.Subject, c.Level, c.SchoolYear, c.Code, c.JoinEnabled,
+            c.Enrollments.Count, c.CreatedAt))
+        .ToListAsync();
+
+    return Results.Ok(classes);
+})
+.RequireAuthorization()
+.WithSummary("Mes classes")
+.Produces<List<SchoolClassDto>>();
+
+// ── GET /auth/classes/{id}/eleves ─────────────────────────────────────────────
+auth.MapGet("/classes/{id:guid}/eleves", async (Guid id, ClaimsPrincipal principal, UserContext db) =>
+{
+    var teacher = await CurrentUserAsync(principal, db);
+    if (teacher is null) return Results.Unauthorized();
+
+    var owns = await db.SchoolClasses.AnyAsync(c => c.Id == id && c.TeacherId == teacher.Id);
+    if (!owns) return Results.NotFound(new { message = "Classe introuvable." });
+
+    var members = await db.ClassEnrollments
+        .Where(e => e.ClassId == id)
+        .OrderBy(e => e.Student.Username)
+        .Select(e => new ClassMemberDto(
+            e.StudentId, e.Student.Username, e.Student.Level, e.Student.Filiere, e.JoinedAt))
+        .ToListAsync();
+
+    return Results.Ok(members);
+})
+.RequireAuthorization()
+.WithSummary("L'effectif d'une classe")
+.Produces<List<ClassMemberDto>>()
+.Produces(404);
+
+// ── GET /auth/classes/mes-eleves ──────────────────────────────────────────────
+//
+// L'union des effectifs de l'enseignant, en un seul appel.
+//
+// ⚠️ C'est le point d'appui de toute l'autorisation enseignant, et sa forme n'est pas
+// anodine. On aurait pu mettre les identifiants de classe dans le jeton et demander
+// ensuite « cet élève est-il dans cette classe ? » — mais il aurait fallu interroger le
+// service quand même, une fois par élève consulté. Ici, un enseignant de cent cinquante
+// élèves déclenche UNE requête, dont le résultat se met en cache.
+auth.MapGet("/classes/mes-eleves", async (ClaimsPrincipal principal, UserContext db) =>
+{
+    var teacher = await CurrentUserAsync(principal, db);
+    if (teacher is null) return Results.Unauthorized();
+
+    // Un rôle qui n'est pas enseignant ne reçoit pas d'effectif — même vide, la réponse
+    // suggérerait que la question a un sens pour lui.
+    if (teacher.Role != UserRole.Teacher) return Results.Forbid();
+
+    var students = await db.ClassEnrollments
+        .Where(e => e.Class.TeacherId == teacher.Id)
+        .Select(e => e.StudentId)
+        .Distinct()
+        .ToListAsync();
+
+    return Results.Ok(students);
+})
+.RequireAuthorization()
+.WithSummary("Tous les élèves de mes classes")
+.Produces<List<Guid>>()
+.Produces(403);
+
+// ── POST /auth/classes/{id}/code ──────────────────────────────────────────────
+//
+// Régénère le code. Un code affiché en classe finit toujours par sortir de la classe :
+// il faut pouvoir le couper sans perdre les élèves déjà inscrits.
+auth.MapPost("/classes/{id:guid}/code", async (Guid id, ClaimsPrincipal principal, UserContext db) =>
+{
+    var teacher = await CurrentUserAsync(principal, db);
+    if (teacher is null) return Results.Unauthorized();
+
+    var schoolClass = await db.SchoolClasses
+        .Include(c => c.Enrollments)
+        .FirstOrDefaultAsync(c => c.Id == id && c.TeacherId == teacher.Id);
+
+    if (schoolClass is null) return Results.NotFound(new { message = "Classe introuvable." });
+
+    schoolClass.Code = await UniqueCodeAsync(db);
+    schoolClass.JoinEnabled = true;
+    await db.SaveChangesAsync();
+
+    return Results.Ok(ToDto(schoolClass, schoolClass.Enrollments.Count));
+})
+.RequireAuthorization()
+.WithSummary("Régénérer le code d'une classe")
+.Produces<SchoolClassDto>()
+.Produces(404);
+
+// ── DELETE /auth/classes/{id}/code ────────────────────────────────────────────
+auth.MapDelete("/classes/{id:guid}/code", async (Guid id, ClaimsPrincipal principal, UserContext db) =>
+{
+    var teacher = await CurrentUserAsync(principal, db);
+    if (teacher is null) return Results.Unauthorized();
+
+    var schoolClass = await db.SchoolClasses
+        .FirstOrDefaultAsync(c => c.Id == id && c.TeacherId == teacher.Id);
+
+    if (schoolClass is null) return Results.NotFound(new { message = "Classe introuvable." });
+
+    // On ferme l'entrée sans toucher aux inscriptions : la classe continue de vivre.
+    schoolClass.JoinEnabled = false;
+    await db.SaveChangesAsync();
+
+    return Results.NoContent();
+})
+.RequireAuthorization()
+.WithSummary("Fermer l'entrée d'une classe")
+.Produces(204)
+.Produces(404);
+
+// ── POST /auth/me/classes ─────────────────────────────────────────────────────
+auth.MapPost("/me/classes", async (JoinClassRequest req, ClaimsPrincipal principal, UserContext db) =>
+{
+    var student = await CurrentUserAsync(principal, db);
+    if (student is null) return Results.Unauthorized();
+
+    if (student.Role != UserRole.Student)
+        return Results.BadRequest(new { message = "Seul un élève rejoint une classe." });
+
+    var code = req.Code.Trim().ToUpperInvariant();
+    var schoolClass = await db.SchoolClasses
+        .Include(c => c.Teacher)
+        .FirstOrDefaultAsync(c => c.Code == code);
+
+    if (schoolClass is null)
+        return Results.NotFound(new { message = "Ce code ne correspond à aucune classe." });
+
+    // Message distinct : un code fermé et un code inexistant n'appellent pas la même
+    // réaction de l'élève — dans un cas il s'est trompé, dans l'autre il doit demander.
+    if (!schoolClass.AcceptsJoin)
+        return Results.Conflict(new { message = "L'entrée de cette classe est fermée. Demandez un nouveau code." });
+
+    var already = await db.ClassEnrollments
+        .AnyAsync(e => e.ClassId == schoolClass.Id && e.StudentId == student.Id);
+
+    if (already)
+        return Results.Conflict(new { message = "Vous êtes déjà dans cette classe." });
+
+    db.ClassEnrollments.Add(new ClassEnrollment
+    {
+        ClassId = schoolClass.Id,
+        StudentId = student.Id,
+    });
+
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new MyClassDto(
+        schoolClass.Id, schoolClass.Name, schoolClass.Subject, schoolClass.Level,
+        schoolClass.SchoolYear, schoolClass.Teacher.Username, DateTime.UtcNow));
+})
+.RequireAuthorization()
+.WithSummary("Rejoindre une classe par son code")
+.Produces<MyClassDto>()
+.Produces(404)
+.Produces(409);
+
+// ── GET /auth/me/classes ──────────────────────────────────────────────────────
+auth.MapGet("/me/classes", async (ClaimsPrincipal principal, UserContext db) =>
+{
+    var student = await CurrentUserAsync(principal, db);
+    if (student is null) return Results.Unauthorized();
+
+    var classes = await db.ClassEnrollments
+        .Where(e => e.StudentId == student.Id)
+        .OrderByDescending(e => e.JoinedAt)
+        .Select(e => new MyClassDto(
+            e.ClassId, e.Class.Name, e.Class.Subject, e.Class.Level,
+            e.Class.SchoolYear, e.Class.Teacher.Username, e.JoinedAt))
+        .ToListAsync();
+
+    return Results.Ok(classes);
+})
+.RequireAuthorization()
+.WithSummary("Les classes que j'ai rejointes")
+.Produces<List<MyClassDto>>();
+
+// ── DELETE /auth/me/classes/{id} ──────────────────────────────────────────────
+auth.MapDelete("/me/classes/{id:guid}", async (Guid id, ClaimsPrincipal principal, UserContext db) =>
+{
+    var student = await CurrentUserAsync(principal, db);
+    if (student is null) return Results.Unauthorized();
+
+    var enrollment = await db.ClassEnrollments
+        .FirstOrDefaultAsync(e => e.ClassId == id && e.StudentId == student.Id);
+
+    if (enrollment is null) return Results.NotFound(new { message = "Vous n'êtes pas dans cette classe." });
+
+    db.ClassEnrollments.Remove(enrollment);
+    await db.SaveChangesAsync();
+
+    // ⚠️ L'enseignant garde l'accès jusqu'à l'expiration du cache d'effectif (cinq
+    // minutes). Contrepartie assumée d'une résolution mise en cache — sans elle, chaque
+    // consultation coûterait une requête par élève.
+    return Results.NoContent();
+})
+.RequireAuthorization()
+.WithSummary("Quitter une classe")
+.Produces(204)
+.Produces(404);
+
 
 
 
@@ -563,6 +812,27 @@ static async Task<List<Guid>> LoadChildrenAsync(UserContext db, AppUser user) =>
             .Where(l => l.ParentId == user.Id)
             .Select(l => l.StudentId)
             .ToListAsync();
+
+static SchoolClassDto ToDto(SchoolClass c, int studentCount) => new(
+    c.Id, c.Name, c.Subject, c.Level, c.SchoolYear, c.Code, c.JoinEnabled, studentCount, c.CreatedAt);
+
+/// <summary>
+/// Un code de classe qui n'est pris par personne.
+///
+/// L'index unique refuserait un doublon de toute façon ; on préfère le détecter ici que
+/// de renvoyer une erreur de base à un enseignant qui crée sa classe. Six caractères sur
+/// trente et un donnent près d'un milliard de possibilités : la boucle ne tournera jamais.
+/// </summary>
+static async Task<string> UniqueCodeAsync(UserContext db)
+{
+    for (var attempt = 0; attempt < 10; attempt++)
+    {
+        var code = SchoolClass.NewCode();
+        if (!await db.SchoolClasses.AnyAsync(c => c.Code == code)) return code;
+    }
+
+    throw new InvalidOperationException("Impossible de produire un code de classe libre.");
+}
 
 /// <summary>
 /// Émet un jeton d'accès et un jeton de rafraîchissement.

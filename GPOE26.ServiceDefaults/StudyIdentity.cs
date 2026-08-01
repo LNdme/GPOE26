@@ -42,6 +42,9 @@ public static class StudyIdentity
     public static bool IsParent(this ClaimsPrincipal principal) =>
         string.Equals(principal.GetRole(), "Parent", StringComparison.OrdinalIgnoreCase);
 
+    public static bool IsTeacher(this ClaimsPrincipal principal) =>
+        string.Equals(principal.GetRole(), "Teacher", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>Les élèves listés dans le claim « children ».</summary>
     public static IReadOnlyCollection<Guid> GetLinkedChildren(this ClaimsPrincipal principal)
     {
@@ -63,6 +66,16 @@ public static class StudyIdentity
     /// Vrai pour l'élève lui-même, et pour un parent auquel il s'est rattaché.
     /// Toute autre situation est un refus — y compris un parent qui demanderait
     /// l'identifiant d'un enfant qui n'est pas le sien.
+    ///
+    /// ⚠️ **Cette fonction ne connaît pas les enseignants, et c'est délibéré.** Un
+    /// enseignant suit cent cinquante élèves : aucun jeton ne peut les porter, donc
+    /// répondre pour lui exigerait d'interroger un annuaire — donc de rendre cette
+    /// fonction asynchrone, et avec elle les onze endroits qui l'appellent, dont
+    /// <c>GPOE26.Harness.Stub</c>, qui n'a volontairement aucune dépendance.
+    ///
+    /// L'accès enseignant passe par <c>StudentDirectory.CanViewAsync</c>, une porte
+    /// séparée, employée uniquement là où il est réellement offert. Celle-ci reste pure,
+    /// et ses tests valent justement parce qu'elle l'est.
     /// </summary>
     public static bool CanViewStudent(this ClaimsPrincipal principal, Guid studentId)
     {
