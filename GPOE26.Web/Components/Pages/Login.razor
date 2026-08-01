@@ -65,8 +65,11 @@
     protected override void OnInitialized()
     {
         if (Auth.IsAuthenticated)
-            Nav.NavigateTo("/cours");
+            Nav.NavigateTo(HomeRoute);
     }
+
+    /// <summary>Un parent n'a pas de cours à lui : sa page d'accueil est l'espace famille.</summary>
+    private string HomeRoute => Auth.IsParent ? "/famille" : "/cours";
 
     private async Task OnKey(KeyboardEventArgs e)
     {
@@ -89,7 +92,7 @@
         _loading = false;
         
         if (ok)
-            Nav.NavigateTo("/cours");
+            Nav.NavigateTo(HomeRoute);
         else
             _error = err;
     }

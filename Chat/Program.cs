@@ -70,7 +70,9 @@ builder.Services.AddScoped<TuteurAgent>();
 builder.Services.AddScoped<ExerciceAgent>();
 builder.Services.AddScoped<RelecteurAgent>();
 builder.Services.AddScoped<CorrecteurAgent>();
+builder.Services.AddScoped<SyntheseAgent>();
 builder.Services.AddScoped<MemoireAgent>();
+builder.Services.AddScoped<BilanAgent>();
 builder.Services.AddScoped<RepetiteurOrchestrator>();
 
 // Client HTTP des implémentations ILlmService historiques (DeepSeek, GPT, Foundry).

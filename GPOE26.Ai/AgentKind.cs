@@ -38,4 +38,13 @@ public enum AgentKind
 
     /// <summary>Lecture à voix haute des explications (synthèse vocale).</summary>
     Voix,
+
+    /// <summary>
+    /// Bilan rédigé pour un parent.
+    ///
+    /// Rôle distinct du tuteur : le destinataire n'est pas l'élève, n'a pas suivi le
+    /// cours, et lit un texte qui peut avoir des conséquences à la maison. Cela mérite
+    /// un modèle qu'on choisit pour sa qualité de rédaction, pas pour sa pédagogie.
+    /// </summary>
+    Bilan,
 }

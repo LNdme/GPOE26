@@ -3,34 +3,51 @@
 @inject GPOE26.Web.Services.ApiClient Api
 
 @*
-    L'étape « Consolider », premier temps : un exercice à rédiger.
+    Les deux étapes où l'élève rédige au lieu de reconnaître.
 
-    L'élève produit au lieu de reconnaître — c'est ce qui distingue cette étape du
-    QCM qui suit. Le corrigé reste masqué tant qu'il n'a pas soumis : le révéler
-    avant viderait l'exercice de son sens.
+    · L'exercice de consolidation : appliquer une notion du cours.
+    · La question de synthèse, en toute fin de parcours : dire ce que le cours
+      raconte dans son ensemble. On peut valider tous les QCM d'un cours découpé
+      en cinq parties sans avoir jamais saisi ce qu'il dit — c'est cet écart-là
+      qu'on vient mesurer.
+
+    Même forme (énoncé, rédaction, correction), donc un seul composant : seuls les
+    mots changent, et l'API sollicitée. Le corrigé reste masqué tant que l'élève
+    n'a pas soumis : le révéler avant viderait l'étape de son sens.
 *@
 
-<div class="exercise">
+<div class="@RootClass">
 
     @if (_loading)
     {
         <div class="exercise-state">
             <div class="spinner-border text-brand-dark mb-3"></div>
-            <h5>Préparation de votre exercice…</h5>
-            <p class="text-muted-chic">Il portera sur ce que vous venez d'étudier.</p>
+            <h5>@(IsSynthesis ? "Préparation de votre question de synthèse…" : "Préparation de votre exercice…")</h5>
+            <p class="text-muted-chic">
+                @(IsSynthesis
+                    ? "Elle portera sur l'ensemble du cours, pas sur un détail."
+                    : "Il portera sur ce que vous venez d'étudier.")
+            </p>
         </div>
     }
     else if (_statement is null)
     {
         <div class="exercise-state">
             <div class="display-6 mb-2">⚠️</div>
-            <h5>L'exercice n'a pas pu être préparé</h5>
+            <h5>@(IsSynthesis ? "La question n'a pas pu être préparée" : "L'exercice n'a pas pu être préparé")</h5>
             <p class="text-muted-chic">@(_error ?? "Réessayez dans un instant.")</p>
             <button class="btn btn-brand mt-2" @onclick="StartAsync">Réessayer</button>
         </div>
     }
     else
     {
+        @if (IsSynthesis)
+        {
+            <p class="exercise-intro">
+                Dernière étape : une seule question, pour voir ce que vous retenez de ce cours.
+            </p>
+        }
+
         <section class="exercise-statement">
             <MarkdownViewer Content="@_statement" />
         </section>
@@ -38,11 +55,13 @@
         @if (_correction is null)
         {
             <div class="exercise-answer">
-                <label class="exercise-label" for="exercise-answer">Votre réponse</label>
+                <label class="exercise-label" for="exercise-answer">
+                    @(IsSynthesis ? "Ce que vous en retenez" : "Votre réponse")
+                </label>
                 <textarea id="exercise-answer"
                           class="exercise-input"
                           rows="10"
-                          placeholder="Rédigez votre raisonnement, étape par étape…"
+                          placeholder="@AnswerPlaceholder"
                           @bind="_answer"
                           @bind:event="oninput"
                           disabled="@_correcting"></textarea>
@@ -52,6 +71,10 @@
                         @if (_answer.Length > 0)
                         {
                             <text>@_answer.Length caractères</text>
+                        }
+                        else if (IsSynthesis)
+                        {
+                            <text>Avec vos mots à vous : c'est votre compréhension qu'on regarde, pas votre mémoire.</text>
                         }
                         else
                         {
@@ -83,9 +106,7 @@
                 <div class="exercise-verdict">
                     <span class="exercise-verdict-badge">@(correction.Acquis ? "✓" : "◐")</span>
                     <div>
-                        <p class="exercise-verdict-title">
-                            @(correction.Acquis ? "C'est acquis" : "Partiellement acquis")
-                        </p>
+                        <p class="exercise-verdict-title">@VerdictTitle(correction.Acquis)</p>
                         @if (correction.Conseil is { Length: > 0 } conseil)
                         {
                             <p class="exercise-verdict-hint">@conseil</p>
@@ -96,7 +117,9 @@
                 @if (correction.PointsForts.Count > 0)
                 {
                     <div class="exercise-points is-strong">
-                        <p class="exercise-points-title">Ce que vous avez réussi</p>
+                        <p class="exercise-points-title">
+                            @(IsSynthesis ? "Ce que vous avez bien vu" : "Ce que vous avez réussi")
+                        </p>
                         <ul>
                             @foreach (var point in correction.PointsForts)
                             {
@@ -120,7 +143,7 @@
                 }
 
                 <details class="exercise-solution" open="@(!correction.Acquis)">
-                    <summary>Voir la correction attendue</summary>
+                    <summary>@(IsSynthesis ? "Voir ce qu'on attendait" : "Voir la correction attendue")</summary>
                     <MarkdownViewer Content="@correction.Correction" />
                 </details>
 
@@ -129,7 +152,7 @@
                         <i class="bi bi-chat-dots"></i> Demander au répétiteur
                     </button>
                     <button class="btn btn-sm btn-brand-outline" @onclick="RetryAsync">
-                        Refaire un exercice
+                        @(IsSynthesis ? "Répondre à une autre question" : "Refaire un exercice")
                     </button>
                 </div>
             </div>
@@ -154,6 +177,16 @@
 
     private Guid _loadedStepId;
 
+    private bool IsSynthesis => Step.IsSynthesis;
+
+    // Extraits en propriétés : un littéral de chaîne imbriqué dans un attribut Razor
+    // n'est pas analysable de façon fiable.
+    private string RootClass => IsSynthesis ? "exercise is-synthesis" : "exercise";
+
+    private string AnswerPlaceholder => IsSynthesis
+        ? "Expliquez avec vos mots — quelques lignes suffisent…"
+        : "Rédigez votre raisonnement, étape par étape…";
+
     protected override async Task OnParametersSetAsync()
     {
         if (_loadedStepId == Step.Id) return;
@@ -171,10 +204,16 @@
         _correction = null;
         StateHasChanged();
 
-        _statement = await Api.GenerateExerciseAsync(Course.Id, Step.HeadingPath);
+        // La synthèse ignore volontairement HeadingPath : elle interroge le cours
+        // entier, même quand le parcours a été découpé en parties.
+        _statement = IsSynthesis
+            ? await Api.GenerateSynthesisAsync(Course.Id)
+            : await Api.GenerateExerciseAsync(Course.Id, Step.HeadingPath);
 
         if (_statement is null)
-            _error = "Le générateur d'exercices n'a rien renvoyé.";
+            _error = IsSynthesis
+                ? "La question de synthèse n'a pas pu être formulée."
+                : "Le générateur d'exercices n'a rien renvoyé.";
 
         _loading = false;
     }
@@ -184,7 +223,8 @@
         if (_statement is null || string.IsNullOrWhiteSpace(_answer) || _correcting) return;
 
         _correcting = true;
-        _correction = await Api.CorrectExerciseAsync(Course.Id, Step.HeadingPath, _statement, _answer);
+        var answer = _answer.Trim();
+        _correction = await Api.CorrectExerciseAsync(Course.Id, Step.HeadingPath, _statement, answer);
         _correcting = false;
 
         if (_correction is null)
@@ -195,10 +235,19 @@
 
         // Le score de l'agent est sur 100 : on le remonte tel quel, le seuil de
         // validation est appliqué côté API comme pour les QCM.
-        await OnCompleted.InvokeAsync(new StepResultRequest(_correction.Score, 100, null));
+        //
+        // On joint la réponse rédigée et ce que la correction en a dit : sur la
+        // question de synthèse, c'est le signal le plus parlant du suivi parental —
+        // l'enfant explique son cours avec ses mots, et on sait ce qui manquait.
+        await OnCompleted.InvokeAsync(new StepResultRequest(
+            _correction.Score,
+            100,
+            null,
+            answer,
+            SummarizeCorrection(_correction)));
     }
 
-    /// <summary>Un nouvel exercice sur la même notion, pour s'entraîner davantage.</summary>
+    /// <summary>Un nouvel énoncé sur la même étape, pour retravailler la notion.</summary>
     private Task RetryAsync() => StartAsync();
 
     private async Task AskTutorAsync()
@@ -210,8 +259,42 @@
             ? $" On m'a dit qu'il me manquait : {string.Join(" ; ", manquants)}."
             : "";
 
-        await OnAskTutor.InvokeAsync(
-            $"J'ai fait cet exercice : « {Shorten(_statement)} ».{detail} Peux-tu m'expliquer ce que je n'ai pas compris ?");
+        await OnAskTutor.InvokeAsync(IsSynthesis
+            ? $"On m'a demandé : « {Shorten(_statement)} ».{detail} Peux-tu m'aider à voir ce que ce cours dit dans son ensemble ?"
+            : $"J'ai fait cet exercice : « {Shorten(_statement)} ».{detail} Peux-tu m'expliquer ce que je n'ai pas compris ?");
+    }
+
+    private string VerdictTitle(bool acquis) => (IsSynthesis, acquis) switch
+    {
+        (true, true) => "Vous avez saisi l'essentiel",
+        (true, false) => "L'essentiel n'est pas encore là",
+        (false, true) => "C'est acquis",
+        (false, false) => "Partiellement acquis",
+    };
+
+    /// <summary>
+    /// Une ou deux phrases sur ce que vaut la réponse, telles qu'un parent peut les
+    /// lire sans contexte. On reprend le conseil de la correction quand il existe,
+    /// sinon le premier point manquant — jamais le corrigé entier, qui n'apprendrait
+    /// rien sur l'enfant.
+    /// </summary>
+    private string SummarizeCorrection(ExerciseCorrection correction)
+    {
+        var verdict = (IsSynthesis, correction.Acquis) switch
+        {
+            (true, true) => "L'essentiel du cours est compris.",
+            (true, false) => "L'essentiel du cours n'est pas encore compris.",
+            (false, true) => "L'exercice est réussi.",
+            (false, false) => "L'exercice n'est que partiellement réussi.",
+        };
+
+        var detail = correction.Conseil is { Length: > 0 } conseil
+            ? conseil.Trim()
+            : correction.PointsManquants.FirstOrDefault()?.Trim();
+
+        var summary = detail is { Length: > 0 } ? $"{verdict} {detail}" : verdict;
+
+        return summary.Length <= 400 ? summary : summary[..400].TrimEnd() + "…";
     }
 
     private static string Shorten(string value) =>

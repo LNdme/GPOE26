@@ -49,6 +49,68 @@
     public enum UserRole
     {
         Student,
-        Teacher
+        Teacher,
+
+        /// <summary>Parent qui suit la progression de ses enfants.</summary>
+        Parent
+    }
+
+    /// <summary>
+    /// Code à usage unique généré par un élève pour qu'un parent se rattache à lui.
+    ///
+    /// C'est l'élève qui l'émet, jamais le parent : le lien ne peut donc pas exister
+    /// sans qu'il l'ait voulu, et on ne peut pas se rattacher à un enfant au hasard en
+    /// devinant son adresse.
+    /// </summary>
+    public class StudentLinkCode
+    {
+        public Guid Id { get; set; } = Guid.NewGuid();
+
+        public Guid StudentId { get; set; }
+        public AppUser Student { get; set; } = null!;
+
+        /// <summary>Code court, lisible à voix haute, sans caractères ambigus.</summary>
+        public required string Code { get; set; }
+
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        /// <summary>
+        /// Un code permanent finirait par circuler : celui-ci ne vaut qu'une demi-heure.
+        /// </summary>
+        public DateTime ExpiresAt { get; set; } = DateTime.UtcNow.AddMinutes(30);
+
+        public DateTime? UsedAt { get; set; }
+        public Guid? UsedByParentId { get; set; }
+
+        public bool IsUsable(DateTime now) => UsedAt is null && ExpiresAt > now;
+
+        /// <summary>Durée de validité d'un code fraîchement émis.</summary>
+        public static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(30);
+
+        /// <summary>
+        /// Alphabet sans 0/O ni 1/I/L : un code se dicte souvent de vive voix entre
+        /// un enfant et son parent.
+        /// </summary>
+        private const string Alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+        public static string NewCode()
+        {
+            var buffer = System.Security.Cryptography.RandomNumberGenerator.GetBytes(8);
+            return string.Concat(buffer.Select(b => Alphabet[b % Alphabet.Length]));
+        }
+    }
+
+    /// <summary>Lien de suivi entre un parent et un élève.</summary>
+    public class ParentChild
+    {
+        public Guid Id { get; set; } = Guid.NewGuid();
+
+        public Guid ParentId { get; set; }
+        public AppUser Parent { get; set; } = null!;
+
+        public Guid StudentId { get; set; }
+        public AppUser Student { get; set; } = null!;
+
+        public DateTime LinkedAt { get; set; } = DateTime.UtcNow;
     }
 }

@@ -1,0 +1,311 @@
+@page "/famille"
+@* Api et Nav viennent de _Imports.razor. *@
+@inject GPOE26.Web.Services.AuthService Auth
+@rendermode InteractiveServer
+
+<PageTitle>Espace famille – GPOE26</PageTitle>
+
+@*
+    L'espace famille : la réponse à « est-ce qu'il a travaillé cette semaine ? ».
+
+    Ce que cette page ne montrera jamais : les échanges de l'enfant avec le répétiteur.
+    C'est là qu'il écrit « je n'ai rien compris » ; s'il sait que ces mots remontent, il
+    cessera de les écrire, et l'outil perdra ce qui le rend utile. Ici on donne des faits
+    mesurés et un bilan rédigé — de quoi savoir où il en est, pas de quoi lire par-dessus
+    son épaule.
+*@
+
+<div class="famille">
+
+    @if (!Auth.IsAuthenticated)
+    {
+        <div class="famille-empty">
+            <h5>Vous n'êtes pas connecté</h5>
+            <a class="btn btn-brand mt-2" href="/login">Se connecter</a>
+        </div>
+    }
+    else if (!Auth.IsParent)
+    {
+        <div class="famille-empty">
+            <div class="display-6 mb-2">👪</div>
+            <h5>Cet espace est réservé aux comptes parents</h5>
+            <p class="text-muted-chic">
+                Vous pouvez laisser un parent suivre votre progression depuis votre profil.
+            </p>
+            <a class="btn btn-brand mt-2" href="/profil">Aller à mon profil</a>
+        </div>
+    }
+    else
+    {
+        <header class="famille-head">
+            <div>
+                <h1 class="famille-title">Espace famille</h1>
+                <p class="famille-subtitle">
+                    La progression de vos enfants, séance par séance.
+                </p>
+            </div>
+        </header>
+
+        <section class="famille-link">
+            <h2 class="famille-section-title">Rattacher un enfant</h2>
+            <p class="famille-hint">
+                Demandez à votre enfant de générer un code depuis son profil, puis saisissez-le
+                ici. Le lien ne peut pas se créer sans lui.
+            </p>
+
+            <div class="famille-link-form">
+                <input class="famille-link-input"
+                       maxlength="8"
+                       placeholder="Code à 8 caractères"
+                       @bind="_code"
+                       @bind:event="oninput"
+                       disabled="@_linking" />
+
+                <button class="btn btn-brand"
+                        disabled="@(_linking || string.IsNullOrWhiteSpace(_code))"
+                        @onclick="LinkAsync">
+                    @if (_linking)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                    }
+                    Rattacher
+                </button>
+            </div>
+
+            @if (_linkError is not null)
+            {
+                <p class="famille-error">@_linkError</p>
+            }
+            @if (_linkSuccess is not null)
+            {
+                <p class="famille-success">@_linkSuccess</p>
+            }
+        </section>
+
+        @if (_loading)
+        {
+            <div class="famille-empty">
+                <div class="spinner-border text-brand-dark mb-3"></div>
+                <p class="text-muted-chic">Chargement du suivi…</p>
+            </div>
+        }
+        else if (_children.Count == 0)
+        {
+            <div class="famille-empty">
+                <div class="display-6 mb-2">🔗</div>
+                <h5>Aucun enfant rattaché</h5>
+                <p class="text-muted-chic">Saisissez le code que votre enfant vous a communiqué.</p>
+            </div>
+        }
+        else
+        {
+            @foreach (var child in _children)
+            {
+                var overview = _overviews.GetValueOrDefault(child.Id);
+
+                <article class="famille-child">
+                    <header class="famille-child-head">
+                        <div class="famille-child-identity">
+                            <div class="famille-child-avatar">@Initial(child.Username)</div>
+                            <div>
+                                <h2 class="famille-child-name">@child.Username</h2>
+                                <p class="famille-child-meta">@LevelLabel(child)</p>
+                            </div>
+                        </div>
+
+                        <div class="famille-child-actions">
+                            <a class="btn btn-sm btn-brand-outline" href="@ChildLink(child)">
+                                Voir le détail
+                            </a>
+                            <button class="btn btn-sm btn-outline-danger"
+                                    @onclick="() => UnlinkAsync(child)"
+                                    disabled="@(_unlinking == child.Id)">
+                                Délier
+                            </button>
+                        </div>
+                    </header>
+
+                    @if (overview is null)
+                    {
+                        <p class="famille-hint">Suivi indisponible pour le moment.</p>
+                    }
+                    else
+                    {
+                        @* La semaine d'abord : c'est la première question d'un parent. *@
+                        <div class="@WeekClass(overview)">
+                            @if (overview.StudiedThisWeek)
+                            {
+                                <span class="famille-week-main">
+                                    @overview.WeeklyDuration de travail cette semaine
+                                </span>
+                                <span class="famille-week-sub">
+                                    @overview.SessionsThisWeek @(overview.SessionsThisWeek > 1 ? "séances" : "séance")
+                                    · @overview.ExercisesThisWeek @(overview.ExercisesThisWeek > 1 ? "exercices rédigés" : "exercice rédigé")
+                                    · @overview.QuestionsThisWeek @(overview.QuestionsThisWeek > 1 ? "questions posées" : "question posée")
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="famille-week-main">Aucune révision cette semaine</span>
+                                <span class="famille-week-sub">@LastSeen(overview)</span>
+                            }
+                        </div>
+
+                        @{
+                            var started = overview.Courses.Where(c => c.IsStarted).Take(4).ToList();
+                        }
+
+                        @if (started.Count == 0)
+                        {
+                            <p class="famille-hint">Aucun cours commencé pour l'instant.</p>
+                        }
+                        else
+                        {
+                            <ul class="famille-courses">
+                                @foreach (var course in started)
+                                {
+                                    <li>
+                                        <a href="@ChildLink(child, course.CourseId)">
+                                            <div class="famille-course-head">
+                                                <span class="famille-course-title">@course.Title</span>
+                                                <span class="famille-course-score">
+                                                    @course.StepsPassed/@course.StepsTotal
+                                                </span>
+                                            </div>
+                                            <div class="famille-course-bar">
+                                                <span style="@course.ProgressStyle"></span>
+                                            </div>
+                                            <div class="famille-course-meta">
+                                                @course.Subject
+                                                @if (course.CurrentStepTitle is { Length: > 0 } step && !course.IsFinished)
+                                                {
+                                                    <text> · en cours : @step</text>
+                                                }
+                                                @if (course.IsFinished)
+                                                {
+                                                    <text> · parcours terminé</text>
+                                                }
+                                            </div>
+                                        </a>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    }
+                </article>
+            }
+        }
+    }
+</div>
+
+@code {
+    private List<ChildSummaryDto> _children = [];
+    private Dictionary<Guid, ChildOverviewDto> _overviews = [];
+
+    private string _code = "";
+    private bool _loading = true;
+    private bool _linking;
+    private Guid? _unlinking;
+    private string? _linkError;
+    private string? _linkSuccess;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Auth.IsAuthenticated || !Auth.IsParent)
+        {
+            _loading = false;
+            return;
+        }
+
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        _children = await Api.GetChildrenAsync();
+
+        // Un résumé par enfant, en parallèle : trois enfants ne doivent pas coûter trois
+        // allers-retours en série.
+        var overviews = await Task.WhenAll(
+            _children.Select(async child => (child.Id, Overview: await Api.GetChildOverviewAsync(child.Id))));
+
+        _overviews = overviews
+            .Where(o => o.Overview is not null)
+            .ToDictionary(o => o.Id, o => o.Overview!);
+
+        _loading = false;
+    }
+
+    private async Task LinkAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_code) || _linking) return;
+
+        _linking = true;
+        _linkError = null;
+        _linkSuccess = null;
+
+        var (link, error) = await Api.LinkChildAsync(_code.Trim().ToUpperInvariant());
+
+        if (link is null)
+        {
+            _linkError = error;
+            _linking = false;
+            return;
+        }
+
+        // Le jeton renvoyé porte le claim « children » à jour. Sans cette bascule, le
+        // service Cours refuserait le suivi de l'enfant qui vient d'être rattaché,
+        // jusqu'à l'expiration du jeton précédent.
+        Auth.ApplyRefreshedToken(link.Token, link.ExpiresAt);
+
+        _code = "";
+        _linkSuccess = $"{link.Child.Username} est maintenant rattaché à votre compte.";
+        _linking = false;
+
+        await ReloadAsync();
+    }
+
+    private async Task UnlinkAsync(ChildSummaryDto child)
+    {
+        _unlinking = child.Id;
+
+        var refreshed = await Api.UnlinkChildAsync(child.Id);
+        if (refreshed is not null)
+        {
+            Auth.ApplyRefreshedToken(refreshed.Token, refreshed.ExpiresAt);
+            await ReloadAsync();
+        }
+        else
+        {
+            _linkError = "Le lien n'a pas pu être retiré.";
+        }
+
+        _unlinking = null;
+    }
+
+    // Extraits en méthodes : un littéral de chaîne imbriqué dans un attribut Razor
+    // n'est pas analysable de façon fiable.
+    private static string ChildLink(ChildSummaryDto child, Guid? courseId = null) =>
+        courseId is { } id ? $"/famille/{child.Id}?cours={id}" : $"/famille/{child.Id}";
+
+    private static string WeekClass(ChildOverviewDto overview) =>
+        overview.StudiedThisWeek ? "famille-week is-active" : "famille-week is-idle";
+
+    private static string Initial(string username) =>
+        string.IsNullOrWhiteSpace(username) ? "?" : username[..1].ToUpperInvariant();
+
+    private static string LevelLabel(ChildSummaryDto child)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(child.Level)) parts.Add(child.Level!);
+        if (!string.IsNullOrWhiteSpace(child.Filiere)) parts.Add(child.Filiere!);
+
+        return parts.Count > 0 ? string.Join(" · ", parts) : "Élève";
+    }
+
+    private static string LastSeen(ChildOverviewDto overview) =>
+        overview.LastSessionAt is { } last
+            ? $"Dernière séance le {last.ToLocalTime():d MMMM}"
+            : "Aucune séance enregistrée à ce jour";
+}

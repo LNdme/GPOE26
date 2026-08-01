@@ -699,12 +699,11 @@ namespace GPOE26.Web.Services
         /// le parcours renvoyé dit ce qui s'est déverrouillé.
         /// </summary>
         public async Task<JourneyDto?> SubmitStepResultAsync(
-            Guid courseId, Guid stepId, int score, int total, IEnumerable<string>? weakHeadings = null)
+            Guid courseId, Guid stepId, StepResultRequest request)
         {
             var client = CreateAuthClient("cours");
             try
             {
-                var request = new StepResultRequest(score, total, weakHeadings?.ToList());
                 var resp = await client.PostAsJsonAsync($"/cours/{courseId}/parcours/{stepId}/resultat", request);
                 resp.EnsureSuccessStatusCode();
                 return await resp.Content.ReadFromJsonAsync<JourneyDto>();
@@ -713,6 +712,28 @@ namespace GPOE26.Web.Services
             {
                 _logger.LogError(ex, $"Error submitting result for step {stepId}");
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// Signale une activité d'étude, pour le journal des séances de révision.
+        ///
+        /// Silencieux en cas d'échec : perdre un signal de présence ne doit jamais
+        /// interrompre le travail de l'élève.
+        /// </summary>
+        public async Task ReportActivityAsync(Guid courseId, StudyActivity activity)
+        {
+            var client = CreateAuthClient("cours");
+            try
+            {
+                // L'enum part en nombre, comme partout ailleurs dans ce projet :
+                // aucun convertisseur de chaîne n'est enregistré côté Cours.
+                await client.PostAsJsonAsync($"/cours/{courseId}/seance/activite",
+                    new { Activity = activity });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, $"Activity signal dropped for course {courseId}");
             }
         }
 
@@ -896,6 +917,30 @@ namespace GPOE26.Web.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, $"Error generating exercise for course {courseId}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Demande la question ouverte de synthèse : ce que l'élève a retenu du cours
+        /// dans son ensemble, et non d'une de ses parties. Pas de <c>headingPath</c>
+        /// ici — c'est justement une question sur le tout.
+        /// </summary>
+        public async Task<string?> GenerateSynthesisAsync(Guid courseId)
+        {
+            var client = CreateAuthClient("chat");
+            try
+            {
+                var resp = await client.PostAsJsonAsync("/chat/synthese",
+                    new { CourseId = courseId, HeadingPath = (string?)null });
+
+                resp.EnsureSuccessStatusCode();
+                var body = await resp.Content.ReadFromJsonAsync<ExerciceResponse>();
+                return body?.Statement;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error generating synthesis question for course {courseId}");
                 return null;
             }
         }
@@ -1084,18 +1129,219 @@ namespace GPOE26.Web.Services
             }
         }
 
-        public async Task<AuthResponse?> RegisterAsync(RegisterRequest req)
+        /// <summary>
+        /// Inscription. Renvoie le message du serveur en cas de refus : l'inscription
+        /// d'un parent peut échouer pour une raison précise (« un parent n'a ni niveau
+        /// ni filière »), et « Erreur lors de la création du compte » n'aiderait personne.
+        /// </summary>
+        public async Task<(AuthResponse? auth, string? error)> RegisterAsync(RegisterRequest req)
         {
             var client = _factory.CreateClient("user");
             try
             {
                 var resp = await client.PostAsJsonAsync("/auth/register", req);
-                if (!resp.IsSuccessStatusCode) return null;
-                return await resp.Content.ReadFromJsonAsync<AuthResponse>();
+
+                if (!resp.IsSuccessStatusCode)
+                    return (null, await ReadProblemAsync(resp));
+
+                return (await resp.Content.ReadFromJsonAsync<AuthResponse>(), null);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error registering");
+                return (null, "Le service d'inscription est injoignable.");
+            }
+        }
+
+        // ── Lien famille ─────────────────────────────────────────────────────────
+
+        /// <summary>L'élève émet un code que son parent saisira. À usage unique, 30 minutes.</summary>
+        public async Task<LinkCodeResponse?> GenerateLinkCodeAsync()
+        {
+            var client = CreateAuthClient("user");
+            try
+            {
+                var resp = await client.PostAsync("/auth/me/code-parent", content: null);
+                resp.EnsureSuccessStatusCode();
+                return await resp.Content.ReadFromJsonAsync<LinkCodeResponse>();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generating parent link code");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Le parent saisit le code. La réponse porte un jeton rafraîchi : l'appelant doit
+        /// le passer à AuthService, sans quoi l'enfant restera invisible une heure durant.
+        /// </summary>
+        public async Task<(LinkChildResponse? link, string? error)> LinkChildAsync(string code)
+        {
+            var client = CreateAuthClient("user");
+            try
+            {
+                var resp = await client.PostAsJsonAsync("/auth/parent/enfants", new { Code = code });
+
+                if (!resp.IsSuccessStatusCode)
+                    return (null, await ReadProblemAsync(resp) ?? "Ce code n'est pas valide.");
+
+                return (await resp.Content.ReadFromJsonAsync<LinkChildResponse>(), null);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error linking child");
+                return (null, "Le service est injoignable.");
+            }
+        }
+
+        public async Task<List<ChildSummaryDto>> GetChildrenAsync()
+        {
+            var client = CreateAuthClient("user");
+            try
+            {
+                return await client.GetFromJsonAsync<List<ChildSummaryDto>>("/auth/parent/enfants") ?? [];
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching linked children");
+                return [];
+            }
+        }
+
+        /// <summary>Délie un enfant. Renvoie le jeton rafraîchi, à réappliquer.</summary>
+        public async Task<RefreshedTokenResponse?> UnlinkChildAsync(Guid childId)
+        {
+            var client = CreateAuthClient("user");
+            try
+            {
+                var resp = await client.DeleteAsync($"/auth/parent/enfants/{childId}");
+                resp.EnsureSuccessStatusCode();
+                return await resp.Content.ReadFromJsonAsync<RefreshedTokenResponse>();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error unlinking child {childId}");
+                return null;
+            }
+        }
+
+        /// <summary>Les parents rattachés à l'élève connecté — il doit savoir qui le suit.</summary>
+        public async Task<List<LinkedParentDto>> GetMyParentsAsync()
+        {
+            if (string.IsNullOrEmpty(_tokenProvider.Token)) return [];
+
+            var client = CreateAuthClient("user");
+            try
+            {
+                return await client.GetFromJsonAsync<List<LinkedParentDto>>("/auth/me/parents") ?? [];
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching linked parents");
+                return [];
+            }
+        }
+
+        public async Task<bool> UnlinkParentAsync(Guid parentId)
+        {
+            var client = CreateAuthClient("user");
+            try
+            {
+                var resp = await client.DeleteAsync($"/auth/me/parents/{parentId}");
+                return resp.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error unlinking parent {parentId}");
+                return false;
+            }
+        }
+
+        // ── Suivi parental ───────────────────────────────────────────────────────
+
+        /// <summary>Vue d'ensemble d'un enfant : a-t-il travaillé, combien, sur quoi.</summary>
+        public async Task<ChildOverviewDto?> GetChildOverviewAsync(Guid studentId, int jours = 7)
+        {
+            var client = CreateAuthClient("cours");
+            try
+            {
+                return await client.GetFromJsonAsync<ChildOverviewDto>(
+                    $"/suivi/{studentId}/resume?jours={jours}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error fetching overview for student {studentId}");
+                return null;
+            }
+        }
+
+        public async Task<List<StudySessionDto>> GetChildSessionsAsync(Guid studentId, int take = 30)
+        {
+            var client = CreateAuthClient("cours");
+            try
+            {
+                return await client.GetFromJsonAsync<List<StudySessionDto>>(
+                    $"/suivi/{studentId}/seances?take={take}") ?? [];
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error fetching sessions for student {studentId}");
+                return [];
+            }
+        }
+
+        public async Task<ChildCourseDetailDto?> GetChildCourseAsync(Guid studentId, Guid courseId)
+        {
+            var client = CreateAuthClient("cours");
+            try
+            {
+                return await client.GetFromJsonAsync<ChildCourseDetailDto>(
+                    $"/suivi/{studentId}/cours/{courseId}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error fetching course {courseId} for student {studentId}");
+                return null;
+            }
+        }
+
+        /// <summary>Le bilan rédigé pour le parent. Généré une fois par jour côté Chat.</summary>
+        public async Task<BilanResponse?> GetBilanAsync(Guid studentId, Guid courseId)
+        {
+            var client = CreateAuthClient("chat");
+            try
+            {
+                var resp = await client.PostAsJsonAsync("/chat/bilan",
+                    new { StudentId = studentId, CourseId = courseId });
+
+                resp.EnsureSuccessStatusCode();
+                return await resp.Content.ReadFromJsonAsync<BilanResponse>();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error fetching bilan for student {studentId}, course {courseId}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Message d'erreur renvoyé par nos services, qui répondent tous
+        /// <c>{ "message": "…" }</c>. Null si la réponse ne dit rien d'exploitable.
+        /// </summary>
+        private static async Task<string?> ReadProblemAsync(HttpResponseMessage response)
+        {
+            try
+            {
+                using var document = System.Text.Json.JsonDocument.Parse(
+                    await response.Content.ReadAsStringAsync());
+
+                return document.RootElement.TryGetProperty("message", out var message)
+                    ? message.GetString()
+                    : null;
+            }
+            catch (System.Text.Json.JsonException)
+            {
                 return null;
             }
         }

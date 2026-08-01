@@ -1,0 +1,228 @@
+/* Espace famille. Reprend les tokens --rd-* de reading.css et le vocabulaire visuel de
+   JourneyBar : le parent et l'enfant doivent avoir l'impression d'ouvrir la même
+   application, vue de deux côtés. */
+
+.famille {
+    max-width: 58rem;
+    margin: 0 auto;
+    padding: 2.5rem 1.25rem 4rem;
+    color: var(--rd-text, #1f2430);
+}
+
+.famille-empty {
+    margin: 3.5rem auto;
+    text-align: center;
+}
+
+/* ── En-tête ──────────────────────────────────────────────────────────────── */
+
+.famille-head { margin-bottom: 1.75rem; }
+
+.famille-title {
+    margin: 0;
+    font-size: 1.6rem;
+    font-weight: 700;
+}
+
+.famille-subtitle {
+    margin: .25rem 0 0;
+    font-size: .92rem;
+    color: var(--rd-text-soft, #6b7280);
+}
+
+.famille-section-title {
+    margin: 0 0 .4rem;
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.famille-hint {
+    margin: 0 0 1rem;
+    font-size: .87rem;
+    line-height: 1.6;
+    color: var(--rd-text-soft, #6b7280);
+}
+
+.famille-error { margin: .75rem 0 0; font-size: .85rem; color: #b42318; }
+.famille-success { margin: .75rem 0 0; font-size: .85rem; color: #067647; }
+
+/* ── Rattachement ─────────────────────────────────────────────────────────── */
+
+.famille-link {
+    padding: 1.35rem 1.5rem;
+    margin-bottom: 2rem;
+    border: 1px solid var(--rd-border, #e3e6ec);
+    border-radius: 12px;
+    background: var(--rd-surface, #fbfbfd);
+}
+
+.famille-link-form {
+    display: flex;
+    gap: .65rem;
+    flex-wrap: wrap;
+}
+
+/* Le code se recopie caractère par caractère : chasse fixe et lettres espacées. */
+.famille-link-input {
+    flex: 1 1 14rem;
+    padding: .6rem .9rem;
+    border: 1px solid var(--rd-border, #e3e6ec);
+    border-radius: 8px;
+    background: var(--rd-bg, #fff);
+    color: var(--rd-text, #1f2430);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 1.05rem;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+}
+
+.famille-link-input:focus {
+    outline: none;
+    border-color: var(--rd-accent, #174ea6);
+    box-shadow: 0 0 0 3px var(--rd-accent-soft, rgba(23, 78, 166, .15));
+}
+
+/* ── Carte enfant ─────────────────────────────────────────────────────────── */
+
+.famille-child {
+    padding: 1.35rem 1.5rem;
+    margin-bottom: 1.25rem;
+    border: 1px solid var(--rd-border, #e3e6ec);
+    border-radius: 14px;
+    background: var(--rd-bg, #fff);
+}
+
+.famille-child-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.15rem;
+}
+
+.famille-child-identity {
+    display: flex;
+    align-items: center;
+    gap: .85rem;
+}
+
+.famille-child-avatar {
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--rd-accent, #174ea6);
+    color: #fff;
+    font-weight: 700;
+}
+
+.famille-child-name { margin: 0; font-size: 1.1rem; font-weight: 700; }
+
+.famille-child-meta {
+    margin: 0;
+    font-size: .82rem;
+    color: var(--rd-text-soft, #6b7280);
+}
+
+.famille-child-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+
+/* ── La semaine ───────────────────────────────────────────────────────────── */
+
+/* Le fait saillant, avant tout le reste : a-t-il travaillé ? La bordure colorée
+   répond avant même qu'on ait lu la phrase. */
+.famille-week {
+    display: flex;
+    flex-direction: column;
+    gap: .2rem;
+    padding: .85rem 1.1rem;
+    margin-bottom: 1.15rem;
+    border-radius: 10px;
+    border-left: 4px solid var(--rd-border, #e3e6ec);
+    background: var(--rd-surface, #fbfbfd);
+}
+
+.famille-week.is-active { border-left-color: #067647; }
+.famille-week.is-idle { border-left-color: #b54708; }
+
+.famille-week-main { font-size: .97rem; font-weight: 600; }
+
+.famille-week-sub {
+    font-size: .81rem;
+    color: var(--rd-text-soft, #6b7280);
+}
+
+/* ── Cours ────────────────────────────────────────────────────────────────── */
+
+.famille-courses {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+    gap: .75rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.famille-courses a {
+    display: block;
+    padding: .8rem .95rem;
+    border: 1px solid var(--rd-border, #e3e6ec);
+    border-radius: 10px;
+    color: inherit;
+    text-decoration: none;
+    transition: border-color .15s ease, transform .15s ease;
+}
+
+.famille-courses a:hover {
+    border-color: var(--rd-accent, #174ea6);
+    transform: translateY(-1px);
+}
+
+.famille-course-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: .5rem;
+    margin-bottom: .45rem;
+}
+
+.famille-course-title {
+    font-size: .91rem;
+    font-weight: 650;
+    line-height: 1.35;
+}
+
+.famille-course-score {
+    flex: 0 0 auto;
+    font-size: .78rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--rd-text-soft, #6b7280);
+}
+
+.famille-course-bar {
+    height: 5px;
+    border-radius: 3px;
+    background: var(--rd-border, #e3e6ec);
+    overflow: hidden;
+}
+
+.famille-course-bar span {
+    display: block;
+    height: 100%;
+    border-radius: 3px;
+    background: var(--rd-accent, #174ea6);
+}
+
+.famille-course-meta {
+    margin-top: .4rem;
+    font-size: .77rem;
+    color: var(--rd-text-soft, #6b7280);
+}
+
+@media (max-width: 540px) {
+    .famille-child-head { flex-direction: column; align-items: flex-start; }
+    .famille-courses { grid-template-columns: 1fr; }
+}

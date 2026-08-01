@@ -37,7 +37,21 @@ else
                     <i class="bi bi-arrow-left"></i>
                 </a>
                 <div class="study-identity">
-                    <span class="study-subject">@_course.Subject</span>
+                    <span class="study-subject">
+                        @_course.Subject
+                        @if (_parentWatching is { Length: > 0 } watcher)
+                        {
+                            @*
+                                L'élève doit savoir que sa progression est suivie. Le taire
+                                serait un piège : il écrit au répétiteur des choses qu'il
+                                n'écrirait pas s'il se croyait observé — et ces échanges-là,
+                                justement, ne remontent jamais. Autant le dire.
+                            *@
+                            <span class="study-watch" title="@watcher">
+                                <i class="bi bi-eye"></i> Suivi parental actif
+                            </span>
+                        }
+                    </span>
                     <h1 class="study-title">@_course.Title</h1>
                 </div>
             </div>
@@ -446,6 +460,9 @@ else
     // Sommaire
     private IReadOnlyList<MarkdownViewer.OutlineEntry> _outline = [];
 
+    /// <summary>Libellé du suivi parental, null quand aucun parent n'est rattaché.</summary>
+    private string? _parentWatching;
+
     // Parcours
     private JourneyDto? _journey;
     private StepDto? _step;
@@ -501,6 +518,26 @@ else
     {
         await LoadAsync();
         _loading = false;
+
+        // Après l'affichage : savoir qui suit l'élève est utile, mais ne doit pas
+        // retarder l'ouverture de son cours d'un aller-retour réseau.
+        await LoadParentWatchAsync();
+    }
+
+    /// <summary>
+    /// Nom du ou des parents rattachés, pour l'indicateur de suivi. Null si personne :
+    /// l'indicateur ne s'affiche que quand il est vrai.
+    /// </summary>
+    private async Task LoadParentWatchAsync()
+    {
+        var parents = await Api.GetMyParentsAsync();
+        if (parents.Count == 0) return;
+
+        _parentWatching = parents.Count == 1
+            ? $"{parents[0].Username} suit votre progression"
+            : $"{string.Join(", ", parents.Select(p => p.Username))} suivent votre progression";
+
+        StateHasChanged();
     }
 
     private async Task LoadAsync()
@@ -560,6 +597,7 @@ else
         StepKind.MiniTest or StepKind.TestFinal when NextStep?.IsReading == true => "Partie suivante",
         StepKind.MiniTest or StepKind.TestFinal => "Passer aux exercices",
         StepKind.ExerciceOuvert => "Passer au QCM d'application",
+        StepKind.QcmApplication when NextStep?.IsSynthesis == true => "Passer à la question de synthèse",
         _ => "Continuer",
     };
 
@@ -591,6 +629,17 @@ else
         return InvokeAsync(StateHasChanged);
     }
 
+    /// <summary>
+    /// Signal de présence, émis par reading-interop.js une fois par minute tant que
+    /// l'onglet est visible. Alimente le journal des séances de révision.
+    /// </summary>
+    [JSInvokable]
+    public async Task OnStudyHeartbeat()
+    {
+        if (_course is null) return;
+        await Api.ReportActivityAsync(_course.Id, StudyActivity.Lecture);
+    }
+
     private async Task MarkReadAsync()
     {
         if (_course is null || _step is null || _advancing) return;
@@ -610,8 +659,7 @@ else
     {
         if (_course is null || _step is null) return;
 
-        var updated = await Api.SubmitStepResultAsync(
-            _course.Id, _step.Id, result.Score, result.Total, result.WeakHeadings);
+        var updated = await Api.SubmitStepResultAsync(_course.Id, _step.Id, result);
 
         if (updated is null) return;
 
@@ -664,6 +712,7 @@ else
         {
             StepKind.Lecture => "📖",
             StepKind.ExerciceOuvert => "✍️",
+            StepKind.Synthese => "💡",
             _ => "🎯",
         };
     }
@@ -814,6 +863,11 @@ else
 
         _messages.Add(new ConversationMessage("user", question));
         StateHasChanged();
+
+        // Une question posée fait partie de la séance de révision. C'est ici qu'on le
+        // sait : la page est le seul endroit qui voit à la fois la lecture et le chat,
+        // et le signaler depuis Chat créerait un appel de Chat vers Cours, donc un cycle.
+        await Api.ReportActivityAsync(_course.Id, StudyActivity.Question);
 
         try
         {

@@ -6,6 +6,7 @@ using Chat.Agents;
 using Chat.Model;
 using Chat.Service;
 using GPOE26.Ai;
+using GPOE26.ServiceDefaults;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
@@ -95,6 +96,94 @@ public class ChatController(ILlmService llmService) : ControllerBase
 
         await Response.WriteAsync("data: [DONE]\n\n", cancellationToken);
         await Response.Body.FlushAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Pose la question de synthèse finale : l'élève a-t-il saisi l'essentiel du cours ?
+    /// </summary>
+    [Authorize]
+    [HttpPost("synthese")]
+    public async Task<ActionResult<ExerciceResponse>> GenerateSynthesis(
+        [FromBody] ExerciceRequest request,
+        [FromServices] SyntheseAgent synthese,
+        [FromServices] CoursClient cours,
+        CancellationToken cancellationToken)
+    {
+        var course = await cours.GetCourseAsync(request.CourseId, cancellationToken);
+        if (course is null) return NotFound(new { message = "Cours introuvable." });
+
+        // Vue large du cours, jamais d'une seule section : une question de synthèse
+        // bâtie sur un seul passage retomberait sur un détail.
+        var passages = await cours.SearchAsync(request.CourseId, course.Title, 12, cancellationToken);
+
+        var question = await synthese.AskAsync(course.Title, passages, cancellationToken);
+
+        return string.IsNullOrWhiteSpace(question)
+            ? StatusCode(StatusCodes.Status502BadGateway, new { message = "Aucune question n'a pu être produite." })
+            : Ok(new ExerciceResponse(question));
+    }
+
+    /// <summary>
+    /// Le bilan rédigé pour un parent, sur un enfant et un cours.
+    ///
+    /// La réponse ne contient QUE du texte de bilan : pas de champ « échanges », pas de
+    /// citation. La garantie de confidentialité du répétiteur tient dans la forme de
+    /// cette réponse autant que dans le prompt de l'agent — ce qui n'existe pas ici ne
+    /// peut pas fuir dans une interface.
+    /// </summary>
+    [Authorize]
+    [HttpPost("bilan")]
+    public async Task<ActionResult<BilanResponse>> GetBilan(
+        [FromBody] BilanRequest request,
+        [FromServices] BilanAgent bilan,
+        [FromServices] MemoireAgent memoire,
+        [FromServices] CoursClient cours,
+        [FromServices] IMemoryCache cache,
+        CancellationToken cancellationToken)
+    {
+        // Même règle que le service Cours, lue au même endroit : un parent ne voit que
+        // les enfants qui se sont rattachés à lui, un élève ne voit que lui-même.
+        if (User.GetUserId() is null) return Unauthorized();
+        if (!User.CanViewStudent(request.StudentId)) return Forbid();
+
+        // Une génération par élève, par cours et par jour : un parent qui rafraîchit sa
+        // page ne doit pas relancer un appel de modèle à chaque fois.
+        var key = $"bilan:{request.StudentId}:{request.CourseId}:{DateTime.UtcNow:yyyy-MM-dd}";
+
+        if (cache.TryGetValue(key, out BilanResponse? cached) && cached is not null)
+            return Ok(cached);
+
+        var detail = await cours.GetChildCourseAsync(request.StudentId, request.CourseId, cancellationToken);
+        if (detail is null)
+            return NotFound(new { message = "Aucun suivi disponible pour ce cours." });
+
+        // La fiche du répétiteur n'est lue que pour en tirer les notions difficiles ;
+        // l'agent a consigne de ne jamais la reprendre telle quelle.
+        var notes = await memoire.GetNotesAsync(request.StudentId, request.CourseId, cancellationToken);
+
+        string text;
+        try
+        {
+            text = await bilan.WriteAsync(detail, notes, cancellationToken);
+        }
+        catch (OpenRouterException ex)
+        {
+            return StatusCode(StatusCodes.Status502BadGateway, new { message = ex.Message });
+        }
+
+        if (string.IsNullOrWhiteSpace(text))
+            return StatusCode(StatusCodes.Status502BadGateway, new { message = "Aucun bilan n'a pu être rédigé." });
+
+        var response = new BilanResponse(text, DateTime.UtcNow);
+
+        cache.Set(key, response, new MemoryCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(12),
+            // Le cache du service déclare une taille limite : sans Size, Set lève.
+            Size = text.Length,
+        });
+
+        return Ok(response);
     }
 
     /// <summary>

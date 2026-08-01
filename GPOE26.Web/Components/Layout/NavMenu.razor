@@ -43,7 +43,18 @@
                     <NavLink class="nav-link px-3" href="/hierarchy">L'Établissement</NavLink>
                 </li>
 
-                @if (Auth.IsAuthenticated)
+                @*
+                    Un parent n'a ni cours ni parcours : lui proposer « Mes Cours » et
+                    « Apprentissage » l'enverrait sur deux pages vides. Il a l'espace
+                    famille à la place.
+                *@
+                @if (Auth.IsAuthenticated && Auth.IsParent)
+                {
+                    <li class="nav-item">
+                        <NavLink class="nav-link px-3" href="/famille">Espace famille</NavLink>
+                    </li>
+                }
+                else if (Auth.IsAuthenticated)
                 {
                     <li class="nav-item">
                         <NavLink class="nav-link px-3" href="/cours">Mes Cours</NavLink>
@@ -65,7 +76,14 @@
                             <span class="d-none d-lg-block text-brand-dark fw-bold">@Auth.Profile?.Username</span>
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end shadow border-0 mt-2" aria-labelledby="userMenu">
-                            <li><a class="dropdown-item py-2" href="/cours"><i class="bi bi-book me-2 text-brand-dark"></i> Mes cours</a></li>
+                            @if (Auth.IsParent)
+                            {
+                                <li><a class="dropdown-item py-2" href="/famille"><i class="bi bi-people me-2 text-brand-dark"></i> Espace famille</a></li>
+                            }
+                            else
+                            {
+                                <li><a class="dropdown-item py-2" href="/cours"><i class="bi bi-book me-2 text-brand-dark"></i> Mes cours</a></li>
+                            }
                             <li><a class="dropdown-item py-2" href="/profil"><i class="bi bi-person me-2 text-brand-dark"></i> Profil</a></li>
                             <li><hr class="dropdown-divider my-1" /></li>
                             <li><button class="dropdown-item py-2 text-danger" @onclick="Logout"><i class="bi bi-box-arrow-right me-2"></i> Se déconnecter</button></li>

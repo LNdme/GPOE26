@@ -70,12 +70,38 @@
 .study-identity { min-width: 0; }
 
 .study-subject {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    gap: .6rem;
     font-size: .72rem;
     font-weight: 650;
     letter-spacing: .06em;
     text-transform: uppercase;
     color: var(--rd-accent);
+}
+
+/* Suivi parental : présent, lisible, mais sans rien de menaçant — l'élève doit
+   savoir, pas se sentir surveillé. D'où le gris plutôt que le rouge. */
+.study-watch {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    padding: .1rem .45rem;
+    border-radius: 999px;
+    background: var(--rd-surface);
+    border: 1px solid var(--rd-border);
+    color: var(--rd-text-soft);
+    font-size: .66rem;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: none;
+}
+
+@media (max-width: 640px) {
+    /* Sur petit écran, l'icône suffit : le titre du cours doit rester lisible. */
+    .study-watch span,
+    .study-watch { font-size: 0; gap: 0; padding: .2rem .35rem; }
+    .study-watch i { font-size: .7rem; }
 }
 
 .study-title {

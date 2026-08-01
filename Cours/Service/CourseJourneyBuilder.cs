@@ -67,6 +67,11 @@ public static class CourseJourneyBuilder
         Add(StepKind.ExerciceOuvert, "Exercice de consolidation");
         Add(StepKind.QcmApplication, "QCM d'application");
 
+        // Toujours en dernier : la question de synthèse ne vérifie pas un détail mais
+        // ce que l'élève a retenu de l'ensemble. Elle n'a de sens qu'une fois le reste
+        // du parcours derrière lui.
+        Add(StepKind.Synthese, "Question de synthèse");
+
         // Seule la première étape est ouverte : le reste se déverrouille au fil des
         // validations, c'est ce qui donne au parcours sa direction.
         if (steps.Count > 0) steps[0].Status = StepStatus.Available;

@@ -1,0 +1,195 @@
+@page "/profil"
+@* Api et Nav viennent de _Imports.razor. *@
+@inject GPOE26.Web.Services.AuthService Auth
+@rendermode InteractiveServer
+
+<PageTitle>Mon profil – GPOE26</PageTitle>
+
+@*
+    Le profil, et surtout le lien famille vu du côté de l'élève.
+
+    C'est l'élève qui émet le code, jamais le parent : le rattachement ne peut donc pas
+    exister sans qu'il l'ait voulu. Et il voit qui le suit, avec le moyen de le défaire —
+    sans quoi le « suivi parental actif » affiché dans la page d'étude ne serait qu'une
+    formule.
+*@
+
+<div class="profil">
+
+    @if (!Auth.IsAuthenticated)
+    {
+        <div class="profil-empty">
+            <h5>Vous n'êtes pas connecté</h5>
+            <a class="btn btn-brand mt-2" href="/login">Se connecter</a>
+        </div>
+    }
+    else
+    {
+        var profile = Auth.Profile;
+
+        <header class="profil-head">
+            <div class="profil-avatar">@Initial(profile?.Username)</div>
+            <div>
+                <h1 class="profil-name">@profile?.Username</h1>
+                <p class="profil-meta">
+                    @RoleLabel(profile?.Role)
+                    @if (!string.IsNullOrWhiteSpace(profile?.Level))
+                    {
+                        <span> · @profile!.Level</span>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(profile?.Filiere))
+                    {
+                        <span> · @profile!.Filiere</span>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(profile?.Specialite))
+                    {
+                        <span> · @profile!.Specialite</span>
+                    }
+                </p>
+                <p class="profil-meta">@profile?.Email</p>
+            </div>
+        </header>
+
+        @if (Auth.IsParent)
+        {
+            <section class="profil-card">
+                <h2 class="profil-card-title">Espace famille</h2>
+                <p class="profil-card-hint">
+                    Le suivi de vos enfants se trouve dans l'espace famille.
+                </p>
+                <a class="btn btn-brand btn-sm" href="/famille">Ouvrir l'espace famille</a>
+            </section>
+        }
+        else
+        {
+            <section class="profil-card">
+                <h2 class="profil-card-title">Laisser un parent suivre ma progression</h2>
+                <p class="profil-card-hint">
+                    Générez un code et communiquez-le à votre parent. Il verra votre progression
+                    — temps de travail, étapes validées, notions difficiles — mais
+                    <strong>jamais vos échanges avec le répétiteur</strong>.
+                </p>
+
+                @if (_code is not null)
+                {
+                    <div class="profil-code">
+                        <span class="profil-code-value">@_code.Code</span>
+                        <span class="profil-code-hint">
+                            @if (_code.MinutesLeft > 0)
+                            {
+                                <text>Valable @_code.MinutesLeft minutes, une seule fois.</text>
+                            }
+                            else
+                            {
+                                <text>Ce code a expiré — générez-en un nouveau.</text>
+                            }
+                        </span>
+                    </div>
+                }
+
+                <button class="btn btn-brand btn-sm" @onclick="GenerateCodeAsync" disabled="@_generating">
+                    @if (_generating)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                    }
+                    @(_code is null ? "Générer un code" : "Générer un nouveau code")
+                </button>
+
+                @if (_error is not null)
+                {
+                    <p class="profil-error">@_error</p>
+                }
+            </section>
+
+            <section class="profil-card">
+                <h2 class="profil-card-title">Qui suit ma progression</h2>
+
+                @if (_loadingParents)
+                {
+                    <p class="profil-card-hint">Chargement…</p>
+                }
+                else if (_parents.Count == 0)
+                {
+                    <p class="profil-card-hint">Personne pour l'instant.</p>
+                }
+                else
+                {
+                    <ul class="profil-list">
+                        @foreach (var parent in _parents)
+                        {
+                            <li>
+                                <div>
+                                    <span class="profil-list-name">@parent.Username</span>
+                                    <span class="profil-list-meta">
+                                        @parent.Email · depuis le @parent.LinkedAt.ToLocalTime().ToString("d MMMM yyyy")
+                                    </span>
+                                </div>
+                                <button class="btn btn-sm btn-outline-danger"
+                                        @onclick="() => UnlinkParentAsync(parent)"
+                                        disabled="@(_unlinking == parent.Id)">
+                                    Retirer
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                }
+            </section>
+        }
+    }
+</div>
+
+@code {
+    private LinkCodeResponse? _code;
+    private List<LinkedParentDto> _parents = [];
+
+    private bool _generating;
+    private bool _loadingParents = true;
+    private Guid? _unlinking;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Auth.IsAuthenticated || Auth.IsParent)
+        {
+            _loadingParents = false;
+            return;
+        }
+
+        _parents = await Api.GetMyParentsAsync();
+        _loadingParents = false;
+    }
+
+    private async Task GenerateCodeAsync()
+    {
+        _generating = true;
+        _error = null;
+
+        _code = await Api.GenerateLinkCodeAsync();
+        if (_code is null) _error = "Le code n'a pas pu être généré. Réessayez.";
+
+        _generating = false;
+    }
+
+    private async Task UnlinkParentAsync(LinkedParentDto parent)
+    {
+        _unlinking = parent.Id;
+
+        if (await Api.UnlinkParentAsync(parent.Id))
+            _parents = _parents.Where(p => p.Id != parent.Id).ToList();
+        else
+            _error = "Le lien n'a pas pu être retiré.";
+
+        _unlinking = null;
+    }
+
+    private static string Initial(string? username) =>
+        string.IsNullOrWhiteSpace(username) ? "?" : username[..1].ToUpperInvariant();
+
+    private static string RoleLabel(string? role) => role switch
+    {
+        "Student" => "Élève",
+        "Teacher" => "Enseignant",
+        "Parent" => "Parent",
+        _ => "Compte",
+    };
+}

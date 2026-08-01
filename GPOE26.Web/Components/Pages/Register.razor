@@ -52,19 +52,37 @@
                 <select class="form-select" @bind="_role">
                     <option value="Student">Élève</option>
                     <option value="Teacher">Enseignant</option>
+                    <option value="Parent">Parent</option>
                 </select>
             </div>
-            <div class="col-md-6">
-                <label class="form-label">Niveau</label>
-                <select class="form-select" @bind="_level">
-                    <option value="">— Choisir —</option>
-                    <option value="3eme">3ème</option>
-                    <option value="2nde">2nde</option>
-                    <option value="1ere">1ère</option>
-                    <option value="Tle">Terminale</option>
-                </select>
-            </div>
+            @if (_role != "Parent")
+            {
+                <div class="col-md-6">
+                    <label class="form-label">Niveau</label>
+                    <select class="form-select" @bind="_level">
+                        <option value="">— Choisir —</option>
+                        <option value="3eme">3ème</option>
+                        <option value="2nde">2nde</option>
+                        <option value="1ere">1ère</option>
+                        <option value="Tle">Terminale</option>
+                    </select>
+                </div>
+            }
         </div>
+
+        @if (_role == "Parent")
+        {
+            @*
+                Un parent n'a ni niveau ni filière — le service User refuse l'inscription
+                si on lui en envoie. On dit plutôt ce qui vient après : le compte seul ne
+                donne accès à rien tant que l'enfant n'a pas émis son code.
+            *@
+            <div class="alert alert-light border small mb-4">
+                <strong>Après l'inscription :</strong> demandez à votre enfant de générer
+                un code depuis son profil, puis saisissez-le dans votre espace famille.
+                Le lien ne peut pas se créer sans lui.
+            </div>
+        }
 
         @if (_role == "Student")
         {
@@ -113,7 +131,7 @@
 
     protected override void OnInitialized()
     {
-        if (Auth.IsAuthenticated) Nav.NavigateTo("/cours");
+        if (Auth.IsAuthenticated) Nav.NavigateTo(Auth.IsParent ? "/famille" : "/cours");
     }
 
     private async Task DoRegister()
@@ -127,20 +145,26 @@
         _loading = true;
         _error = null;
 
+        var isParent = _role == "Parent";
+
         var req = new RegisterRequest(
-            Email: _email, 
-            Username: _username, 
+            Email: _email,
+            Username: _username,
             Password: _password,
             Role: _role,
-            Level: string.IsNullOrWhiteSpace(_level) ? null : _level,
+            // Un parent n'a ni niveau, ni filière, ni spécialité : le service User rejette
+            // l'inscription si on lui en transmet.
+            Level: isParent || string.IsNullOrWhiteSpace(_level) ? null : _level,
             Specialite: _role == "Teacher" && !string.IsNullOrWhiteSpace(_specialite) ? _specialite : null,
             Filiere: _role == "Student" && !string.IsNullOrWhiteSpace(_filiere) ? _filiere : null
         );
 
         var (ok, err) = await Auth.RegisterAsync(req);
         _loading = false;
-        
-        if (ok) Nav.NavigateTo("/cours");
-        else _error = err;
+
+        if (!ok) { _error = err; return; }
+
+        // Un parent n'a pas de cours à lui : on l'emmène là où son compte a un sens.
+        Nav.NavigateTo(isParent ? "/famille" : "/cours");
     }
 }

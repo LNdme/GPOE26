@@ -251,6 +251,18 @@ namespace Cours.Model
         /// </summary>
         public string? WeakHeadings { get; set; }
 
+        /// <summary>
+        /// Ce que l'élève a écrit, pour les étapes rédigées (exercice ouvert, synthèse).
+        ///
+        /// Avec <see cref="CorrectionSummary"/>, c'est le signal le plus parlant d'un
+        /// tableau de bord parent : la compréhension du cours dans les mots de l'enfant,
+        /// là où un score de QCM ne dit que « 7 sur 10 ».
+        /// </summary>
+        public string? StudentAnswer { get; set; }
+
+        /// <summary>Ce que la correction a retenu de cette réponse, en une ou deux phrases.</summary>
+        public string? CorrectionSummary { get; set; }
+
         /// <summary>Seuil de validation d'une étape évaluée.</summary>
         public const double PassThreshold = 0.7;
 
@@ -275,7 +287,15 @@ namespace Cours.Model
         ExerciceOuvert,
 
         /// <summary>QCM d'application, plus exigeant que le test de compréhension.</summary>
-        QcmApplication
+        QcmApplication,
+
+        /// <summary>
+        /// Question ouverte finale : l'élève a-t-il saisi l'essentiel du cours ?
+        ///
+        /// On peut valider chaque QCM d'un cours en cinq parties sans jamais avoir
+        /// compris ce que le cours dit dans son ensemble. Cette étape comble cet écart.
+        /// </summary>
+        Synthese
     }
 
     public enum StepStatus
@@ -294,6 +314,63 @@ namespace Cours.Model
 
         /// <summary>Tentée sans atteindre le seuil.</summary>
         Failed
+    }
+
+    /// <summary>
+    /// Une séance de révision : ce que l'élève a réellement fait, et pendant combien de temps.
+    ///
+    /// Sans elle, on peut dire qu'une étape a été validée mais pas qu'il y a eu vingt
+    /// minutes de travail mardi soir — or c'est précisément ce qu'un parent veut savoir.
+    /// </summary>
+    public class StudySession
+    {
+        public Guid Id { get; set; } = Guid.NewGuid();
+
+        public Guid StudentId { get; set; }
+
+        public Guid CourseId { get; set; }
+        public Course Course { get; set; } = null!;
+
+        public DateTime StartedAt { get; set; } = DateTime.UtcNow;
+        public DateTime LastActivityAt { get; set; } = DateTime.UtcNow;
+
+        /// <summary>
+        /// Temps réellement actif, et non l'écart entre l'ouverture et la fermeture de
+        /// l'onglet : un onglet oublié la nuit ne doit pas compter huit heures de révision.
+        /// </summary>
+        public int ActiveSeconds { get; set; }
+
+        public int StepsCompleted { get; set; }
+        public int ExercisesDone { get; set; }
+        public int QuestionsAsked { get; set; }
+
+        /// <summary>Au-delà de ce silence, l'élève est parti : la séance suivante est une autre séance.</summary>
+        public static readonly TimeSpan IdleTimeout = TimeSpan.FromMinutes(30);
+
+        /// <summary>
+        /// Crédit maximal accordé entre deux signaux. La page en émet un par minute ;
+        /// plafonner évite qu'un signal tardif — onglet en arrière-plan, machine en
+        /// veille — ne gonfle la durée d'un coup.
+        /// </summary>
+        public const int MaxSecondsPerSignal = 90;
+
+        public bool IsOpenAt(DateTime now) => now - LastActivityAt < IdleTimeout;
+    }
+
+    /// <summary>Nature d'un signal d'activité, pour savoir ce qui a été fait dans la séance.</summary>
+    public enum StudyActivity
+    {
+        /// <summary>Signal périodique de présence pendant la lecture.</summary>
+        Lecture,
+
+        /// <summary>Une question posée au répétiteur.</summary>
+        Question,
+
+        /// <summary>Une étape du parcours validée.</summary>
+        Etape,
+
+        /// <summary>Un exercice rédigé et soumis.</summary>
+        Exercice
     }
 
     /// <summary>Rythme du parcours, déduit de la longueur du cours.</summary>

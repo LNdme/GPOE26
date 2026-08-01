@@ -127,6 +127,59 @@
         string? Conseil
     );
 
+    // ── Bilan parental ────────────────────────────────────────────────────────
+
+    /// <summary>Demande d'un bilan sur un enfant et un cours.</summary>
+    public record BilanRequest(Guid StudentId, Guid CourseId);
+
+    /// <summary>
+    /// Le bilan rendu au parent : du texte, et rien d'autre.
+    ///
+    /// Pas de champ « échanges », pas de champ « messages » : la garantie de cette
+    /// phase tient dans la forme du DTO autant que dans le prompt de l'agent.
+    /// </summary>
+    public record BilanResponse(string Text, DateTime GeneratedAt);
+
+    /// <summary>
+    /// Miroir de Cours.DTOs.ChildCourseDetailDto, réduit à ce dont le bilan a besoin.
+    ///
+    /// ⚠️ Les enums transitent en nombres entre les services : l'ordre de StepKind
+    /// doit rester identique à celui de Cours.Model.StepKind.
+    /// </summary>
+    public record ChildCourseDetail(
+        ChildCourseProgress Progress,
+        List<ChildWrittenAnswer> WrittenAnswers
+    );
+
+    public record ChildCourseProgress(
+        Guid CourseId,
+        string Title,
+        string Subject,
+        int StepsTotal,
+        int StepsPassed,
+        int StepsFailed,
+        string? CurrentStepTitle,
+        DateTime? LastStudiedAt,
+        int ActiveSeconds,
+        int ExercisesDone,
+        List<string> WeakHeadings
+    );
+
+    public record ChildWrittenAnswer(
+        int Kind,
+        string StepTitle,
+        int? ScorePercent,
+        DateTime? CompletedAt,
+        string Answer,
+        string? CorrectionSummary
+    )
+    {
+        /// <summary>StepKind.Synthese vaut 5 côté Cours ; les enums passent en nombres.</summary>
+        public const int SyntheseKind = 5;
+
+        public bool IsSynthesis => Kind == SyntheseKind;
+    }
+
     /// <summary>
     /// Évènement du flux SSE. <c>Type</c> vaut "step", "token", "done" ou "error".
     /// </summary>

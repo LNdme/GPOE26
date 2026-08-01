@@ -20,6 +20,7 @@ namespace Cours.Data
         public DbSet<CourseAsset> CourseAssets => Set<CourseAsset>();
         public DbSet<CourseChunk> CourseChunks => Set<CourseChunk>();
         public DbSet<CourseStep> CourseSteps => Set<CourseStep>();
+        public DbSet<StudySession> StudySessions => Set<StudySession>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -87,6 +88,20 @@ namespace Cours.Data
                 entity.Property(s => s.Title).HasMaxLength(300);
                 entity.Property(s => s.HeadingPath).HasMaxLength(500);
                 entity.HasIndex(s => new { s.CourseId, s.Order });
+            });
+
+            modelBuilder.Entity<StudySession>(entity =>
+            {
+                // Deux accès dominent : « les séances de cet élève, les plus récentes
+                // d'abord » pour le tableau de bord parent, et « la séance ouverte sur
+                // ce cours » à chaque signal d'activité.
+                entity.HasIndex(s => new { s.StudentId, s.StartedAt });
+                entity.HasIndex(s => new { s.StudentId, s.CourseId, s.LastActivityAt });
+
+                entity.HasOne(s => s.Course)
+                      .WithMany()
+                      .HasForeignKey(s => s.CourseId)
+                      .OnDelete(DeleteBehavior.Cascade);
             });
 
             modelBuilder.Entity<CourseChunk>(entity =>

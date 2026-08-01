@@ -19,6 +19,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\GPOE26.AppHost\GPOE26.AppHost.csproj" />
+    <!-- Références explicites : les tests d'unité ci-dessous portent sur des règles
+         pures (autorisation parent-enfant, découpage des séances, construction du
+         parcours) et ne doivent pas dépendre de la transitivité des références
+         Aspire de l'AppHost. -->
+    <ProjectReference Include="..\Cours\Cours.csproj" />
+    <ProjectReference Include="..\GPOE26.ServiceDefaults\GPOE26.ServiceDefaults.csproj" />
   </ItemGroup>
 
   <ItemGroup>

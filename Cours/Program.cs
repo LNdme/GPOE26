@@ -6,6 +6,7 @@ using Cours.Helpers;
 using Cours.Model;
 using Cours.Service;
 using GPOE26.Ai;
+using GPOE26.ServiceDefaults;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -55,6 +56,7 @@ builder.Services.AddGpoeAi(builder.Configuration);
 
 builder.Services.AddScoped<CourseFormattingService>();
 builder.Services.AddScoped<CourseSearchService>();
+builder.Services.AddScoped<StudySessionService>();
 builder.Services.AddSingleton<CourseFormattingQueue>();
 builder.Services.AddHostedService<CourseFormattingWorker>();
 
@@ -432,6 +434,33 @@ cours.MapGet("/{id:guid}/parcours", async (Guid id, ClaimsPrincipal principal, C
 .Produces<JourneyDto>()
 .Produces(404);
 
+// ── POST /cours/{id}/seance/activite ──────────────────────────────────────────
+//
+// Signal de présence émis par la page d'étude. En Blazor Server la page tourne sur
+// le serveur : ce n'est pas une déclaration du navigateur, c'est notre propre code
+// sous l'identité de l'élève authentifié.
+cours.MapPost("/{id:guid}/seance/activite", async (
+    Guid id,
+    ActivityRequest req,
+    ClaimsPrincipal principal,
+    CoursContext db,
+    StudySessionService sessions) =>
+{
+    var studentId = ClaimsHelper.GetUserId(principal);
+    if (studentId is null) return Results.Unauthorized();
+
+    // Un signal ne vaut que sur un cours qui appartient à l'élève : sans ce contrôle,
+    // n'importe qui pourrait fabriquer des séances sur le cours d'un autre.
+    var owns = await db.Courses.AnyAsync(c => c.Id == id && c.OwnerId == studentId);
+    if (!owns) return Results.NotFound(new { message = "Cours introuvable." });
+
+    await sessions.RecordAsync(studentId.Value, id, req.Activity);
+    return Results.NoContent();
+})
+.WithSummary("Signaler une activité d'étude")
+.Produces(204)
+.Produces(404);
+
 // ── POST /cours/{id}/parcours/{stepId}/lu ─────────────────────────────────────
 //
 // Déclenché par le bouton « J'ai lu », lui-même allumé au franchissement de 90 %
@@ -440,7 +469,8 @@ cours.MapPost("/{id:guid}/parcours/{stepId:guid}/lu", async (
     Guid id,
     Guid stepId,
     ClaimsPrincipal principal,
-    CoursContext db) =>
+    CoursContext db,
+    StudySessionService sessions) =>
 {
     var ownerId = ClaimsHelper.GetUserId(principal);
     if (ownerId is null) return Results.Unauthorized();
@@ -468,6 +498,11 @@ cours.MapPost("/{id:guid}/parcours/{stepId:guid}/lu", async (
     course.UpdatedAt = DateTime.UtcNow;
 
     await db.SaveChangesAsync();
+
+    // Comptabilisé côté serveur plutôt que déclaré par la page : c'est ici qu'on sait
+    // avec certitude qu'une étape vient d'être franchie.
+    await sessions.RecordAsync(ownerId.Value, id, StudyActivity.Etape);
+
     return Results.Ok(BuildJourney(course));
 })
 .WithSummary("Marquer une étape de lecture comme faite")
@@ -484,7 +519,8 @@ cours.MapPost("/{id:guid}/parcours/{stepId:guid}/resultat", async (
     Guid stepId,
     StepResultRequest req,
     ClaimsPrincipal principal,
-    CoursContext db) =>
+    CoursContext db,
+    StudySessionService sessions) =>
 {
     var ownerId = ClaimsHelper.GetUserId(principal);
     if (ownerId is null) return Results.Unauthorized();
@@ -517,6 +553,15 @@ cours.MapPost("/{id:guid}/parcours/{stepId:guid}/resultat", async (
         ? string.Join(" | ", req.WeakHeadings.Distinct())
         : null;
 
+    // Étapes rédigées : on conserve la réponse et ce que la correction en a dit.
+    // C'est ce qui permettra à un parent de voir la compréhension de son enfant
+    // avec ses propres mots, là où un score ne dit que « 7 sur 10 ».
+    if (req.StudentAnswer is { Length: > 0 })
+        step.StudentAnswer = req.StudentAnswer.Length > 4000 ? req.StudentAnswer[..4000] : req.StudentAnswer;
+
+    if (req.CorrectionSummary is { Length: > 0 })
+        step.CorrectionSummary = req.CorrectionSummary.Length > 1000 ? req.CorrectionSummary[..1000] : req.CorrectionSummary;
+
     var passed = (double)req.Score / req.Total >= CourseStep.PassThreshold;
 
     if (passed)
@@ -535,11 +580,188 @@ cours.MapPost("/{id:guid}/parcours/{stepId:guid}/resultat", async (
     course.UpdatedAt = DateTime.UtcNow;
     await db.SaveChangesAsync();
 
+    // Un exercice rédigé et un QCM ne racontent pas la même chose à un parent :
+    // on les distingue dans le journal de la séance.
+    await sessions.RecordAsync(
+        ownerId.Value, id,
+        step.Kind is StepKind.ExerciceOuvert or StepKind.Synthese
+            ? StudyActivity.Exercice
+            : StudyActivity.Etape);
+
     return Results.Ok(BuildJourney(course));
 })
 .WithSummary("Enregistrer le résultat d'une étape évaluée")
 .Produces<JourneyDto>()
 .Produces(400)
+.Produces(404);
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  Suivi parental
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Un parent a besoin de savoir où en est son enfant, pas de lire par-dessus son
+// épaule. Le répétiteur est l'endroit où l'élève écrit « je n'ai pas compris » ;
+// s'il sait que ses messages seront lus mot à mot, il cessera d'être honnête avec
+// le tuteur et l'outil perdra ce qui le rend utile.
+//
+// Ce n'est pas une convention d'affichage : AUCUN de ces endpoints ne renvoie le
+// contenu d'un échange. Ce qui n'existe pas dans l'API ne peut pas fuir dans une
+// interface. Ce qui remonte, ce sont des faits mesurés — du temps, des scores, des
+// notions fragiles — et ce que l'élève a lui-même rédigé pour son cours.
+//
+// L'autorisation vit dans StudyIdentity, partagée par tous les services : dupliquée
+// ici, elle finirait par diverger de celle du Chat, et c'est exactement le genre de
+// divergence qui ouvre l'accès aux données d'un enfant qui n'est pas le sien.
+var suivi = app.MapGroup("/suivi")
+    .WithTags("Suivi parental")
+    .RequireAuthorization();
+
+// ── GET /suivi/{studentId}/resume ─────────────────────────────────────────────
+//
+// La page d'accueil de l'espace famille : a-t-il travaillé cette semaine, combien
+// de temps, et où en est-il dans chacun de ses cours.
+suivi.MapGet("/{studentId:guid}/resume", async (
+    Guid studentId,
+    ClaimsPrincipal principal,
+    CoursContext db,
+    int? jours) =>
+{
+    if (Deny(principal, studentId) is { } refusal) return refusal;
+
+    // Fenêtre glissante plutôt que semaine calendaire : le lundi matin, une semaine
+    // calendaire afficherait « 0 minute » alors que l'enfant a travaillé la veille.
+    var since = DateTime.UtcNow.AddDays(-Math.Clamp(jours ?? 7, 1, 90));
+
+    var courses = await db.Courses
+        .Where(c => c.OwnerId == studentId)
+        .Include(c => c.Steps.OrderBy(s => s.Order))
+        .OrderByDescending(c => c.UpdatedAt)
+        .ToListAsync();
+
+    // Cumuls par cours, toutes séances confondues : « 2 h 40 sur ce cours depuis
+    // le début », qui ne se déduit pas des totaux de la semaine.
+    var totals = await db.StudySessions
+        .Where(s => s.StudentId == studentId)
+        .GroupBy(s => s.CourseId)
+        .Select(g => new
+        {
+            CourseId = g.Key,
+            ActiveSeconds = g.Sum(s => s.ActiveSeconds),
+            ExercisesDone = g.Sum(s => s.ExercisesDone),
+            LastStudiedAt = g.Max(s => s.LastActivityAt),
+        })
+        .ToDictionaryAsync(x => x.CourseId);
+
+    var week = await db.StudySessions
+        .Where(s => s.StudentId == studentId && s.StartedAt >= since)
+        .Select(s => new { s.ActiveSeconds, s.ExercisesDone, s.QuestionsAsked })
+        .ToListAsync();
+
+    var progress = new List<ChildCourseProgressDto>(courses.Count);
+    foreach (var course in courses)
+    {
+        totals.TryGetValue(course.Id, out var total);
+        progress.Add(BuildProgress(
+            course,
+            total?.ActiveSeconds ?? 0,
+            total?.ExercisesDone ?? 0,
+            total?.LastStudiedAt));
+    }
+
+    // Le cours travaillé le plus récemment d'abord : c'est celui sur lequel un parent
+    // veut des nouvelles. Les cours jamais ouverts ferment la liste.
+    progress = [.. progress.OrderByDescending(p => p.LastStudiedAt ?? DateTime.MinValue)];
+
+    return Results.Ok(new ChildOverviewDto(
+        studentId,
+        since,
+        totals.Count == 0 ? null : totals.Values.Max(t => t.LastStudiedAt),
+        week.Count,
+        week.Sum(s => s.ActiveSeconds),
+        week.Sum(s => s.ExercisesDone),
+        week.Sum(s => s.QuestionsAsked),
+        // Commencé = ouvert au moins une fois, même si rien n'est encore validé.
+        progress.Count(p => p.LastStudiedAt is not null || p.StepsPassed > 0),
+        progress.Count(p => p.IsFinished),
+        progress));
+})
+.WithSummary("Vue d'ensemble d'un élève, pour son parent")
+.Produces<ChildOverviewDto>()
+.Produces(401)
+.Produces(403);
+
+// ── GET /suivi/{studentId}/seances ────────────────────────────────────────────
+//
+// L'historique des séances : la question « est-ce qu'il a étudié hier soir ? » se
+// répond ici, et nulle part ailleurs.
+suivi.MapGet("/{studentId:guid}/seances", async (
+    Guid studentId,
+    ClaimsPrincipal principal,
+    CoursContext db,
+    int? take) =>
+{
+    if (Deny(principal, studentId) is { } refusal) return refusal;
+
+    var sessions = await db.StudySessions
+        .Where(s => s.StudentId == studentId)
+        .OrderByDescending(s => s.StartedAt)
+        .Take(Math.Clamp(take ?? 30, 1, 200))
+        .Select(s => new StudySessionDto(
+            s.Id, s.CourseId, s.Course.Title, s.Course.Subject,
+            s.StartedAt, s.LastActivityAt, s.ActiveSeconds,
+            s.StepsCompleted, s.ExercisesDone, s.QuestionsAsked))
+        .ToListAsync();
+
+    return Results.Ok(sessions);
+})
+.WithSummary("Historique des séances de révision d'un élève")
+.Produces<List<StudySessionDto>>()
+.Produces(401)
+.Produces(403);
+
+// ── GET /suivi/{studentId}/cours/{courseId} ───────────────────────────────────
+//
+// Le détail d'un cours : le parcours étape par étape, les séances qui l'ont produit,
+// et surtout ce que l'enfant a rédigé de sa main.
+suivi.MapGet("/{studentId:guid}/cours/{courseId:guid}", async (
+    Guid studentId,
+    Guid courseId,
+    ClaimsPrincipal principal,
+    CoursContext db) =>
+{
+    if (Deny(principal, studentId) is { } refusal) return refusal;
+
+    var course = await db.Courses
+        .Include(c => c.Steps.OrderBy(s => s.Order))
+        .FirstOrDefaultAsync(c => c.Id == courseId && c.OwnerId == studentId);
+
+    if (course is null) return Results.NotFound(new { message = "Cours introuvable." });
+
+    var sessions = await db.StudySessions
+        .Where(s => s.StudentId == studentId && s.CourseId == courseId)
+        .OrderByDescending(s => s.StartedAt)
+        .Select(s => new StudySessionDto(
+            s.Id, s.CourseId, course.Title, course.Subject,
+            s.StartedAt, s.LastActivityAt, s.ActiveSeconds,
+            s.StepsCompleted, s.ExercisesDone, s.QuestionsAsked))
+        .ToListAsync();
+
+    var progress = BuildProgress(
+        course,
+        sessions.Sum(s => s.ActiveSeconds),
+        sessions.Sum(s => s.ExercisesDone),
+        sessions.Count == 0 ? null : sessions.Max(s => s.LastActivityAt));
+
+    return Results.Ok(new ChildCourseDetailDto(
+        progress,
+        BuildJourney(course),
+        sessions,
+        WrittenAnswers(course).ToList()));
+})
+.WithSummary("Le parcours d'un élève sur un cours, pour son parent")
+.Produces<ChildCourseDetailDto>()
+.Produces(401)
+.Produces(403)
 .Produces(404);
 
 // ── PUT /cours/{id} ───────────────────────────────────────────────────────────
@@ -701,3 +923,75 @@ static JourneyDto BuildJourney(Course course)
         steps.Count(s => s.Status == StepStatus.Passed),
         CourseStep.PassThreshold * 100);
 }
+
+// ── Suivi parental ────────────────────────────────────────────────────────────
+
+/// <summary>
+/// Contrôle d'accès aux données d'étude d'un élève. Renvoie null quand l'appel est
+/// légitime, le refus à retourner sinon.
+///
+/// On distingue les deux refus : 401 dit « je ne sais pas qui tu es », 403 dit « je
+/// sais qui tu es, et ce n'est pas ton enfant ». Confondre les deux ferait chercher
+/// un problème de session là où il y a un problème de droits.
+/// </summary>
+static IResult? Deny(ClaimsPrincipal principal, Guid studentId)
+{
+    if (principal.GetUserId() is null) return Results.Unauthorized();
+
+    return principal.CanViewStudent(studentId)
+        ? null
+        : Results.Forbid();
+}
+
+/// <summary>Où en est un élève sur un cours, vu du tableau de bord parent.</summary>
+static ChildCourseProgressDto BuildProgress(
+    Course course, int activeSeconds, int exercisesDone, DateTime? lastStudiedAt)
+{
+    var steps = course.Steps.OrderBy(s => s.Order).ToList();
+
+    var current = steps.FirstOrDefault(
+        s => s.Status is StepStatus.Available or StepStatus.InProgress or StepStatus.Failed);
+
+    // Les notions fragiles s'accumulent d'un test à l'autre : c'est leur répétition
+    // qui est parlante, pas leur ordre d'apparition.
+    var weak = steps
+        .Where(s => !string.IsNullOrWhiteSpace(s.WeakHeadings))
+        .SelectMany(s => s.WeakHeadings!.Split(" | ", StringSplitOptions.RemoveEmptyEntries))
+        .Select(h => h.Trim())
+        .Where(h => h.Length > 0)
+        .Distinct()
+        .ToList();
+
+    return new ChildCourseProgressDto(
+        course.Id,
+        course.Title,
+        course.Subject,
+        steps.Count,
+        steps.Count(s => s.Status == StepStatus.Passed),
+        steps.Count(s => s.Status == StepStatus.Failed),
+        current?.Title,
+        lastStudiedAt,
+        activeSeconds,
+        exercisesDone,
+        weak,
+        WrittenAnswers(course).FirstOrDefault(a => a.Kind == StepKind.Synthese));
+}
+
+/// <summary>
+/// Ce que l'élève a rédigé de sa main, étapes ouvertes uniquement.
+///
+/// C'est du travail scolaire, pas une conversation : la frontière du suivi parental
+/// passe entre les deux. Les échanges avec le répétiteur n'apparaissent nulle part.
+/// </summary>
+static IEnumerable<WrittenAnswerDto> WrittenAnswers(Course course) =>
+    course.Steps
+        .OrderBy(s => s.Order)
+        .Where(s => s.Kind is StepKind.ExerciceOuvert or StepKind.Synthese)
+        .Where(s => !string.IsNullOrWhiteSpace(s.StudentAnswer))
+        .Select(s => new WrittenAnswerDto(
+            s.Kind,
+            s.Title,
+            s.Percentage is { } p ? (int)Math.Round(p * 100) : null,
+            s.CompletedAt,
+            s.StudentAnswer!,
+            s.CorrectionSummary));

@@ -1,0 +1,378 @@
+@page "/famille/{ChildId:guid}"
+@using GPOE26.Web.Components.UI
+@* Api et Nav viennent de _Imports.razor. *@
+@inject GPOE26.Web.Services.AuthService Auth
+@rendermode InteractiveServer
+
+<PageTitle>Suivi – GPOE26</PageTitle>
+
+@*
+    Le détail d'un enfant : ses cours, ses séances, ce qu'il a écrit, et le bilan rédigé.
+
+    Rien ici ne vient de ses échanges avec le répétiteur. Ce qui remonte est du travail
+    scolaire — les réponses qu'il a rédigées pour son cours — et des faits mesurés.
+    Le bilan lui-même parle de notions, jamais de propos.
+*@
+
+<div class="enfant">
+
+    @if (!Auth.IsAuthenticated || !Auth.IsParent)
+    {
+        <div class="enfant-empty">
+            <h5>Cet espace est réservé aux comptes parents</h5>
+            <a class="btn btn-brand mt-2" href="/login">Se connecter</a>
+        </div>
+    }
+    else if (_loading)
+    {
+        <div class="enfant-empty">
+            <div class="spinner-border text-brand-dark mb-3"></div>
+            <p class="text-muted-chic">Chargement du suivi…</p>
+        </div>
+    }
+    else if (_overview is null)
+    {
+        <div class="enfant-empty">
+            <div class="display-6 mb-2">🔒</div>
+            <h5>Suivi indisponible</h5>
+            <p class="text-muted-chic">
+                Cet enfant n'est pas rattaché à votre compte, ou le service est injoignable.
+            </p>
+            <a class="btn btn-brand mt-2" href="/famille">Retour à l'espace famille</a>
+        </div>
+    }
+    else
+    {
+        <header class="enfant-head">
+            <a class="enfant-back" href="/famille">← Espace famille</a>
+            <h1 class="enfant-title">@(_child?.Username ?? "Suivi de l'élève")</h1>
+            <p class="enfant-subtitle">
+                @_overview.CoursesStarted @(_overview.CoursesStarted > 1 ? "cours commencés" : "cours commencé"),
+                @_overview.CoursesFinished @(_overview.CoursesFinished > 1 ? "terminés" : "terminé")
+                · @_overview.WeeklyDuration cette semaine
+            </p>
+        </header>
+
+        <nav class="enfant-tabs">
+            <button class="@TabClass(Tab.Cours)" @onclick="() => _tab = Tab.Cours">Cours</button>
+            <button class="@TabClass(Tab.Seances)" @onclick="() => _tab = Tab.Seances">Séances</button>
+        </nav>
+
+        @if (_tab == Tab.Seances)
+        {
+            @* L'historique brut : « a-t-il étudié hier soir ? » se répond ici. *@
+            @if (_sessions.Count == 0)
+            {
+                <p class="enfant-hint">Aucune séance de révision enregistrée.</p>
+            }
+            else
+            {
+                <ul class="enfant-sessions">
+                    @foreach (var session in _sessions)
+                    {
+                        <li>
+                            <div class="enfant-session-when">
+                                <span class="enfant-session-date">
+                                    @session.StartedAt.ToLocalTime().ToString("ddd d MMM")
+                                </span>
+                                <span class="enfant-session-hour">
+                                    @session.StartedAt.ToLocalTime().ToString("HH'h'mm")
+                                </span>
+                            </div>
+                            <div class="enfant-session-what">
+                                <span class="enfant-session-course">@session.CourseTitle</span>
+                                <span class="enfant-session-meta">
+                                    @session.Duration
+                                    @if (session.StepsCompleted > 0)
+                                    {
+                                        <text> · @session.StepsCompleted @(session.StepsCompleted > 1 ? "étapes" : "étape")</text>
+                                    }
+                                    @if (session.ExercisesDone > 0)
+                                    {
+                                        <text> · @session.ExercisesDone @(session.ExercisesDone > 1 ? "exercices" : "exercice")</text>
+                                    }
+                                    @if (session.QuestionsAsked > 0)
+                                    {
+                                        <text> · @session.QuestionsAsked @(session.QuestionsAsked > 1 ? "questions" : "question")</text>
+                                    }
+                                </span>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            }
+        }
+        else
+        {
+            <div class="enfant-layout">
+                <aside class="enfant-rail">
+                    @foreach (var course in _overview.Courses)
+                    {
+                        <button type="button"
+                                class="@CourseLinkClass(course)"
+                                @onclick="() => SelectCourseAsync(course.CourseId)">
+                            <span class="enfant-rail-title">@course.Title</span>
+                            <span class="enfant-rail-meta">
+                                @course.Subject · @course.StepsPassed/@course.StepsTotal
+                            </span>
+                        </button>
+                    }
+                </aside>
+
+                <section class="enfant-detail">
+                    @if (_detail is null)
+                    {
+                        <p class="enfant-hint">
+                            @(_loadingCourse ? "Chargement du cours…" : "Choisissez un cours pour voir le détail.")
+                        </p>
+                    }
+                    else
+                    {
+                        var progress = _detail.Progress;
+
+                        <div class="enfant-card">
+                            <h2 class="enfant-card-title">@progress.Title</h2>
+                            <p class="enfant-card-meta">
+                                @progress.Subject · @progress.Duration de travail ·
+                                @progress.ExercisesDone @(progress.ExercisesDone > 1 ? "exercices rédigés" : "exercice rédigé")
+                            </p>
+
+                            <div class="enfant-bar">
+                                <span style="@progress.ProgressStyle"></span>
+                            </div>
+                            <p class="enfant-bar-label">
+                                @progress.StepsPassed étapes validées sur @progress.StepsTotal
+                                @if (progress.CurrentStepTitle is { Length: > 0 } current && !progress.IsFinished)
+                                {
+                                    <text> · en cours : @current</text>
+                                }
+                            </p>
+
+                            @* Les trois temps du parcours, dans le même ordre que chez l'élève. *@
+                            <div class="enfant-phases">
+                                @foreach (var phase in Phases)
+                                {
+                                    <div class="enfant-phase @PhaseClass(phase)">
+                                        <span class="enfant-phase-name">@PhaseLabel(phase)</span>
+                                        <span class="enfant-phase-state">@PhaseState(phase)</span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+
+                        @if (progress.WeakHeadings.Count > 0)
+                        {
+                            <div class="enfant-card is-warning">
+                                <h3 class="enfant-card-subtitle">Ce qui a été raté aux tests</h3>
+                                <ul class="enfant-weak">
+                                    @foreach (var heading in progress.WeakHeadings)
+                                    {
+                                        <li>@heading</li>
+                                    }
+                                </ul>
+                            </div>
+                        }
+
+                        @* Le bilan rédigé : ce qu'un score ne dit pas. *@
+                        <div class="enfant-card is-bilan">
+                            <h3 class="enfant-card-subtitle">Bilan du répétiteur</h3>
+
+                            @if (_bilanLoading)
+                            {
+                                <p class="enfant-hint">
+                                    <span class="spinner-border spinner-border-sm me-1"></span>
+                                    Rédaction en cours…
+                                </p>
+                            }
+                            else if (_bilan is not null)
+                            {
+                                <MarkdownViewer Content="@_bilan.Text" />
+                                <p class="enfant-bilan-date">
+                                    Rédigé le @_bilan.GeneratedAt.ToLocalTime().ToString("d MMMM à HH'h'mm")
+                                </p>
+                            }
+                            else
+                            {
+                                <p class="enfant-hint">
+                                    @(_bilanError ?? "Le bilan n'est pas encore disponible pour ce cours.")
+                                </p>
+                                <button class="btn btn-sm btn-brand-outline" @onclick="LoadBilanAsync">
+                                    Demander un bilan
+                                </button>
+                            }
+                        </div>
+
+                        @* Ce que l'enfant a écrit de sa main : du travail scolaire, pas une
+                           conversation. C'est le signal le plus parlant de cette page. *@
+                        @if (_detail.WrittenAnswers.Count > 0)
+                        {
+                            <div class="enfant-card">
+                                <h3 class="enfant-card-subtitle">Ce qu'il a écrit</h3>
+
+                                @foreach (var answer in _detail.WrittenAnswers)
+                                {
+                                    <div class="@AnswerClass(answer)">
+                                        <div class="enfant-answer-head">
+                                            <span class="enfant-answer-kind">@answer.KindLabel</span>
+                                            @if (answer.ScorePercent is { } score)
+                                            {
+                                                <span class="enfant-answer-score">@score/100</span>
+                                            }
+                                        </div>
+
+                                        <p class="enfant-answer-step">@answer.StepTitle</p>
+                                        <blockquote class="enfant-answer-text">@answer.Answer</blockquote>
+
+                                        @if (answer.CorrectionSummary is { Length: > 0 } summary)
+                                        {
+                                            <p class="enfant-answer-correction">@summary</p>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        <p class="enfant-privacy">
+                            🔒 Les échanges de votre enfant avec le répétiteur restent privés.
+                            C'est ce qui lui permet d'y poser les questions qu'il n'ose pas poser ailleurs.
+                        </p>
+                    }
+                </section>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public Guid ChildId { get; set; }
+
+    /// <summary>Cours à ouvrir d'emblée, passé depuis la carte de l'espace famille.</summary>
+    [SupplyParameterFromQuery(Name = "cours")]
+    public Guid? CourseId { get; set; }
+
+    private enum Tab { Cours, Seances }
+
+    private static readonly JourneyPhase[] Phases =
+        [JourneyPhase.Lire, JourneyPhase.Comprendre, JourneyPhase.Consolider];
+
+    private ChildSummaryDto? _child;
+    private ChildOverviewDto? _overview;
+    private List<StudySessionDto> _sessions = [];
+    private ChildCourseDetailDto? _detail;
+    private BilanResponse? _bilan;
+
+    private Tab _tab = Tab.Cours;
+    private bool _loading = true;
+    private bool _loadingCourse;
+    private bool _bilanLoading;
+    private string? _bilanError;
+
+    private Guid _loadedChildId;
+    private Guid? _selectedCourseId;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedChildId == ChildId) return;
+        _loadedChildId = ChildId;
+
+        if (!Auth.IsAuthenticated || !Auth.IsParent)
+        {
+            _loading = false;
+            return;
+        }
+
+        _loading = true;
+
+        // Les enfants viennent du service User, le suivi du service Cours : le premier dit
+        // qui est cet enfant, le second ce qu'il a fait.
+        var children = await Api.GetChildrenAsync();
+        _child = children.FirstOrDefault(c => c.Id == ChildId);
+
+        _overview = await Api.GetChildOverviewAsync(ChildId);
+        _sessions = await Api.GetChildSessionsAsync(ChildId);
+
+        _loading = false;
+
+        // Le cours désigné par l'URL, sinon le plus récemment travaillé : dans les deux
+        // cas le parent arrive sur quelque chose, pas sur un écran vide.
+        var initial = CourseId ?? _overview?.Courses.FirstOrDefault(c => c.IsStarted)?.CourseId;
+        if (initial is { } id) await SelectCourseAsync(id);
+    }
+
+    private async Task SelectCourseAsync(Guid courseId)
+    {
+        if (_selectedCourseId == courseId && _detail is not null) return;
+
+        _selectedCourseId = courseId;
+        _loadingCourse = true;
+        _detail = null;
+        _bilan = null;
+        _bilanError = null;
+        StateHasChanged();
+
+        _detail = await Api.GetChildCourseAsync(ChildId, courseId);
+        _loadingCourse = false;
+
+        // Le bilan coûte un appel de modèle : on ne le demande que pour un cours
+        // réellement commencé, et il est mis en cache côté Chat pour la journée.
+        if (_detail is { Progress.StepsPassed: > 0 }) await LoadBilanAsync();
+    }
+
+    private async Task LoadBilanAsync()
+    {
+        if (_selectedCourseId is not { } courseId || _bilanLoading) return;
+
+        _bilanLoading = true;
+        _bilanError = null;
+        StateHasChanged();
+
+        _bilan = await Api.GetBilanAsync(ChildId, courseId);
+        if (_bilan is null) _bilanError = "Le bilan n'a pas pu être rédigé pour l'instant.";
+
+        _bilanLoading = false;
+    }
+
+    // ── Affichage ────────────────────────────────────────────────────────────
+
+    // Extraits en méthodes : un littéral de chaîne imbriqué dans un attribut Razor
+    // n'est pas analysable de façon fiable.
+    private string TabClass(Tab tab) =>
+        _tab == tab ? "enfant-tab is-active" : "enfant-tab";
+
+    private static string AnswerClass(WrittenAnswerDto answer) =>
+        answer.IsSynthesis ? "enfant-answer is-synthesis" : "enfant-answer";
+
+    private string CourseLinkClass(ChildCourseProgressDto course)
+    {
+        var classes = "enfant-rail-link";
+        if (course.CourseId == _selectedCourseId) classes += " is-active";
+        if (!course.IsStarted) classes += " is-untouched";
+        return classes;
+    }
+
+    private static string PhaseLabel(JourneyPhase phase) => phase switch
+    {
+        JourneyPhase.Lire => "Lire",
+        JourneyPhase.Comprendre => "Comprendre",
+        _ => "Consolider",
+    };
+
+    private StepStatus PhaseStatus(JourneyPhase phase) =>
+        _detail?.Journey.PhaseStatus(phase) ?? StepStatus.Locked;
+
+    private string PhaseClass(JourneyPhase phase) => PhaseStatus(phase) switch
+    {
+        StepStatus.Passed => "is-passed",
+        StepStatus.Failed => "is-failed",
+        StepStatus.Locked => "is-locked",
+        _ => "is-open",
+    };
+
+    private string PhaseState(JourneyPhase phase) => PhaseStatus(phase) switch
+    {
+        StepStatus.Passed => "validé",
+        StepStatus.Failed => "à refaire",
+        StepStatus.Locked => "pas encore",
+        _ => "en cours",
+    };
+}

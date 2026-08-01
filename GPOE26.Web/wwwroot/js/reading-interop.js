@@ -61,6 +61,14 @@ window.readingInterop = (() => {
     /** Part du texte à partir de laquelle on considère le cours lu. */
     const READ_THRESHOLD = 0.9;
 
+    /**
+     * Rythme du signal de présence, en millisecondes.
+     *
+     * Le serveur crédite l'écart réel entre deux signaux, plafonné à 90 secondes :
+     * une minute laisse donc de la marge sans jamais gonfler la durée mesurée.
+     */
+    const HEARTBEAT_MS = 60_000;
+
     function refresh() {
         if (!state) return;
 
@@ -146,6 +154,16 @@ window.readingInterop = (() => {
             scroller.addEventListener('scroll', state.onScroll, { passive: true });
             window.addEventListener('resize', state.onScroll, { passive: true });
 
+            // Signal de présence : uniquement quand l'onglet est visible. Un onglet
+            // laissé ouvert en arrière-plan ne doit pas compter comme du temps d'étude.
+            if (onRead) {
+                state.heartbeat = setInterval(() => {
+                    if (document.visibilityState !== 'visible') return;
+
+                    onRead.invokeMethodAsync('OnStudyHeartbeat').catch(() => { });
+                }, HEARTBEAT_MS);
+            }
+
             // Reprise : on attend un frame que la mise en page soit stabilisée
             // (KaTeX et les images changent la hauteur du document).
             requestAnimationFrame(() => {
@@ -206,6 +224,11 @@ window.readingInterop = (() => {
             if (!state) return;
             state.scroller.removeEventListener('scroll', state.onScroll);
             window.removeEventListener('resize', state.onScroll);
+
+            // Sans cela, le minuteur survivrait à la navigation et continuerait à
+            // signaler de l'activité sur un cours que l'élève a quitté.
+            if (state.heartbeat) clearInterval(state.heartbeat);
+
             state = null;
         },
     };

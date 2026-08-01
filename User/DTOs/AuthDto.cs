@@ -35,6 +35,34 @@ public record LoginRequest(
     [Required] string Password
 );
 
+// ── Lien famille ──────────────────────────────────────────────────────────────
+
+/// <summary>Code émis par un élève pour permettre à un parent de se rattacher.</summary>
+public record LinkCodeResponse(string Code, DateTime ExpiresAt);
+
+/// <summary>Le parent saisit le code que son enfant lui a communiqué.</summary>
+public record LinkChildRequest([Required] string Code);
+
+/// <summary>
+/// Réponse au rattachement : le lien, et un jeton rafraîchi.
+///
+/// Le nouveau jeton porte le claim « children » à jour, ce qui rend l'enfant visible
+/// immédiatement sans que le parent ait à se reconnecter.
+/// </summary>
+public record LinkChildResponse(ChildSummaryDto Child, string Token, DateTime ExpiresAt);
+
+/// <summary>Un enfant vu depuis l'espace parent. Ne contient aucune donnée d'étude.</summary>
+public record ChildSummaryDto(
+    Guid Id,
+    string Username,
+    string? Level,
+    string? Filiere,
+    DateTime LinkedAt
+);
+
+/// <summary>Un parent vu depuis le profil de l'élève, pour qu'il sache qui le suit.</summary>
+public record LinkedParentDto(Guid Id, string Username, string Email, DateTime LinkedAt);
+
 public record AuthResponse(
     string Token,
     DateTime ExpiresAt,

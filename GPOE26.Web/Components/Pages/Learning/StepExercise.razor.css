@@ -1,5 +1,6 @@
-/* Étape « Consolider », exercice ouvert. Tokens --rd-* de reading.css, comme le
-   reste du parcours : l'élève ne change pas d'univers visuel en changeant d'étape. */
+/* Les étapes rédigées : exercice de consolidation et question de synthèse. Tokens
+   --rd-* de reading.css, comme le reste du parcours : l'élève ne change pas
+   d'univers visuel en changeant d'étape. */
 
 .exercise {
     max-width: 46rem;
@@ -9,6 +10,25 @@
 }
 
 .exercise-state { margin: 3rem auto; text-align: center; }
+
+/* ── Synthèse ─────────────────────────────────────────────────────────────── */
+
+/* Dernière étape du parcours : une seule question, un peu solennelle. */
+.exercise-intro {
+    margin-bottom: 1rem;
+    font-size: .82rem;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--rd-text-soft);
+}
+
+.exercise.is-synthesis .exercise-statement {
+    padding: 1.75rem 1.85rem;
+    border-left-width: 5px;
+    font-size: 1.05rem;
+    line-height: 1.75;
+}
 
 /* ── Énoncé ───────────────────────────────────────────────────────────────── */
 

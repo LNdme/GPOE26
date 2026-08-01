@@ -119,10 +119,14 @@ namespace Cours.DTOs
 
     /// <summary>Enregistrement du résultat d'une étape évaluée.</summary>
     /// <param name="WeakHeadings">Sections sur lesquelles l'élève a échoué, pour l'y renvoyer.</param>
+    /// <param name="StudentAnswer">Ce que l'élève a rédigé, pour les étapes ouvertes.</param>
+    /// <param name="CorrectionSummary">Ce que la correction en a retenu, en une ou deux phrases.</param>
     public record StepResultRequest(
         int Score,
         int Total,
-        List<string>? WeakHeadings
+        List<string>? WeakHeadings,
+        string? StudentAnswer = null,
+        string? CorrectionSummary = null
     );
 
     /// <param name="QuestionCount">Nombre de questions à générer ; 0 si l'étape n'est pas un QCM.</param>
@@ -138,7 +142,9 @@ namespace Cours.DTOs
         int Attempts,
         DateTime? CompletedAt,
         List<string> WeakHeadings,
-        int QuestionCount
+        int QuestionCount,
+        string? StudentAnswer,
+        string? CorrectionSummary
     )
     {
         public StepDto(CourseStep s) : this(
@@ -155,7 +161,9 @@ namespace Cours.DTOs
             string.IsNullOrWhiteSpace(s.WeakHeadings)
                 ? []
                 : s.WeakHeadings.Split(" | ", StringSplitOptions.RemoveEmptyEntries).ToList(),
-            Service.CourseJourneyBuilder.QuestionCountFor(s.Kind)
+            Service.CourseJourneyBuilder.QuestionCountFor(s.Kind),
+            s.StudentAnswer,
+            s.CorrectionSummary
         )
         { }
     }
@@ -169,6 +177,102 @@ namespace Cours.DTOs
         Guid? ActiveStepId,
         int PassedCount,
         double PassThresholdPercent
+    );
+
+    // ── Séances de révision ───────────────────────────────────────────────────────
+
+    /// <summary>Signal d'activité émis par la page d'étude.</summary>
+    public record ActivityRequest(StudyActivity Activity);
+
+    /// <summary>Une séance de révision, telle que la voit un parent.</summary>
+    public record StudySessionDto(
+        Guid Id,
+        Guid CourseId,
+        string CourseTitle,
+        string Subject,
+        DateTime StartedAt,
+        DateTime LastActivityAt,
+        int ActiveSeconds,
+        int StepsCompleted,
+        int ExercisesDone,
+        int QuestionsAsked
+    )
+    {
+        public int ActiveMinutes => (int)Math.Round(ActiveSeconds / 60.0);
+    }
+
+    // ── Suivi parental ────────────────────────────────────────────────────────────
+    //
+    // Ces DTOs sont la garantie centrale du suivi parental : ils ne portent aucun
+    // contenu d'échange avec le répétiteur. Ce qui n'existe pas dans l'API ne peut pas
+    // fuir dans une interface. Le parent reçoit des faits mesurés — du temps, des
+    // scores, des notions fragiles — et ce que son enfant a lui-même rédigé.
+
+    /// <summary>
+    /// La réponse d'un élève à une étape rédigée, avec ce que la correction en a dit.
+    /// C'est le signal le plus parlant du tableau de bord : l'enfant explique son cours
+    /// avec ses mots, là où un score ne dit que « 7 sur 10 ».
+    /// </summary>
+    public record WrittenAnswerDto(
+        StepKind Kind,
+        string StepTitle,
+        int? ScorePercent,
+        DateTime? CompletedAt,
+        string Answer,
+        string? CorrectionSummary
+    );
+
+    /// <summary>Où en est un élève sur un cours donné.</summary>
+    /// <param name="LastStudiedAt">Dernière séance de révision sur ce cours, s'il y en a eu.</param>
+    /// <param name="WeakHeadings">Notions sur lesquelles il a échoué, dédupliquées.</param>
+    public record ChildCourseProgressDto(
+        Guid CourseId,
+        string Title,
+        string Subject,
+        int StepsTotal,
+        int StepsPassed,
+        int StepsFailed,
+        string? CurrentStepTitle,
+        DateTime? LastStudiedAt,
+        int ActiveSeconds,
+        int ExercisesDone,
+        List<string> WeakHeadings,
+        WrittenAnswerDto? Synthesis
+    )
+    {
+        public double CompletionPercent =>
+            StepsTotal == 0 ? 0 : Math.Round((double)StepsPassed / StepsTotal * 100, 0);
+
+        public bool IsFinished => StepsTotal > 0 && StepsPassed == StepsTotal;
+    }
+
+    /// <summary>Vue d'ensemble d'un enfant, pour la page d'accueil de l'espace famille.</summary>
+    /// <param name="Since">Début de la fenêtre sur laquelle portent les totaux hebdomadaires.</param>
+    public record ChildOverviewDto(
+        Guid StudentId,
+        DateTime Since,
+        DateTime? LastSessionAt,
+        int SessionsThisWeek,
+        int ActiveSecondsThisWeek,
+        int ExercisesThisWeek,
+        int QuestionsThisWeek,
+        int CoursesStarted,
+        int CoursesFinished,
+        List<ChildCourseProgressDto> Courses
+    )
+    {
+        public int ActiveMinutesThisWeek => (int)Math.Round(ActiveSecondsThisWeek / 60.0);
+
+        /// <summary>A-t-il travaillé cette semaine ? La première question d'un parent.</summary>
+        public bool StudiedThisWeek => SessionsThisWeek > 0;
+    }
+
+    /// <summary>Le détail d'un cours pour un parent : le parcours et les séances qui l'ont produit.</summary>
+    public record ChildCourseDetailDto(
+        ChildCourseProgressDto Progress,
+        JourneyDto Journey,
+        List<StudySessionDto> Sessions,
+        List<WrittenAnswerDto> WrittenAnswers
     );
 
     /// <summary>Un fragment retrouvé par la recherche sémantique.</summary>

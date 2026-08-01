@@ -135,6 +135,39 @@ public record AuthResponse(
     UserProfileDto Profile
 );
 
+// ── Lien famille ──────────────────────────────────────────────────────────────
+
+/// <summary>Code émis par l'élève pour qu'un parent puisse se rattacher à lui.</summary>
+public record LinkCodeResponse(string Code, DateTime ExpiresAt)
+{
+    public bool IsExpired => DateTime.UtcNow >= ExpiresAt;
+
+    /// <summary>Minutes restantes, arrondies à la minute inférieure. Jamais négatif.</summary>
+    public int MinutesLeft => Math.Max(0, (int)(ExpiresAt - DateTime.UtcNow).TotalMinutes);
+}
+
+/// <summary>Un enfant vu depuis l'espace parent. Ne porte aucune donnée d'étude.</summary>
+public record ChildSummaryDto(
+    Guid Id,
+    string Username,
+    string? Level,
+    string? Filiere,
+    DateTime LinkedAt
+);
+
+/// <summary>
+/// Réponse au rattachement : le lien, et un jeton rafraîchi.
+///
+/// Le nouveau jeton porte le claim « children » à jour. Sans lui, l'enfant
+/// n'apparaîtrait qu'à la reconnexion suivante — jusqu'à une heure plus tard.
+/// </summary>
+public record LinkChildResponse(ChildSummaryDto Child, string Token, DateTime ExpiresAt);
+
+/// <summary>Jeton renvoyé après un déliement, lui aussi rafraîchi.</summary>
+public record RefreshedTokenResponse(string Token, DateTime ExpiresAt);
+
+/// <summary>Un parent vu depuis le profil de l'élève, pour qu'il sache qui le suit.</summary>
+public record LinkedParentDto(Guid Id, string Username, string Email, DateTime LinkedAt);
 
 #endregion
 
@@ -245,7 +278,7 @@ public record SearchHitDto(
 
 // ── Parcours d'apprentissage ──────────────────────────────────────────────────
 
-public enum StepKind { Lecture, MiniTest, TestFinal, ExerciceOuvert, QcmApplication }
+public enum StepKind { Lecture, MiniTest, TestFinal, ExerciceOuvert, QcmApplication, Synthese }
 
 public enum StepStatus { Locked, Available, InProgress, Passed, Failed }
 
@@ -263,12 +296,18 @@ public record StepDto(
     int Attempts,
     DateTime? CompletedAt,
     List<string> WeakHeadings,
-    int QuestionCount
+    int QuestionCount,
+    string? StudentAnswer,
+    string? CorrectionSummary
 )
 {
     public bool IsReading => Kind == StepKind.Lecture;
     public bool IsQuiz => Kind is StepKind.MiniTest or StepKind.TestFinal or StepKind.QcmApplication;
-    public bool IsOpenExercise => Kind == StepKind.ExerciceOuvert;
+
+    /// <summary>Étapes où l'élève rédige : exercice de consolidation et question de synthèse.</summary>
+    public bool IsOpenExercise => Kind is StepKind.ExerciceOuvert or StepKind.Synthese;
+
+    public bool IsSynthesis => Kind == StepKind.Synthese;
 
     public bool IsLocked => Status == StepStatus.Locked;
     public bool IsPassed => Status == StepStatus.Passed;
@@ -324,7 +363,133 @@ public record JourneyDto(
     }
 }
 
-public record StepResultRequest(int Score, int Total, List<string>? WeakHeadings);
+/// <summary>Résultat d'une étape évaluée.</summary>
+/// <param name="StudentAnswer">Ce que l'élève a rédigé, pour les étapes ouvertes.</param>
+/// <param name="CorrectionSummary">Ce que la correction en a retenu, en une ou deux phrases.</param>
+public record StepResultRequest(
+    int Score,
+    int Total,
+    List<string>? WeakHeadings,
+    string? StudentAnswer = null,
+    string? CorrectionSummary = null
+);
+
+// ── Séances de révision ───────────────────────────────────────────────────────
+
+/// <summary>
+/// Nature d'un signal d'activité.
+/// ⚠️ L'ordre doit rester identique à Cours.Model.StudyActivity : les enums transitent
+/// en nombres entre les services.
+/// </summary>
+public enum StudyActivity { Lecture, Question, Etape, Exercice }
+
+public record StudySessionDto(
+    Guid Id,
+    Guid CourseId,
+    string CourseTitle,
+    string Subject,
+    DateTime StartedAt,
+    DateTime LastActivityAt,
+    int ActiveSeconds,
+    int StepsCompleted,
+    int ExercisesDone,
+    int QuestionsAsked
+)
+{
+    public int ActiveMinutes => (int)Math.Round(ActiveSeconds / 60.0);
+
+    /// <summary>« 24 min » ou « 1 h 05 », pour un parent qui lit vite.</summary>
+    public string Duration => ActiveMinutes < 60
+        ? $"{ActiveMinutes} min"
+        : $"{ActiveMinutes / 60} h {ActiveMinutes % 60:00}";
+}
+
+// ── Suivi parental ────────────────────────────────────────────────────────────
+//
+// Miroirs des DTOs de Cours.DTOs. Aucun ne porte de contenu d'échange avec le
+// répétiteur : ce que le parent voit, ce sont des faits mesurés et ce que son enfant
+// a lui-même rédigé pour son cours.
+
+/// <summary>Ce que l'élève a rédigé, avec ce que la correction en a dit.</summary>
+public record WrittenAnswerDto(
+    StepKind Kind,
+    string StepTitle,
+    int? ScorePercent,
+    DateTime? CompletedAt,
+    string Answer,
+    string? CorrectionSummary
+)
+{
+    public bool IsSynthesis => Kind == StepKind.Synthese;
+
+    public string KindLabel => IsSynthesis ? "Question de synthèse" : "Exercice de consolidation";
+}
+
+/// <summary>Où en est un enfant sur un cours.</summary>
+public record ChildCourseProgressDto(
+    Guid CourseId,
+    string Title,
+    string Subject,
+    int StepsTotal,
+    int StepsPassed,
+    int StepsFailed,
+    string? CurrentStepTitle,
+    DateTime? LastStudiedAt,
+    int ActiveSeconds,
+    int ExercisesDone,
+    List<string> WeakHeadings,
+    WrittenAnswerDto? Synthesis
+)
+{
+    public double CompletionPercent =>
+        StepsTotal == 0 ? 0 : Math.Round((double)StepsPassed / StepsTotal * 100, 0);
+
+    public bool IsFinished => StepsTotal > 0 && StepsPassed == StepsTotal;
+
+    public bool IsStarted => LastStudiedAt is not null || StepsPassed > 0;
+
+    public string Duration => FormatDuration(ActiveSeconds);
+
+    /// <summary>Largeur de la barre de progression, en style inline.</summary>
+    public string ProgressStyle =>
+        FormattableString.Invariant($"width:{CompletionPercent:0}%");
+
+    internal static string FormatDuration(int seconds)
+    {
+        var minutes = (int)Math.Round(seconds / 60.0);
+        return minutes < 60 ? $"{minutes} min" : $"{minutes / 60} h {minutes % 60:00}";
+    }
+}
+
+/// <summary>Vue d'ensemble d'un enfant, pour la page d'accueil de l'espace famille.</summary>
+public record ChildOverviewDto(
+    Guid StudentId,
+    DateTime Since,
+    DateTime? LastSessionAt,
+    int SessionsThisWeek,
+    int ActiveSecondsThisWeek,
+    int ExercisesThisWeek,
+    int QuestionsThisWeek,
+    int CoursesStarted,
+    int CoursesFinished,
+    List<ChildCourseProgressDto> Courses
+)
+{
+    public bool StudiedThisWeek => SessionsThisWeek > 0;
+
+    public string WeeklyDuration => ChildCourseProgressDto.FormatDuration(ActiveSecondsThisWeek);
+}
+
+/// <summary>Le détail d'un cours : le parcours, les séances, et ce que l'enfant a écrit.</summary>
+public record ChildCourseDetailDto(
+    ChildCourseProgressDto Progress,
+    JourneyDto Journey,
+    List<StudySessionDto> Sessions,
+    List<WrittenAnswerDto> WrittenAnswers
+);
+
+/// <summary>Le bilan rédigé par l'agent. Du texte, et rien d'autre.</summary>
+public record BilanResponse(string Text, DateTime GeneratedAt);
 
 // ── Exercice de consolidation ─────────────────────────────────────────────────
 

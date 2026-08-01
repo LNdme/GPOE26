@@ -1,0 +1,140 @@
+/* Profil et lien famille. Mêmes tokens --rd-* que le canvas de lecture : l'élève ne
+   change pas d'univers visuel en quittant son cours. */
+
+.profil {
+    max-width: 46rem;
+    margin: 0 auto;
+    padding: 2.5rem 1.25rem 4rem;
+    color: var(--rd-text, #1f2430);
+}
+
+.profil-empty { margin: 4rem auto; text-align: center; }
+
+/* ── En-tête ──────────────────────────────────────────────────────────────── */
+
+.profil-head {
+    display: flex;
+    align-items: center;
+    gap: 1.15rem;
+    margin-bottom: 2rem;
+}
+
+.profil-avatar {
+    flex: 0 0 auto;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--rd-accent, #174ea6);
+    color: #fff;
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.profil-name {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.profil-meta {
+    margin: .15rem 0 0;
+    font-size: .87rem;
+    color: var(--rd-text-soft, #6b7280);
+}
+
+/* ── Cartes ───────────────────────────────────────────────────────────────── */
+
+.profil-card {
+    padding: 1.35rem 1.5rem;
+    margin-bottom: 1.25rem;
+    border: 1px solid var(--rd-border, #e3e6ec);
+    border-radius: 12px;
+    background: var(--rd-surface, #fbfbfd);
+}
+
+.profil-card-title {
+    margin: 0 0 .5rem;
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.profil-card-hint {
+    margin: 0 0 1rem;
+    font-size: .89rem;
+    line-height: 1.6;
+    color: var(--rd-text-soft, #6b7280);
+}
+
+.profil-error {
+    margin: .75rem 0 0;
+    font-size: .85rem;
+    color: #b42318;
+}
+
+/* ── Code de rattachement ─────────────────────────────────────────────────── */
+
+/* Un code se lit à voix haute et se recopie : chiffres et lettres doivent être
+   distincts, d'où la chasse fixe et l'espacement large. */
+.profil-code {
+    display: flex;
+    flex-direction: column;
+    gap: .35rem;
+    padding: 1rem 1.15rem;
+    margin-bottom: 1rem;
+    border: 1px dashed var(--rd-accent, #174ea6);
+    border-radius: 10px;
+    background: var(--rd-bg, #fff);
+}
+
+.profil-code-value {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 1.85rem;
+    font-weight: 700;
+    letter-spacing: .35em;
+    color: var(--rd-accent, #174ea6);
+}
+
+.profil-code-hint {
+    font-size: .8rem;
+    color: var(--rd-text-soft, #6b7280);
+}
+
+/* ── Liste des parents ────────────────────────────────────────────────────── */
+
+.profil-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.profil-list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .75rem 0;
+    border-top: 1px solid var(--rd-border, #e3e6ec);
+}
+
+.profil-list li:first-child { border-top: none; }
+
+.profil-list-name {
+    display: block;
+    font-weight: 600;
+    font-size: .93rem;
+}
+
+.profil-list-meta {
+    display: block;
+    font-size: .8rem;
+    color: var(--rd-text-soft, #6b7280);
+}
+
+@media (max-width: 540px) {
+    .profil-head { flex-direction: column; align-items: flex-start; }
+    .profil-list li { flex-direction: column; align-items: flex-start; }
+    .profil-code-value { font-size: 1.45rem; letter-spacing: .25em; }
+}

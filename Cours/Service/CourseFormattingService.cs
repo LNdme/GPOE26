@@ -219,6 +219,8 @@ public sealed class CourseFormattingService(
             step.Attempts = match.Attempts;
             step.CompletedAt = match.CompletedAt;
             step.WeakHeadings = match.WeakHeadings;
+            step.StudentAnswer = match.StudentAnswer;
+            step.CorrectionSummary = match.CorrectionSummary;
         }
 
         // Après report, on réapplique la règle d'ouverture : la première étape non

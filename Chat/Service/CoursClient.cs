@@ -59,6 +59,39 @@ public sealed class CoursClient(
     }
 
     /// <summary>
+    /// Progression d'un enfant sur un cours, pour la rédaction du bilan parental.
+    ///
+    /// Le contrôle d'accès reste chez Cours, qui applique StudyIdentity au jeton relayé :
+    /// un parent qui demanderait l'enfant d'un autre reçoit un 403, et le Chat n'a aucune
+    /// règle d'autorisation à réimplémenter — donc aucune à faire diverger.
+    /// </summary>
+    public async Task<ChildCourseDetail?> GetChildCourseAsync(
+        Guid studentId, Guid courseId, CancellationToken ct = default)
+    {
+        try
+        {
+            var client = CreateAuthorizedClient();
+            var response = await client.GetAsync($"/suivi/{studentId}/cours/{courseId}", ct);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogWarning(
+                    "Suivi refusé ou introuvable ({Status}) : élève {StudentId}, cours {CourseId}",
+                    (int)response.StatusCode, studentId, courseId);
+                return null;
+            }
+
+            return await response.Content.ReadFromJsonAsync<ChildCourseDetail>(ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Impossible de lire le suivi de l'élève {StudentId} sur le cours {CourseId}",
+                studentId, courseId);
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Réémet le JWT de l'élève vers le service Cours.
     ///
     /// Les endpoints /cours sont protégés et filtrent sur le propriétaire : sans ce
