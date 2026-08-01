@@ -1,0 +1,39 @@
+{
+  "private": true,
+  "name": "gpoe26-browser-app",
+  "version": "0.1.0",
+  "description": "Cible navigateur — sert à développer et à vérifier les extensions sans empaqueter",
+  "dependencies": {
+    "@theia/core": "1.74.0",
+    "@theia/editor": "1.74.0",
+    "@theia/filesystem": "1.74.0",
+    "@theia/messages": "1.74.0",
+    "@theia/monaco": "1.74.0",
+    "@theia/navigator": "1.74.0",
+    "@theia/preferences": "1.74.0",
+    "@theia/workspace": "1.74.0",
+    "gpoe26-core": "0.1.0",
+    "gpoe26-lecture": "0.1.0"
+  },
+  "devDependencies": {
+    "@theia/cli": "1.74.0"
+  },
+  "scripts": {
+    "clean": "theia clean",
+    "build": "theia build --mode development",
+    "start": "theia start --plugins=local-dir:../plugins",
+    "watch": "theia build --watch --mode development"
+  },
+  "theia": {
+    "target": "browser",
+    "frontend": {
+      "config": {
+        "applicationName": "GPOE26 Étude",
+        "preferences": {
+          "files.enableTrash": false,
+          "workbench.colorTheme": "light"
+        }
+      }
+    }
+  }
+}

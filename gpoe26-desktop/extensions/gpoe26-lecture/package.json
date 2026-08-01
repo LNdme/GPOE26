@@ -1,0 +1,29 @@
+{
+  "name": "gpoe26-lecture",
+  "version": "0.1.0",
+  "description": "Le canvas de lecture : afficher un cours agréablement, en ligne ou non",
+  "main": "lib/browser/index.js",
+  "types": "lib/browser/index.d.ts",
+  "files": [
+    "lib",
+    "src"
+  ],
+  "dependencies": {
+    "@theia/core": "1.74.0",
+    "gpoe26-core": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "typescript": "~5.5.4"
+  },
+  "theiaExtensions": [
+    {
+      "frontend": "lib/browser/gpoe26-lecture-frontend-module"
+    }
+  ],
+  "scripts": {
+    "clean": "rimraf lib tsconfig.tsbuildinfo",
+    "build": "tsc -b",
+    "watch": "tsc -b -w"
+  }
+}

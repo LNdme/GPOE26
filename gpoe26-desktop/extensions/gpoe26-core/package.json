@@ -1,0 +1,28 @@
+{
+  "name": "gpoe26-core",
+  "version": "0.1.0",
+  "description": "Le socle : client du harness, authentification, magasin local",
+  "main": "lib/common/index.js",
+  "types": "lib/common/index.d.ts",
+  "files": [
+    "lib",
+    "src"
+  ],
+  "dependencies": {
+    "@theia/core": "1.74.0"
+  },
+  "devDependencies": {
+    "typescript": "~5.5.4"
+  },
+  "theiaExtensions": [
+    {
+      "frontend": "lib/browser/gpoe26-core-frontend-module",
+      "backend": "lib/node/gpoe26-core-backend-module"
+    }
+  ],
+  "scripts": {
+    "clean": "rimraf lib tsconfig.tsbuildinfo",
+    "build": "tsc -b",
+    "watch": "tsc -b -w"
+  }
+}

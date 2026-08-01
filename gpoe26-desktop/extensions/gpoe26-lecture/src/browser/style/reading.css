@@ -1,0 +1,393 @@
+/* ══════════════════════════════════════════════════════════════════════════════
+   Canvas de lecture — typographie et thèmes du cours de l'élève
+   ──────────────────────────────────────────────────────────────────────────────
+   Cette feuille est GLOBALE, et doit le rester : le CSS scoped de Blazor
+   (.razor.css) pose son attribut `b-xxxxx` sur les seuls éléments rendus par
+   Blazor. Le cours est injecté par MarkdownViewer via (MarkupString) — ces
+   nœuds-là n'ont pas l'attribut de scope et échapperaient à une feuille scoped.
+
+   Le chrome de la page (rails, chat, barre d'outils) vit lui dans
+   Components/Pages/Learning/CourseView.razor.css.
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Thèmes ─────────────────────────────────────────────────────────────────────
+   Appliqués par reading-interop.js sur le conteneur via data-reading-theme.
+   Les valeurs par défaut prolongent les tokens de app.css (--slate-*, --accent-blue)
+   plutôt que d'introduire une palette de plus.                                    */
+
+.reading-root {
+    --rd-bg: #ffffff;
+    --rd-surface: #f8fafc;
+    --rd-text: #1f2937;
+    --rd-text-soft: #64748b;
+    --rd-heading: #0f172a;
+    --rd-accent: #2563eb;
+    --rd-accent-soft: #eff6ff;
+    --rd-border: #e2e8f0;
+    --rd-code-bg: #f1f5f9;
+    --rd-code-text: #be123c;
+    --rd-mark: #fef08a;
+    --rd-shadow: 0 1px 3px rgba(15, 23, 42, .06);
+}
+
+.reading-root[data-reading-theme="sepia"] {
+    --rd-bg: #faf4e8;
+    --rd-surface: #f3e9d7;
+    --rd-text: #433422;
+    --rd-text-soft: #7d6a52;
+    --rd-heading: #2f2415;
+    --rd-accent: #a1622a;
+    --rd-accent-soft: #f2e4cf;
+    --rd-border: #e2d3ba;
+    --rd-code-bg: #efe3ce;
+    --rd-code-text: #9a3412;
+    --rd-mark: #f5d98b;
+    --rd-shadow: 0 1px 3px rgba(67, 52, 34, .08);
+}
+
+.reading-root[data-reading-theme="dark"] {
+    --rd-bg: #0f172a;
+    --rd-surface: #1e293b;
+    --rd-text: #dbe3ee;
+    --rd-text-soft: #94a3b8;
+    --rd-heading: #f1f5f9;
+    --rd-accent: #7ba7f5;
+    --rd-accent-soft: #1c2a44;
+    --rd-border: #334155;
+    --rd-code-bg: #1e293b;
+    --rd-code-text: #fda4af;
+    --rd-mark: #854d0e;
+    --rd-shadow: 0 1px 3px rgba(0, 0, 0, .4);
+}
+
+/* Suit le thème du système quand l'élève n'a rien choisi. */
+@media (prefers-color-scheme: dark) {
+    .reading-root:not([data-reading-theme]) {
+        --rd-bg: #0f172a;
+        --rd-surface: #1e293b;
+        --rd-text: #dbe3ee;
+        --rd-text-soft: #94a3b8;
+        --rd-heading: #f1f5f9;
+        --rd-accent: #7ba7f5;
+        --rd-accent-soft: #1c2a44;
+        --rd-border: #334155;
+        --rd-code-bg: #1e293b;
+        --rd-code-text: #fda4af;
+        --rd-mark: #854d0e;
+        --rd-shadow: 0 1px 3px rgba(0, 0, 0, .4);
+    }
+}
+
+/* ── Confort de lecture ─────────────────────────────────────────────────────── */
+
+.reading-root {
+    --rd-size: 1.0625rem;
+    --rd-measure: 68ch;
+    --rd-lh: 1.75;
+    --rd-font: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+    background: var(--rd-bg);
+    color: var(--rd-text);
+}
+
+.reading-root[data-reading-size="sm"] { --rd-size: .9375rem; --rd-lh: 1.7; }
+.reading-root[data-reading-size="lg"] { --rd-size: 1.1875rem; --rd-lh: 1.8; }
+.reading-root[data-reading-size="xl"] { --rd-size: 1.375rem; --rd-lh: 1.85; }
+
+.reading-root[data-reading-width="narrow"] { --rd-measure: 58ch; }
+.reading-root[data-reading-width="wide"]   { --rd-measure: 84ch; }
+
+/* Le serif est proposé parce qu'il aide beaucoup sur les longs textes suivis. */
+.reading-root[data-reading-font="serif"] {
+    --rd-font: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+}
+
+/* ── Le canvas ──────────────────────────────────────────────────────────────── */
+
+.course-canvas {
+    max-width: var(--rd-measure);
+    margin-inline: auto;
+    padding: 0 1.25rem 5rem;
+    font-family: var(--rd-font);
+    font-size: var(--rd-size);
+    line-height: var(--rd-lh);
+    color: var(--rd-text);
+    /* Coupure des mots longs (formules, URL) plutôt qu'un débordement horizontal. */
+    overflow-wrap: break-word;
+}
+
+.course-canvas > :first-child { margin-top: 0; }
+
+/* ── Titres ─────────────────────────────────────────────────────────────────── */
+
+.course-canvas h1,
+.course-canvas h2,
+.course-canvas h3,
+.course-canvas h4 {
+    color: var(--rd-heading);
+    font-family: var(--rd-font);
+    line-height: 1.25;
+    /* Un titre ne doit jamais rester seul en bas d'écran, ni être masqué par la
+       barre de progression sticky quand on saute depuis le sommaire. */
+    scroll-margin-top: 5rem;
+    text-wrap: balance;
+}
+
+/* Grand titre du cours */
+.course-canvas h1 {
+    font-size: clamp(1.9rem, 1.4rem + 2vw, 2.6rem);
+    font-weight: 800;
+    letter-spacing: -.025em;
+    margin: 0 0 1.5rem;
+    padding-bottom: .75rem;
+    position: relative;
+}
+
+.course-canvas h1::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 3.5rem;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--rd-accent);
+}
+
+/* Grandes parties */
+.course-canvas h2 {
+    font-size: clamp(1.35rem, 1.1rem + 1vw, 1.6rem);
+    font-weight: 700;
+    letter-spacing: -.015em;
+    margin: 2.75rem 0 1rem;
+    padding-left: .85rem;
+    border-left: 4px solid var(--rd-accent);
+}
+
+/* Sous-parties */
+.course-canvas h3 {
+    font-size: 1.15rem;
+    font-weight: 650;
+    margin: 2rem 0 .65rem;
+}
+
+.course-canvas h4 {
+    font-size: 1rem;
+    font-weight: 650;
+    color: var(--rd-text-soft);
+    margin: 1.5rem 0 .5rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+}
+
+/* ── Corps de texte ─────────────────────────────────────────────────────────── */
+
+.course-canvas p { margin: 0 0 1.15em; }
+
+.course-canvas strong { font-weight: 700; color: var(--rd-heading); }
+.course-canvas em { font-style: italic; }
+.course-canvas mark { background: var(--rd-mark); color: inherit; padding: 0 .2em; border-radius: 3px; }
+
+.course-canvas a {
+    color: var(--rd-accent);
+    text-underline-offset: .18em;
+    text-decoration-thickness: 1px;
+}
+
+.course-canvas ul,
+.course-canvas ol { margin: 0 0 1.15em; padding-left: 1.5rem; }
+.course-canvas li { margin-bottom: .4em; }
+.course-canvas li::marker { color: var(--rd-accent); }
+.course-canvas ul ul,
+.course-canvas ol ol { margin-bottom: .3em; }
+
+.course-canvas hr {
+    border: 0;
+    border-top: 1px solid var(--rd-border);
+    margin: 2.5rem 0;
+    opacity: 1;
+}
+
+/* ── Citations ──────────────────────────────────────────────────────────────── */
+
+.course-canvas blockquote {
+    margin: 1.5rem 0;
+    padding: .75rem 1.15rem;
+    border-left: 3px solid var(--rd-border);
+    color: var(--rd-text-soft);
+    font-style: italic;
+}
+
+.course-canvas blockquote p:last-child { margin-bottom: 0; }
+
+/* ── Encadrés pédagogiques ──────────────────────────────────────────────────────
+   Produits par l'agent Structurateur sous la forme `> [!definition] Terme`,
+   puis retransformés en <aside class="callout callout-definition"> par
+   MarkdownViewer.RenderCallouts.                                                 */
+
+.course-canvas .callout {
+    margin: 1.75rem 0;
+    padding: 1rem 1.25rem;
+    border-radius: 10px;
+    border: 1px solid var(--cal-border, var(--rd-border));
+    border-left: 4px solid var(--cal-accent, var(--rd-accent));
+    background: var(--cal-bg, var(--rd-surface));
+}
+
+.course-canvas .callout > :last-child { margin-bottom: 0; }
+
+.course-canvas .callout-title {
+    margin: 0 0 .5rem;
+    font-weight: 700;
+    font-size: .9em;
+    letter-spacing: .02em;
+    color: var(--cal-accent, var(--rd-accent));
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+}
+
+.course-canvas .callout-title::before {
+    content: var(--cal-icon, "◆");
+    font-size: 1em;
+    line-height: 1;
+}
+
+.course-canvas .callout-definition { --cal-accent: #2563eb; --cal-bg: color-mix(in srgb, #2563eb 7%, var(--rd-bg)); --cal-icon: "📘"; }
+.course-canvas .callout-theoreme   { --cal-accent: #7c3aed; --cal-bg: color-mix(in srgb, #7c3aed 7%, var(--rd-bg)); --cal-icon: "🔷"; }
+.course-canvas .callout-propriete  { --cal-accent: #0891b2; --cal-bg: color-mix(in srgb, #0891b2 7%, var(--rd-bg)); --cal-icon: "🔹"; }
+.course-canvas .callout-formule    { --cal-accent: #4f46e5; --cal-bg: color-mix(in srgb, #4f46e5 7%, var(--rd-bg)); --cal-icon: "🧮"; }
+.course-canvas .callout-exemple    { --cal-accent: #059669; --cal-bg: color-mix(in srgb, #059669 7%, var(--rd-bg)); --cal-icon: "💡"; }
+.course-canvas .callout-methode    { --cal-accent: #0d9488; --cal-bg: color-mix(in srgb, #0d9488 7%, var(--rd-bg)); --cal-icon: "🧭"; }
+.course-canvas .callout-remarque   { --cal-accent: #64748b; --cal-bg: color-mix(in srgb, #64748b 7%, var(--rd-bg)); --cal-icon: "📝"; }
+.course-canvas .callout-attention  { --cal-accent: #dc2626; --cal-bg: color-mix(in srgb, #dc2626 7%, var(--rd-bg)); --cal-icon: "⚠️"; }
+.course-canvas .callout-astuce     { --cal-accent: #d97706; --cal-bg: color-mix(in srgb, #d97706 7%, var(--rd-bg)); --cal-icon: "✨"; }
+.course-canvas .callout-resume     { --cal-accent: #be185d; --cal-bg: color-mix(in srgb, #be185d 7%, var(--rd-bg)); --cal-icon: "🎯"; }
+
+/* ── Code ───────────────────────────────────────────────────────────────────── */
+
+.course-canvas code {
+    font-family: 'Fira Code', 'Cascadia Code', ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .88em;
+    background: var(--rd-code-bg);
+    color: var(--rd-code-text);
+    padding: .15em .4em;
+    border-radius: 4px;
+}
+
+.course-canvas pre {
+    margin: 1.5rem 0;
+    padding: 1rem 1.15rem;
+    border-radius: 10px;
+    background: #1e1e2e;
+    color: #cdd6f4;
+    font-size: .88em;
+    line-height: 1.6;
+    /* Le bloc défile dans son propre conteneur : la page, elle, ne doit jamais
+       défiler horizontalement. */
+    overflow-x: auto;
+}
+
+.course-canvas pre code {
+    background: none;
+    color: inherit;
+    padding: 0;
+    font-size: inherit;
+}
+
+/* ── Tableaux ───────────────────────────────────────────────────────────────── */
+
+.course-canvas table {
+    width: 100%;
+    margin: 1.5rem 0;
+    border-collapse: collapse;
+    font-size: .93em;
+    /* Un tableau large déborderait la mesure du canvas : on le laisse défiler.
+       (display:block casse la mise en page de table, d'où le conteneur ci-dessous
+       quand MarkdownViewer enveloppe les tableaux.) */
+}
+
+.course-canvas .table-scroll { overflow-x: auto; margin: 1.5rem 0; }
+.course-canvas .table-scroll > table { margin: 0; }
+
+.course-canvas th,
+.course-canvas td {
+    padding: .55rem .75rem;
+    border: 1px solid var(--rd-border);
+    text-align: left;
+    vertical-align: top;
+}
+
+.course-canvas thead th {
+    background: var(--rd-accent-soft);
+    color: var(--rd-accent);
+    font-weight: 650;
+}
+
+.course-canvas tbody tr:nth-child(even) {
+    background: color-mix(in srgb, var(--rd-text) 3%, transparent);
+}
+
+/* ── Images et figures ──────────────────────────────────────────────────────── */
+
+.course-canvas img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 1.75rem auto;
+    border-radius: 10px;
+    border: 1px solid var(--rd-border);
+    box-shadow: var(--rd-shadow);
+    background: #fff;
+}
+
+.course-canvas figure { margin: 1.75rem 0; }
+.course-canvas figure img { margin-bottom: .6rem; }
+
+.course-canvas figcaption {
+    text-align: center;
+    font-size: .875em;
+    color: var(--rd-text-soft);
+    font-style: italic;
+}
+
+/* ── Mathématiques (KaTeX) ──────────────────────────────────────────────────── */
+
+.course-canvas .katex { font-size: 1.05em; }
+
+.course-canvas .katex-display {
+    margin: 1.5rem 0;
+    padding: .5rem 0;
+    /* Une formule longue défile dans son bloc au lieu d'élargir la page. */
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+/* En attendant le rendu KaTeX, on évite le flash de la source LaTeX brute. */
+.course-canvas div.math:not([data-katex-done]) { opacity: .35; }
+
+/* ── Impression ─────────────────────────────────────────────────────────────── */
+
+@media print {
+    .reading-root {
+        --rd-bg: #fff;
+        --rd-text: #000;
+        --rd-heading: #000;
+        --rd-measure: none;
+    }
+
+    .course-canvas { max-width: none; padding: 0; font-size: 11pt; }
+    .course-canvas h1, .course-canvas h2, .course-canvas h3 { break-after: avoid; }
+    .course-canvas pre, .course-canvas table, .course-canvas .callout,
+    .course-canvas figure, .course-canvas .katex-display { break-inside: avoid; }
+    .course-canvas a { text-decoration: none; color: inherit; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .reading-root * {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+        scroll-behavior: auto !important;
+    }
+}

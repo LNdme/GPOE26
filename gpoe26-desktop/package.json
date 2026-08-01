@@ -1,0 +1,27 @@
+{
+  "private": true,
+  "name": "gpoe26-desktop",
+  "version": "0.1.0",
+  "description": "L'environnement d'étude GPOE26 pour Windows et Mac",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "extensions/*",
+    "browser-app",
+    "electron-app"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "build:extensions": "npm run build --workspace extensions/gpoe26-core --workspace extensions/gpoe26-lecture",
+    "start:browser": "npm start --workspace browser-app",
+    "start:electron": "npm start --workspace electron-app",
+    "watch": "npm run watch --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "rimraf": "^5.0.5",
+    "typescript": "~5.5.4"
+  }
+}

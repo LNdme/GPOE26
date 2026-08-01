@@ -1,0 +1,8 @@
+node_modules/
+lib/
+dist/
+src-gen/
+gen-webpack*.js
+gen-esbuild.*.mjs
+*.tsbuildinfo
+.eslintcache

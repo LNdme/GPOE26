@@ -1,0 +1,26 @@
+# Empaquetage Windows et Mac.
+#
+# Aucune mention de VS Code ni de Theia : l'élève installe GPOE26 Étude.
+appId: cm.gpoe26.etude
+productName: GPOE26 Étude
+copyright: Lycée Technique de Nanga-Eboko
+
+directories:
+  output: dist
+
+files:
+  - lib/**
+  - src-gen/**
+  - scripts/**
+  - "!**/*.map"
+
+win:
+  target: nsis
+  # ⚠️ La signature est indispensable : sans elle, SmartScreen affiche un
+  # avertissement que les familles interprètent, à juste titre, comme un danger.
+  # signingHashAlgorithms, certificateFile : à renseigner avant toute diffusion.
+
+mac:
+  target: dmg
+  category: public.app-category.education
+  # ⚠️ De même côté Apple : sans notarisation, macOS refuse purement l'ouverture.
