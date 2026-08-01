@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!--
+    Aucune référence : ni ASP.NET, ni EF, ni Aspire.
+
+    Ce projet dit ce qu'un harness doit respecter. Il est référencé par les
+    implémentations, par la suite de conformité, et il sert de source aux types
+    TypeScript du harness B et de l'application bureau. La moindre dépendance de
+    framework le rendrait plus lourd à traduire et le lierait à une implémentation.
+  -->
+
+</Project>
