@@ -418,10 +418,13 @@
         Nav.NavigateTo(_mode == InputMode.Text ? "/cours" : $"/learning/course/{created.Id}");
     }
 
-    private static string FormatSize(long bytes) => bytes switch
+    // Écrit avec des `if` et non des motifs relationnels : dans un fichier Razor, un
+    // `< 1024` en début de ligne est lu comme l'ouverture d'une balise HTML.
+    private static string FormatSize(long bytes)
     {
-        < 1024 => $"{bytes} B",
-        < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
-        _ => $"{bytes / (1024.0 * 1024.0):F1} MB"
-    };
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+
+        return $"{bytes / (1024.0 * 1024.0):F1} MB";
+    }
 }

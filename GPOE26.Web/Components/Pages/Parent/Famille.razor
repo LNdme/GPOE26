@@ -151,9 +151,7 @@
                             }
                         </div>
 
-                        @{
-                            var started = overview.Courses.Where(c => c.IsStarted).Take(4).ToList();
-                        }
+                        var started = overview.Courses.Where(c => c.IsStarted).Take(4).ToList();
 
                         @if (started.Count == 0)
                         {

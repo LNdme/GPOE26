@@ -847,7 +847,11 @@ namespace GPOE26.Web.Services
                 Content = JsonContent.Create(new TutorRequest(courseId, message, history.ToList())),
             };
 
-            HttpResponseMessage response;
+            // On ne peut pas céder une valeur depuis un bloc catch : l'échec est retenu,
+            // puis émis une fois sorti du try.
+            HttpResponseMessage? response = null;
+            string? failure = null;
+
             try
             {
                 response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
@@ -855,8 +859,12 @@ namespace GPOE26.Web.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Le service de répétition est injoignable");
-                yield return new TutorStreamEvent("error",
-                    Error: "Le répétiteur est momentanément injoignable. Réessayez dans un instant.");
+                failure = "Le répétiteur est momentanément injoignable. Réessayez dans un instant.";
+            }
+
+            if (response is null)
+            {
+                yield return new TutorStreamEvent("error", Error: failure);
                 yield break;
             }
 
