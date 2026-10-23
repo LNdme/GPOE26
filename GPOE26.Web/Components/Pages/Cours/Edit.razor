@@ -4,46 +4,8 @@
 
 <PageTitle>Modifier un Cours – GPOE26</PageTitle>
 
-<style>
-    .text-navy { color: #174ea6 !important; }
-    .btn-navy { background-color: #174ea6; color: white; border: none; font-weight: 500; padding: 0.5rem 1.5rem; border-radius: 4px; }
-    .btn-navy:hover { background-color: #123d82; color: white; }
-    .form-section { max-width: 1000px; margin: 0 auto; }
-    
-    .md-editor-container {
-        display: flex;
-        gap: 1.5rem;
-        min-height: 400px;
-    }
-    .md-editor-pane {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-    }
-    .md-textarea {
-        flex: 1;
-        font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
-        font-size: 0.9rem;
-        resize: vertical;
-        border: 1px solid #dadce0;
-        border-radius: 8px;
-        padding: 1rem;
-        min-height: 400px;
-    }
-    .md-preview-pane {
-        flex: 1;
-        border: 1px solid #dadce0;
-        border-radius: 8px;
-        padding: 1.5rem;
-        background: #fafafa;
-        overflow-y: auto;
-        min-height: 400px;
-        max-height: 800px;
-    }
-</style>
-
-<div class="container py-5">
-    <div class="form-section">
+<div class="container management-page">
+    <div class="form-section management-shell management-shell--wide">
         <nav aria-label="breadcrumb" class="mb-3">
             <ol class="breadcrumb">
                 <li class="breadcrumb-item"><a href="/cours" class="text-navy text-decoration-none">Mes Cours</a></li>
@@ -53,7 +15,7 @@
 
         @if (_loading)
         {
-            <div class="text-center py-5"><div class="spinner-border text-navy"></div></div>
+            <div class="management-state"><div class="spinner-border"></div></div>
         }
         else if (_course is null)
         {
@@ -62,10 +24,13 @@
         }
         else
         {
-            <h1 class="fw-bold mb-4" style="font-size:1.8rem; color:#202124;">Modifier le cours</h1>
+            <header class="management-heading">
+                <span class="listing-eyebrow">Mes cours · Gestion</span>
+                <h1 class="listing-title">Modifier le cours</h1>
+            </header>
             @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
 
-            <EditForm Model="_form" OnValidSubmit="Submit" FormName="EditCourseForm">
+            <EditForm Model="_form" OnValidSubmit="Submit" FormName="EditCourseForm" class="management-form">
                 <DataAnnotationsValidator />
 
                 <div class="mb-3">
@@ -102,7 +67,7 @@
                             <div class="alert alert-info py-2 small">Téléchargement de l'image en cours...</div>
                         }
 
-                        <div class="md-editor-container">
+                        <div class="md-editor-container management-editor">
                         <!-- Éditeur Markdown -->
                         <div class="md-editor-pane">
                             <div class="md-toolbar d-flex flex-wrap gap-1 p-2 bg-light border-bottom">
@@ -142,7 +107,7 @@
                     </div>
                 }
 
-                <div class="d-flex gap-2">
+                <div class="management-actions">
                     <button type="submit" class="btn btn-navy" disabled="@_saving">
                         @if (_saving) { <span class="spinner-border spinner-border-sm me-1"></span> } Enregistrer
                     </button>

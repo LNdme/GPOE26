@@ -3,15 +3,8 @@
 
 <PageTitle>Modifier l'article – GPOE26</PageTitle>
 
-<style>
-    .text-navy { color: #174ea6 !important; }
-    .btn-navy { background-color: #174ea6; color: white; border: none; font-weight: 500; padding: 0.5rem 1.5rem; border-radius: 4px; }
-    .btn-navy:hover { background-color: #123d82; color: white; }
-    .form-section { max-width: 720px; margin: 0 auto; }
-</style>
-
-<div class="container py-5">
-    <div class="form-section">
+<div class="container management-page">
+    <div class="form-section management-shell">
         <nav aria-label="breadcrumb" class="mb-3">
             <ol class="breadcrumb">
                 <li class="breadcrumb-item"><a href="/blog" class="text-navy text-decoration-none">Actualités</a></li>
@@ -21,8 +14,8 @@
 
         @if (_loading)
         {
-            <div class="text-center py-5">
-                <div class="spinner-border text-navy"></div>
+            <div class="management-state">
+                <div class="spinner-border"></div>
                 <p class="text-muted mt-2">Chargement...</p>
             </div>
         }
@@ -33,14 +26,17 @@
         }
         else
         {
-            <h1 class="fw-bold mb-4" style="font-size:1.8rem; color:#202124;">Modifier l'article</h1>
+            <header class="management-heading">
+                <span class="listing-eyebrow">Actualités · Gestion</span>
+                <h1 class="listing-title">Modifier l'article</h1>
+            </header>
 
             @if (!string.IsNullOrEmpty(_errorMessage))
             {
                 <div class="alert alert-danger">@_errorMessage</div>
             }
 
-            <EditForm Model="_article" OnValidSubmit="HandleSubmit" FormName="EditArticleForm">
+            <EditForm Model="_article" OnValidSubmit="HandleSubmit" FormName="EditArticleForm" class="management-form">
                 <DataAnnotationsValidator />
                 <ValidationSummary class="text-danger" />
 
@@ -91,7 +87,7 @@
                     <label class="form-check-label" for="isPublished">Publié</label>
                 </div>
 
-                <div class="d-flex gap-2">
+                <div class="management-actions">
                     <button type="submit" class="btn btn-navy" disabled="@_saving">
                         @if (_saving) { <span class="spinner-border spinner-border-sm me-1"></span> }
                         Enregistrer

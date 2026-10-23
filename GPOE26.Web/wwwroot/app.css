@@ -1662,3 +1662,322 @@ h1:focus {
 .form-floating>.form-control:focus::placeholder {
     text-align: start;
 }
+
+/* Shared presentation for management forms and record details */
+.management-page {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    min-height: 70vh;
+    padding: clamp(2rem, 4vw, 3.5rem) max(1rem, calc((100vw - 1320px) / 2)) clamp(3.5rem, 6vw, 5.5rem);
+    background: linear-gradient(180deg, var(--page-paper) 0, #fff 390px);
+}
+
+.management-shell,
+.management-detail {
+    width: 100%;
+    max-width: 800px;
+    margin: 0 auto;
+    border: 1px solid #e6eae6;
+    border-radius: 22px;
+    padding: clamp(1.25rem, 4vw, 2.5rem);
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 12px 34px rgba(16, 46, 80, 0.055);
+}
+
+.management-shell--wide {
+    max-width: 1120px;
+}
+
+.management-detail {
+    max-width: 920px;
+}
+
+.management-heading {
+    margin: 0 0 1.65rem;
+}
+
+.management-heading .listing-title {
+    margin-bottom: 0;
+    font-size: clamp(1.9rem, 3.7vw, 2.55rem);
+}
+
+.management-page .breadcrumb {
+    margin-bottom: 1.35rem !important;
+    color: #758395;
+    font-size: 0.88rem;
+}
+
+.management-page .breadcrumb-item + .breadcrumb-item::before {
+    color: #aab5b0;
+}
+
+.management-page .breadcrumb-item a {
+    color: var(--brand-blue) !important;
+    font-weight: 600;
+}
+
+.management-form .form-label {
+    margin-bottom: 0.45rem;
+    color: #31465b;
+    font-size: 0.9rem;
+}
+
+.management-form .form-control,
+.management-form .form-select,
+.management-form .input-group .form-control {
+    min-height: 46px;
+    border-color: #dfe7e1;
+    border-radius: 11px;
+    color: #24384c;
+    background-color: #fcfdfb;
+    box-shadow: none;
+}
+
+.management-form .input-group .form-control:first-child {
+    border-radius: 11px 0 0 11px;
+}
+
+.management-form .input-group .form-control:last-child {
+    border-radius: 0 11px 11px 0;
+}
+
+.management-form textarea.form-control {
+    min-height: auto;
+    line-height: 1.65;
+}
+
+.management-form .form-control:focus,
+.management-form .form-select:focus {
+    border-color: #8eaa9b;
+    background-color: #fff;
+    box-shadow: 0 0 0 3px rgba(72, 113, 101, 0.11);
+}
+
+.management-form .form-check {
+    border: 1px solid #e4ebe5;
+    border-radius: 12px;
+    padding: 0.85rem 1rem 0.85rem 2.65rem;
+    background: #f7faf6;
+}
+
+.management-form .form-check-input {
+    margin-left: -1.65rem;
+}
+
+.management-form .form-check-label {
+    color: #42576a;
+    font-weight: 500;
+}
+
+.management-form .alert {
+    border-radius: 12px;
+}
+
+.management-form .form-text {
+    margin-top: 0.55rem;
+    color: #718095;
+}
+
+.management-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    border-top: 1px solid #edf0ed;
+    margin-top: 1.5rem;
+    padding-top: 1.25rem;
+}
+
+.management-page .btn-outline-secondary {
+    border-color: #dfe7e1;
+    border-radius: 999px;
+    padding: 0.7rem 1.1rem;
+    color: #536679;
+    background: #fff;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.management-page .btn-outline-secondary:hover {
+    color: var(--brand-navy);
+    background: #f3f6f2;
+}
+
+.management-page .btn-navy {
+    border-radius: 999px;
+    padding: 0.7rem 1.2rem;
+    font-weight: 600;
+}
+
+.management-state {
+    display: grid;
+    justify-items: center;
+    gap: 0.75rem;
+    min-height: 220px;
+    align-content: center;
+    border: 1px dashed #dce4dc;
+    border-radius: 18px;
+    padding: 1.5rem;
+    color: #718095;
+    background: #fbfcfa;
+    text-align: center;
+}
+
+.management-state .spinner-border {
+    color: #487165 !important;
+}
+
+.management-detail .management-cover {
+    width: 100%;
+    max-height: 420px;
+    margin: 0.9rem 0 1.5rem;
+    border-radius: 17px;
+    object-fit: cover;
+    background: #eaf0e8;
+}
+
+.management-detail h1 {
+    margin: 0 0 0.9rem;
+    color: var(--brand-navy);
+    font-size: clamp(2rem, 4.4vw, 3.15rem);
+    font-weight: 600;
+    letter-spacing: -0.05em;
+    line-height: 1.12;
+}
+
+.management-detail__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem 1rem;
+    margin-bottom: 1.5rem;
+    color: #718095;
+    font-size: 0.88rem;
+}
+
+.management-detail__meta span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.management-detail__copy {
+    margin: 0 0 1.7rem;
+    color: #42546a;
+    font-size: 1.02rem;
+    line-height: 1.85;
+    white-space: pre-wrap;
+}
+
+.management-detail__excerpt {
+    border-left: 3px solid #8eaa9b;
+    margin: 0 0 1.5rem;
+    padding: 0.25rem 0 0.25rem 1rem;
+    color: #637587;
+    font-size: 1.1rem;
+    font-style: italic;
+    line-height: 1.7;
+}
+
+.management-badge {
+    display: inline-flex;
+    align-items: center;
+    border: 0;
+    border-radius: 999px;
+    padding: 0.38rem 0.75rem;
+    color: #416854;
+    background: #edf3e9;
+    font-size: 0.79rem;
+    font-weight: 600;
+}
+
+.management-editor .md-toolbar {
+    border: 1px solid #e1e8e2;
+    border-bottom: 0 !important;
+    border-radius: 13px 13px 0 0;
+    background: #f3f7f2 !important;
+}
+
+.management-editor {
+    display: flex;
+    gap: 1.5rem;
+    min-height: 400px;
+}
+
+.management-editor .md-editor-pane {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.management-editor .md-toolbar .btn {
+    border-radius: 8px;
+}
+
+.management-editor .md-textarea {
+    flex: 1;
+    min-height: 400px;
+    resize: vertical;
+    padding: 1rem;
+    font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
+    font-size: 0.9rem;
+    border-color: #dfe7e1;
+    border-radius: 0 0 13px 13px;
+    background: #fcfdfb;
+    color: #24384c;
+    line-height: 1.7;
+}
+
+.management-editor .md-preview-pane {
+    min-width: 0;
+    min-height: 400px;
+    max-height: 800px;
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.5rem;
+    border-color: #e1e8e2;
+    border-radius: 13px;
+    background: #f8faf7;
+    color: #42546a;
+}
+
+.management-upload-zone {
+    border: 1px dashed #bdcec2;
+    border-radius: 15px;
+    padding: 2rem;
+    color: #536679;
+    background: #f8faf7;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.management-upload-zone:hover {
+    border-color: #7f9c8e;
+    background: #f2f7f1;
+}
+
+@media (max-width: 767.98px) {
+    .management-page {
+        padding: 1.25rem 0.8rem 3rem;
+    }
+
+    .management-shell,
+    .management-detail {
+        border-radius: 17px;
+        padding: 1.15rem;
+    }
+
+    .management-actions {
+        align-items: stretch;
+    }
+
+    .management-actions > * {
+        flex: 1 1 auto;
+        text-align: center;
+    }
+
+    .md-editor-container {
+        flex-direction: column;
+    }
+}
