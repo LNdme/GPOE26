@@ -3,99 +3,102 @@
 
 <PageTitle>Actualités – GPOE26</PageTitle>
 
-<style>
-    .bg-light-gray { background-color: #f8f9fa; }
-    .text-navy { color: #174ea6 !important; }
-    .btn-navy { background-color: #174ea6; color: white; border: none; font-weight: 500; padding: 0.5rem 1.5rem; border-radius: 4px; }
-    .btn-navy:hover { background-color: #123d82; color: white; }
-    .card-clean { border: 1px solid #dadce0; border-radius: 8px; box-shadow: none; transition: box-shadow 0.2s; background: white; }
-    .card-clean:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
-    .section-title { font-weight: 400; font-size: 2rem; margin-bottom: 1.5rem; color: #202124; }
-    .badge-category { background-color: #e8f0fe; color: #174ea6; border: none; font-weight: 500; }
-</style>
+<div class="listing-page">
+    <div class="container">
+        <header class="listing-header">
+            <div class="listing-header__copy">
+                <span class="listing-eyebrow">La vie de l’établissement</span>
+                <h1 class="listing-title">Actualités</h1>
+                <p class="listing-description">Les nouvelles, les projets et les temps forts du lycée.</p>
+            </div>
+            <a href="/blog/create" class="listing-create-button">
+                <i class="bi bi-plus-lg" aria-hidden="true"></i> Nouvel article
+            </a>
+        </header>
 
-<div class="container py-5">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="section-title mb-0">Actualités</h1>
-        <a href="/blog/create" class="btn btn-navy">
-            <i class="bi bi-plus-lg me-1"></i> Nouvel Article
-        </a>
-    </div>
-
-    @* Filtres par catégorie *@
-    <div class="d-flex gap-2 mb-4 flex-wrap">
-        <button class="btn @(_selectedCategory == null ? "btn-navy" : "btn-outline-secondary") btn-sm" @onclick='() => FilterByCategory(null)'>Tous</button>
-        @foreach (var cat in _categories)
-        {
-            <button class="btn @(_selectedCategory == cat ? "btn-navy" : "btn-outline-secondary") btn-sm" @onclick='() => FilterByCategory(cat)'>@cat</button>
-        }
-    </div>
-
-    @if (_loading)
-    {
-        <div class="text-center py-5">
-            <div class="spinner-border text-navy"></div>
-            <p class="text-muted mt-2">Chargement des articles...</p>
-        </div>
-    }
-    else if (!_articles.Any())
-    {
-        <div class="text-center py-5 text-muted">
-            <p class="fs-5">Aucun article trouvé.</p>
-        </div>
-    }
-    else
-    {
-        <div class="row g-4">
-            @foreach (var article in _articles)
+        <div class="listing-filters" aria-label="Filtrer les actualités">
+            <button class="btn @(_selectedCategory == null ? "btn-navy" : "btn-outline-secondary")" @onclick='() => FilterByCategory(null)'>Toutes</button>
+            @foreach (var cat in _categories)
             {
-                <div class="col-md-4">
-                    <div class="card card-clean h-100">
-                        @if (!string.IsNullOrEmpty(article.ImageUrl))
-                        {
-                            <img src="@article.ImageUrl" class="card-img-top" alt="@article.Title" style="height: 180px; object-fit: cover;" />
-                        }
-                        <div class="card-body d-flex flex-column">
-                            <span class="badge badge-category mb-2 align-self-start">@article.Category</span>
-                            <h5 class="card-title fw-bold">@article.Title</h5>
-                            <p class="card-text text-muted small flex-grow-1">@(article.Excerpt ?? Truncate(article.Content, 120))</p>
-                            <small class="text-muted mb-3">@article.CreatedAt.ToString("dd MMM yyyy")</small>
-
-                            <div class="d-flex gap-2 mt-auto">
-                                <a href="@($"/blog/details/{article.Id}")" class="btn btn-outline-secondary btn-sm flex-fill">Détails</a>
-                                <a href="@($"/blog/edit/{article.Id}")" class="btn btn-outline-primary btn-sm flex-fill">Modifier</a>
-                                <button class="btn btn-outline-danger btn-sm" @onclick="() => ConfirmDelete(article)">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <button class="btn @(_selectedCategory == cat ? "btn-navy" : "btn-outline-secondary")" @onclick='() => FilterByCategory(cat)'>@cat</button>
             }
         </div>
 
-        @* Pagination *@
-        @if (_totalPages > 1)
+        @if (_loading)
         {
-            <nav class="mt-4">
-                <ul class="pagination justify-content-center">
-                    <li class="page-item @(_currentPage <= 1 ? "disabled" : "")">
-                        <button class="page-link" @onclick="() => GoToPage(_currentPage - 1)">Précédent</button>
-                    </li>
-                    @for (int i = 1; i <= _totalPages; i++)
-                    {
-                        var pageNum = i;
-                        <li class="page-item @(pageNum == _currentPage ? "active" : "")">
-                            <button class="page-link" @onclick="() => GoToPage(pageNum)">@pageNum</button>
-                        </li>
-                    }
-                    <li class="page-item @(_currentPage >= _totalPages ? "disabled" : "")">
-                        <button class="page-link" @onclick="() => GoToPage(_currentPage + 1)">Suivant</button>
-                    </li>
-                </ul>
-            </nav>
+            <div class="listing-state" role="status">
+                <span class="spinner-border text-brand-dark"></span>
+                <p>Chargement des actualités…</p>
+            </div>
         }
-    }
+        else if (!_articles.Any())
+        {
+            <div class="listing-state">
+                <i class="bi bi-journal-text" aria-hidden="true"></i>
+                <h2>Aucun article pour le moment</h2>
+                <p>Les prochaines actualités de l’établissement apparaîtront ici.</p>
+            </div>
+        }
+        else
+        {
+            <div class="row g-4">
+                @foreach (var article in _articles)
+                {
+                    <div class="col-sm-6 col-lg-4">
+                        <article class="content-card">
+                            <div class="content-card__image @(string.IsNullOrWhiteSpace(article.ImageUrl) ? "content-card__image--illustration" : string.Empty)">
+                                <img src="@(string.IsNullOrWhiteSpace(article.ImageUrl) ? "/images/learning-together.webp" : article.ImageUrl)"
+                                     alt="@article.Title" loading="lazy" />
+                            </div>
+                            <div class="content-card__body">
+                                <div class="content-card__meta">
+                                    <span class="content-tag">@article.Category</span>
+                                    <time>@article.CreatedAt.ToString("dd MMM yyyy")</time>
+                                </div>
+                                <h2>@article.Title</h2>
+                                <p class="content-card__description">@(article.Excerpt ?? Truncate(article.Content, 120))</p>
+                                <div class="content-card__actions">
+                                    <a href="@($"/blog/details/{article.Id}")" class="content-card__primary-link">
+                                        Lire l’article <i class="bi bi-arrow-right" aria-hidden="true"></i>
+                                    </a>
+                                    <a href="@($"/blog/edit/{article.Id}")" class="content-card__icon-action"
+                                       title="Modifier l’article" aria-label="@($"Modifier {article.Title}")">
+                                        <i class="bi bi-pencil" aria-hidden="true"></i>
+                                    </a>
+                                    <button class="content-card__icon-action content-card__icon-action--danger"
+                                            title="Supprimer l’article" aria-label="@($"Supprimer {article.Title}")"
+                                            @onclick="() => ConfirmDelete(article)">
+                                        <i class="bi bi-trash" aria-hidden="true"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </article>
+                    </div>
+                }
+            </div>
+
+            @if (_totalPages > 1)
+            {
+                <nav class="mt-4" aria-label="Pagination des actualités">
+                    <ul class="pagination justify-content-center">
+                        <li class="page-item @(_currentPage <= 1 ? "disabled" : "")">
+                            <button class="page-link" @onclick="() => GoToPage(_currentPage - 1)">Précédent</button>
+                        </li>
+                        @for (int i = 1; i <= _totalPages; i++)
+                        {
+                            var pageNum = i;
+                            <li class="page-item @(pageNum == _currentPage ? "active" : "")">
+                                <button class="page-link" @onclick="() => GoToPage(pageNum)" aria-current="@(pageNum == _currentPage ? "page" : null)">@pageNum</button>
+                            </li>
+                        }
+                        <li class="page-item @(_currentPage >= _totalPages ? "disabled" : "")">
+                            <button class="page-link" @onclick="() => GoToPage(_currentPage + 1)">Suivant</button>
+                        </li>
+                    </ul>
+                </nav>
+            }
+        }
+    </div>
 </div>
 
 @* Modal de confirmation de suppression *@

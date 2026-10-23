@@ -5,124 +5,209 @@
 
 <PageTitle>Accueil – GPOE26</PageTitle>
 
-<div class="container-fluid bg-brand-dark text-white py-5 text-center">
-    <div class="container py-5 my-4">
-        <h1 class="display-4 fw-bold mb-4" style="letter-spacing: -1px;">@( _contact?.Name ?? "Plateforme d'apprentissage IA" )</h1>
-        <p class="lead text-white-50 mb-5" style="max-width: 700px; margin: auto;">
-            L'excellence éducative propulsée par l'intelligence artificielle. Rejoignez-nous pour construire votre avenir avec curiosité et rigueur.
-        </p>
-        <a href="/register" class="btn btn-light text-brand-dark btn-lg px-5 shadow-sm fw-bold">Commencer maintenant</a>
+<section class="home-hero">
+    <div class="container home-hero__grid">
+        <div class="home-hero__copy">
+            <span class="home-eyebrow">Lycée Technique de Nanga-Eboko</span>
+            <h1>@(_contact?.Name ?? "Apprendre, créer, réussir.")</h1>
+            <p>
+                Des cours, des projets et une communauté pour faire grandir vos idées et préparer votre avenir.
+            </p>
+            <div class="home-hero__actions">
+                <a href="/register" class="btn btn-home-primary">Rejoindre la plateforme <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+                <a href="/hierarchy" class="home-text-link">Découvrir l’établissement</a>
+            </div>
+            <div class="home-hero__note"><i class="bi bi-lightbulb" aria-hidden="true"></i> Apprendre avec curiosité et confiance</div>
+        </div>
+        <div class="home-hero__visual" aria-label="Illustration de deux personnes qui apprennent ensemble">
+            <img src="/images/learning-together.webp" alt="Deux apprenants travaillent ensemble autour d’un ordinateur" />
+            <div class="home-hero__caption">
+                <span class="home-hero__caption-icon"><i class="bi bi-book-half" aria-hidden="true"></i></span>
+                <span><strong>Le savoir se partage</strong><small>Une communauté qui avance ensemble</small></span>
+            </div>
+        </div>
     </div>
-</div>
+</section>
 
 @if (_contact is not null)
 {
-    <div class="container py-5 mt-4">
-        <div class="row align-items-center g-5">
-            <div class="col-lg-6">
-                <h2 class="section-title mb-4">À propos de notre établissement</h2>
-                <p class="text-muted-chic fs-5 mb-4" style="line-height: 1.7;">
-                    Situé au cœur de @_contact.City, notre établissement s'engage à fournir une éducation de premier plan mêlant tradition d'excellence et innovation technologique. Nos outils numériques de pointe accompagnent nos élèves et professeurs vers la réussite globale.
+    <section class="home-section home-about">
+        <div class="container home-about__grid">
+            <div class="home-about__copy">
+                <span class="home-eyebrow home-eyebrow--dark">Notre établissement</span>
+                <h2>Un lieu pour apprendre et construire l’avenir.</h2>
+                <p>
+                    Au cœur de @_contact.City, le Lycée Technique de Nanga-Eboko associe savoir-faire, accompagnement et outils numériques pour faire progresser chaque élève.
                 </p>
-                <ul class="list-unstyled text-muted-chic">
-                    <li class="mb-3 d-flex align-items-center"><i class="bi bi-geo-alt-fill text-brand-dark fs-5 me-3"></i> @_contact.Address</li>
-                    <li class="mb-3 d-flex align-items-center"><i class="bi bi-envelope-fill text-brand-dark fs-5 me-3"></i> @_contact.Email</li>
-                    <li class="mb-3 d-flex align-items-center"><i class="bi bi-telephone-fill text-brand-dark fs-5 me-3"></i> @_contact.Phone</li>
-                </ul>
-            </div>
-            <div class="col-lg-6 text-center">
-                <!-- Abstract placeholder ou future image du lycée -->
-                <div class="rounded-4 bg-white d-flex align-items-center justify-content-center shadow-sm" style="height: 350px; border: 1px solid var(--slate-200); overflow: hidden;">
-                   <i class="bi bi-building" style="font-size: 5rem; color: var(--slate-200);"></i>
+                <div class="home-contact-list">
+                    @if (!string.IsNullOrWhiteSpace(_contact.Address))
+                    {
+                        <span><i class="bi bi-geo-alt" aria-hidden="true"></i> @_contact.Address</span>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_contact.Email))
+                    {
+                        <a href="mailto:@_contact.Email"><i class="bi bi-envelope" aria-hidden="true"></i> @_contact.Email</a>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_contact.Phone))
+                    {
+                        <a href="tel:@_contact.Phone"><i class="bi bi-telephone" aria-hidden="true"></i> @_contact.Phone</a>
+                    }
                 </div>
             </div>
+            <div class="home-about__visual">
+                <img src="/images/digital-learning.webp" alt="Illustration d’une personne découvrant l’apprentissage numérique" loading="lazy" />
+                <div class="home-about__label"><span>Le numérique au service de l’apprentissage</span><i class="bi bi-arrow-up-right" aria-hidden="true"></i></div>
+            </div>
         </div>
-    </div>
+    </section>
 }
 
-<div class="container py-5">
-    
-    <h2 class="section-title text-center">Dernières Actualités</h2>
-    @if (_loading)
-    {
-        <div class="text-center text-muted-chic"><div class="spinner-border text-brand-dark"></div> Chargement...</div>
-    }
-    else if (_news.Any())
-    {
-        <div class="row g-4 mb-5">
-            @foreach (var article in _news)
-            {
-                <div class="col-md-4">
-                    <div class="card card-elegant h-100 border-0">
-                        @if(!string.IsNullOrEmpty(article.ImageUrl)) {
-                            <img src="@article.ImageUrl" class="card-img-top" style="height:200px; object-fit:cover;" alt="@article.Title" />
-                        }
-                        <div class="card-body p-4">
-                            <span class="badge bg-slate-100 text-brand-dark mb-3 border px-2 py-1">@article.Category</span>
-                            <h5 class="card-title fw-bold mb-3" style="color: var(--slate-900);">@article.Title</h5>
-                            <p class="card-text text-muted-chic small">@article.Excerpt</p>
-                        </div>
-                    </div>
-                </div>
-            }
-        </div>
-    }
-
-    <div class="row g-5 mb-5 mt-4">
-        <div class="col-md-6">
-            <h2 class="section-title">Événements à venir</h2>
-            <div class="card card-elegant border-0">
-                <ul class="list-group list-group-flush">
-                    @foreach (var ev in _events)
-                    {
-                        <li class="list-group-item py-4 px-4 border-light d-flex justify-content-between align-items-center">
-                            <div>
-                                <h6 class="mb-1 fw-bold" style="color: var(--slate-900);">@ev.Title</h6>
-                                <small class="text-muted-chic">@ev.StartDate.ToString("dd MMM yyyy") - <span class="badge bg-slate-100 text-brand-dark px-2">@ev.Type</span></small>
-                            </div>
-                            <div class="bg-slate-50 rounded-circle d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
-                                <i class="bi bi-calendar-event text-brand-dark"></i>
-                            </div>
-                        </li>
-                    }
-                    @if (!_events.Any() && !_loading) { <li class="list-group-item py-4 px-4 text-muted-chic">Aucun événement prévu.</li> }
-                </ul>
+<section class="home-section home-news">
+    <div class="container">
+        <div class="home-section-heading">
+            <div>
+                <span class="home-eyebrow home-eyebrow--dark">À la une</span>
+                <h2>Les nouvelles de l’établissement</h2>
             </div>
+            <a href="/blog" class="home-section-link">Toutes les actualités <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
         </div>
 
-        <div class="col-md-6">
-            <h2 class="section-title">Clubs & Activités</h2>
-            <div class="d-flex flex-wrap gap-3">
-                @foreach (var act in _activities)
+        @if (_loading)
+        {
+            <div class="home-loading"><span class="spinner-border spinner-border-sm text-brand-dark" role="status"></span> Chargement des actualités…</div>
+        }
+        else if (_news.Any())
+        {
+            <div class="row g-4">
+                @foreach (var article in _news)
                 {
-                    <div class="p-3 card-elegant border-0 w-100 d-flex justify-content-between align-items-center">
-                        <span class="fw-bold" style="color: var(--slate-900);">@act.Name</span>
-                        <span class="badge bg-slate-100 text-brand-dark border px-3 py-2 rounded-pill">@act.Category</span>
+                    <div class="col-md-4">
+                        <article class="story-card">
+                            <a href="@($"/blog/details/{article.Id}")" class="story-card__image @(string.IsNullOrWhiteSpace(article.ImageUrl) ? "story-card__image--illustration" : string.Empty)" aria-label="@($"Lire l’article : {article.Title}")">
+                                <img src="@(string.IsNullOrWhiteSpace(article.ImageUrl) ? "/images/learning-together.webp" : article.ImageUrl)"
+                                     alt="" loading="lazy" />
+                            </a>
+                            <div class="story-card__body">
+                                <div class="story-card__meta"><span>@article.Category</span><time>@article.CreatedAt.ToString("dd MMM yyyy")</time></div>
+                                <h3><a href="@($"/blog/details/{article.Id}")">@article.Title</a></h3>
+                                <p>@(article.Excerpt ?? Truncate(article.Content, 120))</p>
+                                <a href="@($"/blog/details/{article.Id}")" class="story-card__link">Lire l’article <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+                            </div>
+                        </article>
                     </div>
                 }
-                @if (!_activities.Any() && !_loading) { <span class="text-muted-chic">Aucune activité disponible.</span> }
+            </div>
+        }
+        else
+        {
+            <p class="home-empty">Les prochaines actualités de l’établissement apparaîtront ici.</p>
+        }
+    </div>
+</section>
+
+<section class="home-section home-community">
+    <div class="container">
+        <div class="home-section-heading">
+            <div>
+                <span class="home-eyebrow home-eyebrow--dark">La vie au lycée</span>
+                <h2>À découvrir cette semaine</h2>
+            </div>
+        </div>
+        <div class="row g-4">
+            <div class="col-lg-6">
+                <div class="home-feature-panel">
+                    <div class="home-feature-panel__heading">
+                        <h3>Prochains événements</h3>
+                        <a href="/events" aria-label="Voir tous les événements"><i class="bi bi-arrow-up-right" aria-hidden="true"></i></a>
+                    </div>
+                    @if (_loading)
+                    {
+                        <p class="home-empty">Chargement…</p>
+                    }
+                    else if (_events.Any())
+                    {
+                        <div class="home-event-list">
+                            @foreach (var ev in _events.Take(3))
+                            {
+                                <a class="home-event" href="@($"/events/details/{ev.Id}")">
+                                    <span class="home-event__date"><strong>@ev.StartDate.ToString("dd")</strong><small>@ev.StartDate.ToString("MMM")</small></span>
+                                    <span class="home-event__content"><strong>@ev.Title</strong><small>@ev.Type@if (!string.IsNullOrWhiteSpace(ev.Location)) { <span> · @ev.Location</span> }</small></span>
+                                    <i class="bi bi-arrow-right home-event__arrow" aria-hidden="true"></i>
+                                </a>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="home-empty">Aucun événement prévu pour le moment.</p>
+                    }
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="home-feature-panel home-feature-panel--activities">
+                    <div class="home-feature-panel__heading">
+                        <h3>Clubs et activités</h3>
+                        <a href="/activities" aria-label="Découvrir toutes les activités"><i class="bi bi-arrow-up-right" aria-hidden="true"></i></a>
+                    </div>
+                    @if (_loading)
+                    {
+                        <p class="home-empty">Chargement…</p>
+                    }
+                    else if (_activities.Any())
+                    {
+                        <div class="home-activity-list">
+                            @foreach (var activity in _activities.Take(3))
+                            {
+                                <a class="home-activity" href="@($"/activities/details/{activity.Id}")">
+                                    <img src="@ActivityImage(activity)" alt="" loading="lazy" />
+                                    <span><strong>@activity.Name</strong><small>@activity.Category</small></span>
+                                    <i class="bi bi-arrow-right" aria-hidden="true"></i>
+                                </a>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="home-empty">Les activités seront bientôt présentées ici.</p>
+                    }
+                </div>
             </div>
         </div>
     </div>
+</section>
 
-    <h2 class="section-title text-center mt-5 pt-4">Notre Équipe</h2>
-    <div class="row g-4 justify-content-center">
-        @foreach (var member in _hierarchy.Take(4))
-        {
-            <div class="col-md-3 text-center">
-                <div class="rounded-circle mx-auto mb-3 d-flex align-items-center justify-content-center shadow-sm" style="width: 100px; height: 100px; font-size: 24px; background-color: var(--slate-100); overflow: hidden; border: 3px solid white;">
-                    @if(!string.IsNullOrEmpty(member.ImageUrl)) {
-                        <img src="@member.ImageUrl" style="width: 100%; height: 100%; object-fit: cover;" alt="@member.Name" />
-                    } else {
-                        <i class="bi bi-person text-brand-dark"></i>
-                    }
+@if (_hierarchy.Any())
+{
+    <section class="home-section home-team">
+        <div class="container">
+            <div class="home-section-heading">
+                <div>
+                    <span class="home-eyebrow home-eyebrow--dark">L’équipe éducative</span>
+                    <h2>Les personnes qui vous accompagnent</h2>
                 </div>
-                <h5 class="fw-bold mb-1" style="color: var(--slate-900);">@member.PreName @member.Name</h5>
-                <div class="text-muted-chic small fw-medium text-uppercase" style="letter-spacing: 0.5px;">@member.Role</div>
+                <a href="/hierarchy" class="home-section-link">Rencontrer l’équipe <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
             </div>
-        }
-    </div>
-</div>
+            <div class="home-team-list">
+                @foreach (var member in _hierarchy.Take(4))
+                {
+                    <div class="home-team-member">
+                        <div class="home-team-member__avatar">
+                            @if (!string.IsNullOrWhiteSpace(member.ImageUrl))
+                            {
+                                <img src="@member.ImageUrl" alt="" loading="lazy" />
+                            }
+                            else
+                            {
+                                <span>@(string.IsNullOrWhiteSpace(member.PreName) ? "É" : member.PreName[..1])</span>
+                            }
+                        </div>
+                        <div><strong>@member.PreName @member.Name</strong><small>@member.Role</small></div>
+                    </div>
+                }
+            </div>
+        </div>
+    </section>
+}
 
 @code {
     private bool _loading = true;
@@ -151,5 +236,19 @@
         _hierarchy = await hierarchyTask;
         
         _loading = false;
+    }
+
+    private static string ActivityImage(SchoolActivity activity) =>
+        activity.Category?.ToLowerInvariant() switch
+        {
+            "science" => "/images/future-learning.webp",
+            "sport" => "/images/learning-together.webp",
+            _ => "/images/digital-learning.webp"
+        };
+
+    private static string Truncate(string? text, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+        return text.Length <= maxLength ? text : text[..maxLength] + "…";
     }
 }

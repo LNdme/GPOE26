@@ -3,30 +3,24 @@
 @implements IDisposable
 @rendermode InteractiveServer
 
-<style>
-    .lt-header { background-color: white; border-bottom: 1px solid var(--slate-200); }
-    .lt-header .navbar-nav .nav-link { color: var(--text-muted); transition: color 0.2s ease; border-bottom: 2px solid transparent; padding-bottom: 2px; font-weight: 500; }
-    .lt-header .navbar-nav .nav-link:hover, .lt-header .navbar-nav .nav-link.active { color: var(--slate-900); border-bottom-color: var(--slate-900); }
-    .lt-logo-circle { width: 42px; height: 42px; border-radius: 8px; background-color: var(--slate-900); color: white; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.1rem; letter-spacing: -0.5px; }
-    .placeholder-white::placeholder { color: rgba(255, 255, 255, 0.6) !important; }
-</style>
-
-<nav class="navbar navbar-expand-lg navbar-light lt-header sticky-top py-2 shadow-sm">
+<nav class="navbar navbar-expand-lg navbar-light lt-header sticky-top">
     <div class="container">
-        <a class="navbar-brand d-flex align-items-center gap-2 m-0 pe-4" href="/">
-            <div class="lt-logo-circle shadow-sm">LT</div>
+        <a class="navbar-brand d-flex align-items-center gap-2 m-0" href="/" aria-label="Lycée Technique de Nanga-Eboko, accueil">
+            <div class="lt-logo-circle">LT</div>
             <div class="d-flex flex-column lh-1">
                 <span class="fw-bold fs-5 text-brand-dark">LT Nanga-Eboko</span>
-                <span class="text-muted-chic" style="font-size: 0.75rem;">Excellence & Innovation</span>
+                <span class="text-muted-chic lt-brand-caption">Excellence & Innovation</span>
             </div>
         </a>
 
-        <button class="navbar-toggler shadow-none" type="button" @onclick="ToggleNavMenu">
+        <button class="navbar-toggler shadow-none" type="button" @onclick="ToggleNavMenu"
+                aria-label="@(collapseNavMenu ? "Ouvrir le menu" : "Fermer le menu")"
+                aria-expanded="@(!collapseNavMenu)" aria-controls="main-navigation">
             <span class="navbar-toggler-icon"></span>
         </button>
 
-        <div class="collapse navbar-collapse @(collapseNavMenu ? "" : "show")">
-            <ul class="navbar-nav me-auto mb-2 mb-lg-0 gap-lg-2">
+        <div id="main-navigation" class="collapse navbar-collapse @(collapseNavMenu ? "" : "show")">
+            <ul class="navbar-nav me-auto mb-2 mb-lg-0 gap-lg-1">
                 <li class="nav-item">
                     <NavLink class="nav-link px-3" href="/" Match="NavLinkMatch.All">Accueil</NavLink>
                 </li>
@@ -54,7 +48,7 @@
                 }
             </ul>
 
-            <ul class="navbar-nav ms-auto align-items-center">
+            <ul class="navbar-nav ms-auto align-items-center lt-account-nav">
                 @if (Auth.IsAuthenticated)
                 {
                     <li class="nav-item dropdown dropdown-menu-end">
@@ -77,11 +71,11 @@
                 }
                 else
                 {
-                    <li class="nav-item me-2 mb-2 mb-lg-0 w-100 text-center">
-                        <a class="btn btn-outline-secondary btn-sm rounded-pill px-4 fw-medium w-100" href="/login">Connexion</a>
+                    <li class="nav-item me-lg-2 mb-2 mb-lg-0">
+                        <a class="btn btn-login" href="/login">Connexion</a>
                     </li>
-                    <li class="nav-item w-100 text-center">
-                        <a class="btn btn-brand btn-sm rounded-pill px-4 fw-bold w-100 shadow-sm" href="/register">S'inscrire</a>
+                    <li class="nav-item">
+                        <a class="btn btn-register" href="/register">S’inscrire</a>
                     </li>
                 }
             </ul>

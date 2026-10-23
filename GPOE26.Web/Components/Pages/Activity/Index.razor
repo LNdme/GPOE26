@@ -3,75 +3,96 @@
 
 <PageTitle>Activités – GPOE26</PageTitle>
 
-<style>
-    .text-navy { color: #174ea6 !important; }
-    .btn-navy { background-color: #174ea6; color: white; border: none; font-weight: 500; padding: 0.5rem 1.5rem; border-radius: 4px; }
-    .btn-navy:hover { background-color: #123d82; color: white; }
-    .card-clean { border: 1px solid #dadce0; border-radius: 8px; box-shadow: none; transition: box-shadow 0.2s; background: white; }
-    .card-clean:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
-    .section-title { font-weight: 400; font-size: 2rem; margin-bottom: 1.5rem; color: #202124; }
-    .badge-cat { background-color: #e8f0fe; color: #174ea6; font-weight: 500; }
-</style>
+<div class="listing-page">
+    <div class="container">
+        <header class="listing-header">
+            <div class="listing-header__copy">
+                <span class="listing-eyebrow">Apprendre en faisant</span>
+                <h1 class="listing-title">Clubs et activités</h1>
+                <p class="listing-description">Explorez vos passions, rencontrez d’autres élèves et lancez-vous dans un nouveau projet.</p>
+            </div>
+            <a href="/activities/create" class="listing-create-button">
+                <i class="bi bi-plus-lg" aria-hidden="true"></i> Nouvelle activité
+            </a>
+        </header>
 
-<div class="container py-5">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="section-title mb-0">Clubs & Activités</h1>
-        <a href="/activities/create" class="btn btn-navy"><i class="bi bi-plus-lg me-1"></i> Nouvelle Activité</a>
-    </div>
-
-    <div class="d-flex gap-2 mb-4 flex-wrap">
-        <button class="btn @(_selCat == null ? "btn-navy" : "btn-outline-secondary") btn-sm" @onclick='() => Filter(null)'>Tous</button>
-        @foreach (var c in _cats)
-        {
-            <button class="btn @(_selCat == c ? "btn-navy" : "btn-outline-secondary") btn-sm" @onclick='() => Filter(c)'>@c</button>
-        }
-    </div>
-
-    @if (_loading)
-    {
-        <div class="text-center py-5"><div class="spinner-border text-navy"></div></div>
-    }
-    else if (!_items.Any())
-    {
-        <div class="text-center py-5 text-muted"><p class="fs-5">Aucune activité trouvée.</p></div>
-    }
-    else
-    {
-        <div class="row g-4">
-            @foreach (var a in _items)
+        <div class="listing-filters" aria-label="Filtrer les activités">
+            <button class="btn @(_selCat == null ? "btn-navy" : "btn-outline-secondary")" @onclick='() => Filter(null)'>Toutes</button>
+            @foreach (var c in _cats)
             {
-                <div class="col-md-4">
-                    <div class="card card-clean h-100">
-                        @if (!string.IsNullOrEmpty(a.ImageUrl))
-                        {
-                            <img src="@a.ImageUrl" class="card-img-top" alt="@a.Name" style="height: 160px; object-fit: cover;" />
-                        }
-                        <div class="card-body d-flex flex-column">
-                            <div class="d-flex justify-content-between align-items-start mb-2">
-                                <span class="badge badge-cat">@a.Category</span>
-                                @if (!a.IsActive) { <span class="badge bg-secondary">Inactive</span> }
-                            </div>
-                            <h5 class="card-title fw-bold">@a.Name</h5>
-                            <p class="card-text text-muted small flex-grow-1">@Truncate(a.Description, 100)</p>
-                            @if (!string.IsNullOrEmpty(a.Schedule))
-                            {
-                                <small class="text-muted mb-2">🕐 @a.Schedule</small>
-                            }
-                            @if (!string.IsNullOrEmpty(a.ResponsibleTeacher))
-                            {
-                                <small class="text-muted mb-3">👨‍🏫 @a.ResponsibleTeacher</small>
-                            }
-                            <div class="d-flex gap-2 mt-auto">
-                                <a href="@($"/activities/details/{a.Id}")" class="btn btn-outline-secondary btn-sm flex-fill">Détails</a>
-                                <a href="@($"/activities/edit/{a.Id}")" class="btn btn-outline-primary btn-sm flex-fill">Modifier</a>
-                                <button class="btn btn-outline-danger btn-sm" @onclick="() => ConfirmDel(a)"><i class="bi bi-trash"></i></button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <button class="btn @(_selCat == c ? "btn-navy" : "btn-outline-secondary")" @onclick='() => Filter(c)'>@c</button>
             }
         </div>
-    }
+
+        @if (_loading)
+        {
+            <div class="listing-state" role="status">
+                <span class="spinner-border text-brand-dark"></span>
+                <p>Chargement des activités…</p>
+            </div>
+        }
+        else if (!_items.Any())
+        {
+            <div class="listing-state">
+                <i class="bi bi-lightbulb" aria-hidden="true"></i>
+                <h2>Aucune activité dans cette catégorie</h2>
+                <p>Choisissez un autre filtre ou revenez découvrir les prochaines activités.</p>
+            </div>
+        }
+        else
+        {
+            <div class="row g-4">
+                @foreach (var a in _items)
+                {
+                    <div class="col-sm-6 col-lg-4">
+                        <article class="content-card">
+                            <div class="content-card__image @(string.IsNullOrWhiteSpace(a.ImageUrl) ? "content-card__image--illustration" : string.Empty)">
+                                <img src="@ActivityImage(a)" alt="@a.Name" loading="lazy" />
+                            </div>
+                            <div class="content-card__body">
+                                <div class="content-card__meta">
+                                    <span class="content-tag">@a.Category</span>
+                                    @if (!a.IsActive)
+                                    {
+                                        <span>Inactive</span>
+                                    }
+                                </div>
+                                <h2>@a.Name</h2>
+                                <p class="content-card__description">@Truncate(a.Description, 120)</p>
+                                @if (!string.IsNullOrWhiteSpace(a.Schedule) || !string.IsNullOrWhiteSpace(a.ResponsibleTeacher))
+                                {
+                                    <div class="content-card__details">
+                                        @if (!string.IsNullOrWhiteSpace(a.Schedule))
+                                        {
+                                            <span><i class="bi bi-clock" aria-hidden="true"></i> @a.Schedule</span>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(a.ResponsibleTeacher))
+                                        {
+                                            <span><i class="bi bi-person" aria-hidden="true"></i> @a.ResponsibleTeacher</span>
+                                        }
+                                    </div>
+                                }
+                                <div class="content-card__actions">
+                                    <a href="@($"/activities/details/{a.Id}")" class="content-card__primary-link">
+                                        Découvrir l’activité <i class="bi bi-arrow-right" aria-hidden="true"></i>
+                                    </a>
+                                    <a href="@($"/activities/edit/{a.Id}")" class="content-card__icon-action"
+                                       title="Modifier l’activité" aria-label="@($"Modifier {a.Name}")">
+                                        <i class="bi bi-pencil" aria-hidden="true"></i>
+                                    </a>
+                                    <button class="content-card__icon-action content-card__icon-action--danger"
+                                            title="Supprimer l’activité" aria-label="@($"Supprimer {a.Name}")"
+                                            @onclick="() => ConfirmDel(a)">
+                                        <i class="bi bi-trash" aria-hidden="true"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </article>
+                    </div>
+                }
+            </div>
+        }
+    </div>
 </div>
 
 @if (_toDel is not null)
@@ -112,5 +133,17 @@
         _toDel = null; _deleting = false;
         await Load();
     }
+
+    private static string ActivityImage(SchoolActivity activity)
+    {
+        if (!string.IsNullOrWhiteSpace(activity.ImageUrl)) return activity.ImageUrl;
+        return activity.Category?.ToLowerInvariant() switch
+        {
+            "science" => "/images/future-learning.webp",
+            "sport" => "/images/learning-together.webp",
+            _ => "/images/digital-learning.webp"
+        };
+    }
+
     private static string Truncate(string t, int m) => t.Length <= m ? t : t[..m] + "…";
 }
