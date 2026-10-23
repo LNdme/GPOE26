@@ -52,3 +52,7 @@ exposeLocalhost = true
 localPort = 5455
 externalPort = 3002
 exposeLocalhost = true
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 180000
