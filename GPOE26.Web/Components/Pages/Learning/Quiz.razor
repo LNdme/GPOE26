@@ -3,19 +3,7 @@
 
 <PageTitle>Quiz – GPOE26</PageTitle>
 
-<style>
-    .option-btn { display: block; width: 100%; text-align: left; padding: 0.75rem 1rem; margin-bottom: 0.5rem; border: 2px solid var(--slate-200); border-radius: 8px; background: white; cursor: pointer; transition: all 0.2s; font-size: 0.95rem; }
-    .option-btn:hover { border-color: var(--slate-700); background: var(--slate-50); }
-    .option-btn.selected { border-color: var(--slate-800); background: var(--slate-100); color: var(--slate-900); font-weight: 600; }
-    .option-btn.correct { border-color: #137333; background: #e6f4ea; color: #137333; }
-    .option-btn.wrong { border-color: #c5221f; background: #fce8e6; color: #c5221f; }
-    .score-circle { width: 120px; height: 120px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: 700; margin: 0 auto; }
-    .score-good { background: #e6f4ea; color: #137333; border: 3px solid #137333; }
-    .score-ok { background: #fef7e0; color: #e37400; border: 3px solid #e37400; }
-    .score-bad { background: #fce8e6; color: #c5221f; border: 3px solid #c5221f; }
-    .quiz-container { max-width: 800px; margin: 0 auto; }
-</style>
-
+<main class="study-page quiz-page">
 <div class="container py-5">
     <div class="quiz-container">
         <nav aria-label="breadcrumb" class="mb-3">
@@ -28,117 +16,134 @@
 
         @if (_loadingCourse)
         {
-            <div class="text-center py-5"><div class="spinner-border text-brand-dark"></div><p class="text-muted-chic mt-2">Chargement du cours...</p></div>
+            <section class="quiz-state" role="status" aria-live="polite">
+                <div class="quiz-skeleton"></div><div class="quiz-skeleton quiz-skeleton--short"></div>
+                <p>Chargement du cours…</p>
+            </section>
         }
         else if (_course is null)
         {
-            <div class="alert alert-warning">Cours introuvable.</div>
+            <section class="quiz-panel quiz-message">
+                <span class="quiz-kicker">Apprentissage</span><h1>@(_error is null ? "Cours introuvable" : "Cours indisponible")</h1>
+                <p>@(_error ?? "Ce cours n’existe pas ou vous n’y avez pas accès.")</p>
+                <a href="/learning" class="study-button">Retour à mes cours</a>
+            </section>
         }
         else if (_generating)
         {
-            <div class="text-center py-5">
-                <div class="spinner-border text-brand-dark mb-3" style="width: 3rem; height: 3rem;"></div>
-                <h4 class="text-muted">🧠 L'IA génère votre quiz...</h4>
-                <p class="text-muted">Cela peut prendre quelques secondes.</p>
-            </div>
+            <section class="quiz-panel quiz-message" role="status" aria-live="polite">
+                <span class="quiz-kicker">Préparation</span><h1>Votre quiz se prépare</h1>
+                <p>Quelques instants pour créer des questions à partir du cours.</p>
+                <div class="quiz-skeleton"></div><div class="quiz-skeleton quiz-skeleton--short"></div>
+            </section>
         }
         else if (_quiz is null)
         {
-            @* Configuration du quiz *@
-            <div class="card card-elegant p-4 border-0">
-                <h2 class="fw-bold mb-3" style="color:var(--slate-900);">🧠 Créer un Quiz</h2>
-                <p class="text-muted-chic mb-4">Cours : <strong>@_course.Title</strong></p>
-
-                @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
-
-                <div class="mb-3">
-                    <label class="form-label fw-semibold">Nombre de questions</label>
-                    <select class="form-select" style="max-width: 200px;" @bind="_numQuestions">
-                        <option value="1">1 question</option>
-                        <option value="2">2 questions</option>
-                        <option value="3">3 questions</option>
-                        <option value="5">5 questions</option>
-                        <option value="10">10 questions</option>
+            <section class="quiz-panel quiz-setup">
+                <span class="quiz-kicker">Réviser autrement</span>
+                <h1>Un quiz, une idée à la fois.</h1>
+                <p class="quiz-course-name">@_course.Title</p>
+                @if (!string.IsNullOrEmpty(_error)) { <div class="study-alert" role="alert">@_error</div> }
+                @if (string.IsNullOrWhiteSpace(_course.ExtractedText))
+                {
+                    <div class="study-alert" role="status">Le contenu du cours est nécessaire pour créer un quiz.</div>
+                }
+                <div class="quiz-setup__controls">
+                    <label for="question-count">Nombre de questions</label>
+                    <select id="question-count" class="form-select" @bind="_numQuestions">
+                        <option value="1">1 question</option><option value="2">2 questions</option>
+                        <option value="3">3 questions</option><option value="5">5 questions</option><option value="10">10 questions</option>
                     </select>
                 </div>
-
-                <button class="btn btn-brand" @onclick="GenerateQuiz">Générer le Quiz</button>
-            </div>
+                <button class="study-button" @onclick="GenerateQuiz" disabled="@string.IsNullOrWhiteSpace(_course.ExtractedText)">Générer mon quiz</button>
+            </section>
         }
         else if (_results is null)
         {
-            @* Affichage des questions *@
-            <h2 class="fw-bold mb-1" style="color:var(--slate-900);">📝 @_quiz.Title</h2>
-            <p class="text-muted-chic mb-4">Répondez aux @_quiz.Questions.Count questions ci-dessous</p>
-
-            @for (int i = 0; i < _quiz.Questions.Count; i++)
-            {
-                var q = _quiz.Questions[i];
-                var qIndex = i;
-                <div class="card card-elegant p-4 mb-3 border-0">
-                    <h5 class="fw-bold mb-3" style="color:var(--slate-800);">
-                        <span class="text-brand-dark">Q@(qIndex + 1).</span> @q.Text
-                    </h5>
-                    @for (int j = 0; j < q.Options.Count; j++)
+            var current = _quiz.Questions[_currentQuestionIndex];
+            <section class="quiz-panel quiz-question-panel">
+                <div class="quiz-question-top">
+                    <div><span class="quiz-kicker">@_quiz.Title</span><h1>À vous de jouer.</h1></div>
+                    <span class="quiz-counter">@(_currentQuestionIndex + 1) <span>/ @_quiz.Questions.Count</span></span>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(_error)) { <div class="study-alert" role="alert">@_error</div> }
+                <div class="quiz-progress" role="progressbar" aria-label="Progression du quiz"
+                     aria-valuenow="@(_currentQuestionIndex + 1)" aria-valuemin="1" aria-valuemax="@_quiz.Questions.Count">
+                    <span style="width:@($"{100.0 * (_currentQuestionIndex + 1) / _quiz.Questions.Count:0.##}%")"></span>
+                </div>
+                <div class="quiz-question">
+                    <span class="quiz-question-number">QUESTION @(_currentQuestionIndex + 1)</span>
+                    <h2>@current.Text</h2>
+                </div>
+                <div class="quiz-options" role="group" aria-label="Choisissez une réponse">
+                    @for (int j = 0; j < current.Options.Count; j++)
                     {
-                        var optIndex = j;
-                        var isSelected = _answers.ContainsKey(q.Id) && _answers[q.Id] == optIndex;
-                        <button type="button"
-                                class="option-btn @(isSelected ? "selected" : "")"
-                                @onclick="() => SelectOption(q.Id, optIndex)">
-                            <strong>@((char)('A' + optIndex)).</strong> @q.Options[optIndex]
+                        var optionIndex = j;
+                        var selected = _answers.TryGetValue(current.Id, out var answer) && answer == optionIndex;
+                        <button type="button" class="option-btn @(selected ? "selected" : "")"
+                                aria-pressed="@selected" @onclick="() => SelectOption(current.Id, optionIndex)">
+                            <span class="option-letter">@((char)('A' + optionIndex))</span>
+                            <span>@current.Options[optionIndex]</span>
+                            @if (selected) { <span class="option-check" aria-hidden="true">Sélectionnée</span> }
                         </button>
                     }
                 </div>
-            }
-
-            <div class="d-flex gap-2 mt-4">
-                <button class="btn btn-brand btn-lg w-100" @onclick="SubmitQuiz"
-                        disabled="@(_submitting || _answers.Count < _quiz.Questions.Count)">
-                    @if (_submitting) { <span class="spinner-border spinner-border-sm me-1"></span> }
-                    Soumettre mes réponses (@_answers.Count / @_quiz.Questions.Count)
-                </button>
-            </div>
-
-            @if (_answers.Count < _quiz.Questions.Count)
-            {
-                <p class="text-muted small mt-2">Veuillez répondre à toutes les questions avant de soumettre.</p>
-            }
+                <div class="quiz-navigation">
+                    <button type="button" class="study-button study-button--quiet" @onclick="PreviousQuestion" disabled="@(_currentQuestionIndex == 0)">
+                        Précédente
+                    </button>
+                    @if (_currentQuestionIndex < _quiz.Questions.Count - 1)
+                    {
+                        <button type="button" class="study-button" @onclick="NextQuestion">Question suivante</button>
+                    }
+                    else
+                    {
+                        <button type="button" class="study-button" @onclick="SubmitQuiz"
+                                disabled="@(_submitting || _answers.Count < _quiz.Questions.Count)">
+                            @if (_submitting) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                            Terminer le quiz
+                        </button>
+                    }
+                </div>
+                <p class="quiz-completion-note" aria-live="polite">
+                    @if (_answers.Count < _quiz.Questions.Count)
+                    { <span>@_answers.Count sur @_quiz.Questions.Count réponses · répondez à chaque question avant de terminer.</span> }
+                    else { <span>Toutes vos réponses sont prêtes.</span> }
+                </p>
+            </section>
         }
         else
         {
-            @* Résultats *@
-            <div class="text-center mb-4">
-                <div class="score-circle @GetScoreClass(_results.Percentage) mb-3 shadow-sm">
-                    @_results.Score / @_results.Total
+            <section class="quiz-result-hero">
+                <span class="quiz-kicker">Votre bilan</span>
+                <div class="score-circle @GetScoreClass(_results.Percentage)">@_results.Score <span>/ @_results.Total</span></div>
+                <h1>@GetScoreMessage(_results.Percentage)</h1>
+                <p>Vous avez obtenu <strong>@_results.Percentage.ToString("F0") %</strong></p>
+            </section>
+            <section class="quiz-feedback">
+                <div class="quiz-feedback-heading"><span class="quiz-kicker">Pour progresser</span><h2>Correction détaillée</h2></div>
+                @foreach (var fb in _results.Feedbacks)
+                {
+                    <article class="feedback-card @(fb.IsCorrect ? "is-correct" : "is-incorrect")">
+                        <div class="feedback-status">@((fb.IsCorrect ? "Réponse juste" : "À revoir"))</div>
+                        <h3>@fb.QuestionText</h3>
+                        @if (!fb.IsCorrect)
+                        {
+                            <p>Votre réponse : option @((char)('A' + fb.SelectedOptionIndex))</p>
+                            <p class="feedback-correct-answer">Bonne réponse : option @((char)('A' + fb.CorrectOptionIndex))</p>
+                        }
+                        <p class="feedback-explanation">@fb.Explanation</p>
+                    </article>
+                }
+                <div class="quiz-result-actions">
+                    <button class="study-button study-button--quiet" @onclick="ResetQuiz">Refaire un quiz</button>
+                    <a href="@($"/learning/course/{CourseId}")" class="study-button">Retour au cours</a>
                 </div>
-                <h2 class="fw-bold" style="color:var(--slate-900);">@GetScoreMessage(_results.Percentage)</h2>
-                <p class="text-muted-chic">Vous avez obtenu <strong class="text-brand-dark">@_results.Percentage.ToString("F0")%</strong></p>
-            </div>
-
-            <h4 class="fw-bold mb-3" style="color:var(--slate-800);">Correction détaillée</h4>
-            @foreach (var fb in _results.Feedbacks)
-            {
-                <div class="card card-elegant p-4 mb-3 @(fb.IsCorrect ? "border-success" : "border-danger") border-0" style="border-left: 4px solid !important;">
-                    <h6 class="fw-bold mb-2">
-                        @(fb.IsCorrect ? "✅" : "❌") @fb.QuestionText
-                    </h6>
-                    @if (!fb.IsCorrect)
-                    {
-                        <p class="mb-1"><small class="text-danger">Votre réponse : option @((char)('A' + fb.SelectedOptionIndex))</small></p>
-                        <p class="mb-1"><small class="text-success">Bonne réponse : option @((char)('A' + fb.CorrectOptionIndex))</small></p>
-                    }
-                    <p class="text-muted-chic small mb-0 mt-2 fst-italic">💡 @fb.Explanation</p>
-                </div>
-            }
-
-            <div class="d-flex gap-2 mt-4">
-                <button class="btn btn-brand" @onclick="ResetQuiz">🔄 Refaire un quiz</button>
-                <a href="@($"/learning/course/{CourseId}")" class="btn btn-brand-outline">Retour au cours</a>
-            </div>
+            </section>
         }
     </div>
 </div>
+</main>
 
 @code {
     [Parameter] public Guid CourseId { get; set; }
@@ -149,13 +154,15 @@
     private Dictionary<Guid, int> _answers = new();
     private bool _loadingCourse = true, _generating, _submitting;
     private int _numQuestions = 5;
+    private int _currentQuestionIndex;
     private string? _error;
 
     protected override async Task OnInitializedAsync()
     {
         _loadingCourse = true;
-        _course = await Api.GetCourseAsync(CourseId);
-        _loadingCourse = false;
+        try { _course = await Api.GetCourseAsync(CourseId); }
+        catch { _error = "Vérifiez votre connexion puis réessayez."; }
+        finally { _loadingCourse = false; }
     }
 
     private async Task GenerateQuiz()
@@ -164,11 +171,13 @@
         _generating = true; _error = null;
         StateHasChanged();
 
-        _quiz = await Api.GenerateQuizAsync(_course.Title, _course.ExtractedText, _numQuestions);
+        try { _quiz = await Api.GenerateQuizAsync(_course.Title, _course.ExtractedText, _numQuestions); }
+        catch { _quiz = null; }
         _generating = false;
 
-        if (_quiz is null)
+        if (_quiz is null || _quiz.Questions.Count == 0)
         {
+            _quiz = null;
             _error = "Erreur lors de la génération du quiz par l'IA.";
         }
     }
@@ -178,6 +187,17 @@
         _answers[questionId] = optionIndex;
     }
 
+    private void NextQuestion()
+    {
+        if (_quiz is not null && _currentQuestionIndex < _quiz.Questions.Count - 1)
+            _currentQuestionIndex++;
+    }
+
+    private void PreviousQuestion()
+    {
+        if (_currentQuestionIndex > 0) _currentQuestionIndex--;
+    }
+
     private async Task SubmitQuiz()
     {
         if (_quiz is null) return;
@@ -185,7 +205,12 @@
         StateHasChanged();
 
         var studentAnswers = _answers.Select(kv => new StudentAnswer(kv.Key, kv.Value)).ToList();
-        _results = await Api.SubmitQuizAnswersAsync(_quiz.QuizId, studentAnswers);
+        try
+        {
+            _results = await Api.SubmitQuizAnswersAsync(_quiz.QuizId, studentAnswers);
+            if (_results is null) _error = "La correction n’a pas pu être chargée. Réessayez.";
+        }
+        catch { _error = "La correction n’a pas pu être chargée. Vérifiez votre connexion et réessayez."; }
         _submitting = false;
     }
 
@@ -194,6 +219,7 @@
         _quiz = null;
         _results = null;
         _answers.Clear();
+        _currentQuestionIndex = 0;
         _error = null;
     }
 
@@ -206,10 +232,10 @@
 
     private static string GetScoreMessage(double pct) => pct switch
     {
-        >= 90 => "🎉 Excellent !",
-        >= 70 => "👏 Très bien !",
-        >= 50 => "👍 Pas mal !",
-        >= 30 => "📚 À revoir...",
-        _ => "💪 Courage, révisez le cours !"
+        >= 90 => "Excellent travail.",
+        >= 70 => "Très bon travail.",
+        >= 50 => "Un bon début.",
+        >= 30 => "Encore quelques notions à revoir.",
+        _ => "Chaque essai vous fait progresser."
     };
 }

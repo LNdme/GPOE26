@@ -3,7 +3,7 @@
 
 <PageTitle>Mes Cours – GPOE26</PageTitle>
 
-<div class="listing-page">
+<main class="listing-page course-library-page study-page">
     <div class="container">
         <header class="listing-header">
             <div class="listing-header__copy">
@@ -21,6 +21,14 @@
             <div class="listing-state" role="status">
                 <span class="spinner-border text-brand-dark"></span>
                 <p>Chargement de vos cours…</p>
+            </div>
+        }
+        else if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <div class="listing-state" role="alert">
+                <h2>La bibliothèque n’a pas pu charger</h2>
+                <p>@_error</p>
+                <button type="button" class="listing-create-button mt-2" @onclick="Load">Réessayer</button>
             </div>
         }
         else if (!_courses.Any())
@@ -76,15 +84,18 @@
             </div>
         }
     </div>
-</div>
+</main>
 
 @if (_toDel is not null)
 {
-    <div class="modal d-block" tabindex="-1" style="background: rgba(0,0,0,0.4);">
+    <div class="modal d-block study-modal" tabindex="-1" style="background: rgba(0,0,0,0.68);">
         <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header"><h5 class="modal-title">Confirmer la suppression</h5><button type="button" class="btn-close" @onclick="CancelDel"></button></div>
-                <div class="modal-body"><p>Supprimer <strong>@_toDel.Title</strong> ?</p></div>
+            <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="delete-course-title">
+                <div class="modal-header"><h5 id="delete-course-title" class="modal-title">Confirmer la suppression</h5><button type="button" class="btn-close" aria-label="Fermer" @onclick="CancelDel"></button></div>
+                <div class="modal-body">
+                    <p>Supprimer <strong>@_toDel.Title</strong> ?</p>
+                    @if (!string.IsNullOrWhiteSpace(_error)) { <div class="study-alert" role="alert">@_error</div> }
+                </div>
                 <div class="modal-footer">
                     <button class="btn btn-secondary" @onclick="CancelDel">Annuler</button>
                     <button class="btn btn-danger" @onclick="Del" disabled="@_deleting">
@@ -98,20 +109,34 @@
 
 @code {
     private bool _loading = true, _deleting;
+    private string? _error;
     private List<CourseSummaryDto> _courses = new();
     private CourseSummaryDto? _toDel;
 
     protected override async Task OnInitializedAsync() => await Load();
-    private async Task Load() { _loading = true; _courses = await Api.GetMyCoursesAsync(); _loading = false; }
-    private void ConfirmDel(CourseSummaryDto c) => _toDel = c;
-    private void CancelDel() => _toDel = null;
+    private async Task Load()
+    {
+        _loading = true;
+        _error = null;
+        try { _courses = await Api.GetMyCoursesAsync(); }
+        catch { _error = "Vérifiez votre connexion puis réessayez."; }
+        finally { _loading = false; }
+    }
+    private void ConfirmDel(CourseSummaryDto c) { _error = null; _toDel = c; }
+    private void CancelDel() { _error = null; _toDel = null; }
     private async Task Del()
     {
         if (_toDel is null) return;
         _deleting = true;
-        await Api.DeleteCourseAsync(_toDel.Id);
-        _toDel = null; _deleting = false;
-        await Load();
+        _error = null;
+        try
+        {
+            await Api.DeleteCourseAsync(_toDel.Id);
+            _toDel = null;
+            await Load();
+        }
+        catch { _error = "Le cours n’a pas pu être supprimé. Réessayez."; }
+        finally { _deleting = false; }
     }
 
     private static string CourseImage(CourseSummaryDto course)

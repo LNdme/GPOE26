@@ -4,7 +4,7 @@
 
 <PageTitle>Modifier un Cours – GPOE26</PageTitle>
 
-<div class="container management-page">
+<main class="container management-page course-workspace study-page">
     <div class="form-section management-shell management-shell--wide">
         <nav aria-label="breadcrumb" class="mb-3">
             <ol class="breadcrumb">
@@ -19,7 +19,7 @@
         }
         else if (_course is null)
         {
-            <div class="alert alert-warning">Cours introuvable.</div>
+            <div class="alert alert-warning">@(string.IsNullOrWhiteSpace(_error) ? "Cours introuvable." : _error)</div>
             <a href="/cours" class="btn btn-outline-secondary">Retour</a>
         }
         else
@@ -34,16 +34,16 @@
                 <DataAnnotationsValidator />
 
                 <div class="mb-3">
-                    <label class="form-label fw-semibold">Titre *</label>
-                    <InputText @bind-Value="_form.Title" class="form-control" />
+                    <label for="edit-course-title" class="form-label fw-semibold">Titre *</label>
+                    <InputText id="edit-course-title" @bind-Value="_form.Title" class="form-control" />
                 </div>
                 <div class="mb-3">
-                    <label class="form-label fw-semibold">Matière *</label>
-                    <InputText @bind-Value="_form.Subject" class="form-control" />
+                    <label for="edit-course-subject" class="form-label fw-semibold">Matière *</label>
+                    <InputText id="edit-course-subject" @bind-Value="_form.Subject" class="form-control" />
                 </div>
                 <div class="mb-3">
-                    <label class="form-label fw-semibold">Description</label>
-                    <InputTextArea @bind-Value="_form.Description" class="form-control" rows="3" />
+                    <label for="edit-course-description" class="form-label fw-semibold">Description</label>
+                    <InputTextArea id="edit-course-description" @bind-Value="_form.Description" class="form-control" rows="3" />
                 </div>
 
                 @if (_course.ContentType == ContentType.Text)
@@ -55,9 +55,9 @@
                                 <p class="text-muted small mb-0">L'éditeur a été mis à jour pour supporter le Markdown complet !</p>
                             </div>
                             <div class="d-flex gap-2">
-                                <label class="btn btn-outline-secondary btn-sm mb-0 position-relative">
-                                    📷 Insérer une image
-                                    <InputFile OnChange="HandleDirectImageUpload" accept="image/*" class="position-absolute" style="opacity: 0; width: 0; height: 0;" />
+                                <label class="btn btn-outline-secondary btn-sm mb-0 position-relative course-file-label">
+                                    Insérer une image
+                                    <InputFile OnChange="HandleDirectImageUpload" accept="image/*" aria-label="Choisir une image à insérer" class="course-file-input" />
                                 </label>
                             </div>
                         </div>
@@ -85,7 +85,7 @@
                             </div>
                             <textarea id="md-editor" class="md-textarea" 
                                           placeholder="Éditez votre cours en Markdown ici..."
-                                          @bind="_markdownContent" @bind:event="oninput"></textarea>
+                                          aria-label="Contenu du cours en Markdown" @bind="_markdownContent" @bind:event="oninput"></textarea>
                             </div>
                             <div class="md-preview-pane">
                                 @if (string.IsNullOrWhiteSpace(_markdownContent))
@@ -116,7 +116,7 @@
             </EditForm>
         }
     </div>
-</div>
+</main>
 
 @code {
     [Parameter] public Guid Id { get; set; }
@@ -136,7 +136,8 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _course = await Api.GetCourseAsync(Id);
+        try { _course = await Api.GetCourseAsync(Id); }
+        catch { _error = "Le cours n’a pas pu être chargé. Vérifiez votre connexion puis réessayez."; }
         if (_course is not null)
         {
             _form = new EditFormModel
@@ -225,7 +226,9 @@
             : null;
 
         var request = new UpdateCourseRequest(_form.Title, _form.Subject, _form.Description, sections);
-        var ok = await Api.UpdateCourseAsync(Id, request);
+        bool ok;
+        try { ok = await Api.UpdateCourseAsync(Id, request); }
+        catch { ok = false; }
         _saving = false;
         if (ok) Nav.NavigateTo("/cours");
         else _error = "Erreur lors de la mise à jour.";

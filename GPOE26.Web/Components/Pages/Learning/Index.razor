@@ -3,7 +3,7 @@
 
 <PageTitle>Apprentissage – GPOE26</PageTitle>
 
-<div class="learning-page">
+<main class="learning-page study-page">
     <div class="container">
         <section class="learning-hero">
             <div class="learning-hero__copy">
@@ -22,6 +22,14 @@
             <div class="listing-state" role="status">
                 <span class="spinner-border text-brand-dark"></span>
                 <p>Chargement de vos cours…</p>
+            </div>
+        }
+        else if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <div class="listing-state" role="alert">
+                <h2>Vos cours ne sont pas disponibles</h2>
+                <p>@_error</p>
+                <button type="button" class="listing-create-button mt-2" @onclick="LoadCourses">Réessayer</button>
             </div>
         }
         else if (!_courses.Any())
@@ -72,17 +80,25 @@
             </div>
         }
     </div>
-</div>
+</main>
 
 @code {
     private bool _loading = true;
+    private string? _error;
     private List<CourseSummaryDto> _courses = new();
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadCourses();
+    }
+
+    private async Task LoadCourses()
+    {
         _loading = true;
-        _courses = await Api.GetMyCoursesAsync();
-        _loading = false;
+        _error = null;
+        try { _courses = await Api.GetMyCoursesAsync(); }
+        catch { _error = "Vérifiez votre connexion puis réessayez."; }
+        finally { _loading = false; }
     }
 
     private static string Truncate(string t, int m) => t.Length <= m ? t : t[..m] + "…";

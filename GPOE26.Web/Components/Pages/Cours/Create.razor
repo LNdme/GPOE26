@@ -6,7 +6,7 @@
 
 <PageTitle>Créer un Cours – GPOE26</PageTitle>
 
-<div class="container management-page">
+<main class="container management-page course-workspace study-page">
     <div class="form-section management-shell management-shell--wide">
         <nav aria-label="breadcrumb" class="mb-3">
             <ol class="breadcrumb">
@@ -18,7 +18,12 @@
         <header class="management-heading">
             <span class="listing-eyebrow">Mes cours · Gestion</span>
             <h1 class="listing-title">Créer un cours</h1>
+            <p class="listing-description">Ajoutez vos idées, demandez un premier plan ou importez un document.</p>
         </header>
+        <aside class="course-create-note">
+            <img src="/images/learning-together.webp" alt="" />
+            <div><strong>Un espace pour vos ressources</strong><span>Votre cours sera disponible dans votre bibliothèque dès sa création.</span></div>
+        </aside>
 
         @if (!string.IsNullOrEmpty(_error)) { <div class="alert alert-danger">@_error</div> }
 
@@ -26,18 +31,18 @@
             <DataAnnotationsValidator />
 
             <div class="mb-3">
-                <label class="form-label fw-semibold">Titre *</label>
-                <InputText @bind-Value="_form.Title" class="form-control" placeholder="ex: Introduction à l'algorithmique" />
+                <label for="course-title" class="form-label fw-semibold">Titre *</label>
+                <InputText id="course-title" @bind-Value="_form.Title" class="form-control" placeholder="ex: Introduction à l'algorithmique" />
             </div>
 
             <div class="mb-3">
-                <label class="form-label fw-semibold">Matière *</label>
-                <InputText @bind-Value="_form.Subject" class="form-control" placeholder="ex: Informatique, Mathématiques..." />
+                <label for="course-subject" class="form-label fw-semibold">Matière *</label>
+                <InputText id="course-subject" @bind-Value="_form.Subject" class="form-control" placeholder="ex: Informatique, Mathématiques..." />
             </div>
 
             <div class="mb-3">
-                <label class="form-label fw-semibold">Description</label>
-                <InputTextArea @bind-Value="_form.Description" class="form-control" rows="3" />
+                <label for="course-description" class="form-label fw-semibold">Description</label>
+                <InputTextArea id="course-description" @bind-Value="_form.Description" class="form-control" rows="3" />
             </div>
 
             <div class="mb-3">
@@ -45,11 +50,11 @@
                 <div class="d-flex gap-3">
                     <div class="form-check">
                         <input class="form-check-input" type="radio" name="contentType" id="typeText" checked="@(!_isPdf)" @onchange="() => _isPdf = false" />
-                        <label class="form-check-label" for="typeText">📝 Saisir du contenu structuré</label>
+                        <label class="form-check-label" for="typeText">Rédiger mon cours</label>
                     </div>
                     <div class="form-check">
                         <input class="form-check-input" type="radio" name="contentType" id="typePdf" checked="@_isPdf" @onchange="() => _isPdf = true" />
-                        <label class="form-check-label" for="typePdf">📄 Uploader un PDF</label>
+                        <label class="form-check-label" for="typePdf">Importer un PDF</label>
                     </div>
                 </div>
             </div>
@@ -65,11 +70,11 @@
                         <div class="d-flex gap-2">
                             <button type="button" class="btn btn-outline-primary btn-sm" @onclick="GenerateWithAI" disabled="@_isGeneratingAI">
                                 @if (_isGeneratingAI) { <span class="spinner-border spinner-border-sm"></span> }
-                                ✨ Générer le plan (IA)
+                                Générer un plan avec l’IA
                             </button>
-                            <label class="btn btn-outline-secondary btn-sm mb-0 position-relative">
-                                📷 Insérer une image
-                                <InputFile OnChange="HandleDirectImageUpload" accept="image/*" class="position-absolute" style="opacity: 0; width: 0; height: 0;" />
+                            <label class="btn btn-outline-secondary btn-sm mb-0 position-relative course-file-label">
+                                Insérer une image
+                                <InputFile OnChange="HandleDirectImageUpload" accept="image/*" aria-label="Choisir une image à insérer" class="course-file-input" />
                             </label>
                         </div>
                     </div>
@@ -97,7 +102,7 @@
                             </div>
                             <textarea id="md-editor" class="md-textarea" 
                                       placeholder="# Titre du cours&#10;&#10;Commencez à rédiger votre cours ici..."
-                                      @bind="_markdownContent" @bind:event="oninput"></textarea>
+                                      aria-label="Contenu du cours en Markdown" @bind="_markdownContent" @bind:event="oninput"></textarea>
                         </div>
                         
                         <!-- Prévisualisation en direct -->
@@ -122,7 +127,7 @@
                         <InputFile OnChange="HandleFileSelected" accept=".pdf" />
                         @if (_selectedFile is not null)
                         {
-                            <p class="mt-2 mb-0 text-success">📄 @_selectedFile.Name (@FormatSize(_selectedFile.Size))</p>
+                            <p class="mt-2 mb-0 text-success">@_selectedFile.Name (@FormatSize(_selectedFile.Size))</p>
                         }
                         else
                         {
@@ -140,7 +145,7 @@
             </div>
         </EditForm>
     </div>
-</div>
+</main>
 
 @code {
     private const long MaxPdfFileSizeBytes = 10 * 1024 * 1024;
@@ -295,7 +300,14 @@
             sections
         );
 
-        var created = await Api.CreateCourseAsync(request);
+        CourseDto? created;
+        try { created = await Api.CreateCourseAsync(request); }
+        catch
+        {
+            _error = "Erreur lors de la création du cours. Vérifiez votre connexion puis réessayez.";
+            _saving = false;
+            return;
+        }
         if (created is null)
         {
             _error = "Erreur lors de la création du cours.";
