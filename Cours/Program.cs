@@ -246,11 +246,11 @@ cours.MapPost("/{id:guid}/upload", async (
     // Sauvegarder le nouveau PDF (fallback si WebRootPath est null)
     var root = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
     var uploadFolder = Path.Combine(root, "uploads", "cours");
-    var relativePath = await extractor.SavePdfAsync(file, uploadFolder);
 
     // Extraire le texte du PDF
     using var stream = file.OpenReadStream();
     var extractedText = extractor.ExtractText(stream);
+    var relativePath = await extractor.SavePdfAsync(file, uploadFolder);
 
     // Mettre à jour le cours — supprimer les sections texte
     course.ContentType = ContentType.Pdf;

@@ -117,7 +117,7 @@
             else
             {
                 <div class="mb-3">
-                    <label class="form-label fw-semibold">Fichier PDF</label>
+                    <label class="form-label fw-semibold">Fichier PDF <span class="text-muted fw-normal">(10 Mo maximum)</span></label>
                     <div class="upload-zone management-upload-zone">
                         <InputFile OnChange="HandleFileSelected" accept=".pdf" />
                         @if (_selectedFile is not null)
@@ -143,6 +143,7 @@
 </div>
 
 @code {
+    private const long MaxPdfFileSizeBytes = 10 * 1024 * 1024;
     private CourseFormModel _form = new();
     private bool _isPdf = false;
     private bool _saving;
@@ -159,7 +160,17 @@
         public string? Description { get; set; }
     }
 
-    private void HandleFileSelected(InputFileChangeEventArgs e) => _selectedFile = e.File;
+    private void HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        _error = null;
+        _selectedFile = e.File;
+
+        if (_selectedFile.Size > MaxPdfFileSizeBytes)
+        {
+            _selectedFile = null;
+            _error = "Le PDF dépasse la taille maximale de 10 Mo.";
+        }
+    }
 
     private async Task HandleDirectImageUpload(InputFileChangeEventArgs e)
     {
@@ -258,6 +269,20 @@
             return;
         }
 
+        if (_isPdf && _selectedFile is null)
+        {
+            _error = "Veuillez sélectionner un fichier PDF.";
+            _saving = false;
+            return;
+        }
+
+        if (_isPdf && _selectedFile!.Size > MaxPdfFileSizeBytes)
+        {
+            _error = "Le PDF dépasse la taille maximale de 10 Mo.";
+            _saving = false;
+            return;
+        }
+
         var sections = _isPdf ? null : new List<CreateSectionDto>
         {
             new CreateSectionDto(SectionType.Paragraph, _markdownContent, 0, 0)
@@ -280,11 +305,21 @@
 
         if (_isPdf && _selectedFile is not null)
         {
-            using var stream = _selectedFile.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024);
-            var ok = await Api.UploadCoursePdfAsync(created.Id, stream, _selectedFile.Name);
+            var ok = false;
+            try
+            {
+                using var stream = _selectedFile.OpenReadStream(maxAllowedSize: MaxPdfFileSizeBytes);
+                ok = await Api.UploadCoursePdfAsync(created.Id, stream, _selectedFile.Name);
+            }
+            catch (Exception)
+            {
+                ok = false;
+            }
+
             if (!ok)
             {
-                _error = "Le cours a été créé mais l'upload du PDF a échoué.";
+                await Api.DeleteCourseAsync(created.Id);
+                _error = "Le PDF n'a pas pu être importé. Vérifiez qu'il s'agit d'un PDF valide de 10 Mo maximum.";
                 _saving = false;
                 return;
             }

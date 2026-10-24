@@ -1,4 +1,4 @@
-modules = ["web", "nodejs-20", "dotnet-10.0"]
+modules = ["web", "nodejs-20", "dotnet-10.0", "postgresql-16"]
 [agent]
 expertMode = true
 

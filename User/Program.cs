@@ -110,7 +110,7 @@ using (var scope = app.Services.CreateScope())
             ""Username"" character varying(64) NOT NULL,
             ""PasswordHash"" text NOT NULL,
             ""CreatedAt"" timestamp with time zone NOT NULL,
-            ""Role"" integer NOT NULL DEFAULT 0,
+            ""Role"" text NOT NULL DEFAULT 'Student',
             ""Level"" text,
             ""Specialite"" text,
             ""Filiere"" text,
