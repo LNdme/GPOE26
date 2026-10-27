@@ -108,6 +108,28 @@ Les fichiers envoyés par les utilisateurs sont enregistrés dans `*/wwwroot/upl
 
 ---
 
+## API du service User (comptes)
+
+| Domaine | Endpoints |
+|---|---|
+| Authentification | `POST /auth/register` (inscription guidée : profil, classes initiales, clé d'abonnement, code de classe, essai), `POST /auth/login`, `GET/PUT/PATCH /auth/me` |
+| Classes et groupes | `POST /classrooms`, `GET /classrooms/mine`, `GET /classrooms/{id}`, `GET /classrooms/{id}/members`, `POST /classrooms/join`, `POST /classrooms/{id}/invite-code`, `DELETE /classrooms/{id}`, `DELETE /classrooms/{id}/members/{studentId}` |
+| Parents | `POST /parents/children/link` (code de l'élève), `POST /parents/children` (créer le compte de l'enfant), `GET /parents/children`, `DELETE /parents/children/{linkId}` ; côté élève `GET /me/parents`, `POST /me/parents/{linkId}/approve` ou `/reject` |
+| Abonnements | `GET /subscriptions/me`, `POST /subscriptions/redeem`, `POST /subscriptions/checkout`, `POST /subscriptions/trial` |
+| Administration | `POST/GET /admin/organizations`, `POST /admin/organizations/{id}/licenses`, `POST /admin/subscriptions/{id}/activate` |
+
+Le JWT contient désormais `premium` (`true`/`false`) et `plan` : les services Chat et Quiz pourront réserver les fonctions Premium aux abonnés sans interroger la base User.
+
+Tant que le paiement n'est pas branché (phase 5), un abonnement souscrit reste `PendingPayment` jusqu'à ce qu'un administrateur l'active.
+
+**Données de démonstration (environnement Development uniquement)** — mot de passe `Test1234!` :
+`admin@gpoe26.cm` (Admin), `prof@gpoe26.cm` (Enseignant), `eleve@gpoe26.cm` (Élève), `parent@gpoe26.cm` (Parent, rattaché à l'élève), classe « Terminale C » (code `DEM-TLC`), licence du « Lycée de démonstration » (clé `ETB-DEMO-PROF`, 50 places).
+
+En production, aucun compte Admin n'est créé automatiquement : promouvoir un compte existant avec
+`UPDATE "AppUsers" SET "Role" = 'Admin' WHERE "Email" = '...';`
+
+---
+
 ## Tests
 
 ```bash
@@ -116,6 +138,8 @@ dotnet test GPOE26.slnx
 
 Le test existant démarre l'AppHost complet (Docker requis) et vérifie que la page d'accueil répond.
 
+Le script `scripts/test-user-api.sh` rejoue les parcours de la phase 1 sur le service User (57 vérifications : inscriptions, clés, places, rôles, rattachements) — voir l'en-tête du script pour le lancer.
+
 ---
 
 ## Feuille de route
@@ -123,7 +147,7 @@ Le test existant démarre l'AppHost complet (Docker requis) et vérifie que la p
 | Phase | Contenu | État |
 |---|---|---|
 | 0 | Nettoyage du dépôt, secrets hors du code, README | ✅ |
-| 1 | **Comptes et rôles** : Élève, Enseignant, Parent, Admin ; structures (établissement scolaire, autre institution : entreprise, startup, centre de formation…) ; classes et groupes avec code d'invitation ; lien parent ↔ enfant ; abonnements et **clés d'abonnement** (familiale, établissement/institution) ; plan d'études ; progression | À faire |
+| 1 | ✅ (API) **Comptes et rôles** : Élève, Enseignant, Parent, Admin ; structures (établissement scolaire, autre institution : entreprise, startup, centre de formation…) ; classes et groupes avec code d'invitation ; lien parent ↔ enfant ; abonnements et **clés d'abonnement** (familiale, établissement/institution) ; plan d'études et progression : à faire | Backend fait, interface en phase 3 |
 | 1 bis | **Évaluations enseignant** : cours, devoirs et épreuves (quiz d'entraînement, devoir, épreuve notée, épreuve blanche) avec questions QCM, choix multiples, vrai/faux, réponse courte, numérique et réponse ouverte (correction manuelle assistée par IA) ; suivi de la maîtrise par élève et par chapitre | À faire |
 | 2 | **Maquettes** : inscription guidée en questions-réponses (système scolaire camerounais bilingue : classes, séries, BEPC/Probatoire/BAC, GCE O/A Level) ; tableaux de bord par rôle ; lecture de cours à 3 colonnes | À faire |
 | 3 | Intégration Blazor : bibliothèque de composants partagée `GPOE26.UI`, services derrière des interfaces | À faire |

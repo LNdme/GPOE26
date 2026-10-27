@@ -6,6 +6,8 @@ using System.Security.Claims;
 using System.Text;
 using User.Data;
 using User.DTOs;
+using User.Endpoints;
+using User.Helper;
 using User.Model;
 using User.Service;
 
@@ -56,6 +58,11 @@ builder.Services.AddSwaggerGen(c =>
 
 
 builder.Services.AddScoped<Jwtservice>();
+builder.Services.AddScoped<SubscriptionService>();
+builder.Services.AddScoped<ClassroomService>();
+
+// Applique les [Required], [MinLength]… des DTOs aux Minimal APIs (sinon ils sont ignorés)
+builder.Services.AddValidation();
 
 // Nécessaire pour le PatchController uniquement
 builder.Services.AddControllers().AddNewtonsoftJson();
@@ -81,11 +88,15 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateAudience = true,
             ValidAudience = builder.Configuration["Jwt:Audience"],
             ValidateLifetime = true,
-            ClockSkew = TimeSpan.Zero
+            ClockSkew = TimeSpan.Zero,
+            // Les claims gardent leur nom court du JWT ("sub", "role"…)
+            RoleClaimType = "role",
+            NameClaimType = "username"
         };
+        options.MapInboundClaims = false;
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddRolePolicies();
 
 
 
@@ -97,32 +108,13 @@ app.MapDefaultEndpoints();
 // Configure the HTTP request pipeline.
 
 
-// ⚠️ AJOUT : migration automatique au démarrage
-// Crée les tables si elles n'existent pas encore.
+// Création / mise à niveau du schéma au démarrage (idempotent, cf. Data/UserSchema.cs).
 // En prod, préférer une migration explicite dans le pipeline CI/CD.
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<UserContext>();
-    await db.Database.ExecuteSqlRawAsync(
-        @"CREATE TABLE IF NOT EXISTS ""AppUsers"" (
-            ""Id"" uuid NOT NULL,
-            ""Email"" character varying(256) NOT NULL,
-            ""Username"" character varying(64) NOT NULL,
-            ""PasswordHash"" text NOT NULL,
-            ""CreatedAt"" timestamp with time zone NOT NULL,
-            ""Role"" text NOT NULL DEFAULT 'Student',
-            ""Level"" text,
-            ""Specialite"" text,
-            ""Filiere"" text,
-            ""Language"" text NOT NULL DEFAULT 'fr',
-            ""LastLoginAt"" timestamp with time zone,
-            CONSTRAINT ""PK_AppUsers"" PRIMARY KEY (""Id"")
-        )");
-    await db.Database.ExecuteSqlRawAsync(
-        @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AppUsers_Email"" ON ""AppUsers"" (""Email"")");
-    await db.Database.ExecuteSqlRawAsync(
-        @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AppUsers_Username"" ON ""AppUsers"" (""Username"")");
-    await UserSeeder.SeedAsync(db);
+    await UserSchema.EnsureAsync(db);
+    await UserSeeder.SeedAsync(db, app.Environment.IsDevelopment());
 }
 
 if (app.Environment.IsDevelopment())
@@ -154,8 +146,14 @@ app.UseAuthorization();
 var auth = app.MapGroup("/auth").WithTags("Auth");
 
 // ── POST /auth/register ───────────────────────────────────────────────────────
-auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice jwt) =>
+// Inscription guidée (élève, enseignant ou parent). Les clés et codes sont vérifiés
+// AVANT la création du compte : une clé invalide ne laisse pas de compte à moitié créé.
+auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice jwt,
+    SubscriptionService subs, ClassroomService classrooms) =>
 {
+    if (req.Role == UserRole.Admin)
+        return Results.BadRequest(new { message = "Un compte administrateur ne peut pas être créé par inscription." });
+
     // Vérifications unicité
     if (await db.AppUsers.AnyAsync(u => u.Email == req.Email.ToLower()))
         return Results.Conflict(new { message = "Un compte avec cet email existe déjà." });
@@ -170,6 +168,27 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
     if (req.Role == UserRole.Teacher && req.Filiere is not null)
         return Results.BadRequest(new { message = "Un enseignant ne peut pas avoir de filière." });
 
+    if (req.InviteCode is not null && req.Role != UserRole.Student)
+        return Results.BadRequest(new { message = "Seul un élève peut rejoindre une classe." });
+
+    if (req.StartTrial && req.Role != UserRole.Teacher)
+        return Results.BadRequest(new { message = "L'essai gratuit est réservé aux enseignants." });
+
+    if (req.SubscriptionKey is not null)
+    {
+        var (error, _) = await subs.CheckKeyAsync(req.SubscriptionKey, req.Role);
+        if (error != RedeemError.None)
+            return Results.BadRequest(new { message = SubscriptionService.Message(error) });
+    }
+
+    if (req.InviteCode is not null)
+    {
+        var code = CodeGenerator.Normalize(req.InviteCode);
+        if (!await db.Classrooms.AnyAsync(c => c.InviteCode == code && !c.IsArchived))
+            return Results.BadRequest(new { message = "Code d'invitation de classe invalide." });
+    }
+
+    var teachingSubjects = req.TeachingSubjects ?? new();
     var user = new AppUser
     {
         Email = req.Email.ToLower(),
@@ -177,16 +196,49 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
         PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password),
         Role = req.Role,
         Level = req.Level,
-        Specialite = req.Specialite,
+        // La spécialité (claim JWT lu par le LLM) reprend les matières enseignées
+        Specialite = req.Specialite ?? (teachingSubjects.Count > 0 ? string.Join(", ", teachingSubjects) : null),
         Filiere = req.Filiere,
         Language = req.Language,
+        SubSystem = req.SubSystem,
+        ExamTarget = req.ExamTarget,
+        ExamDate = req.ExamDate,
+        FocusSubjects = req.FocusSubjects ?? new(),
+        DailyStudyMinutes = req.DailyStudyMinutes,
+        TeachingSubjects = teachingSubjects,
+        TeachingContext = req.TeachingContext,
+        OrganizationName = req.TeachingContext == TeachingContext.Independent ? null : req.OrganizationName,
+        LinkCode = req.Role == UserRole.Student ? await ParentEndpoints.UniqueLinkCodeAsync(db) : null
     };
-
     db.AppUsers.Add(user);
+
+    // Enseignant : une classe (ou un groupe) par niveau choisi pendant l'inscription
+    if (req.Role == UserRole.Teacher && req.InitialClasses is { Count: > 0 })
+    {
+        var isSchool = req.TeachingContext != TeachingContext.Institution;
+        foreach (var name in req.InitialClasses.Where(n => !string.IsNullOrWhiteSpace(n)).Distinct())
+        {
+            var subSystem = !isSchool ? (SchoolSubSystem?)null
+                : name.StartsWith("Form", StringComparison.OrdinalIgnoreCase) || name.EndsWith("Sixth", StringComparison.OrdinalIgnoreCase)
+                    ? SchoolSubSystem.Anglophone : SchoolSubSystem.Francophone;
+            await classrooms.CreateAsync(user, name, isSchool ? name.Trim() : null, subSystem);
+        }
+    }
+
+    if (req.InviteCode is not null)
+        await classrooms.JoinAsync(user, req.InviteCode);
+
     await db.SaveChangesAsync();
 
-    var (token, expiresAt) = jwt.GenerateToken(user);
-    return Results.Created("/auth/me", new AuthResponse(token, expiresAt, new UserProfileDto(user)));
+    if (req.SubscriptionKey is not null)
+        await subs.RedeemAsync(user, req.SubscriptionKey);
+
+    if (req.StartTrial)
+        await subs.StartTrialAsync(user.Id, SubscriptionPlan.Teacher);
+
+    var entitlement = await subs.GetEntitlementAsync(user.Id);
+    var (token, expiresAt) = jwt.GenerateToken(user, entitlement);
+    return Results.Created("/auth/me", new AuthResponse(token, expiresAt, new UserProfileDto(user, entitlement)));
 })
 .WithSummary("Créer un compte")
 .Produces<AuthResponse>(201)
@@ -194,7 +246,7 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
 .Produces(400);
 
 // ── POST /auth/login ──────────────────────────────────────────────────────────
-auth.MapPost("/login", async (LoginRequest req, UserContext db, Jwtservice jwt) =>
+auth.MapPost("/login", async (LoginRequest req, UserContext db, Jwtservice jwt, SubscriptionService subs) =>
 {
     var user = await db.AppUsers.FirstOrDefaultAsync(u => u.Email == req.Email.ToLower());
 
@@ -206,8 +258,9 @@ auth.MapPost("/login", async (LoginRequest req, UserContext db, Jwtservice jwt) 
     user.LastLoginAt = DateTime.UtcNow;
     await db.SaveChangesAsync();
 
-    var (token, expiresAt) = jwt.GenerateToken(user);
-    return Results.Ok(new AuthResponse(token, expiresAt, new UserProfileDto(user)));
+    var entitlement = await subs.GetEntitlementAsync(user.Id);
+    var (token, expiresAt) = jwt.GenerateToken(user, entitlement);
+    return Results.Ok(new AuthResponse(token, expiresAt, new UserProfileDto(user, entitlement)));
 })
 .WithSummary("Se connecter")
 .Produces<AuthResponse>()
@@ -216,38 +269,25 @@ auth.MapPost("/login", async (LoginRequest req, UserContext db, Jwtservice jwt) 
 // ── GET /auth/me ──────────────────────────────────────────────────────────────
 // Endpoint protégé : le client envoie le JWT dans le header Authorization: Bearer <token>
 // On lit les claims du token pour retrouver l'utilisateur
-auth.MapGet("/me", async (ClaimsPrincipal principal, UserContext db) =>
+auth.MapGet("/me", async (ClaimsPrincipal principal, UserContext db, SubscriptionService subs) =>
 {
-    // "sub" est le claim standard qui contient l'Id utilisateur
-    var userIdStr = principal.FindFirstValue(ClaimTypes.NameIdentifier)
-                    ?? principal.FindFirstValue("sub");
-
-    if (userIdStr is null || !Guid.TryParse(userIdStr, out var userId))
-        return Results.Unauthorized();
-
-    var user = await db.AppUsers.FindAsync(userId);
-    return user is null ? Results.NotFound() : Results.Ok(new UserProfileDto(user));
+    var user = await db.CurrentUserAsync(principal);
+    return user is null
+        ? Results.NotFound()
+        : Results.Ok(new UserProfileDto(user, await subs.GetEntitlementAsync(user.Id)));
 })
 .RequireAuthorization()
 .WithSummary("Profil de l'utilisateur connecté")
 .Produces<UserProfileDto>()
 .Produces(401);
 
-
-
 // ── PUT /auth/me ──────────────────────────────────────────────────────────────
 // Remplacement COMPLET du profil.
 // Tous les champs doivent être envoyés — les champs omis seront mis à null.
 // Différence avec PATCH : PATCH = modification partielle, PUT = remplacement total.
-auth.MapPut("/me", async (UpdateProfileRequest req, ClaimsPrincipal principal, UserContext db) =>
+auth.MapPut("/me", async (UpdateProfileRequest req, ClaimsPrincipal principal, UserContext db, SubscriptionService subs) =>
 {
-    var userIdStr = principal.FindFirstValue(ClaimTypes.NameIdentifier)
-                    ?? principal.FindFirstValue("sub");
-
-    if (userIdStr is null || !Guid.TryParse(userIdStr, out var userId))
-        return Results.Unauthorized();
-
-    var user = await db.AppUsers.FindAsync(userId);
+    var user = await db.CurrentUserAsync(principal);
     if (user is null) return Results.NotFound();
 
     // Cohérence métier : vérifier la combinaison Role/Specialite/Filiere
@@ -265,7 +305,7 @@ auth.MapPut("/me", async (UpdateProfileRequest req, ClaimsPrincipal principal, U
     user.Language = req.Language ?? user.Language;
 
     await db.SaveChangesAsync();
-    return Results.Ok(new UserProfileDto(user));
+    return Results.Ok(new UserProfileDto(user, await subs.GetEntitlementAsync(user.Id)));
 })
 .RequireAuthorization()
 .WithSummary("Remplacer le profil complet (PUT)")
@@ -273,22 +313,13 @@ auth.MapPut("/me", async (UpdateProfileRequest req, ClaimsPrincipal principal, U
 .Produces(400)
 .Produces(401);
 
-// PATCH /auth/me → voir Controllers/UserController.cs
+// PATCH /auth/me → voir Controllers/UsersController.cs
 
-
-// PATCH /auth/me → voir Controllers/UserController.cs
-
-
-
-
-
-
-
-
-
-
-
-
+// ─── Classes, parents, abonnements, administration ────────────────────────────
+app.MapClassroomEndpoints();
+app.MapParentEndpoints();
+app.MapSubscriptionEndpoints();
+app.MapAdminEndpoints();
 
 app.MapControllers();
 

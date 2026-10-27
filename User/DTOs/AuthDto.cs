@@ -1,5 +1,6 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using User.Model;
+using User.Service;
 
 namespace User.DTOs;
 
@@ -19,6 +20,10 @@ namespace User.DTOs;
 //  UpdateProfileRequest = données acceptées par PATCH /auth/me
 // ══════════════════════════════════════════════════════════════════════════════
 
+/// <summary>
+/// Inscription guidée. Seuls Email, Username et Password sont obligatoires ;
+/// les autres champs correspondent aux étapes de l'onboarding selon le rôle.
+/// </summary>
 public record RegisterRequest(
     [Required, EmailAddress] string Email,
     [Required, MinLength(3), MaxLength(64)] string Username,
@@ -27,7 +32,22 @@ public record RegisterRequest(
     string? Level = null,
     string? Specialite = null,
     string? Filiere = null,
-    string Language = "fr"
+    string Language = "fr",
+    // ── Élève ──
+    SchoolSubSystem? SubSystem = null,
+    string? ExamTarget = null,
+    DateOnly? ExamDate = null,
+    List<string>? FocusSubjects = null,
+    int? DailyStudyMinutes = null,
+    string? InviteCode = null,
+    // ── Enseignant ──
+    List<string>? TeachingSubjects = null,
+    TeachingContext? TeachingContext = null,
+    string? OrganizationName = null,
+    List<string>? InitialClasses = null,
+    bool StartTrial = false,
+    // ── Élève ou enseignant : clé familiale / d'établissement / d'institution ──
+    string? SubscriptionKey = null
 );
 
 public record LoginRequest(
@@ -50,10 +70,23 @@ public record UserProfileDto(
     string? Specialite,
     string? Filiere,
     string Language,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    SchoolSubSystem? SubSystem,
+    string? ExamTarget,
+    DateOnly? ExamDate,
+    List<string> FocusSubjects,
+    int? DailyStudyMinutes,
+    string? LinkCode,
+    List<string> TeachingSubjects,
+    TeachingContext? TeachingContext,
+    Guid? OrganizationId,
+    string? OrganizationName,
+    bool IsPremium,
+    SubscriptionPlan? Plan,
+    DateTime? PremiumUntil
 )
 {
-    public UserProfileDto(AppUser user) : this(
+    public UserProfileDto(AppUser user, Entitlement? entitlement = null) : this(
         user.Id,
         user.Email,
         user.Username,
@@ -62,7 +95,20 @@ public record UserProfileDto(
         user.Specialite,
         user.Filiere,
         user.Language,
-        user.CreatedAt
+        user.CreatedAt,
+        user.SubSystem,
+        user.ExamTarget,
+        user.ExamDate,
+        user.FocusSubjects,
+        user.DailyStudyMinutes,
+        user.LinkCode,
+        user.TeachingSubjects,
+        user.TeachingContext,
+        user.OrganizationId,
+        user.OrganizationName,
+        entitlement?.IsPremium ?? false,
+        entitlement?.Plan,
+        entitlement?.Until
     )
     { }
 }
