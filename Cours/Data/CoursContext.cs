@@ -1,4 +1,4 @@
-﻿using Cours.Model;
+using Cours.Model;
 using Microsoft.EntityFrameworkCore;
 
 namespace Cours.Data
@@ -17,6 +17,7 @@ namespace Cours.Data
 
                 // Stocker l'enum comme string en DB
                 entity.Property(c => c.ContentType).HasConversion<string>();
+                entity.Property(c => c.Status).HasConversion<string>();
 
                 // Index pour retrouver rapidement les cours d'un utilisateur
                 entity.HasIndex(c => c.OwnerId);

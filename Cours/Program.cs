@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Http.Resilience;
 using System.Security.Claims;
 using System.Text;
 using Cours.Data;
@@ -24,6 +25,12 @@ builder.Services.AddDbContext<CoursContext>(options =>
 
 // ─── Services ─────────────────────────────────────────────────────────────────
 builder.Services.AddScoped<PdfExtractorService>();
+
+// Service User : classes de l'utilisateur, pour le partage des cours (JWT de l'appelant transmis)
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddHttpClient<UserDirectoryClient>(client =>
+        client.BaseAddress = new Uri(builder.Configuration["Services:User"] ?? "http://localhost:5197"))
+    .AddStandardResilienceHandler();
 builder.Services.AddOpenApi();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -104,6 +111,15 @@ using (var scope = app.Services.CreateScope())
         )");
     await db.Database.ExecuteSqlRawAsync(
         @"CREATE INDEX IF NOT EXISTS ""IX_CourseSections_CourseId_Order"" ON ""CourseSections"" (""CourseId"", ""Order"")");
+    // Partage des cours avec les classes (phase 1 bis)
+    await db.Database.ExecuteSqlRawAsync(
+        @"ALTER TABLE ""Courses"" ADD COLUMN IF NOT EXISTS ""Status"" text NOT NULL DEFAULT 'Draft'");
+    await db.Database.ExecuteSqlRawAsync(
+        @"ALTER TABLE ""Courses"" ADD COLUMN IF NOT EXISTS ""ClassroomIds"" uuid[] NOT NULL DEFAULT ARRAY[]::uuid[]");
+    await db.Database.ExecuteSqlRawAsync(
+        @"ALTER TABLE ""Courses"" ADD COLUMN IF NOT EXISTS ""PublishedAt"" timestamp with time zone");
+    await db.Database.ExecuteSqlRawAsync(
+        @"CREATE INDEX IF NOT EXISTS ""IX_Courses_ClassroomIds"" ON ""Courses"" USING gin (""ClassroomIds"")");
     await CoursSeeder.SeedAsync(db);
 }
 
@@ -149,19 +165,46 @@ cours.MapGet("", async (
 .WithSummary("Liste de mes cours")
 .Produces<List<CourseSummaryDto>>();
 
-// ── GET /cours/{id} ───────────────────────────────────────────────────────────
-cours.MapGet("/{id:guid}", async (Guid id, ClaimsPrincipal principal, CoursContext db) =>
+// ── GET /cours/shared ─────────────────────────────────────────────────────────
+// Cours publiés pour les classes de l'élève (gratuits dans le modèle freemium).
+cours.MapGet("/shared", async (CoursContext db, UserDirectoryClient users, string? subject) =>
 {
-    var ownerId = ClaimsHelper.GetUserId(principal);
-    if (ownerId is null) return Results.Unauthorized();
+    var classIds = (await users.MyClassroomIdsAsync()).ToList();
+    if (classIds.Count == 0) return Results.Ok(new List<CourseSummaryDto>());
+
+    var query = db.Courses.Where(c => c.Status == CourseStatus.Published && c.ClassroomIds.Any(id => classIds.Contains(id)));
+    if (!string.IsNullOrWhiteSpace(subject))
+        query = query.Where(c => c.Subject == subject);
+
+    var results = await query
+        .OrderByDescending(c => c.PublishedAt)
+        .Select(c => new CourseSummaryDto(c))
+        .ToListAsync();
+    return Results.Ok(results);
+})
+.WithSummary("Cours partagés avec mes classes")
+.Produces<List<CourseSummaryDto>>();
+
+// ── GET /cours/{id} ───────────────────────────────────────────────────────────
+// L'auteur, ou un membre d'une classe avec laquelle le cours est publié.
+cours.MapGet("/{id:guid}", async (Guid id, ClaimsPrincipal principal, CoursContext db, UserDirectoryClient users) =>
+{
+    var userId = ClaimsHelper.GetUserId(principal);
+    if (userId is null) return Results.Unauthorized();
 
     var course = await db.Courses
         .Include(c => c.Sections.OrderBy(s => s.Order))
-        .FirstOrDefaultAsync(c => c.Id == id && c.OwnerId == ownerId);
+        .FirstOrDefaultAsync(c => c.Id == id);
 
-    return course is null
+    var allowed = course is not null
+        && (course.OwnerId == userId
+            || (course.Status == CourseStatus.Published
+                && course.ClassroomIds.Count > 0
+                && (await users.MyClassroomIdsAsync()).Overlaps(course.ClassroomIds)));
+
+    return !allowed
         ? Results.NotFound(new { message = "Cours introuvable." })
-        : Results.Ok(new CourseDto(course));
+        : Results.Ok(new CourseDto(course!));
 })
 .WithSummary("Détail d'un cours")
 .Produces<CourseDto>()
@@ -350,6 +393,38 @@ cours.MapPatch("/{id:guid}", async (
 .WithSummary("Modifier partiellement un cours (métadonnées)")
 .Produces<CourseDto>()
 .Produces(404);
+
+// ── PUT /cours/{id}/sharing ───────────────────────────────────────────────────
+// Publie le cours pour des classes de l'auteur, ou le repasse en brouillon.
+cours.MapPut("/{id:guid}/sharing", async (Guid id, ShareCourseRequest req, ClaimsPrincipal principal,
+    CoursContext db, UserDirectoryClient users) =>
+{
+    var ownerId = ClaimsHelper.GetUserId(principal);
+    if (ownerId is null) return Results.Unauthorized();
+
+    var course = await db.Courses.FirstOrDefaultAsync(c => c.Id == id && c.OwnerId == ownerId);
+    if (course is null) return Results.NotFound(new { message = "Cours introuvable." });
+
+    var classroomIds = req.ClassroomIds?.Distinct().ToList() ?? new();
+    if (req.Publish)
+    {
+        if (classroomIds.Count == 0)
+            return Results.BadRequest(new { message = "Choisissez au moins une classe." });
+        var owned = await users.MyClassroomIdsAsync();
+        if (classroomIds.Any(c => !owned.Contains(c)))
+            return Results.BadRequest(new { message = "Vous ne pouvez partager un cours qu'avec vos propres classes." });
+    }
+
+    course.ClassroomIds = classroomIds;
+    course.Status = req.Publish ? CourseStatus.Published : CourseStatus.Draft;
+    course.PublishedAt = req.Publish ? course.PublishedAt ?? DateTime.UtcNow : null;
+    course.UpdatedAt = DateTime.UtcNow;
+    await db.SaveChangesAsync();
+    return Results.Ok(new CourseSummaryDto(course));
+})
+.WithSummary("Partager un cours avec ses classes")
+.Produces<CourseSummaryDto>()
+.Produces(400);
 
 // ── DELETE /cours/{id} ────────────────────────────────────────────────────────
 cours.MapDelete("/{id:guid}", async (

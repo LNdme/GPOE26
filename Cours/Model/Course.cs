@@ -1,4 +1,4 @@
-﻿namespace Cours.Model
+namespace Cours.Model
 {
     /// <summary>
     /// Un cours structuré : titre principal, sections hiérarchiques (titres, paragraphes, images),
@@ -46,6 +46,16 @@
         /// Id de l'utilisateur propriétaire — lu depuis le claim "sub" du JWT.
         /// </summary>
         public Guid OwnerId { get; set; }
+
+        // ─── Partage ──────────────────────────────────────────────────────────────
+
+        /// <summary>Brouillon : visible du seul auteur. Publié : visible des classes ci-dessous.</summary>
+        public CourseStatus Status { get; set; } = CourseStatus.Draft;
+
+        /// <summary>Classes ou groupes (service User) avec lesquels le cours est partagé</summary>
+        public List<Guid> ClassroomIds { get; set; } = new();
+
+        public DateTime? PublishedAt { get; set; }
 
         // ─── Métadonnées ──────────────────────────────────────────────────────────
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -95,6 +105,12 @@
         /// 0 pour les paragraphes et images.
         /// </summary>
         public int Level { get; set; } = 0;
+    }
+
+    public enum CourseStatus
+    {
+        Draft,
+        Published
     }
 
     public enum ContentType

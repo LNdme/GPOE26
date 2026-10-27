@@ -19,7 +19,8 @@ var postgres = builder.AddPostgres("postgres")
 var userDb = postgres.AddDatabase("userdb");
 var coursDb = postgres.AddDatabase("coursdb");
 var schoolDb = postgres.AddDatabase("LyceeDB");  // ApiService
-// Quiz et Chat sont en InMemory pour l'instant, pas de DB à déclarer
+var quizDb = postgres.AddDatabase("quizdb");     // Quiz : évaluations des enseignants
+// Chat est en InMemory pour l'instant, pas de DB à déclarer
 
 
 
@@ -42,6 +43,7 @@ var coursService = builder.AddProject<Projects.Cours>("cours")
     .WithEnvironment("Jwt__Key", jwtKeyValue)
     .WithEnvironment("Jwt__Issuer", jwtIssuer)
     .WithEnvironment("Jwt__Audience", jwtAudience)
+    .WithEnvironment("Services__User", userService.GetEndpoint("http"))   // partage des cours avec les classes
     .WithReference(coursDb)  // ← ajoute
     .WaitFor(coursDb);       // ← ajoute
 
@@ -49,7 +51,14 @@ var chatService = builder.AddProject<Projects.Chat>("chat")
     .WithEnvironment("DeepSeek__ApiKey", deepSeekApiKey);
 
 var quizService = builder.AddProject<Projects.Quiz>("quiz")
-    .WithEnvironment("LLM__ApiKey", deepSeekApiKey);
+    .WithEnvironment("LLM__ApiKey", deepSeekApiKey)
+    .WithEnvironment("Jwt__Key", jwtKeyValue)
+    .WithEnvironment("Jwt__Issuer", jwtIssuer)
+    .WithEnvironment("Jwt__Audience", jwtAudience)
+    .WithEnvironment("Services__User", userService.GetEndpoint("http"))   // classes, élèves, parents
+    .WithReference(quizDb)
+    .WaitFor(quizDb)
+    .WaitFor(userService);
 
 
 builder.AddProject<Projects.GPOE26_Web>("webfrontend")
