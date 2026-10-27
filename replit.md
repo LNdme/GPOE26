@@ -9,7 +9,7 @@ Système de gestion scolaire basé sur .NET 10 / Blazor, déployé comme microse
 | **ApiService** | 5455 | API principale (contacts, actualités, événements, activités, hiérarchie) |
 | **User** | 5197 | Authentification JWT, gestion des utilisateurs |
 | **Cours** | 5188 | Gestion des cours (CRUD, sections Markdown, PDF) |
-| **Chat** | 5212 | Tuteur IA (ChatGPT via OpenAI) |
+| **Chat** | 5212 | Tuteur IA (DeepSeek par défaut, configurable) |
 | **Quiz** | 5163 | Génération et correction de quiz |
 | **Web** | 5000 | Frontend Blazor Server (public face) |
 
@@ -40,7 +40,7 @@ Le script compile et démarre les 6 services en parallèle. La Web attend 30s av
 
 ## Variables d'environnement nécessaires
 - `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` — PostgreSQL (auto-configuré sur Replit)
-- `OPENAI_API_KEY` — pour le service Chat (tuteur IA) et la génération de cours
+- `DEEPSEEK_API_KEY` — pour les services Chat (tuteur IA) et Quiz
 
 ## Prochaines étapes (session plan)
 - T001 : Refonte modèle Course (MarkdownContent unifié, Status, SourceType)

@@ -5,6 +5,9 @@ var jwtKeyValue = "votre_cle_secrete_tres_longue_et_aleatoire_ici_changez_moi_en
 var jwtIssuer   = "GPOE2026";
 var jwtAudience = "GPOE2026Users";
 
+// ── Clé du LLM (DeepSeek) : secret, à définir via `dotnet user-secrets set "Parameters:deepseek-apikey" "<clé>"`
+var deepSeekApiKey = builder.AddParameter("deepseek-apikey", secret: true);
+
 
 
 
@@ -42,9 +45,11 @@ var coursService = builder.AddProject<Projects.Cours>("cours")
     .WithReference(coursDb)  // ← ajoute
     .WaitFor(coursDb);       // ← ajoute
 
-var chatService = builder.AddProject<Projects.Chat>("chat");
+var chatService = builder.AddProject<Projects.Chat>("chat")
+    .WithEnvironment("DeepSeek__ApiKey", deepSeekApiKey);
 
-var quizService = builder.AddProject<Projects.Quiz>("quiz");
+var quizService = builder.AddProject<Projects.Quiz>("quiz")
+    .WithEnvironment("LLM__ApiKey", deepSeekApiKey);
 
 
 builder.AddProject<Projects.GPOE26_Web>("webfrontend")
