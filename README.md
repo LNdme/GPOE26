@@ -123,11 +123,20 @@ Le test existant démarre l'AppHost complet (Docker requis) et vérifie que la p
 | Phase | Contenu | État |
 |---|---|---|
 | 0 | Nettoyage du dépôt, secrets hors du code, README | ✅ |
-| 1 | **Comptes et rôles** : Élève, Enseignant, Parent, Admin ; classes avec code d'invitation ; lien parent ↔ enfant ; modèle d'abonnement (freemium) ; plan d'études ; progression | À faire |
+| 1 | **Comptes et rôles** : Élève, Enseignant, Parent, Admin ; structures (établissement scolaire, autre institution : entreprise, startup, centre de formation…) ; classes et groupes avec code d'invitation ; lien parent ↔ enfant ; abonnements et **clés d'abonnement** (familiale, établissement/institution) ; plan d'études ; progression | À faire |
+| 1 bis | **Évaluations enseignant** : cours, devoirs et épreuves (quiz d'entraînement, devoir, épreuve notée, épreuve blanche) avec questions QCM, choix multiples, vrai/faux, réponse courte, numérique et réponse ouverte (correction manuelle assistée par IA) ; suivi de la maîtrise par élève et par chapitre | À faire |
 | 2 | **Maquettes** : inscription guidée en questions-réponses (système scolaire camerounais bilingue : classes, séries, BEPC/Probatoire/BAC, GCE O/A Level) ; tableaux de bord par rôle ; lecture de cours à 3 colonnes | À faire |
 | 3 | Intégration Blazor : bibliothèque de composants partagée `GPOE26.UI`, services derrière des interfaces | À faire |
 | 4 | **Application Windows hybride** (.NET MAUI Blazor Hybrid) : lecture des cours et exercices hors connexion (SQLite), synchronisation au retour du réseau | À faire |
 | 5 | Paiement des abonnements (Mobile Money / carte) | Plus tard |
 | 6 | Import PDF/DOCX/image → Markdown par IA, éditeur de cours à 3 modes, quiz persistés en base, tests | À faire |
 
-**Modèle d'abonnement prévu (freemium)** : les cours partagés par les enseignants restent gratuits ; l'abonnement payé par le parent débloque le tuteur IA, les quiz illimités, les épreuves blanches, le plan d'études et le suivi détaillé.
+**Modèle d'abonnement prévu (freemium)** : les cours partagés par les enseignants restent gratuits ; l'abonnement Premium débloque le tuteur IA, les quiz illimités, les épreuves blanches, le plan d'études et le suivi détaillé.
+
+| Qui | Comment il accède |
+|---|---|
+| Élève | Gratuit, **ou** clé d'abonnement fournie par un parent ou l'établissement, **ou** abonnement payé lui-même |
+| Parent | Paie l'abonnement et reçoit une **clé familiale** à transmettre à ses enfants |
+| Enseignant | **Clé de licence** de son établissement ou de son institution (entreprise, startup…), **ou** abonnement enseignant individuel, **ou** essai gratuit |
+
+L'interface est responsive : sur mobile, le menu latéral devient un tiroir (☰) et le sommaire « Sur cette page » se replie en haut de l'article.
