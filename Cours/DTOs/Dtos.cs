@@ -1,4 +1,4 @@
-﻿using Cours.Model;
+using Cours.Model;
 using System.ComponentModel.DataAnnotations;
 
 namespace Cours.DTOs
@@ -52,7 +52,10 @@ namespace Cours.DTOs
         string? PdfPath,
         List<SectionDto> Sections,
         DateTime CreatedAt,
-        DateTime UpdatedAt
+        DateTime UpdatedAt,
+        CourseStatus Status,
+        List<Guid> ClassroomIds,
+        Guid OwnerId
     )
     {
         public CourseDto(Course c) : this(
@@ -68,7 +71,10 @@ namespace Cours.DTOs
                 .Select(s => new SectionDto(s.Id, s.Type, s.Content, s.Order, s.Level))
                 .ToList(),
             c.CreatedAt,
-            c.UpdatedAt
+            c.UpdatedAt,
+            c.Status,
+            c.ClassroomIds,
+            c.OwnerId
         )
         { }
     }
@@ -90,7 +96,10 @@ namespace Cours.DTOs
         string Subject,
         string? Description,
         ContentType ContentType,
-        DateTime CreatedAt
+        DateTime CreatedAt,
+        CourseStatus Status,
+        List<Guid> ClassroomIds,
+        Guid OwnerId
     )
     {
         public CourseSummaryDto(Course c) : this(
@@ -99,8 +108,14 @@ namespace Cours.DTOs
             c.Subject,
             c.Description,
             c.ContentType,
-            c.CreatedAt
+            c.CreatedAt,
+            c.Status,
+            c.ClassroomIds,
+            c.OwnerId
         )
         { }
     }
+
+    /// <summary>Partage d'un cours : publié pour ces classes, ou repassé en brouillon (Publish = false)</summary>
+    public record ShareCourseRequest(bool Publish, List<Guid>? ClassroomIds);
 }

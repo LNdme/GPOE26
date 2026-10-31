@@ -35,18 +35,26 @@ ASPNETCORE_URLS="http://localhost:5188" \
   Jwt__Key="$JWT_KEY" \
   Jwt__Issuer="$JWT_ISSUER" \
   Jwt__Audience="$JWT_AUDIENCE" \
+  Services__User="http://localhost:5197" \
   dotnet run --project Cours/Cours.csproj --no-launch-profile &
 COURSPID=$!
 
 # Start Chat service (port 5212)
 echo "Starting Chat service on port 5212..."
 ASPNETCORE_URLS="http://localhost:5212" \
+  DeepSeek__ApiKey="${DEEPSEEK_API_KEY}" \
   dotnet run --project Chat/Chat.csproj --no-launch-profile &
 CHATPID=$!
 
 # Start Quiz service (port 5163)
 echo "Starting Quiz service on port 5163..."
 ASPNETCORE_URLS="http://localhost:5163" \
+  LLM__ApiKey="${DEEPSEEK_API_KEY}" \
+  ConnectionStrings__QuizDB="$NPGSQL_CONN" \
+  Jwt__Key="$JWT_KEY" \
+  Jwt__Issuer="$JWT_ISSUER" \
+  Jwt__Audience="$JWT_AUDIENCE" \
+  Services__User="http://localhost:5197" \
   dotnet run --project Quiz/Quiz.csproj --no-launch-profile &
 QUIZPID=$!
 

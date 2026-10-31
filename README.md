@@ -1,1 +1,182 @@
 # GPOE26
+
+Plateforme scolaire et d'apprentissage en ligne : site vitrine de l'établissement (actualités, événements, hiérarchie…), cours numériques avec tuteur IA, quiz générés automatiquement, et suivi des élèves par leurs enseignants et leurs parents.
+
+Construite en **.NET 10** : frontend **Blazor Server**, microservices **ASP.NET Core**, base **PostgreSQL**, orchestration locale avec **.NET Aspire**.
+
+---
+
+## Architecture
+
+```
+                        ┌────────────────────────┐
+                        │   GPOE26.Web (Blazor)  │  :5000
+                        └───────────┬────────────┘
+        ┌──────────────┬────────────┼─────────────┬──────────────┐
+        ▼              ▼            ▼             ▼              ▼
+  ApiService        User          Cours          Chat           Quiz
+   :5455           :5197         :5188          :5212          :5163
+ (site école)   (comptes, JWT) (cours, PDF)  (tuteur IA)   (quiz IA)
+        │              │            │             │              │
+        └──────────────┴─────┬──────┘          LLM (DeepSeek, Claude, GPT…)
+                             ▼
+                        PostgreSQL
+```
+
+| Projet | Port | Rôle |
+|---|---|---|
+| `GPOE26.Web` | 5000 | Interface Blazor Server (site public, espace d'apprentissage, gestion) |
+| `GPOE26.ApiService` | 5455 | Actualités, événements, discours, activités, hiérarchie, contacts, upload d'images |
+| `User` | 5197 | Inscription, connexion, profil — émet les jetons JWT |
+| `Cours` | 5188 | CRUD des cours (sections Markdown ou PDF, extraction du texte via PdfPig), partage avec les classes |
+| `Chat` | 5212 | Tuteur IA : réponses aux questions, résumés, brouillons de cours |
+| `Quiz` | 5163 | Évaluations des enseignants (quiz, devoirs, épreuves : base `quizdb`), correction automatique et assistée par IA, suivi de la maîtrise ; génération de quiz par IA |
+| `GPOE26.AppHost` | — | Orchestrateur Aspire (PostgreSQL + pgAdmin + tous les services) |
+| `GPOE26.ServiceDefaults` | — | Télémétrie, health checks, résilience HTTP partagés |
+| `GPOE26.Tests` | — | Tests d'intégration Aspire |
+
+**Authentification** : JWT (issuer `GPOE2026`, audience `GPOE2026Users`) émis par `User` et validé par `Cours`. Le jeton contient le rôle et le niveau de l'utilisateur, que les services IA utilisent pour adapter leurs réponses.
+
+**Rendu des cours** : Markdown via Markdig, coloration du code avec Prism.js, formules avec KaTeX, table des matières générée automatiquement.
+
+---
+
+## Démarrage
+
+### Prérequis
+- [.NET SDK 10](https://dotnet.microsoft.com/download)
+- Docker (pour le PostgreSQL lancé par Aspire) **ou** un PostgreSQL existant (Replit)
+- Une clé d'API pour le LLM (DeepSeek par défaut)
+
+### Option 1 — Aspire (développement local, Visual Studio)
+
+```bash
+cd GPOE26.AppHost
+dotnet user-secrets set "Parameters:deepseek-apikey" "<votre-clé>"
+dotnet run
+```
+
+Le tableau de bord Aspire s'ouvre et démarre PostgreSQL (volume persistant), pgAdmin et tous les services. Dans Visual Studio, définissez simplement `GPOE26.AppHost` comme projet de démarrage.
+
+### Option 2 — Script (Replit ou serveur sans Docker)
+
+```bash
+export PGHOST=... PGPORT=5432 PGDATABASE=... PGUSER=... PGPASSWORD=...
+export DEEPSEEK_API_KEY=...
+bash start.sh
+```
+
+Le script lance les 5 services backend, attend 30 s, puis démarre le frontend sur le port 5000. Voir `replit.md` pour les détails propres à Replit.
+
+---
+
+## Configuration
+
+Aucun secret ne doit être commité. Copiez `.env.example` en `.env` (ignoré par git) ou utilisez les *user-secrets* .NET.
+
+| Variable | Service(s) | Description |
+|---|---|---|
+| `DEEPSEEK_API_KEY` | Chat, Quiz | Clé du LLM (transmise en `DeepSeek__ApiKey` / `LLM__ApiKey`) |
+| `LlmProvider` | Chat | `DeepSeek` (défaut dans `appsettings.json`), `Claude`, `Gpt`, `Foundry` |
+| `Jwt__Key` / `Jwt__Issuer` / `Jwt__Audience` | User, Cours | Clé de signature JWT (≥ 256 bits). **La valeur par défaut est un exemple : à changer en production.** |
+| `ConnectionStrings__UserDB` / `__CoursDB` / `__LyceeDB` | User, Cours, ApiService | Chaînes de connexion PostgreSQL (fournies automatiquement par Aspire) |
+| `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` | `start.sh` | Utilisées pour construire les chaînes de connexion |
+
+---
+
+## Structure du dépôt
+
+```
+GPOE26.slnx                 Solution
+GPOE26.AppHost/             Orchestrateur Aspire
+GPOE26.ServiceDefaults/     Configuration commune des services
+GPOE26.Web/                 Frontend Blazor
+  Components/Pages/         Pages (Learning, Cours, Blog, Event, Activity, Hierarchy…)
+  Components/UI/            MarkdownViewer, TableOfContents
+  Services/                 ApiClient, AuthService
+GPOE26.ApiService/          API du site de l'établissement
+User/                       Comptes et authentification
+Cours/                      Gestion des cours
+Chat/                       Tuteur IA (services LLM interchangeables)
+Quiz/                       Génération et correction de quiz
+GPOE26.Tests/               Tests
+scripts/post-merge.sh       Restore + build après un merge (Replit)
+start.sh                    Lancement sans Aspire
+```
+
+Les fichiers envoyés par les utilisateurs sont enregistrés dans `*/wwwroot/uploads/` et ne sont pas versionnés.
+
+---
+
+## API du service User (comptes)
+
+| Domaine | Endpoints |
+|---|---|
+| Authentification | `POST /auth/register` (inscription guidée : profil, classes initiales, clé d'abonnement, code de classe, essai), `POST /auth/login`, `GET/PUT/PATCH /auth/me` |
+| Classes et groupes | `POST /classrooms`, `GET /classrooms/mine`, `GET /classrooms/{id}`, `GET /classrooms/{id}/members`, `POST /classrooms/join`, `POST /classrooms/{id}/invite-code`, `DELETE /classrooms/{id}`, `DELETE /classrooms/{id}/members/{studentId}` |
+| Parents | `POST /parents/children/link` (code de l'élève), `POST /parents/children` (créer le compte de l'enfant), `GET /parents/children`, `DELETE /parents/children/{linkId}` ; côté élève `GET /me/parents`, `POST /me/parents/{linkId}/approve` ou `/reject` |
+| Abonnements | `GET /subscriptions/me`, `POST /subscriptions/redeem`, `POST /subscriptions/checkout`, `POST /subscriptions/trial` |
+| Administration | `POST/GET /admin/organizations`, `POST /admin/organizations/{id}/licenses`, `POST /admin/subscriptions/{id}/activate` |
+
+### Évaluations (service Quiz) et partage des cours (service Cours)
+
+| Qui | Endpoints |
+|---|---|
+| Enseignant | `POST /assessments`, `PUT /assessments/{id}` (tant qu'aucun élève n'a composé), `POST /assessments/{id}/publish`, `POST /assessments/{id}/close`, `DELETE /assessments/{id}`, `GET /assessments/{id}/submissions`, `PUT /assessments/{id}/submissions/{sid}/answers/{qid}/grade`, `POST …/ai-suggestion`, `GET /progress/classrooms/{classroomId}` ; Cours : `PUT /cours/{id}/sharing` |
+| Élève | `GET /assessments/mine`, `POST /assessments/{id}/attempts` (démarrer ou reprendre), `POST /assessments/{id}/attempts/{sid}/submit`, `GET /assessments/{id}/submissions/{sid}`, `GET /progress/me` ; Cours : `GET /cours/shared`, `GET /cours/{id}` |
+| Parent | `GET /progress/students/{studentId}` (enfant rattaché) |
+
+- **Types de questions** : QCM, choix multiples (tout ou rien), vrai/faux, réponse courte (casse, accents et ponctuation ignorés), numérique (virgule, espaces, unité et tolérance acceptés), réponse ouverte (texte ou photo de copie, corrigée par l'enseignant).
+- **Correction assistée** : sur demande, l'IA propose une note (arrondie au quart de point) et un commentaire selon les critères de l'enseignant ; rien n'est appliqué sans sa validation.
+- **Publication des résultats** : immédiate pour un entraînement ; sinon après la date limite ou la clôture. La vue élève ne contient jamais les bonnes réponses avant.
+- **Suivi** : note de la meilleure tentative ramenée sur 20, moyenne, et maîtrise par cours (points obtenus sur les questions liées au cours).
+- Le service Quiz interroge le service User avec le jeton de l'utilisateur (classes, élèves, rattachements) : il a besoin de `Services__User` et de la même configuration `Jwt`.
+
+Le JWT contient désormais `premium` (`true`/`false`) et `plan` : les services Chat et Quiz pourront réserver les fonctions Premium aux abonnés sans interroger la base User.
+
+Tant que le paiement n'est pas branché (phase 5), un abonnement souscrit reste `PendingPayment` jusqu'à ce qu'un administrateur l'active.
+
+**Données de démonstration (environnement Development uniquement)** — mot de passe `Test1234!` :
+`admin@gpoe26.cm` (Admin), `prof@gpoe26.cm` (Enseignant), `eleve@gpoe26.cm` (Élève), `parent@gpoe26.cm` (Parent, rattaché à l'élève), classe « Terminale C » (code `DEM-TLC`), licence du « Lycée de démonstration » (clé `ETB-DEMO-PROF`, 50 places).
+
+En production, aucun compte Admin n'est créé automatiquement : promouvoir un compte existant avec
+`UPDATE "AppUsers" SET "Role" = 'Admin' WHERE "Email" = '...';`
+
+---
+
+## Tests
+
+```bash
+dotnet test GPOE26.slnx
+```
+
+Le test existant démarre l'AppHost complet (Docker requis) et vérifie que la page d'accueil répond.
+
+`Quiz.Tests` contient les tests unitaires de la correction automatique (`dotnet test Quiz.Tests`). Le script `scripts/test-evaluations.sh` rejoue les parcours de la phase 1 bis (63 vérifications : partage des cours, création et publication, droits d'accès, tentatives, correction manuelle et assistée, publication des résultats, suivi enseignant/élève/parent).
+
+Le script `scripts/test-user-api.sh` rejoue les parcours de la phase 1 sur le service User (57 vérifications : inscriptions, clés, places, rôles, rattachements) — voir l'en-tête du script pour le lancer.
+
+---
+
+## Feuille de route
+
+| Phase | Contenu | État |
+|---|---|---|
+| 0 | Nettoyage du dépôt, secrets hors du code, README | ✅ |
+| 1 | ✅ (API) **Comptes et rôles** : Élève, Enseignant, Parent, Admin ; structures (établissement scolaire, autre institution : entreprise, startup, centre de formation…) ; classes et groupes avec code d'invitation ; lien parent ↔ enfant ; abonnements et **clés d'abonnement** (familiale, établissement/institution) ; plan d'études et progression : à faire | Backend fait, interface en phase 3 |
+| 1 bis | ✅ (API) **Évaluations enseignant** : cours, devoirs et épreuves (quiz d'entraînement, devoir, épreuve notée, épreuve blanche) avec questions QCM, choix multiples, vrai/faux, réponse courte, numérique et réponse ouverte (correction manuelle assistée par IA) ; suivi de la maîtrise par élève et par chapitre ; partage des cours avec les classes | Backend fait, interface en phase 3 |
+| 2 | **Maquettes** : inscription guidée en questions-réponses (système scolaire camerounais bilingue : classes, séries, BEPC/Probatoire/BAC, GCE O/A Level) ; tableaux de bord par rôle ; lecture de cours à 3 colonnes | À faire |
+| 3 | Intégration Blazor : bibliothèque de composants partagée `GPOE26.UI`, services derrière des interfaces | À faire |
+| 4 | **Application Windows hybride** (.NET MAUI Blazor Hybrid) : lecture des cours et exercices hors connexion (SQLite), synchronisation au retour du réseau | À faire |
+| 5 | Paiement des abonnements (Mobile Money / carte) | Plus tard |
+| 6 | Import PDF/DOCX/image → Markdown par IA, éditeur de cours à 3 modes, quiz persistés en base, tests | À faire |
+
+**Modèle d'abonnement prévu (freemium)** : les cours partagés par les enseignants restent gratuits ; l'abonnement Premium débloque le tuteur IA, les quiz illimités, les épreuves blanches, le plan d'études et le suivi détaillé.
+
+| Qui | Comment il accède |
+|---|---|
+| Élève | Gratuit, **ou** clé d'abonnement fournie par un parent ou l'établissement, **ou** abonnement payé lui-même |
+| Parent | Paie l'abonnement et reçoit une **clé familiale** à transmettre à ses enfants |
+| Enseignant | **Clé de licence** de son établissement ou de son institution (entreprise, startup…), **ou** abonnement enseignant individuel, **ou** essai gratuit |
+
+L'interface est responsive : sur mobile, le menu latéral devient un tiroir (☰) et le sommaire « Sur cette page » se replie en haut de l'article.

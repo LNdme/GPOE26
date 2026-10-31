@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 using System.Security.Claims;
@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.JsonPatch;
 using User.Data;
 using User.DTOs;
 using User.Model;
+using User.Service;
 
 namespace User.Controllers
 {
@@ -35,7 +36,7 @@ namespace User.Controllers
     [Route("auth")]
     [Authorize]
     [ApiController]
-    public class UsersController(UserContext db) : ControllerBase
+    public class UsersController(UserContext db, SubscriptionService subs) : ControllerBase
     {
         /// <summary>Extrait l'Id utilisateur depuis les claims du JWT</summary>
         private Guid GetUserId()
@@ -93,7 +94,7 @@ namespace User.Controllers
             if (dto.Language is not null) user.Language = dto.Language;
 
             await db.SaveChangesAsync();
-            return Ok(new UserProfileDto(user));
+            return Ok(new UserProfileDto(user, await subs.GetEntitlementAsync(user.Id)));
         }
     }
 }

@@ -1,4 +1,4 @@
-﻿using Microsoft.IdentityModel.Tokens;
+using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
@@ -9,7 +9,7 @@ namespace User.Service
     public class Jwtservice(IConfiguration config)
     {
 
-        public (string token, DateTime expiresAt) GenerateToken(AppUser user)
+        public (string token, DateTime expiresAt) GenerateToken(AppUser user, Entitlement entitlement)
         {
             var jwtKey = config["Jwt:Key"]
                 ?? throw new InvalidOperationException("Jwt:Key manquant dans la configuration.");
@@ -25,6 +25,7 @@ namespace User.Service
             //   "level"    → pour adapter la complexité des réponses
             //   "subjects" → pour personnaliser les exemples
             //   "lang"     → pour répondre dans la bonne langue
+            //   "premium"  → pour réserver les fonctions Premium aux abonnés
             var claims = new[]
             {
             new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
@@ -35,6 +36,9 @@ namespace User.Service
             new Claim("specialite", user.Specialite ?? ""),
             new Claim("filiere", user.Filiere ?? ""),
             new Claim("lang", user.Language),
+            // "premium" → les services Chat/Quiz réservent le tuteur IA et les quiz illimités aux abonnés
+            new Claim("premium", entitlement.IsPremium ? "true" : "false"),
+            new Claim("plan", entitlement.Plan?.ToString() ?? ""),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
 
