@@ -216,9 +216,9 @@
                         <input id="ed-subject" class="ga-input" @bind="_d.Subject" />
                     </div>
 
+                    <div class="ga-field"><label for="ed-open">Ouverture (facultatif)</label><input id="ed-open" class="ga-input" type="datetime-local" @bind="_d.OpensAt" /></div>
+                    <div class="ga-field"><label for="ed-due">Date limite</label><input id="ed-due" class="ga-input" type="datetime-local" @bind="_d.DueAt" /></div>
                     <div class="ga-form-grid" style="grid-template-columns:repeat(2, minmax(0, 1fr))">
-                        <div class="ga-field"><label for="ed-open">Ouverture</label><input id="ed-open" class="ga-input" type="datetime-local" @bind="_d.OpensAt" @bind:format="yyyy-MM-ddTHH:mm" /></div>
-                        <div class="ga-field"><label for="ed-due">Date limite</label><input id="ed-due" class="ga-input" type="datetime-local" @bind="_d.DueAt" @bind:format="yyyy-MM-ddTHH:mm" /></div>
                         <div class="ga-field"><label for="ed-dur">Durée (min)</label><input id="ed-dur" class="ga-input" type="number" min="1" @bind="_d.DurationMinutes" /></div>
                         <div class="ga-field"><label for="ed-try">Tentatives</label><input id="ed-try" class="ga-input" type="number" min="1" max="20" @bind="_d.MaxAttempts" /></div>
                     </div>

@@ -102,6 +102,8 @@ async function account(page, user, email) {
     await teacher.selectOption('#ed-course', courseId);
     await teacher.fill('#ed-due', '2026-12-20T18:00'); await teacher.press('#ed-due', 'Tab');
     await teacher.waitForSelector('text=8 points');
+    const due = await teacher.inputValue('#ed-due');
+    if (!due.startsWith('2026-12-20T18:00')) throw new Error(`date limite non prise en compte : « ${due} »`);
   });
   await shot(teacher, '04-enseignant-editeur');
   await step('publication', async () => {
@@ -140,6 +142,7 @@ async function account(page, user, email) {
   await step('tableau de bord élève (mobile) avec le devoir', async () => {
     await student.click('text=Accéder à mon espace');
     await student.waitForSelector('text=Devoir n°1 — Suites géométriques');
+    await student.waitForSelector('.ga-tag:has-text("À RENDRE")');   // la date limite est bien enregistrée
   });
   await shot(student, '09-eleve-tableau-de-bord-mobile');
   await step('menu tiroir (mobile)', async () => {
