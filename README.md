@@ -31,6 +31,8 @@ Construite en **.NET 10** : frontend **Blazor Server**, microservices **ASP.NET 
 | `Cours` | 5188 | CRUD des cours (sections Markdown ou PDF, extraction du texte via PdfPig), partage avec les classes |
 | `Chat` | 5212 | Tuteur IA : discussions conservées par élève et par cours (base `chatdb`), photos d'exercices, résumés, brouillons de cours |
 | `Quiz` | 5163 | Évaluations des enseignants (quiz, devoirs, épreuves : base `quizdb`), correction automatique et assistée par IA, suivi de la maîtrise ; génération de quiz par IA |
+| `GPOE26.Offline` | — | Fonctionnement hors connexion (cache SQLite par utilisateur, file d'envoi, synchronisation), sans dépendance à MAUI |
+| `GPOE26.Desktop` | — | Application Windows (.NET MAUI Blazor Hybrid) : mêmes écrans que le site, utilisables hors connexion |
 | `GPOE26.AppHost` | — | Orchestrateur Aspire (PostgreSQL + pgAdmin + tous les services) |
 | `GPOE26.ServiceDefaults` | — | Télémétrie, health checks, résilience HTTP partagés |
 | `GPOE26.Tests` | — | Tests d'intégration Aspire |
@@ -139,6 +141,32 @@ L'interface des élèves, enseignants et parents est une **bibliothèque Razor**
 
 ---
 
+## Application Windows et hors connexion (phase 4)
+
+L'application `GPOE26.Desktop` (MAUI Blazor Hybrid) affiche les écrans de `GPOE26.UI` et ajoute le fonctionnement hors connexion de `GPOE26.Offline`.
+
+| Pour l'élève | Comment |
+|---|---|
+| Lire ses cours sans réseau | Tout cours ouvert une fois reste disponible ; « Tout rendre disponible hors ligne » dans « Mes cours » |
+| Composer sans réseau | « Composer hors ligne » sur une évaluation que l'enseignant a ouverte au hors ligne (option « Autoriser la composition hors ligne » de l’éditeur d’épreuve). Le minuteur part quand l'élève commence sur son appareil. Les photos de copie sont gardées sur l'appareil |
+| Envoyer au retour du réseau | Automatique (retour du réseau, connexion) ou bouton « Envoyer maintenant ». Un bandeau indique l'état : hors connexion, envois en attente, synchronisation, refus éventuel |
+| Copie en ligne interrompue | Si le réseau tombe au moment de rendre une copie commencée en ligne, elle est mise en attente avec ses photos au lieu d'être perdue |
+
+- **Sûreté** : un renvoi n'enregistre jamais deux fois la même copie (identifiant choisi par l'appareil) ; une coupure ou une erreur 5xx est retentée ; seul un refus explicite (tentatives épuisées…) retire la copie de la file et prévient l'élève. Une base SQLite par utilisateur (`%LOCALAPPDATA%`), session chiffrée pour le compte Windows (DPAPI).
+- **Jeton expiré hors ligne** : la session reste ouverte pour lire et composer ; rien n'est envoyé tant que l'élève ne s'est pas reconnecté.
+- **Heure de remise** : celle de l'appareil, bornée par l'heure de réception ; l'enseignant voit le badge « HORS LIGNE ».
+- **Limites** : le tuteur IA et la lecture de la copie par l'IA demandent une connexion (l'IA lit les photos une fois envoyées) ; les images insérées dans un cours ne sont pas encore mises en cache ; les pages enseignant de création de cours s'ouvrent dans le navigateur.
+
+**Compiler l'application** (Windows) : ouvrir `GPOE26.Desktop.slnx` dans Visual Studio 2026 avec la charge « .NET MAUI », ou
+`dotnet workload install maui-windows` puis `dotnet build GPOE26.Desktop -f net10.0-windows10.0.19041.0`. Les adresses des services sont dans `GPOE26.Desktop/appsettings.json`. Le workflow GitHub « Application Windows » compile l'application à chaque modification et publie l'exécutable autonome (artefact `GPOE26-Windows-x64`).
+
+**Essayer le hors connexion sans Windows** : lancer le site avec `Offline__Enabled=true` (mode de démonstration : le site se comporte comme l'application ; ne pas activer en production), puis arrêter les services Cours et Quiz.
+
+| Endpoint (Quiz) | Rôle |
+|---|---|
+| `GET /assessments/{id}/offline-package` | Évaluation à composer hors ligne (sans bonne réponse, sans démarrer de tentative) |
+| `POST /assessments/{id}/offline-submissions` | Copie composée hors ligne, avec ses photos en base64 ; idempotente |
+
 ## API du service User (comptes)
 
 | Domaine | Endpoints |
@@ -202,6 +230,8 @@ Le script `scripts/ui-e2e.js` (Playwright) rejoue dans un navigateur le parcours
 
 Le script `scripts/ui-tutor-e2e.js` rejoue avec un vrai LLM (17 étapes) le tuteur et les copies photographiées : question au tuteur, photo d'exercice analysée, épinglage, discussion retrouvée après fermeture du cours, liste et explications épinglées, composition avec photo transcrite, analyse de la démarche, proposition de note de l'enseignant, version mobile. Préparer les données avec `python3 scripts/seed-tutor-demo.py > ids.json` (cours de physique, exercice, élève Premium), puis `node scripts/ui-tutor-e2e.js <captures> ids.json scripts/fixtures/copie-mruv.jpg scripts/fixtures/copie-chute.jpg`.
 
+`GPOE26.Offline.Tests` (10 tests, `dotnet test GPOE26.Offline.Tests`) simule un serveur que l'on coupe et rallume : cache, composition hors ligne, envoi au retour du réseau, coupure pendant l'envoi, refus, erreur passagère, jeton expiré, photos envoyées avant la copie. Le script `scripts/ui-offline-e2e.js` rejoue le parcours dans un navigateur en arrêtant réellement les services Cours, Quiz et Chat (12 étapes) — voir son en-tête.
+
 Le script `scripts/test-user-api.sh` rejoue les parcours de la phase 1 sur le service User (57 vérifications : inscriptions, clés, places, rôles, rattachements) — voir l'en-tête du script pour le lancer.
 
 ---
@@ -215,7 +245,7 @@ Le script `scripts/test-user-api.sh` rejoue les parcours de la phase 1 sur le se
 | 1 bis | ✅ (API) **Évaluations enseignant** : cours, devoirs et épreuves (quiz d'entraînement, devoir, épreuve notée, épreuve blanche) avec questions QCM, choix multiples, vrai/faux, réponse courte, numérique et réponse ouverte (correction manuelle assistée par IA) ; suivi de la maîtrise par élève et par chapitre ; partage des cours avec les classes | Backend fait, interface en phase 3 |
 | 2 | **Maquettes** : inscription guidée en questions-réponses (système scolaire camerounais bilingue : classes, séries, BEPC/Probatoire/BAC, GCE O/A Level) ; tableaux de bord par rôle ; lecture de cours à 3 colonnes | À faire |
 | 3 | ✅ Intégration Blazor : bibliothèque partagée `GPOE26.UI` (pages, API derrière des interfaces, session persistante), inscription guidée, tableaux de bord élève / enseignant / parent, lecture des cours, composition, éditeur d'épreuve, correction assistée, suivi de classe, abonnement, version mobile ; **tuteur IA avec discussions conservées et explications épinglées, copies photographiées lues par l'IA** (OpenRouter, modèles gratuits avec repli) | Fait (web) |
-| 4 | **Application Windows hybride** (.NET MAUI Blazor Hybrid) : lecture des cours et exercices hors connexion (SQLite), synchronisation au retour du réseau | À faire |
+| 4 | ✅ **Application Windows hybride** (.NET MAUI Blazor Hybrid) : lecture des cours et exercices hors connexion (SQLite), composition et photos de copie sans réseau, synchronisation au retour du réseau | Fait (à essayer sur un vrai poste Windows) |
 | 5 | Paiement des abonnements (Mobile Money / carte) | Plus tard |
 | 6 | Import PDF/DOCX/image → Markdown par IA, éditeur de cours à 3 modes, quiz persistés en base, tests | À faire |
 
