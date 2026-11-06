@@ -1,4 +1,5 @@
 @inherits LayoutComponentBase
+@inject GPOE26.UI.Services.SessionState Session
 
 <div class="gpoe-shell">
     <NavMenu />
@@ -7,3 +8,8 @@
     </main>
     <Footer />
 </div>
+
+@code {
+    // Restaure la session enregistrée dans le navigateur (le menu affiche alors l'utilisateur connecté)
+    protected override Task OnInitializedAsync() => Session.RestoreAsync();
+}

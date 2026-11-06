@@ -1,0 +1,162 @@
+@page "/app/evaluations"
+@layout AppLayout
+@inherits AppPage
+@inject IAssessmentApi Api
+
+<PageTitle>Évaluations — GPOE26</PageTitle>
+
+<div class="ga-page">
+    <div class="ga-head">
+        <div>
+            <h1>@(IsTeacher ? "Épreuves et devoirs" : "Mes évaluations")</h1>
+            <p>@(IsTeacher ? "Créez, publiez pour vos classes, corrigez." : "Les quiz, devoirs et épreuves de tes classes.")</p>
+        </div>
+        @if (IsTeacher)
+        {
+            <div class="ga-actions">
+                <a class="ga-btn secondary" href="/app/evaluations/nouvelle?type=Homework">Nouveau devoir</a>
+                <a class="ga-btn" href="/app/evaluations/nouvelle"><Icon Name="plus" /> Nouvelle épreuve</a>
+            </div>
+        }
+    </div>
+
+    <Alert Message="@_error" />
+    <Alert Message="@_info" Kind="success" />
+
+    @if (!Ready || _loading)
+    {
+        <Loading />
+    }
+    else if (IsTeacher)
+    {
+        @if (_teacher.Count == 0)
+        {
+            <div class="ga-empty"><strong>Aucune évaluation.</strong><span>Créez un quiz d'entraînement, un devoir ou une épreuve pour vos classes.</span></div>
+        }
+        else
+        {
+            <div class="ga-card">
+                <div class="ga-table-wrap">
+                    <table class="ga-table">
+                        <thead>
+                            <tr><th scope="col">Titre</th><th scope="col">Type</th><th scope="col">Questions</th><th scope="col">Statut</th><th scope="col">Échéance</th><th scope="col"><span class="ga-sr">Actions</span></th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var a in _teacher)
+                            {
+                                <tr>
+                                    <td><strong>@a.Title</strong>@if (a.Subject is { Length: > 0 }) { <br /><span class="ga-small ga-muted">@a.Subject</span> }</td>
+                                    <td>@Labels.Of(a.Kind)</td>
+                                    <td>@a.QuestionCount · @Labels.Number(a.MaxScore) pts</td>
+                                    <td><span class="ga-tag @(a.Status switch { AssessmentStatus.Published => "green", AssessmentStatus.Closed => "purple", _ => "grey" })">@Labels.Of(a.Status).ToUpperInvariant()</span></td>
+                                    <td>@Labels.When(a.DueAt)</td>
+                                    <td>
+                                        <span class="ga-row" style="flex-wrap:nowrap; gap:4px">
+                                            @if (a.Status != AssessmentStatus.Closed) { <a class="ga-btn ghost small" href="/app/evaluations/@a.Id/modifier">Modifier</a> }
+                                            @if (a.Status == AssessmentStatus.Draft)
+                                            {
+                                                <button class="ga-btn small" @onclick="() => PublishAsync(a)">Publier</button>
+                                                <button class="ga-btn ghost small" aria-label="Supprimer @a.Title" @onclick="() => DeleteAsync(a)"><Icon Name="trash" /></button>
+                                            }
+                                            else
+                                            {
+                                                <a class="ga-btn secondary small" href="/app/evaluations/@a.Id/copies">Copies</a>
+                                            }
+                                            @if (a.Status == AssessmentStatus.Published) { <button class="ga-btn ghost small" @onclick="() => CloseAsync(a)">Clôturer</button> }
+                                        </span>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+    }
+    else
+    {
+        <div class="ga-tabs" role="tablist">
+            <button role="tab" class="@(_tab == 0 ? "on" : "")" aria-selected="@(_tab == 0)" @onclick="() => _tab = 0">Disponibles <span class="count">@Open.Count()</span></button>
+            <button role="tab" class="@(_tab == 1 ? "on" : "")" aria-selected="@(_tab == 1)" @onclick="() => _tab = 1">Rendues <span class="count">@Done.Count()</span></button>
+        </div>
+        <div class="ga-grid">
+            @foreach (var a in _tab == 0 ? Open : Done)
+            {
+                <article class="ga-card">
+                    <div class="ga-row between">
+                        <span class="ga-tag">@Labels.Of(a.Kind).ToUpperInvariant()</span>
+                        @if (a.BestScoreScaled is not null) { <span class="ga-tag green">@Labels.Score(a.BestScoreScaled, a.ScaleTo)</span> }
+                    </div>
+                    <h2 class="ga-h3">@a.Title</h2>
+                    <span class="ga-small ga-muted">
+                        @a.QuestionCount questions@(a.DurationMinutes is { } d ? $" · {d} min" : "") · @(a.MaxAttempts - a.AttemptsUsed) tentative(s) restante(s)
+                        @if (a.DueAt is not null) { <br />@($"À rendre {Labels.When(a.DueAt)}") }
+                    </span>
+                    <div class="ga-row" style="margin-top:auto">
+                        @if (a.CanStart(DateTime.UtcNow))
+                        {
+                            <a class="ga-btn small" href="/app/evaluations/@a.Id/composer">@(a.HasAttemptInProgress ? "Reprendre" : a.AttemptsUsed > 0 ? "Nouvelle tentative" : "Commencer")</a>
+                        }
+                        @if (a.LastSubmissionId is { } sid)
+                        {
+                            <a class="ga-btn secondary small" href="/app/evaluations/@a.Id/copies/@sid">Voir ma copie</a>
+                        }
+                    </div>
+                </article>
+            }
+        </div>
+        @if (!(_tab == 0 ? Open : Done).Any())
+        {
+            <div class="ga-empty"><span>@(_tab == 0 ? "Aucune évaluation disponible pour l'instant." : "Tu n'as encore rendu aucune copie.")</span></div>
+        }
+    }
+</div>
+
+@code {
+    private bool IsTeacher => Session.Role == UserRole.Teacher;
+    private bool _loading = true;
+    private int _tab;
+    private string? _error, _info;
+    private List<Assessment> _teacher = new();
+    private List<StudentAssessment> _student = new();
+
+    private IEnumerable<StudentAssessment> Open => _student.Where(a => a.CanStart(DateTime.UtcNow));
+    // Une évaluation à plusieurs tentatives peut figurer dans les deux onglets
+    private IEnumerable<StudentAssessment> Done => _student.Where(a => a.LastSubmissionId is not null);
+
+    protected override async Task LoadAsync()
+    {
+        if (IsTeacher)
+        {
+            var r = await Api.MineAsTeacherAsync();
+            _teacher = r.Value ?? new(); _error = r.Error;
+        }
+        else
+        {
+            var r = await Api.MineAsStudentAsync();
+            _student = r.Value ?? new(); _error = r.Error;
+        }
+        _loading = false;
+    }
+
+    private async Task PublishAsync(Assessment a) => await Apply(Api.PublishAsync(a.Id), $"« {a.Title} » est publiée pour vos classes.");
+    private async Task CloseAsync(Assessment a) => await Apply(Api.CloseAsync(a.Id), $"« {a.Title} » est clôturée : les résultats sont visibles par les élèves.");
+
+    private async Task Apply(Task<ApiResult<Assessment>> call, string success)
+    {
+        _error = _info = null;
+        var r = await call;
+        if (!r.Ok) { _error = r.Error; return; }
+        _info = success;
+        await LoadAsync();
+    }
+
+    private async Task DeleteAsync(Assessment a)
+    {
+        _error = _info = null;
+        var r = await Api.DeleteAsync(a.Id);
+        if (!r.Ok) { _error = r.Error; return; }
+        _teacher.Remove(a);
+        _info = $"« {a.Title} » supprimée.";
+    }
+}

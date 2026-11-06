@@ -94,6 +94,23 @@ public static class EvaluationSchema
             CONSTRAINT ""PK_SubmissionAnswers"" PRIMARY KEY (""Id"")
         )",
         @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_SubmissionAnswers_SubmissionId_QuestionId"" ON ""SubmissionAnswers"" (""SubmissionId"", ""QuestionId"")",
+
+        @"ALTER TABLE ""SubmissionAnswers"" ADD COLUMN IF NOT EXISTS ""StudentAiFeedback"" text",
+
+        // Photos des copies traitées sur papier (réponses ouvertes)
+        @"CREATE TABLE IF NOT EXISTS ""AnswerPhotos"" (
+            ""Id"" uuid NOT NULL,
+            ""SubmissionId"" uuid NOT NULL REFERENCES ""Submissions"" (""Id"") ON DELETE CASCADE,
+            ""QuestionId"" uuid NOT NULL,
+            ""StudentId"" uuid NOT NULL,
+            ""Page"" integer NOT NULL,
+            ""ContentType"" text NOT NULL,
+            ""Data"" bytea NOT NULL,
+            ""Transcription"" text,
+            ""CreatedAt"" timestamp with time zone NOT NULL,
+            CONSTRAINT ""PK_AnswerPhotos"" PRIMARY KEY (""Id"")
+        )",
+        @"CREATE INDEX IF NOT EXISTS ""IX_AnswerPhotos_SubmissionId_QuestionId"" ON ""AnswerPhotos"" (""SubmissionId"", ""QuestionId"")",
     };
 
     public static async Task EnsureAsync(EvaluationContext db)

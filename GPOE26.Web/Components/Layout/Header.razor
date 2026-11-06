@@ -79,9 +79,9 @@
         catch { }
     }
 
-    private void DoLogout()
+    private async Task DoLogout()
     {
-        Auth.Logout();
+        await Auth.LogoutAsync();
         Nav.NavigateTo("/");
     }
 }

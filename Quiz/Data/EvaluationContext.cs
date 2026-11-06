@@ -9,6 +9,7 @@ public class EvaluationContext(DbContextOptions<EvaluationContext> options) : Db
     public DbSet<AssessmentQuestion> AssessmentQuestions => Set<AssessmentQuestion>();
     public DbSet<Submission> Submissions => Set<Submission>();
     public DbSet<SubmissionAnswer> SubmissionAnswers => Set<SubmissionAnswer>();
+    public DbSet<AnswerPhoto> AnswerPhotos => Set<AnswerPhoto>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -18,6 +19,11 @@ public class EvaluationContext(DbContextOptions<EvaluationContext> options) : Db
         modelBuilder.Entity<AssessmentQuestion>().Property(q => q.Id).ValueGeneratedNever();
         modelBuilder.Entity<Submission>().Property(s => s.Id).ValueGeneratedNever();
         modelBuilder.Entity<SubmissionAnswer>().Property(a => a.Id).ValueGeneratedNever();
+        modelBuilder.Entity<AnswerPhoto>(entity =>
+        {
+            entity.Property(p => p.Id).ValueGeneratedNever();
+            entity.HasIndex(p => new { p.SubmissionId, p.QuestionId });
+        });
 
         // Enums stockés en texte, comme dans les autres services — cf. EvaluationSchema
         modelBuilder.Entity<Assessment>(entity =>

@@ -1,0 +1,393 @@
+@page "/app/evaluations/nouvelle"
+@page "/app/evaluations/{Id:guid}/modifier"
+@layout AppLayout
+@inherits AppPage
+@inject IAssessmentApi Api
+@inject IClassroomApi Classrooms
+@inject ICourseApi Courses
+
+<PageTitle>@(Id is null ? "Nouvelle évaluation" : "Modifier l'évaluation") — GPOE26</PageTitle>
+
+<div class="ga-page" style="max-width:1400px">
+    @if (!Ready || _loading)
+    {
+        <Loading />
+    }
+    else
+    {
+        <div class="ga-head">
+            <div style="flex:1 1 320px; min-width:0">
+                <a class="ga-back" href="/app/evaluations"><Icon Name="left" /> Épreuves et devoirs</a>
+                <label for="ed-title" class="ga-sr">Titre de l'évaluation</label>
+                <input id="ed-title" class="ga-input" style="font-family:var(--ga-display); font-size:26px; border:none; background:transparent; padding-left:0" placeholder="Titre de l'évaluation" @bind="_d.Title" />
+                <span class="ga-small ga-muted">@(_status is null ? "Nouveau brouillon" : Labels.Of(_status.Value)) · @_d.Questions.Count question(s) · @Labels.Number(_d.Questions.Sum(q => q.Points)) points</span>
+            </div>
+            <div class="ga-actions">
+                <button class="ga-btn secondary" disabled="@_busy" @onclick="() => SaveAsync(publish: false)">Enregistrer</button>
+                @if (_status != AssessmentStatus.Published)
+                {
+                    <button class="ga-btn" disabled="@_busy" @onclick="() => SaveAsync(publish: true)">Publier</button>
+                }
+            </div>
+        </div>
+
+        <Alert Message="@_error" />
+        <Alert Message="@_info" Kind="success" />
+
+        <div class="ga-row" style="align-items:flex-start; gap:20px">
+            @* ── Plan des questions ── *@
+            <section style="flex:1 1 220px; max-width:290px" class="ga-stack ed-outline" aria-labelledby="h-plan">
+                <h2 id="h-plan" class="ga-h3">Questions</h2>
+                <ol style="list-style:none; margin:0; padding:0" class="ga-stack" >
+                    @for (var i = 0; i < _d.Questions.Count; i++)
+                    {
+                        var index = i;
+                        var q = _d.Questions[i];
+                        <li>
+                            <button type="button" class="@(index == _sel ? "on" : "")" aria-current="@(index == _sel)" @onclick="() => _sel = index">
+                                <span class="num">@(index + 1)</span>
+                                <span class="txt"><small>@Labels.Of(q.Type)</small><span>@(string.IsNullOrWhiteSpace(q.Text) ? "Nouvelle question" : q.Text)</span></span>
+                                <span class="ga-kbd ga-small">@Labels.Number(q.Points) pt</span>
+                            </button>
+                        </li>
+                    }
+                </ol>
+                <button type="button" class="ga-btn secondary block" style="border-style:dashed" aria-expanded="@_adding" @onclick="() => _adding = !_adding">
+                    <Icon Name="plus" /> Ajouter une question
+                </button>
+                @if (_adding)
+                {
+                    <div class="ga-card" style="padding:6px; gap:0" role="menu">
+                        @foreach (var t in Enum.GetValues<QuestionType>())
+                        {
+                            <button type="button" role="menuitem" class="ga-btn ghost" style="justify-content:flex-start; min-height:52px; border-radius:10px; flex-direction:column; align-items:flex-start; gap:0; color:var(--ga-navy) !important" @onclick="() => Add(t)">
+                                <span>@Labels.Of(t)</span><span class="ga-small ga-muted" style="font-weight:400">@Labels.Describe(t)</span>
+                            </button>
+                        }
+                    </div>
+                }
+            </section>
+
+            @* ── Question sélectionnée ── *@
+            <section class="ga-card" style="flex:999 1 400px; min-width:0" aria-labelledby="h-q">
+                @if (_d.Questions.Count == 0)
+                {
+                    <div class="ga-empty"><strong>Aucune question.</strong><span>Ajoutez une première question avec le bouton à gauche.</span></div>
+                }
+                else
+                {
+                    var q = _d.Questions[_sel];
+                    <div class="ga-stack" style="gap:14px" @key="q">
+                    <div class="ga-row between">
+                        <h2 id="h-q" class="ga-h2">Question @(_sel + 1)</h2>
+                        <div class="ga-row">
+                            <label for="q-pts" class="ga-label">Points</label>
+                            <input id="q-pts" class="ga-input" style="width:90px" type="number" min="0.25" step="0.25" @bind="q.Points" />
+                        </div>
+                    </div>
+
+                    <div class="ga-stack" style="gap:8px">
+                        <span class="ga-label" id="q-type">Type de question</span>
+                        <div class="ga-chips" role="radiogroup" aria-labelledby="q-type">
+                            @foreach (var t in Enum.GetValues<QuestionType>())
+                            {
+                                <button type="button" role="radio" aria-checked="@(q.Type == t)" class="ga-chip @(q.Type == t ? "on" : "")" @onclick="() => ChangeType(q, t)">@Labels.Of(t)</button>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="ga-field">
+                        <label for="q-text">Énoncé</label>
+                        <textarea id="q-text" class="ga-textarea" rows="3" @bind="q.Text" @bind:event="oninput"></textarea>
+                    </div>
+
+                    @switch (q.Type)
+                    {
+                        case QuestionType.SingleChoice:
+                        case QuestionType.MultipleChoice:
+                            <div class="ga-stack" style="gap:10px">
+                                <span class="ga-label">Options — cochez @(q.Type == QuestionType.SingleChoice ? "la bonne réponse" : "toutes les bonnes réponses")</span>
+                                @for (var i = 0; i < q.Options.Count; i++)
+                                {
+                                    var oi = i;
+                                    var correct = q.CorrectOptions.Contains(oi);
+                                    <div class="ed-opt">
+                                        <button type="button" class="ed-mark @(q.Type == QuestionType.MultipleChoice ? "square" : "") @(correct ? "on" : "")"
+                                                aria-pressed="@correct" aria-label="Marquer l'option @(oi + 1) comme correcte" @onclick="() => Mark(q, oi)">
+                                            <Icon Name="tick" Size="16" Stroke="3" />
+                                        </button>
+                                        <label for="opt-@oi" class="ga-sr">Option @(oi + 1)</label>
+                                        <input id="opt-@oi" class="ga-input" style="@(correct ? "border-color:var(--ga-green); background:#F1FAEE" : "")" value="@q.Options[oi]" @oninput="e => q.Options[oi] = e.Value?.ToString() ?? string.Empty" />
+                                        <button type="button" class="ga-icon-btn" aria-label="Supprimer l'option @(oi + 1)" @onclick="() => RemoveOption(q, oi)"><Icon Name="x" /></button>
+                                    </div>
+                                }
+                                <button type="button" class="ga-btn secondary small" style="align-self:flex-start" @onclick="() => q.Options.Add(string.Empty)"><Icon Name="plus" /> Ajouter une option</button>
+                            </div>
+                            break;
+
+                        case QuestionType.TrueFalse:
+                            <div class="ga-stack" style="gap:8px">
+                                <span class="ga-label">Bonne réponse</span>
+                                <div class="ga-row">
+                                    <button type="button" class="ga-chip @(q.TrueFalseAnswer == true ? "on" : "")" aria-pressed="@(q.TrueFalseAnswer == true)" @onclick="() => q.TrueFalseAnswer = true">Vrai</button>
+                                    <button type="button" class="ga-chip @(q.TrueFalseAnswer == false ? "on" : "")" aria-pressed="@(q.TrueFalseAnswer == false)" @onclick="() => q.TrueFalseAnswer = false">Faux</button>
+                                </div>
+                            </div>
+                            break;
+
+                        case QuestionType.ShortAnswer:
+                            <div class="ga-field">
+                                <label for="q-acc">Réponses acceptées</label>
+                                <input id="q-acc" class="ga-input" value="@string.Join(" ; ", q.AcceptedAnswers)"
+                                       @onchange="e => SetAccepted(q, e.Value?.ToString())" />
+                                <span class="help">Séparez les variantes par « ; ». Les majuscules, les accents et la ponctuation finale sont ignorés.</span>
+                            </div>
+                            break;
+
+                        case QuestionType.Numeric:
+                            <div class="ga-form-grid">
+                                <div class="ga-field"><label for="q-num">Valeur attendue</label><input id="q-num" class="ga-input" type="number" step="any" @bind="q.NumericAnswer" /></div>
+                                <div class="ga-field"><label for="q-tol">Tolérance (±)</label><input id="q-tol" class="ga-input" type="number" step="any" min="0" @bind="q.Tolerance" /></div>
+                                <div class="ga-field"><label for="q-unit">Unité (facultatif)</label><input id="q-unit" class="ga-input" placeholder="ex. m/s" @bind="q.Unit" /></div>
+                            </div>
+                            break;
+
+                        case QuestionType.OpenEnded:
+                            <div class="ga-field">
+                                <label for="q-crit">Critères de correction (barème)</label>
+                                <textarea id="q-crit" class="ga-textarea" rows="4" placeholder="ex. Expression de vn+1 (2 pts) ; factorisation (2 pts) ; conclusion (2 pts)" @bind="q.Criteria"></textarea>
+                                <span class="help">Vous corrigez chaque copie. @(_d.AiAssistedGrading ? "L'IA peut vous proposer une note selon ces critères." : "")</span>
+                            </div>
+                            break;
+                    }
+
+                    <div class="ga-field">
+                        <label for="q-expl">Explication montrée avec la correction (facultatif)</label>
+                        <textarea id="q-expl" class="ga-textarea" rows="2" @bind="q.Explanation"></textarea>
+                    </div>
+
+                    <div class="ga-row between" style="border-top:1px solid #ECEAE3; padding-top:14px">
+                        <div class="ga-row">
+                            <button type="button" class="ga-btn secondary small" @onclick="() => Duplicate(q)"><Icon Name="copy" /> Dupliquer</button>
+                            <button type="button" class="ga-btn danger small" @onclick="Remove"><Icon Name="trash" /> Supprimer</button>
+                        </div>
+                        <span class="ga-small ga-muted">@(q.Type == QuestionType.OpenEnded ? "Correction par l'enseignant" : "Correction automatique")</span>
+                    </div>
+                    </div>
+                }
+            </section>
+
+            @* ── Paramètres ── *@
+            <aside class="ga-stack" style="flex:1 1 250px; max-width:340px">
+                <section class="ga-card" aria-labelledby="h-param">
+                    <h2 id="h-param" class="ga-h3">Paramètres</h2>
+                    <div class="ga-stack" style="gap:8px">
+                        <span class="ga-label" id="lbl-kind">Type d'évaluation</span>
+                        <div class="ga-chips" role="radiogroup" aria-labelledby="lbl-kind">
+                            @foreach (var k in Enum.GetValues<AssessmentKind>())
+                            {
+                                <button type="button" role="radio" aria-checked="@(_d.Kind == k)" class="ga-chip @(_d.Kind == k ? "on" : "")" @onclick="() => _d.Kind = k">@Labels.Of(k)</button>
+                            }
+                        </div>
+                        <span class="help ga-small ga-muted">@(_d.Kind == AssessmentKind.Practice ? "Note et correction visibles dès que l'élève rend sa copie." : "Résultats visibles après la date limite ou la clôture.")</span>
+                    </div>
+
+                    <div class="ga-stack" style="gap:8px">
+                        <span class="ga-label" id="lbl-cls">Classes ou groupes</span>
+                        @if (_classes.Count == 0) { <span class="ga-small ga-muted">Créez une classe depuis « Mes classes ».</span> }
+                        <div class="ga-chips" role="group" aria-labelledby="lbl-cls">
+                            @foreach (var c in _classes)
+                            {
+                                var on = _d.ClassroomIds.Contains(c.Id);
+                                <button type="button" aria-pressed="@on" class="ga-chip @(on ? "on" : "")" @onclick="() => ToggleClass(c.Id)">@c.Name</button>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="ga-field">
+                        <label for="ed-course">Cours évalué (suivi de la maîtrise)</label>
+                        <select id="ed-course" class="ga-select" @bind="CourseValue">
+                            <option value="">— Aucun —</option>
+                            @foreach (var c in _courses) { <option value="@c.Id">@c.Title</option> }
+                        </select>
+                    </div>
+                    <div class="ga-field">
+                        <label for="ed-subject">Matière</label>
+                        <input id="ed-subject" class="ga-input" @bind="_d.Subject" />
+                    </div>
+
+                    <div class="ga-field"><label for="ed-open">Ouverture (facultatif)</label><input id="ed-open" class="ga-input" type="datetime-local" @bind="_d.OpensAt" /></div>
+                    <div class="ga-field"><label for="ed-due">Date limite</label><input id="ed-due" class="ga-input" type="datetime-local" @bind="_d.DueAt" /></div>
+                    <div class="ga-form-grid" style="grid-template-columns:repeat(2, minmax(0, 1fr))">
+                        <div class="ga-field"><label for="ed-dur">Durée (min)</label><input id="ed-dur" class="ga-input" type="number" min="1" @bind="_d.DurationMinutes" /></div>
+                        <div class="ga-field"><label for="ed-try">Tentatives</label><input id="ed-try" class="ga-input" type="number" min="1" max="20" @bind="_d.MaxAttempts" /></div>
+                    </div>
+
+                    @foreach (var (label, get, set) in Toggles())
+                    {
+                        <div class="ga-row" style="flex-wrap:nowrap">
+                            <button type="button" role="switch" aria-checked="@get()" aria-label="@label" class="ga-switch @(get() ? "on" : "")" @onclick="() => set(!get())"></button>
+                            <span class="ga-small">@label</span>
+                        </div>
+                    }
+                </section>
+
+                <section class="ga-card dark" aria-label="Récapitulatif">
+                    <span class="ga-kbd ga-small" style="color:#C9D3EA; letter-spacing:.06em">RÉCAPITULATIF</span>
+                    <strong style="font-size:28px">@Labels.Number(_d.Questions.Sum(q => q.Points)) points</strong>
+                    <span class="ga-small" style="color:#C9D3EA">@_d.Questions.Count(q => q.Type != QuestionType.OpenEnded) question(s) corrigée(s) automatiquement, @_d.Questions.Count(q => q.Type == QuestionType.OpenEnded) par vous · note ramenée sur @_d.ScaleTo</span>
+                </section>
+            </aside>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+    [SupplyParameterFromQuery(Name = "type")] public string? Type { get; set; }
+
+    protected override UserRole[]? AllowedRoles => [UserRole.Teacher];
+
+    private bool _loading = true, _busy, _adding;
+    private string? _error, _info;
+    private AssessmentDraft _d = new();
+    private AssessmentStatus? _status;
+    private int _sel;
+    private List<Classroom> _classes = new();
+    private List<CourseSummary> _courses = new();
+
+    private string CourseValue
+    {
+        get => _d.CourseId?.ToString() ?? "";
+        set => _d.CourseId = Guid.TryParse(value, out var g) ? g : null;
+    }
+
+    private IEnumerable<(string, Func<bool>, Action<bool>)> Toggles() =>
+    [
+        ("Mélanger les questions et les options", () => _d.Shuffle, v => _d.Shuffle = v),
+        ("Montrer la correction détaillée", () => _d.ShowCorrection, v => _d.ShowCorrection = v),
+        ("Correction assistée par l'IA (réponses ouvertes)", () => _d.AiAssistedGrading, v => _d.AiAssistedGrading = v),
+        ("Autoriser la composition hors ligne (application Windows)", () => _d.AllowOffline, v => _d.AllowOffline = v),
+    ];
+
+    protected override async Task LoadAsync()
+    {
+        var classes = Classrooms.MineAsync();
+        var courses = Courses.MineAsync();
+        await Task.WhenAll(classes, courses);
+        _classes = classes.Result.Value ?? new();
+        _courses = courses.Result.Value ?? new();
+
+        if (Id is { } id)
+        {
+            var existing = await Api.GetAsync(id);
+            if (existing.Value is null) { _error = existing.Error; _loading = false; return; }
+            _d = existing.Value.ToDraft();
+            _status = existing.Value.Status;
+        }
+        else
+        {
+            _d.Kind = Enum.TryParse<AssessmentKind>(Type, out var k) ? k : AssessmentKind.Practice;
+            _d.Subject = Session.Profile?.TeachingSubjects?.FirstOrDefault();
+            if (_classes.Count == 1) _d.ClassroomIds.Add(_classes[0].Id);
+            Add(QuestionType.SingleChoice);
+            _adding = false;
+        }
+        _loading = false;
+    }
+
+    private void Add(QuestionType type)
+    {
+        var q = new QuestionDraft { Type = type, CourseId = null };
+        if (type == QuestionType.OpenEnded) q.Points = 4;
+        _d.Questions.Add(q);
+        _sel = _d.Questions.Count - 1;
+        _adding = false;
+    }
+
+    private static void ChangeType(QuestionDraft q, QuestionType t)
+    {
+        q.Type = t;
+        if (t == QuestionType.SingleChoice && q.CorrectOptions.Count > 1) q.CorrectOptions = [q.CorrectOptions[0]];
+        if (t is QuestionType.SingleChoice or QuestionType.MultipleChoice && q.Options.Count < 2) q.Options = ["", "", ""];
+    }
+
+    private static void Mark(QuestionDraft q, int index)
+    {
+        if (q.Type == QuestionType.SingleChoice) q.CorrectOptions = [index];
+        else if (!q.CorrectOptions.Remove(index)) q.CorrectOptions.Add(index);
+    }
+
+    private static void RemoveOption(QuestionDraft q, int index)
+    {
+        q.Options.RemoveAt(index);
+        q.CorrectOptions = q.CorrectOptions.Where(i => i != index).Select(i => i > index ? i - 1 : i).ToList();
+    }
+
+    private void Duplicate(QuestionDraft q)
+    {
+        _d.Questions.Insert(_sel + 1, new QuestionDraft
+        {
+            Type = q.Type, Text = q.Text, Points = q.Points, Options = [.. q.Options], CorrectOptions = [.. q.CorrectOptions],
+            TrueFalseAnswer = q.TrueFalseAnswer, AcceptedAnswers = [.. q.AcceptedAnswers], NumericAnswer = q.NumericAnswer,
+            Tolerance = q.Tolerance, Unit = q.Unit, Criteria = q.Criteria, Explanation = q.Explanation, CourseId = q.CourseId
+        });
+        _sel++;
+    }
+
+    private void Remove()
+    {
+        _d.Questions.RemoveAt(_sel);
+        _sel = Math.Max(0, Math.Min(_sel, _d.Questions.Count - 1));
+    }
+
+    private static void SetAccepted(QuestionDraft q, string? value) =>
+        q.AcceptedAnswers = (value ?? string.Empty).Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+
+    private void ToggleClass(Guid id)
+    {
+        if (!_d.ClassroomIds.Remove(id)) _d.ClassroomIds.Add(id);
+    }
+
+    private async Task SaveAsync(bool publish)
+    {
+        _busy = true;
+        _error = _info = null;
+        if (string.IsNullOrWhiteSpace(_d.Title)) _d.Title = "Évaluation sans titre";
+        var empty = _d.Questions.FindIndex(q => string.IsNullOrWhiteSpace(q.Text));
+        if (empty >= 0)
+        {
+            _busy = false;
+            _sel = empty;
+            _error = $"La question {empty + 1} n'a pas d'énoncé.";
+            return;
+        }
+
+        var saved = Id is { } id ? await Api.UpdateAsync(id, _d) : await Api.CreateAsync(_d);
+        if (!saved.Ok || saved.Value is null)
+        {
+            _busy = false;
+            _error = saved.Error;
+            return;
+        }
+        _status = saved.Value.Status;
+
+        if (publish)
+        {
+            var published = await Api.PublishAsync(saved.Value.Id);
+            _busy = false;
+            if (!published.Ok)
+            {
+                _error = published.Error;
+                if (Id is null) Nav.NavigateTo($"/app/evaluations/{saved.Value.Id}/modifier", replace: true);
+                return;
+            }
+            Nav.NavigateTo("/app/evaluations");
+            return;
+        }
+
+        _busy = false;
+        _info = "Brouillon enregistré.";
+        if (Id is null) Nav.NavigateTo($"/app/evaluations/{saved.Value.Id}/modifier", replace: true);
+    }
+}

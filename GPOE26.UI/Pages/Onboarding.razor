@@ -1,0 +1,472 @@
+@page "/register"
+@layout FocusLayout
+@inject IAccountApi Account
+@inject IClassroomApi Classrooms
+@inject IFamilyApi Family
+@inject SessionState Session
+@inject NavigationManager Nav
+
+<PageTitle>Inscription — GPOE26</PageTitle>
+
+<div class="ob">
+    <div class="ob-panel">
+        @if (!_done)
+        {
+            var step = Current;
+            <div class="ob-top">
+                @if (_index > 0)
+                {
+                    <button type="button" class="ga-icon-btn" aria-label="Étape précédente" @onclick="Back"><Icon Name="left" Size="26" Stroke="2" /></button>
+                }
+                <div class="ob-progress" role="progressbar" aria-label="Progression de l'inscription" aria-valuenow="@Percent" aria-valuemin="0" aria-valuemax="100">
+                    <span style="width:@(Percent)%"></span>
+                </div>
+                <span class="ga-small ga-muted" style="min-width:40px; text-align:right">@(_index + 1)/@Total</span>
+            </div>
+
+            <div class="ob-body">
+                @if (step.Kind is StepKind.Choice or StepKind.Text)
+                {
+                    <div class="ob-illus" aria-hidden="true">
+                        <svg width="70" height="70" viewBox="0 0 64 64" fill="none" stroke="#0E2350" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M8 16c8-4 16-4 24 2 8-6 16-6 24-2v34c-8-4-16-4-24 2-8-6-16-6-24-2z" /><path d="M32 18v34" />
+                            <path d="M14 24c4-1.5 8-1.5 12 0M14 31c4-1.5 8-1.5 12 0M38 24c4-1.5 8-1.5 12 0M38 31c4-1.5 8-1.5 12 0" />
+                        </svg>
+                    </div>
+                }
+                <div class="ob-title">
+                    <h1>@step.Title</h1>
+                    @if (step.Sub is not null) { <p>@step.Sub</p> }
+                </div>
+
+                @switch (step.Kind)
+                {
+                    case StepKind.Choice:
+                        <div class="ob-options">
+                            @foreach (var o in step.Options)
+                            {
+                                var on = Get(step.Key) == o.Value;
+                                <button type="button" class="ob-option @(on ? "on" : "")" aria-pressed="@on" @onclick="() => Pick(step.Key, o.Value)">
+                                    <span>@o.Label</span>
+                                    @if (o.Hint is not null) { <small>@o.Hint</small> }
+                                </button>
+                            }
+                        </div>
+                        break;
+
+                    case StepKind.Multi:
+                        <div class="ga-chips" style="justify-content:center">
+                            @foreach (var o in step.Options)
+                            {
+                                var on = GetList(step.Key).Contains(o.Value);
+                                <button type="button" class="ga-chip @(on ? "on" : "")" aria-pressed="@on" @onclick="() => Toggle(step.Key, o.Value)">@o.Label</button>
+                            }
+                        </div>
+                        break;
+
+                    case StepKind.Text:
+                        <div class="ga-field">
+                            <label for="ob-text">@step.Label</label>
+                            <input id="ob-text" class="ga-input big" placeholder="@step.Placeholder" autocomplete="off"
+                                   value="@Get(step.Key)" @oninput="e => Set(step.Key, e.Value?.ToString())" @onkeydown="OnEnter" />
+                            @if (step.Help is not null) { <span class="help">@step.Help</span> }
+                        </div>
+                        break;
+
+                    case StepKind.Account:
+                    case StepKind.ChildAccount:
+                        var prefix = step.Kind == StepKind.ChildAccount ? "child" : "";
+                        var kUser = prefix + "username";
+                        var kMail = prefix + "email";
+                        var kPwd = prefix + "password";
+                        <div class="ga-stack" style="gap:14px">
+                            <Alert Message="@_error" />
+                            <div class="ga-field">
+                                <label for="ob-user">Nom d'utilisateur</label>
+                                <input id="ob-user" class="ga-input big" autocomplete="username" value="@Get(kUser)" @oninput="e => Set(kUser, e.Value?.ToString())" />
+                                <span class="help">Visible par tes enseignants. 3 caractères minimum, unique sur la plateforme.</span>
+                            </div>
+                            <div class="ga-field">
+                                <label for="ob-email">Adresse e-mail</label>
+                                <input id="ob-email" class="ga-input big" type="email" autocomplete="email" placeholder="nom@exemple.com" value="@Get(kMail)" @oninput="e => Set(kMail, e.Value?.ToString())" />
+                            </div>
+                            <div class="ga-field">
+                                <label for="ob-pwd">Mot de passe</label>
+                                <input id="ob-pwd" class="ga-input big" type="password" autocomplete="new-password" placeholder="8 caractères minimum" value="@Get(kPwd)" @oninput="e => Set(kPwd, e.Value?.ToString())" />
+                            </div>
+                            @if (step.Kind == StepKind.Account)
+                            {
+                                <p class="ga-small ga-muted" style="margin:0">En créant un compte, vous acceptez les conditions d'utilisation et la politique de confidentialité.</p>
+                            }
+                        </div>
+                        break;
+                }
+            </div>
+
+            <div class="ob-foot">
+                <button type="button" class="ga-btn big block" disabled="@(!CanContinue || _busy)" @onclick="NextAsync">
+                    @(_busy ? "Création du compte…" : step.Kind == StepKind.Account ? "Créer mon compte" : step.Optional && string.IsNullOrWhiteSpace(Get(step.Key)) ? "Passer" : "Continuer")
+                    <Icon Name="right" Stroke="2" />
+                </button>
+                @if (_index == 0)
+                {
+                    <p style="margin:0">Déjà un compte ? <a href="/login" style="font-weight:600; text-decoration:none">Se connecter</a></p>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="ob-body" style="padding-top:48px">
+                <div class="ob-illus" style="background:var(--ga-green-soft); width:96px; height:96px" aria-hidden="true">
+                    <Icon Name="tick" Size="48" Stroke="2.2" />
+                </div>
+                <div class="ob-title">
+                    <h1>@_doneTitle</h1>
+                    <p>@_doneText</p>
+                </div>
+                @foreach (var w in _warnings)
+                {
+                    <Alert Message="@w" Kind="warn" />
+                }
+                @foreach (var c in _codes)
+                {
+                    <div class="ob-code">
+                        <span class="ga-small ga-muted">@c.Label</span>
+                        <strong>@c.Value</strong>
+                        @if (c.Note is not null) { <span class="ga-small">@c.Note</span> }
+                    </div>
+                }
+            </div>
+            <div class="ob-foot">
+                <a class="ga-btn big block" href="/app">Accéder à mon espace <Icon Name="right" Stroke="2" /></a>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private enum StepKind { Choice, Multi, Text, Account, ChildAccount }
+    private record Opt(string Value, string Label, string? Hint = null);
+    private record Step(string Key, StepKind Kind, string Title, string? Sub = null, Opt[]? Opts = null,
+        string? Label = null, string? Placeholder = null, string? Help = null, bool Optional = false)
+    {
+        public Opt[] Options => Opts ?? [];
+    }
+    private record CodeCard(string Label, string Value, string? Note = null);
+
+    // ── Référentiel scolaire camerounais (bilingue) ───────────────────────────
+    private static readonly string[] FrClasses = ["6e", "5e", "4e", "3e", "2nde", "1ère", "Terminale"];
+    private static readonly string[] EnClasses = ["Form 1", "Form 2", "Form 3", "Form 4", "Form 5", "Lower Sixth", "Upper Sixth"];
+    private static readonly Opt[] FrSeries =
+    [
+        new("A", "Série A", "Lettres et philosophie"), new("C", "Série C", "Mathématiques et sciences physiques"),
+        new("D", "Série D", "Mathématiques et SVT"), new("E", "Série E", "Mathématiques et technologie"),
+        new("TI", "Série TI", "Informatique"), new("Technique", "Enseignement technique", "F2, F3, F4, G, ESF…")
+    ];
+    private static readonly Opt[] EnSeries = [new("Arts", "Arts"), new("Science", "Science"), new("Commercial", "Commercial")];
+    private static readonly string[] FrSubjects = ["Mathématiques", "Physique-Chimie", "SVT", "Français", "Anglais", "Philosophie", "Histoire-Géo", "Informatique"];
+    private static readonly string[] EnSubjects = ["Mathematics", "Physics", "Chemistry", "Biology", "English Language", "French", "Computer Science", "History"];
+    private static readonly Dictionary<string, string> ExamFor = new()
+    {
+        ["3e"] = "BEPC", ["1ère"] = "Probatoire", ["Terminale"] = "Baccalauréat", ["Form 5"] = "GCE O Level", ["Upper Sixth"] = "GCE A Level"
+    };
+
+    private readonly Dictionary<string, string?> _a = new();
+    private readonly Dictionary<string, List<string>> _lists = new();
+    private int _index;
+    private bool _busy, _done;
+    private string? _error;
+    private string _doneTitle = "", _doneText = "";
+    private readonly List<string> _warnings = new();
+    private readonly List<CodeCard> _codes = new();
+
+    private string? Get(string key) => _a.GetValueOrDefault(key);
+    private List<string> GetList(string key) => _lists.TryGetValue(key, out var l) ? l : _lists[key] = new();
+    private void Set(string key, string? value) { _a[key] = value; _error = null; }
+
+    private List<Step> Steps => BuildSteps();
+    private Step Current => Steps[Math.Min(_index, Steps.Count - 1)];
+    private int Total => Get("role") is null ? 8 : Steps.Count;
+    private int Percent => Math.Max(6, (int)Math.Round((_index + 1) * 100.0 / Total));
+
+    private bool CanContinue => Current.Kind switch
+    {
+        StepKind.Choice => Get(Current.Key) is not null,
+        StepKind.Multi => GetList(Current.Key).Count > 0,
+        StepKind.Text => Current.Optional || !string.IsNullOrWhiteSpace(Get(Current.Key)),
+        StepKind.Account => AccountValid(""),
+        StepKind.ChildAccount => AccountValid("child"),
+        _ => false
+    };
+
+    private bool AccountValid(string p) =>
+        (Get(p + "username")?.Trim().Length ?? 0) >= 3
+        && (Get(p + "email") ?? "").Contains('@')
+        && (Get(p + "password")?.Length ?? 0) >= 8;
+
+    private void Pick(string key, string value)
+    {
+        if (key == "role") { _a.Clear(); _lists.Clear(); }
+        if (key == "sys") { _a.Remove("classe"); _a.Remove("serie"); _a.Remove("exam"); GetList("mat").Clear(); }
+        if (key == "classe") { _a.Remove("serie"); _a["exam"] = ExamFor.GetValueOrDefault(value); }
+        if (key == "struct") { _a.Remove("acces"); }
+        if (key == "acces") { _a.Remove("cle"); _a.Remove("formule"); }
+        Set(key, value);
+    }
+
+    private void Toggle(string key, string value)
+    {
+        var list = GetList(key);
+        if (!list.Remove(value)) list.Add(value);
+    }
+
+    private void Back() { _error = null; _index = Math.Max(0, _index - 1); }
+
+    private async Task OnEnter(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && CanContinue) await NextAsync();
+    }
+
+    private async Task NextAsync()
+    {
+        if (!CanContinue) return;
+        if (Current.Kind == StepKind.Account) { await RegisterAsync(); return; }
+
+        // Pré-remplit le nom d'utilisateur de l'étape suivante avec le prénom saisi
+        var steps = Steps;
+        var next = _index + 1 < steps.Count ? steps[_index + 1] : null;
+        if (next?.Kind == StepKind.Account && Get("username") is null)
+            _a["username"] = Get("name")?.Trim();
+        if (next?.Kind == StepKind.ChildAccount && Get("childusername") is null)
+            _a["childusername"] = Get("child")?.Trim();
+        _index++;
+    }
+
+    // ── Étapes selon le rôle ──────────────────────────────────────────────────
+    private List<Step> BuildSteps()
+    {
+        var role = Get("role");
+        var name = Get("name")?.Trim();
+        var s = new List<Step>
+        {
+            new("role", StepKind.Choice, "Quelle description vous correspond le mieux ?", Opts:
+            [
+                new("eleve", "Je suis élève"), new("enseignant", "Je suis enseignant(e)"), new("parent", "Je suis parent ou tuteur")
+            ])
+        };
+
+        if (role == "eleve")
+        {
+            s.Add(new("name", StepKind.Text, "Bienvenue ! Comment devons-nous t'appeler ?", Label: "Ton prénom", Placeholder: "Ton prénom"));
+            School(s, child: false, greeting: name);
+            s.Add(new("mat", StepKind.Multi, "Quelles matières veux-tu renforcer ?", "Choisis-en autant que tu veux.",
+                (Get("sys") == "en" ? EnSubjects : FrSubjects).Select(m => new Opt(m, m)).ToArray()));
+            s.Add(new("temps", StepKind.Choice, "Combien de temps peux-tu étudier par jour ?", "Tu pourras le modifier à tout moment.",
+                [new("15", "15 min", "Léger"), new("30", "30 min", "Régulier"), new("45", "45 min", "Sérieux"), new("60", "1 h ou plus", "Intensif")]));
+            s.Add(new("invite", StepKind.Text, "Ton enseignant t'a-t-il donné un code de classe ?", "Tu pourras aussi rejoindre une classe plus tard.",
+                Label: "Code de classe (facultatif)", Placeholder: "ex. K7P-Q2M", Optional: true));
+            s.Add(new("acces", StepKind.Choice, "Comment veux-tu accéder à GPOE26 ?", "Les cours partagés par tes enseignants restent toujours gratuits.",
+            [
+                new("cle", "J'ai une clé d'abonnement", "Donnée par un parent ou par ton établissement"),
+                new("payer", "Je prends mon abonnement", "Mobile Money ou carte bancaire"),
+                new("gratuit", "Commencer gratuitement", "Tu pourras passer à Premium plus tard")
+            ]));
+            if (Get("acces") == "cle")
+                s.Add(new("cle", StepKind.Text, "Saisis ta clé d'abonnement", Label: "Clé d'abonnement", Placeholder: "ex. FAM-7Q2K-9XRM",
+                    Help: "Ton parent la trouve dans son espace, rubrique Abonnement."));
+            else if (Get("acces") == "payer")
+                s.Add(new("formule", StepKind.Choice, "Choisis ta formule", Opts:
+                    [new("Monthly", "Premium · mensuel"), new("Yearly", "Premium · annuel", "Paiement en une fois pour l'année scolaire")]));
+            s.Add(new("account", StepKind.Account, "Dernière étape : crée ton compte"));
+        }
+        else if (role == "enseignant")
+        {
+            var other = Get("struct") == "autre";
+            s.Add(new("name", StepKind.Text, "Bienvenue ! Comment vos élèves vous appellent-ils ?", Label: "Votre nom", Placeholder: "ex. M. Ndongo"));
+            s.Add(new("struct", StepKind.Choice, "Pour quelle structure enseignez-vous ?", Opts:
+            [
+                new("ecole", "Un établissement scolaire", "Collège, lycée, université…"),
+                new("autre", "Une autre institution", "Entreprise, startup, centre de formation, ONG…"),
+                new("indep", "À mon compte", "Répétiteur, cours particuliers")
+            ]));
+            if (Get("struct") != "indep")
+                s.Add(new("ecole", StepKind.Text, other ? "Quel est le nom de votre institution ?" : "Dans quel établissement enseignez-vous ?",
+                    Label: other ? "Institution" : "Établissement", Placeholder: other ? "Nom de l'entreprise ou de l'organisme" : "Nom de l'établissement"));
+            if (other)
+            {
+                s.Add(new("theme", StepKind.Text, "Quels thèmes enseignez-vous ?", Label: "Thèmes", Placeholder: "ex. Développement web, gestion de projet"));
+                s.Add(new("groupe", StepKind.Text, "Comment s'appelle votre premier groupe ?", "Vous pourrez en créer d'autres ensuite.",
+                    Label: "Nom du groupe", Placeholder: "ex. Promotion Data 2026"));
+            }
+            else
+            {
+                s.Add(new("ensMat", StepKind.Multi, "Quelles matières enseignez-vous ?", "Plusieurs choix possibles.", FrSubjects.Select(m => new Opt(m, m)).ToArray()));
+                s.Add(new("ensCls", StepKind.Multi, "Dans quelles classes ?", "Une classe sera créée pour chacune, avec son code d'invitation.",
+                    FrClasses.Concat(EnClasses).Select(c => new Opt(c, c)).ToArray()));
+            }
+            var access = new List<Opt>();
+            if (Get("struct") != "indep")
+                access.Add(new("cle", other ? "J'ai la clé de mon institution" : "J'ai la clé de mon établissement", "Fournie par votre administration"));
+            access.Add(new("payer", "Je prends mon propre abonnement", "Abonnement enseignant individuel"));
+            access.Add(new("essai", "Essayer gratuitement", "Essai sans engagement"));
+            s.Add(new("acces", StepKind.Choice, "Comment souhaitez-vous accéder à GPOE26 ?", Opts: access.ToArray()));
+            if (Get("acces") == "cle")
+                s.Add(new("cle", StepKind.Text, other ? "Saisissez la clé de votre institution" : "Saisissez la clé de votre établissement",
+                    Label: "Clé d'abonnement", Placeholder: "ex. ETB-LYC4-H8MQ", Help: "Elle vous rattache automatiquement à la licence de votre structure."));
+            else if (Get("acces") == "payer")
+                s.Add(new("formule", StepKind.Choice, "Choisissez votre formule", Opts:
+                    [new("Monthly", "Enseignant · mensuel"), new("Yearly", "Enseignant · annuel")]));
+            s.Add(new("account", StepKind.Account, "Dernière étape : créez votre compte"));
+        }
+        else if (role == "parent")
+        {
+            s.Add(new("name", StepKind.Text, "Bienvenue ! Quel est votre prénom ?", Label: "Votre prénom", Placeholder: "Votre prénom"));
+            s.Add(new("has", StepKind.Choice, "Votre enfant a-t-il déjà un compte GPOE26 ?", Opts:
+                [new("oui", "Oui, il ou elle me donnera son code"), new("non", "Non, je crée son compte")]));
+            if (Get("has") == "oui")
+            {
+                s.Add(new("code", StepKind.Text, "Saisissez le code de votre enfant", Label: "Code de l'élève", Placeholder: "ex. AQ4-7KXM",
+                    Help: "Votre enfant le trouve sur son tableau de bord. Il devra accepter le rattachement."));
+            }
+            else
+            {
+                s.Add(new("child", StepKind.Text, "Quel est le prénom de votre enfant ?", Label: "Prénom de l'enfant", Placeholder: "Prénom"));
+                School(s, child: true, greeting: null);
+                s.Add(new("childaccount", StepKind.ChildAccount, $"Identifiants de {Get("child")?.Trim() ?? "votre enfant"}",
+                    "Votre enfant s'en servira pour se connecter."));
+            }
+            s.Add(new("formule", StepKind.Choice, "Choisissez une formule", "Vous pourrez changer à tout moment.",
+            [
+                new("Gratuit", "Gratuit", "Cours partagés par les enseignants"),
+                new("Premium", "Premium familial", "Tuteur IA, quiz illimités, épreuves blanches, suivi détaillé")
+            ]));
+            s.Add(new("account", StepKind.Account, "Dernière étape : créez votre compte"));
+        }
+        return s;
+    }
+
+    private void School(List<Step> s, bool child, string? greeting)
+    {
+        var en = Get("sys") == "en";
+        s.Add(new("sys", StepKind.Choice,
+            child ? "Dans quel sous-système votre enfant est-il scolarisé ?" : $"Salut {(string.IsNullOrEmpty(greeting) ? "toi" : greeting)} ! Dans quel sous-système es-tu ?",
+            Opts: [new("fr", "Francophone"), new("en", "Anglophone")]));
+        s.Add(new("classe", StepKind.Choice, child ? "En quelle classe est votre enfant ?" : "En quelle classe es-tu ?",
+            Opts: (en ? EnClasses : FrClasses).Select(c => new Opt(c, c)).ToArray()));
+        var c = Get("classe");
+        if ((!en && c is "2nde" or "1ère" or "Terminale") || (en && c is "Lower Sixth" or "Upper Sixth"))
+            s.Add(new("serie", StepKind.Choice, child ? "Quelle est sa série ?" : "Quelle est ta série ?", Opts: en ? EnSeries : FrSeries));
+        var suggested = c is null ? null : ExamFor.GetValueOrDefault(c);
+        var exams = en ? new[] { "GCE O Level", "GCE A Level", "Pas d'examen cette année" }
+                       : ["BEPC", "CAP", "Probatoire", "Baccalauréat", "Pas d'examen cette année"];
+        s.Add(new("exam", StepKind.Choice, child ? "Quel examen prépare votre enfant ?" : "Quel examen prépares-tu ?",
+            child ? "Cela nous permet d'adapter son plan d'études." : "Nous l'utiliserons pour bâtir ton plan d'études.",
+            exams.Select(e => new Opt(e, e, e == suggested ? "Suggéré pour cette classe" : null)).ToArray()));
+    }
+
+    // ── Création du compte puis actions complémentaires ──────────────────────
+    private async Task RegisterAsync()
+    {
+        _busy = true;
+        _error = null;
+        var role = Get("role");
+        var exam = Get("exam") is { } e && !e.StartsWith("Pas d'") ? e : null;
+        var request = new RegisterRequest
+        {
+            Email = Get("email")!.Trim(),
+            Username = Get("username")!.Trim(),
+            Password = Get("password")!,
+            Role = role switch { "enseignant" => UserRole.Teacher, "parent" => UserRole.Parent, _ => UserRole.Student },
+            SubSystem = role == "eleve" ? (Get("sys") == "en" ? SchoolSubSystem.Anglophone : SchoolSubSystem.Francophone) : null,
+            Level = role == "eleve" ? Get("classe") : null,
+            Filiere = role == "eleve" ? Get("serie") : null,
+            ExamTarget = role == "eleve" ? exam : null,
+            FocusSubjects = role == "eleve" ? GetList("mat").ToList() : null,
+            DailyStudyMinutes = role == "eleve" && int.TryParse(Get("temps"), out var m) ? m : null,
+            InviteCode = role == "eleve" && !string.IsNullOrWhiteSpace(Get("invite")) ? Get("invite")!.Trim() : null,
+            TeachingContext = role == "enseignant"
+                ? Get("struct") switch { "autre" => TeachingContext.Institution, "indep" => TeachingContext.Independent, _ => TeachingContext.School }
+                : null,
+            OrganizationName = role == "enseignant" ? Get("ecole")?.Trim() : null,
+            TeachingSubjects = role == "enseignant"
+                ? (Get("struct") == "autre" ? [Get("theme")?.Trim() ?? ""] : GetList("ensMat").ToList())
+                : null,
+            InitialClasses = role == "enseignant"
+                ? (Get("struct") == "autre" ? [Get("groupe")?.Trim() ?? ""] : GetList("ensCls").ToList())
+                : null,
+            StartTrial = role == "enseignant" && Get("acces") == "essai",
+            SubscriptionKey = Get("acces") == "cle" ? Get("cle")?.Trim() : null
+        };
+
+        var result = await Account.RegisterAsync(request);
+        if (!result.Ok || result.Value is null)
+        {
+            _busy = false;
+            _error = result.Error;
+            return;
+        }
+        await Session.SignInAsync(result.Value);
+        await AfterRegistrationAsync(role, result.Value.Profile);
+        _busy = false;
+        _done = true;
+    }
+
+    private async Task AfterRegistrationAsync(string? role, UserProfile me)
+    {
+        var name = Get("name")?.Trim() ?? me.Username;
+        var period = Get("formule") == "Yearly" ? BillingPeriod.Yearly : BillingPeriod.Monthly;
+
+        if (role == "eleve")
+        {
+            _doneTitle = $"C'est parti, {name} !";
+            _doneText = me.IsPremium ? "Ton accès Premium est actif. Ton plan d'études t'attend." : "Ton espace est prêt. Ton plan d'études t'attend.";
+            if (Get("acces") == "payer") await CheckoutAsync(SubscriptionPlan.StudentPremium, period);
+            if (me.LinkCode is { } code)
+                _codes.Add(new("Ton code pour tes parents", code, "Donne-le à ton parent pour qu'il suive ta progression."));
+        }
+        else if (role == "enseignant")
+        {
+            var other = Get("struct") == "autre";
+            _doneTitle = $"Bienvenue, {name} !";
+            _doneText = other
+                ? "Votre groupe est créé. Partagez son code avec vos apprenants pour qu'ils vous rejoignent."
+                : "Vos classes sont créées. Partagez leur code avec vos élèves pour qu'ils vous rejoignent.";
+            if (Get("acces") == "payer") await CheckoutAsync(SubscriptionPlan.Teacher, period);
+            var classes = await Classrooms.MineAsync();
+            foreach (var c in classes.Value ?? [])
+                _codes.Add(new($"Code d'invitation — {c.Name}", c.InviteCode ?? "—"));
+        }
+        else
+        {
+            _doneTitle = $"Merci, {name} !";
+            if (Get("has") == "oui")
+            {
+                var link = await Family.LinkChildAsync(Get("code")!.Trim());
+                _doneText = link.Ok
+                    ? "Une demande de rattachement a été envoyée à votre enfant. Vous verrez sa progression dès qu'il l'aura acceptée."
+                    : "Votre compte est créé.";
+                if (!link.Ok) _warnings.Add($"Rattachement impossible : {link.Error} Vous pourrez réessayer depuis votre espace.");
+            }
+            else
+            {
+                var exam = Get("exam") is { } e && !e.StartsWith("Pas d'") ? e : null;
+                var child = await Family.CreateChildAsync(new CreateChildRequest(
+                    Get("childemail")!.Trim(), Get("childusername")!.Trim(), Get("childpassword")!,
+                    Get("sys") == "en" ? SchoolSubSystem.Anglophone : SchoolSubSystem.Francophone, Get("classe"), Get("serie"), exam));
+                _doneText = child.Ok
+                    ? $"Le compte de {child.Value!.Username} est créé : il peut se connecter avec l'e-mail et le mot de passe choisis."
+                    : "Votre compte est créé.";
+                if (!child.Ok) _warnings.Add($"Le compte de votre enfant n'a pas pu être créé : {child.Error} Vous pourrez réessayer depuis votre espace.");
+            }
+            if (Get("formule") == "Premium") await CheckoutAsync(SubscriptionPlan.Family, BillingPeriod.Monthly);
+        }
+    }
+
+    private async Task CheckoutAsync(SubscriptionPlan plan, BillingPeriod period)
+    {
+        var checkout = await Account.CheckoutAsync(plan, period);
+        _warnings.Add(checkout.Ok
+            ? "Votre abonnement est enregistré et sera activé dès réception du paiement (Mobile Money ou carte). Suivez-le dans « Abonnement »."
+            : $"L'abonnement n'a pas pu être enregistré : {checkout.Error}");
+    }
+}

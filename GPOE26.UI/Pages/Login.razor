@@ -1,0 +1,67 @@
+@page "/login"
+@layout FocusLayout
+@inject IAccountApi Account
+@inject SessionState Session
+@inject NavigationManager Nav
+
+<PageTitle>Connexion — GPOE26</PageTitle>
+
+<div class="ob" style="background:#fff">
+    <form class="ob-panel" style="justify-content:center; gap:20px; max-width:440px" @onsubmit="SubmitAsync" @onsubmit:preventDefault>
+        <div class="ga-row" style="justify-content:center">
+            <span class="ga-avatar" style="background:var(--ga-navy); color:#fff; border-radius:12px; width:42px; height:42px"><Icon Name="logo" Size="24" Stroke="2" /></span>
+            <span style="font-family:var(--ga-display); font-weight:600; font-size:30px">GPOE26</span>
+        </div>
+        <div class="ob-title">
+            <h1>Content de te revoir</h1>
+            <p>Connecte-toi pour reprendre là où tu t'es arrêté.</p>
+        </div>
+
+        <Alert Message="@_error" />
+
+        <div class="ga-field">
+            <label for="login-email">Adresse e-mail</label>
+            <input id="login-email" class="ga-input big" type="email" autocomplete="email" required @bind="_email" />
+        </div>
+        <div class="ga-field">
+            <label for="login-password">Mot de passe</label>
+            <input id="login-password" class="ga-input big" type="password" autocomplete="current-password" required @bind="_password" />
+        </div>
+
+        <button type="submit" class="ga-btn big block" disabled="@_busy">@(_busy ? "Connexion…" : "Se connecter")</button>
+
+        <hr class="ga-divider" />
+        <p style="text-align:center; margin:0">Pas encore de compte ? <a href="/register" style="font-weight:600; text-decoration:none">Inscris-toi</a></p>
+        <p style="text-align:center; margin:0" class="ga-small"><a href="/">Retour au site de l'établissement</a></p>
+    </form>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "retour")] public string? ReturnUrl { get; set; }
+
+    private string _email = "", _password = "";
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.RestoreAsync();
+        if (Session.IsAuthenticated) Nav.NavigateTo(AppPage.SafeReturnUrl(ReturnUrl));
+    }
+
+    private async Task SubmitAsync()
+    {
+        _busy = true;
+        _error = null;
+        var result = await Account.LoginAsync(_email.Trim(), _password);
+        _busy = false;
+
+        if (!result.Ok || result.Value is null)
+        {
+            _error = result.Status == System.Net.HttpStatusCode.Unauthorized ? "E-mail ou mot de passe incorrect." : result.Error;
+            return;
+        }
+        await Session.SignInAsync(result.Value);
+        Nav.NavigateTo(AppPage.SafeReturnUrl(ReturnUrl));
+    }
+}

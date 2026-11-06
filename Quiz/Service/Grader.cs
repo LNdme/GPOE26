@@ -29,12 +29,12 @@ public record GradeResult(bool? IsCorrect, decimal? Points, bool NeedsManualGrad
 /// </summary>
 public static class Grader
 {
-    public static GradeResult Grade(AssessmentQuestion q, AnswerInput? answer)
+    public static GradeResult Grade(AssessmentQuestion q, AnswerInput? answer, bool hasPhotos = false)
     {
         if (q.Type == QuestionType.OpenEnded)
         {
-            // Une copie vide vaut 0 sans attendre l'enseignant
-            var empty = string.IsNullOrWhiteSpace(answer?.Text) && string.IsNullOrWhiteSpace(answer?.AttachmentUrl);
+            // Une copie vide (ni texte ni photo) vaut 0 sans attendre l'enseignant
+            var empty = !hasPhotos && string.IsNullOrWhiteSpace(answer?.Text) && string.IsNullOrWhiteSpace(answer?.AttachmentUrl);
             return empty ? new GradeResult(false, 0, false) : new GradeResult(null, null, true);
         }
 

@@ -1,0 +1,159 @@
+@inject SessionState Session
+@inject IClassroomApi Classrooms
+@inject IAssessmentApi Assessments
+
+<div class="ga-page">
+    <div class="ga-head">
+        <div>
+            <h1>Bonjour, @Me.Username</h1>
+            <p>@Labels.Today()@(Me.OrganizationName is { Length: > 0 } ? $" · {Me.OrganizationName}" : "") · @_classes.Count classe(s), @_classes.Sum(c => c.MemberCount) élève(s)</p>
+        </div>
+    </div>
+
+    <section class="ga-grid" aria-label="Créer">
+        <a class="ga-card dark" style="flex-direction:row; align-items:center; text-decoration:none" href="/cours/create">
+            <span class="ga-avatar" style="border-radius:12px; width:44px; height:44px; background:var(--ga-navy-3); color:var(--ga-lime)"><Icon Name="book" /></span>
+            <span><strong style="font-size:16px">Nouveau cours</strong><br /><span class="ga-small" style="color:#C9D3EA">Éditeur, import PDF ou Word</span></span>
+        </a>
+        <a class="ga-card" style="flex-direction:row; align-items:center; text-decoration:none; border:1.5px solid var(--ga-navy)" href="/app/evaluations/nouvelle">
+            <span class="ga-avatar" style="border-radius:12px; width:44px; height:44px; background:var(--ga-purple-soft); color:var(--ga-purple-ink)"><Icon Name="file" /></span>
+            <span><strong style="font-size:16px">Nouvelle épreuve</strong><br /><span class="ga-small ga-muted">Quiz, QCM, questions ouvertes…</span></span>
+        </a>
+        <a class="ga-card" style="flex-direction:row; align-items:center; text-decoration:none; border:1.5px solid var(--ga-navy)" href="/app/evaluations/nouvelle?type=Homework">
+            <span class="ga-avatar" style="border-radius:12px; width:44px; height:44px; background:var(--ga-amber-soft); color:var(--ga-amber-ink)"><Icon Name="calendar" /></span>
+            <span><strong style="font-size:16px">Nouveau devoir</strong><br /><span class="ga-small ga-muted">À rendre avant une date limite</span></span>
+        </a>
+    </section>
+
+    @if (_loading)
+    {
+        <Loading />
+    }
+    else
+    {
+        <section class="ga-stack" aria-labelledby="h-classes">
+            <h2 id="h-classes" class="ga-h2">Mes classes</h2>
+            <div class="ga-grid">
+                @foreach (var c in _classes)
+                {
+                    <article class="ga-card">
+                        <div class="ga-row between" style="align-items:flex-start">
+                            <div>
+                                <h3 class="ga-h3">@c.Name</h3>
+                                <span class="ga-muted ga-small">@c.MemberCount @(c.Kind == ClassroomKind.Group ? "apprenant(s)" : "élève(s)")@(c.Subject is { Length: > 0 } ? $" · {c.Subject}" : "")</span>
+                            </div>
+                            <span class="ga-code" title="Code d'invitation">@c.InviteCode</span>
+                        </div>
+                        <div class="ga-row between">
+                            <span class="ga-small ga-muted">Code à partager avec les élèves</span>
+                            <a class="ga-btn small secondary" href="/app/classes/@c.Id">Voir le suivi</a>
+                        </div>
+                    </article>
+                }
+
+                <form class="ga-card" style="border-style:dashed" @onsubmit="CreateClassAsync" @onsubmit:preventDefault>
+                    <h3 class="ga-h3">Créer une classe ou un groupe</h3>
+                    <div class="ga-field">
+                        <label for="class-name">Nom</label>
+                        <input id="class-name" class="ga-input" placeholder="ex. Terminale C2" @bind="_newClass" />
+                    </div>
+                    <button type="submit" class="ga-btn" disabled="@string.IsNullOrWhiteSpace(_newClass)"><Icon Name="plus" /> Créer</button>
+                    <Alert Message="@_classError" />
+                </form>
+            </div>
+        </section>
+
+        <div class="ga-split">
+            <section class="main ga-card" aria-labelledby="h-recent">
+                <div class="ga-card-head">
+                    <h2 id="h-recent" class="ga-h2">Épreuves et devoirs récents</h2>
+                    <a class="ga-btn ghost" href="/app/evaluations">Tout voir</a>
+                </div>
+                @if (_assessments.Count == 0)
+                {
+                    <div class="ga-empty"><span>Aucune évaluation pour l'instant.</span><a class="ga-btn small" href="/app/evaluations/nouvelle">Créer une épreuve</a></div>
+                }
+                else
+                {
+                    <div class="ga-table-wrap">
+                        <table class="ga-table">
+                            <thead><tr><th scope="col">Titre</th><th scope="col">Type</th><th scope="col">Statut</th><th scope="col">Échéance</th><th scope="col"><span class="ga-sr">Actions</span></th></tr></thead>
+                            <tbody>
+                                @foreach (var a in _assessments.Take(6))
+                                {
+                                    <tr>
+                                        <td><a href="/app/evaluations/@a.Id/modifier" style="font-weight:600; text-decoration:none; color:var(--ga-navy)">@a.Title</a></td>
+                                        <td>@Labels.Of(a.Kind)</td>
+                                        <td><span class="ga-tag @StatusCss(a.Status)">@Labels.Of(a.Status).ToUpperInvariant()</span></td>
+                                        <td>@Labels.When(a.DueAt)</td>
+                                        <td>@if (a.Status != AssessmentStatus.Draft) { <a href="/app/evaluations/@a.Id/copies">Copies</a> }</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
+
+            <aside class="side">
+                <section class="ga-card" style="background:var(--ga-purple-soft); border:none" aria-labelledby="h-tograde">
+                    <h2 id="h-tograde" class="ga-h3" style="color:var(--ga-purple-ink)">Copies à corriger</h2>
+                    @if (_toGrade.Count == 0)
+                    {
+                        <span class="ga-small" style="color:var(--ga-purple-ink)">Aucune copie en attente.</span>
+                    }
+                    @foreach (var (a, count) in _toGrade)
+                    {
+                        <a class="ga-card flat" style="padding:14px; gap:4px; text-decoration:none" href="/app/evaluations/@a.Id/copies">
+                            <strong style="color:var(--ga-navy)">@a.Title</strong>
+                            <span class="ga-small" style="color:var(--ga-purple-ink); font-weight:600">@count copie(s) à corriger</span>
+                        </a>
+                    }
+                </section>
+            </aside>
+        </div>
+    }
+</div>
+
+@code {
+    private UserProfile Me => Session.Profile!;
+    private bool _loading = true;
+    private List<Classroom> _classes = new();
+    private List<Assessment> _assessments = new();
+    private List<(Assessment, int)> _toGrade = new();
+    private string? _newClass, _classError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var classes = Classrooms.MineAsync();
+        var assessments = Assessments.MineAsTeacherAsync();
+        await Task.WhenAll(classes, assessments);
+        _classes = classes.Result.Value ?? new();
+        _assessments = assessments.Result.Value ?? new();
+
+        // Copies en attente sur les évaluations publiées les plus récentes
+        foreach (var a in _assessments.Where(a => a.Status != AssessmentStatus.Draft).Take(6))
+        {
+            var rows = await Assessments.SubmissionsAsync(a.Id);
+            var pending = (rows.Value ?? new()).Count(r => r.Status == SubmissionStatus.Submitted);
+            if (pending > 0) _toGrade.Add((a, pending));
+        }
+        _loading = false;
+    }
+
+    private async Task CreateClassAsync()
+    {
+        _classError = null;
+        var result = await Classrooms.CreateAsync(new CreateClassroomRequest(_newClass!.Trim()));
+        if (!result.Ok) { _classError = result.Error; return; }
+        _classes.Add(result.Value!);
+        _newClass = null;
+    }
+
+    private static string StatusCss(AssessmentStatus s) => s switch
+    {
+        AssessmentStatus.Published => "green",
+        AssessmentStatus.Closed => "purple",
+        _ => "grey"
+    };
+}

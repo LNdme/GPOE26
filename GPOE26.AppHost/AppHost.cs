@@ -5,8 +5,9 @@ var jwtKeyValue = "votre_cle_secrete_tres_longue_et_aleatoire_ici_changez_moi_en
 var jwtIssuer   = "GPOE2026";
 var jwtAudience = "GPOE2026Users";
 
-// ── Clé du LLM (DeepSeek) : secret, à définir via `dotnet user-secrets set "Parameters:deepseek-apikey" "<clé>"`
-var deepSeekApiKey = builder.AddParameter("deepseek-apikey", secret: true);
+// ── Clé du LLM (OpenRouter par défaut, modèles gratuits) : secret, à définir via
+//    `dotnet user-secrets set "Parameters:llm-apikey" "<clé>"`
+var llmApiKey = builder.AddParameter("llm-apikey", secret: true);
 
 
 
@@ -20,7 +21,7 @@ var userDb = postgres.AddDatabase("userdb");
 var coursDb = postgres.AddDatabase("coursdb");
 var schoolDb = postgres.AddDatabase("LyceeDB");  // ApiService
 var quizDb = postgres.AddDatabase("quizdb");     // Quiz : évaluations des enseignants
-// Chat est en InMemory pour l'instant, pas de DB à déclarer
+var chatDb = postgres.AddDatabase("chatdb");     // Chat : discussions avec le tuteur IA
 
 
 
@@ -48,10 +49,17 @@ var coursService = builder.AddProject<Projects.Cours>("cours")
     .WaitFor(coursDb);       // ← ajoute
 
 var chatService = builder.AddProject<Projects.Chat>("chat")
-    .WithEnvironment("DeepSeek__ApiKey", deepSeekApiKey);
+    .WithEnvironment("LLM__ApiKey", llmApiKey)
+    .WithEnvironment("Jwt__Key", jwtKeyValue)
+    .WithEnvironment("Jwt__Issuer", jwtIssuer)
+    .WithEnvironment("Jwt__Audience", jwtAudience)
+    .WithEnvironment("Services__User", userService.GetEndpoint("http"))    // abonnement Premium
+    .WithEnvironment("Services__Cours", coursService.GetEndpoint("http"))  // contenu du cours étudié
+    .WithReference(chatDb)
+    .WaitFor(chatDb);
 
 var quizService = builder.AddProject<Projects.Quiz>("quiz")
-    .WithEnvironment("LLM__ApiKey", deepSeekApiKey)
+    .WithEnvironment("LLM__ApiKey", llmApiKey)
     .WithEnvironment("Jwt__Key", jwtKeyValue)
     .WithEnvironment("Jwt__Issuer", jwtIssuer)
     .WithEnvironment("Jwt__Audience", jwtAudience)

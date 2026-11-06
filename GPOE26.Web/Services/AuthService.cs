@@ -1,57 +1,27 @@
-using System.Text.Json;
+using GPOE26.UI.Services;
 using GPOE26.Web.Models;
 
 namespace GPOE26.Web.Services;
 
 /// <summary>
-/// Gère l'état de connexion (JWT en mémoire).
-/// Délègue les appels HTTP à ApiClient.
-/// Synchronise le token vers AuthTokenProvider pour le DelegatingHandler.
+/// Façade de compatibilité pour les pages historiques du site (menu, cours, apprentissage) :
+/// l'état de connexion est désormais porté par SessionState (bibliothèque GPOE26.UI),
+/// persisté dans le navigateur et partagé avec l'espace d'apprentissage.
 /// </summary>
-public class AuthService(ApiClient api, AuthTokenProvider tokenProvider)
+public class AuthService(SessionState session)
 {
-    private string? _jwt;
-    private UserProfileDto? _profile;
-    private DateTime _expiresAt = DateTime.MinValue;
-
-    public event Action? OnAuthChanged;
-
-    public bool IsAuthenticated => _jwt is not null && DateTime.UtcNow < _expiresAt;
-    public UserProfileDto? Profile => _profile;
-    public string? Token => _jwt;
-
-    // ── Login ─────────────────────────────────────────────────────
-    public async Task<(bool ok, string? error)> LoginAsync(string email, string password)
+    public event Action? OnAuthChanged
     {
-        var auth = await api.LoginAsync(email, password);
-        if (auth is null) return (false, "Email ou mot de passe incorrect.");
-        SetAuth(auth);
-        return (true, null);
+        add => session.Changed += value;
+        remove => session.Changed -= value;
     }
 
-    // ── Register ──────────────────────────────────────────────────
-    public async Task<(bool ok, string? error)> RegisterAsync(RegisterRequest req)
-    {
-        var (auth, error) = await api.RegisterAsync(req);
-        if (auth is null) return (false, error ?? "Erreur lors de la création du compte.");
-        SetAuth(auth);
-        return (true, null);
-    }
+    public bool IsAuthenticated => session.IsAuthenticated;
+    public string? Token => session.Token;
 
-    // ── Logout ────────────────────────────────────────────────────
-    public void Logout()
-    {
-        _jwt = null; _profile = null; _expiresAt = DateTime.MinValue;
-        tokenProvider.Token = null;
-        OnAuthChanged?.Invoke();
-    }
+    public UserProfileDto? Profile => session.Profile is { } p
+        ? new UserProfileDto(p.Id, p.Email, p.Username, p.Role.ToString(), p.Level, p.Specialite, p.Filiere, p.Language, p.CreatedAt)
+        : null;
 
-    private void SetAuth(AuthResponse auth)
-    {
-        _jwt = auth.Token;
-        _profile = auth.Profile;
-        _expiresAt = auth.ExpiresAt;
-        tokenProvider.Token = _jwt;
-        OnAuthChanged?.Invoke();
-    }
+    public Task LogoutAsync() => session.SignOutAsync();
 }

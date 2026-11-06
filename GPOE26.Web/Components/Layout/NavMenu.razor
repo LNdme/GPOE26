@@ -1,4 +1,4 @@
-﻿@inject GPOE26.Web.Services.AuthService Auth
+@inject GPOE26.Web.Services.AuthService Auth
 @inject NavigationManager Nav
 @implements IDisposable
 @rendermode InteractiveServer
@@ -40,6 +40,9 @@
                 @if (Auth.IsAuthenticated)
                 {
                     <li class="nav-item">
+                        <NavLink class="nav-link px-3" href="/app">Mon espace</NavLink>
+                    </li>
+                    <li class="nav-item">
                         <NavLink class="nav-link px-3" href="/cours">Mes Cours</NavLink>
                     </li>
                     <li class="nav-item">
@@ -59,6 +62,7 @@
                             <span class="d-none d-lg-block text-brand-dark fw-bold">@Auth.Profile?.Username</span>
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end shadow border-0 mt-2" aria-labelledby="userMenu">
+                            <li><a class="dropdown-item py-2" href="/app"><i class="bi bi-grid me-2 text-brand-dark"></i> Mon espace</a></li>
                             <li><a class="dropdown-item py-2" href="/cours"><i class="bi bi-book me-2 text-brand-dark"></i> Mes cours</a></li>
                             <li><a class="dropdown-item py-2" href="/profil"><i class="bi bi-person me-2 text-brand-dark"></i> Profil</a></li>
                             <li><hr class="dropdown-divider my-1" /></li>
@@ -89,23 +93,26 @@
     protected override void OnInitialized()
     {
         // On s'abonne à l'événement pour rafraîchir l'UI lors de la connexion/déconnexion
-        Auth.OnAuthChanged += StateHasChanged;
+        Auth.OnAuthChanged += Refresh;
     }
 
     public void Dispose()
     {
         // On se désabonne proprement pour éviter les fuites de mémoire
-        Auth.OnAuthChanged -= StateHasChanged;
+        Auth.OnAuthChanged -= Refresh;
     }
+
+    private void Refresh() => InvokeAsync(StateHasChanged);
 
     private void ToggleNavMenu()
     {
         collapseNavMenu = !collapseNavMenu;
     }
 
-    private void Logout()
+    private async Task Logout()
     {
-        Auth.Logout();
+        // Attendre l'effacement de la session dans le navigateur, sinon le rechargement la restaurerait
+        await Auth.LogoutAsync();
         // Redirection vers l'accueil public avec un rechargement forcé pour nettoyer l'état de la page
         Nav.NavigateTo("/", forceLoad: true); 
     }

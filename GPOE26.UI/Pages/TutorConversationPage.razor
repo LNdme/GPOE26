@@ -1,0 +1,36 @@
+@page "/app/tuteur/{CourseId:guid}"
+@layout AppLayout
+@inherits AppPage
+@inject ICourseApi Courses
+
+<PageTitle>Tuteur IA — @(_title ?? "Cours") — GPOE26</PageTitle>
+
+<div class="ga-page">
+    <div class="ga-row between">
+        <a class="ga-back" href="/app/tuteur"><Icon Name="left" /> Mes discussions</a>
+        @if (_courseAvailable)
+        {
+            <a class="ga-btn secondary small" href="/app/cours/@CourseId"><Icon Name="book" /> Ouvrir le cours</a>
+        }
+    </div>
+    @if (Ready)
+    {
+        <TutorPanel CourseId="CourseId" CourseTitle="@_title" Highlight="Message" />
+    }
+</div>
+
+@code {
+    [Parameter] public Guid CourseId { get; set; }
+    [SupplyParameterFromQuery(Name = "message")] public Guid? Message { get; set; }
+
+    private string? _title;
+    private bool _courseAvailable;
+
+    protected override async Task LoadAsync()
+    {
+        // Le cours peut avoir été retiré de la classe : la discussion reste lisible
+        var course = await Courses.GetAsync(CourseId);
+        _courseAvailable = course.Ok;
+        _title = course.Value?.Title;
+    }
+}

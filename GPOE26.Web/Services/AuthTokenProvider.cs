@@ -1,12 +1,12 @@
+using GPOE26.UI.Services;
+
 namespace GPOE26.Web.Services;
 
 /// <summary>
-/// Lightweight token store that holds the current JWT token.
-/// This breaks the circular dependency: AuthService → ApiClient → AuthService.
-/// AuthService sets the token, JwtDelegatingHandler reads it.
+/// Jeton courant pour ApiClient (pages historiques), lu dans la session partagée.
 /// Registered as Scoped (one per Blazor Server circuit = one per user).
 /// </summary>
-public class AuthTokenProvider
+public class AuthTokenProvider(SessionState session)
 {
-    public string? Token { get; set; }
+    public string? Token => session.Token;
 }

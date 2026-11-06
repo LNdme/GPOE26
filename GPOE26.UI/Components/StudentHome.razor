@@ -1,0 +1,266 @@
+@inject SessionState Session
+@inject IAssessmentApi Assessments
+@inject ICourseApi Courses
+@inject IProgressApi Progress
+@inject IClassroomApi Classrooms
+@inject IFamilyApi Family
+
+<div class="ga-page">
+    <div class="ga-head">
+        <div>
+            <h1>Plan d'études de @Me.Username</h1>
+            <p>@(Me.Level ?? "Élève")@(Me.Filiere is { Length: > 0 } ? $" {Me.Filiere}" : "")@(Me.ExamTarget is { Length: > 0 } ? $" · prépare le {Me.ExamTarget}" : "")</p>
+        </div>
+        <span class="ga-tag amber">@Labels.Today().ToUpperInvariant()</span>
+    </div>
+
+    @foreach (var p in _parentRequests)
+    {
+        <div class="ga-alert warn ga-row between">
+            <span><strong>@p.ParentName</strong> demande à suivre ta progression en tant que parent.</span>
+            <span class="ga-actions">
+                <button class="ga-btn small" @onclick="() => RespondAsync(p, true)">Accepter</button>
+                <button class="ga-btn small secondary" @onclick="() => RespondAsync(p, false)">Refuser</button>
+            </span>
+        </div>
+    }
+
+    @if (_loading)
+    {
+        <Loading />
+    }
+    else
+    {
+        <div class="ga-split">
+            <section class="main ga-card sunk" aria-labelledby="h-todo">
+                <div class="ga-tabs" role="tablist">
+                    <button role="tab" class="@(_tab == 0 ? "on" : "")" aria-selected="@(_tab == 0)" @onclick="() => _tab = 0">À faire <span class="count">@_todo.Count</span></button>
+                    <button role="tab" class="@(_tab == 1 ? "on" : "")" aria-selected="@(_tab == 1)" @onclick="() => _tab = 1">Terminées <span class="count">@_finished.Count</span></button>
+                </div>
+                <h2 id="h-todo" class="ga-sr">Mes évaluations</h2>
+
+                @if (_tab == 0)
+                {
+                    @if (_todo.Count == 0)
+                    {
+                        <div class="ga-empty">
+                            <strong>Rien à rendre pour l'instant.</strong>
+                            <span>Les évaluations publiées par tes enseignants apparaîtront ici.</span>
+                        </div>
+                    }
+                    @foreach (var a in _todo)
+                    {
+                        <article class="ga-task">
+                            <div class="ga-row between" style="align-items:flex-start">
+                                <div class="ga-stack" style="gap:4px; flex:1 1 260px">
+                                    <span class="kicker">@(a.Subject ?? Labels.Of(a.Kind))</span>
+                                    <h3>@a.Title</h3>
+                                    @if (a.Description is { Length: > 0 }) { <p class="ga-muted" style="margin:0">@a.Description</p> }
+                                </div>
+                                @if (a.CanStart(DateTime.UtcNow))
+                                {
+                                    <a class="ga-btn" href="/app/evaluations/@a.Id/composer">@(a.HasAttemptInProgress ? "Reprendre" : "Commencer") <Icon Name="right" /></a>
+                                }
+                                else
+                                {
+                                    <span class="ga-tag grey">@(a.OpensAt > DateTime.UtcNow ? $"Ouvre {Labels.When(a.OpensAt)}" : "Fermée")</span>
+                                }
+                            </div>
+                            <div class="ga-row">
+                                <span class="ga-tag">@Labels.Of(a.Kind).ToUpperInvariant()</span>
+                                <span class="ga-tag grey">@a.QuestionCount QUESTIONS@(a.DurationMinutes is { } d ? $" · {d} MIN" : "")</span>
+                                @if (a.DueAt is not null) { <span class="ga-tag amber">À RENDRE @Labels.When(a.DueAt).ToUpperInvariant()</span> }
+                            </div>
+                        </article>
+                    }
+                }
+                else
+                {
+                    @if (_finished.Count == 0)
+                    {
+                        <div class="ga-empty"><span>Tu n'as encore rendu aucune évaluation.</span></div>
+                    }
+                    @foreach (var a in _finished)
+                    {
+                        <article class="ga-task">
+                            <div class="ga-row between">
+                                <div class="ga-stack" style="gap:2px">
+                                    <span class="kicker">@Labels.Of(a.Kind)</span>
+                                    <h3>@a.Title</h3>
+                                </div>
+                                @if (a.BestScoreScaled is not null)
+                                {
+                                    <span class="ga-tag green">@Labels.Score(a.BestScoreScaled, a.ScaleTo)</span>
+                                }
+                                else
+                                {
+                                    <span class="ga-tag grey">RÉSULTAT À VENIR</span>
+                                }
+                            </div>
+                        </article>
+                    }
+                }
+
+                @if (_courses.Count > 0)
+                {
+                    <h2 class="ga-h3" style="margin-top:6px">Cours partagés par tes enseignants</h2>
+                    @foreach (var c in _courses.Take(4))
+                    {
+                        <article class="ga-task" style="flex-direction:row; flex-wrap:wrap; align-items:center">
+                            <span class="ga-avatar amber" style="border-radius:12px; width:46px; height:46px"><Icon Name="book" /></span>
+                            <div class="ga-stack" style="gap:2px; flex:1 1 220px">
+                                <span class="kicker">@c.Subject</span>
+                                <h3>@c.Title</h3>
+                            </div>
+                            <a class="ga-btn secondary" href="/app/cours/@c.Id">Lire le cours</a>
+                        </article>
+                    }
+                }
+            </section>
+
+            <aside class="side">
+                <div class="ga-card">
+                    <div class="ga-row between">
+                        <strong class="ga-kbd" style="letter-spacing:.08em">@AppTime.Now.ToString("MMMM yyyy", System.Globalization.CultureInfo.GetCultureInfo("fr-FR")).ToUpperInvariant()</strong>
+                    </div>
+                    <div class="ga-cal" aria-label="Calendrier du mois">
+                        @foreach (var dow in new[] { "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim" }) { <span class="dow">@dow</span> }
+                        @foreach (var day in CalendarDays())
+                        {
+                            <span class="d @day.Css" title="@day.Title">@day.Label</span>
+                        }
+                    </div>
+                    <div class="ga-legend">
+                        <span><i style="background:#D9CDF7"></i>Copie rendue</span>
+                        <span><i style="box-shadow:inset 0 0 0 2px var(--ga-purple)"></i>Échéance</span>
+                    </div>
+                </div>
+
+                <div class="ga-stat">
+                    <span class="lbl">Moyenne</span>
+                    <span class="val">@Labels.Number(_progress?.AverageOn20)<small>/20</small></span>
+                    <span class="sub">@(_progress?.Results.Count(r => r.ScoreScaled is not null) ?? 0) évaluation(s) corrigée(s)</span>
+                </div>
+                <div class="ga-grid tight">
+                    <div class="ga-stat green">
+                        <span class="lbl">Maîtrise</span>
+                        <span class="val">@(_progress?.Mastery.Count > 0 ? Labels.Number(_progress.Mastery.Average(m => m.Percent)) + " %" : "—")</span>
+                        <span class="sub">moyenne sur @(_progress?.Mastery.Count ?? 0) cours</span>
+                    </div>
+                    <div class="ga-stat purple">
+                        <span class="lbl">Examen visé</span>
+                        <span class="val" style="font-size:22px">@(Me.ExamTarget ?? "—")</span>
+                        <span class="sub">@(Me.DailyStudyMinutes is { } min ? $"{min} min d'étude par jour" : "Objectif à définir")</span>
+                    </div>
+                </div>
+
+                @if (!Me.IsPremium)
+                {
+                    <a class="ga-premium-lock" href="/app/abonnement">
+                        <Icon Name="spark" Size="26" />
+                        <span><strong>Passe à Premium</strong><br /><span class="ga-small" style="color:#C9D3EA">Tuteur IA, quiz illimités, épreuves blanches.</span></span>
+                    </a>
+                }
+
+                <form class="ga-card" @onsubmit="JoinAsync" @onsubmit:preventDefault>
+                    <h2 class="ga-h3">Mes classes</h2>
+                    @foreach (var c in _classes)
+                    {
+                        <div class="ga-item"><span class="ga-avatar green">@Labels.Initial(c.Name)</span><span class="grow"><strong>@c.Name</strong><span class="ga-small ga-muted">@c.TeacherName</span></span></div>
+                    }
+                    <div class="ga-field">
+                        <label for="join-code">Rejoindre une classe</label>
+                        <div class="ga-row" style="flex-wrap:nowrap">
+                            <input id="join-code" class="ga-input" placeholder="Code donné par l'enseignant" @bind="_joinCode" />
+                            <button class="ga-btn" type="submit" disabled="@string.IsNullOrWhiteSpace(_joinCode)">Rejoindre</button>
+                        </div>
+                    </div>
+                    <Alert Message="@_joinMessage" Kind="@(_joinOk ? "success" : "error")" />
+                </form>
+
+                @if (Me.LinkCode is { } linkCode)
+                {
+                    <div class="ga-card">
+                        <h2 class="ga-h3">Code pour tes parents</h2>
+                        <span class="ga-code" style="font-size:20px; align-self:flex-start">@linkCode</span>
+                        <span class="ga-small ga-muted">Ton parent le saisit dans son espace pour suivre ta progression. Tu devras accepter sa demande.</span>
+                    </div>
+                }
+            </aside>
+        </div>
+    }
+</div>
+
+@code {
+    private UserProfile Me => Session.Profile!;
+    private bool _loading = true;
+    private int _tab;
+    private List<StudentAssessment> _todo = new(), _finished = new();
+    private List<CourseSummary> _courses = new();
+    private List<Classroom> _classes = new();
+    private List<ParentLink> _parentRequests = new();
+    private StudentProgress? _progress;
+    private string? _joinCode, _joinMessage;
+    private bool _joinOk;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var assessments = Assessments.MineAsStudentAsync();
+        var courses = Courses.SharedWithMeAsync();
+        var progress = Progress.MineAsync();
+        var classes = Classrooms.MineAsync();
+        var parents = Family.MyParentsAsync();
+        await Task.WhenAll(assessments, courses, progress, classes, parents);
+
+        var now = DateTime.UtcNow;
+        var all = assessments.Result.Value ?? new();
+        _todo = all.Where(a => a.Status == AssessmentStatus.Published && (a.HasAttemptInProgress || a.AttemptsUsed == 0) && (a.DueAt is null || a.DueAt > now))
+                   .OrderBy(a => a.DueAt ?? DateTime.MaxValue).ToList();
+        _finished = all.Where(a => a.AttemptsUsed > 0 && !a.HasAttemptInProgress).ToList();
+        _courses = courses.Result.Value ?? new();
+        _progress = progress.Result.Value;
+        _classes = classes.Result.Value ?? new();
+        _parentRequests = (parents.Result.Value ?? new()).Where(p => p.Status == LinkStatus.Pending).ToList();
+        _dueDays = all.Where(a => a.DueAt is not null).Select(a => AppTime.ToLocal(a.DueAt!.Value).Date).ToHashSet();
+        _doneDays = (_progress?.Results ?? new()).Where(r => r.SubmittedAt is not null).Select(r => AppTime.ToLocal(r.SubmittedAt!.Value).Date).ToHashSet();
+        _loading = false;
+    }
+
+    private HashSet<DateTime> _dueDays = new(), _doneDays = new();
+    private record CalDay(string Label, string Css, string Title);
+
+    private IEnumerable<CalDay> CalendarDays()
+    {
+        var today = AppTime.Now.Date;
+        var first = new DateTime(today.Year, today.Month, 1);
+        var offset = ((int)first.DayOfWeek + 6) % 7; // lundi = 0
+        for (var i = 0; i < offset; i++) yield return new("", "", "");
+        for (var d = first; d.Month == today.Month; d = d.AddDays(1))
+        {
+            var css = d == today ? "today" : _doneDays.Contains(d) ? "done" : "";
+            if (_dueDays.Contains(d)) css += " due";
+            yield return new(d.Day.ToString(), css, _dueDays.Contains(d) ? "Échéance" : _doneDays.Contains(d) ? "Copie rendue" : "");
+        }
+    }
+
+    private async Task JoinAsync()
+    {
+        var result = await Classrooms.JoinAsync(_joinCode!.Trim());
+        _joinOk = result.Ok;
+        _joinMessage = result.Ok ? $"Tu as rejoint « {result.Value!.Name} »." : result.Error;
+        if (result.Ok)
+        {
+            _joinCode = null;
+            _classes = (await Classrooms.MineAsync()).Value ?? _classes;
+            var assessments = await Assessments.MineAsStudentAsync();
+            if (assessments.Ok)
+                _todo = assessments.Value!.Where(a => a.Status == AssessmentStatus.Published && (a.HasAttemptInProgress || a.AttemptsUsed == 0)).ToList();
+        }
+    }
+
+    private async Task RespondAsync(ParentLink link, bool approve)
+    {
+        var result = await Family.RespondAsync(link.LinkId, approve);
+        if (result.Ok) _parentRequests.Remove(link);
+    }
+}

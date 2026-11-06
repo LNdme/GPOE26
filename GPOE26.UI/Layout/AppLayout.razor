@@ -1,0 +1,130 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject SessionState Session
+@inject NavigationManager Nav
+
+<div class="ga-app">
+    <div class="ga-shell">
+        <header class="ga-topbar">
+            <button type="button" class="ga-icon-btn" aria-label="Ouvrir le menu" aria-expanded="@_open" @onclick="() => _open = true">
+                <Icon Name="menu" Size="24" Stroke="2" />
+            </button>
+            <a class="ga-brand" href="/app"><Icon Name="logo" Size="22" Stroke="2" /><span>GPOE26</span></a>
+            <span style="margin-left:auto" class="ga-avatar">@Labels.Initial(Session.Profile?.Username)</span>
+        </header>
+
+        <button type="button" class="ga-scrim @(_open ? "open" : "")" aria-label="Fermer le menu" tabindex="-1" @onclick="() => _open = false"></button>
+
+        <nav class="ga-sidebar @(_open ? "open" : "")" aria-label="Navigation principale">
+            <a class="ga-brand" href="/app"><Icon Name="logo" Size="26" Stroke="2" /><span>GPOE26</span></a>
+
+            @if (Session.Profile is { } me)
+            {
+                <div class="ga-badge-box">
+                    @SpaceLabel(me.Role)
+                    <small>@(me.IsPremium ? Labels.Of(me.Plan) : "Formule gratuite")</small>
+                </div>
+
+                <div class="ga-nav">
+                    @foreach (var item in Items(me.Role))
+                    {
+                        <NavLink href="@item.Href" Match="@(item.Href == "/app" ? NavLinkMatch.All : NavLinkMatch.Prefix)">
+                            <Icon Name="@item.Icon" /> <span>@item.Label</span>
+                            @if (item.Premium && !me.IsPremium)
+                            {
+                                <span class="ga-tag lime">PREMIUM</span>
+                            }
+                        </NavLink>
+                    }
+                </div>
+
+                <div class="ga-nav-title">SITE</div>
+                <div class="ga-nav">
+                    <a href="/"><Icon Name="home" /> <span>Site de l'établissement</span></a>
+                </div>
+
+                <div class="ga-me">
+                    <span class="ga-avatar">@Labels.Initial(me.Username)</span>
+                    <span style="min-width:0">
+                        <strong>@me.Username</strong>
+                        <small>@Labels.Of(me.Role)@(me.Level is { Length: > 0 } ? $" · {me.Level}" : "")</small>
+                    </span>
+                    <button type="button" class="ga-icon-btn" aria-label="Se déconnecter" title="Se déconnecter" @onclick="SignOutAsync">
+                        <Icon Name="logout" />
+                    </button>
+                </div>
+            }
+        </nav>
+
+        <main class="ga-main" id="contenu">
+            @Body
+        </main>
+    </div>
+</div>
+
+@code {
+    private bool _open;
+
+    private record NavItem(string Href, string Label, string Icon, bool Premium = false);
+
+    private static IEnumerable<NavItem> Items(UserRole role) => role switch
+    {
+        UserRole.Teacher =>
+        [
+            new("/app", "Mes classes", "users"),
+            new("/app/evaluations", "Épreuves et devoirs", "file"),
+            new("/app/cours", "Mes cours", "book"),
+            new("/app/abonnement", "Abonnement", "card"),
+        ],
+        UserRole.Parent =>
+        [
+            new("/app", "Vue d'ensemble", "grid"),
+            new("/app/abonnement", "Abonnement et paiements", "card"),
+        ],
+        _ =>
+        [
+            new("/app", "Plan d'études", "compass"),
+            new("/app/cours", "Mes cours", "book"),
+            new("/app/evaluations", "Évaluations", "check"),
+            new("/app/tuteur", "Tuteur IA", "spark", Premium: true),
+            new("/app/abonnement", "Abonnement", "card"),
+        ]
+    };
+
+    private static string SpaceLabel(UserRole role) => role switch
+    {
+        UserRole.Teacher => "Espace enseignant",
+        UserRole.Parent => "Espace parent",
+        UserRole.Admin => "Administration",
+        _ => "Espace élève"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += OnSessionChanged;
+        Nav.LocationChanged += OnLocationChanged;
+        await Session.RestoreAsync();
+    }
+
+    private void OnSessionChanged()
+    {
+        if (!Session.IsAuthenticated)
+            Nav.NavigateTo("/login");
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        if (!_open) return;
+        _open = false;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SignOutAsync() => await Session.SignOutAsync();
+
+    public void Dispose()
+    {
+        Session.Changed -= OnSessionChanged;
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+}

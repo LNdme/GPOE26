@@ -1,0 +1,19 @@
+@page "/app"
+@layout AppLayout
+@inherits AppPage
+
+<PageTitle>Mon espace — GPOE26</PageTitle>
+
+@if (!Ready)
+{
+    <div class="ga-page"><Loading /></div>
+}
+else
+{
+    @switch (Session.Role)
+    {
+        case UserRole.Teacher: <TeacherHome /> break;
+        case UserRole.Parent: <ParentHome /> break;
+        default: <StudentHome /> break;
+    }
+}

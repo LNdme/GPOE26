@@ -208,7 +208,8 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
         TeachingSubjects = teachingSubjects,
         TeachingContext = req.TeachingContext,
         OrganizationName = req.TeachingContext == TeachingContext.Independent ? null : req.OrganizationName,
-        LinkCode = req.Role == UserRole.Student ? await ParentEndpoints.UniqueLinkCodeAsync(db) : null
+        LinkCode = req.Role == UserRole.Student ? await ParentEndpoints.UniqueLinkCodeAsync(db) : null,
+        LastLoginAt = DateTime.UtcNow   // l'inscription ouvre la première session
     };
     db.AppUsers.Add(user);
 

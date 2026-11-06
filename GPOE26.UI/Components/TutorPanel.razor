@@ -1,0 +1,292 @@
+@* Discussion avec le tuteur IA sur un cours. Tout est conservé côté serveur : en rouvrant le cours
+   (ou depuis « Mes discussions »), l'élève retrouve les explications et peut les relire. *@
+@implements IAsyncDisposable
+@inject ITutorApi Tutor
+@inject SessionState Session
+@inject IJSRuntime JS
+
+<section class="tu @(Docked ? "docked" : "")" aria-label="Tuteur IA">
+    <header class="tu-head">
+        <span class="tu-avatar" aria-hidden="true"><Icon Name="spark" Size="18" Stroke="2" /></span>
+        <div class="grow">
+            <strong>Tuteur IA</strong>
+            <span class="ga-small ga-muted tu-course">@(CourseTitle ?? _conversation?.CourseTitle ?? "Cours")</span>
+        </div>
+        @if (_messages.Count > 0)
+        {
+            @if (_confirmClear)
+            {
+                <button class="ga-btn danger small" @onclick="ClearAsync">Tout effacer</button>
+                <button class="ga-btn ghost small" @onclick="() => _confirmClear = false">Annuler</button>
+            }
+            else
+            {
+                <button class="ga-icon-btn" title="Effacer la discussion" aria-label="Effacer la discussion" @onclick="() => _confirmClear = true"><Icon Name="trash" /></button>
+            }
+        }
+        @if (OnClose.HasDelegate)
+        {
+            <button class="ga-icon-btn" title="Fermer (la discussion est conservée)" aria-label="Fermer le tuteur" @onclick="OnClose"><Icon Name="x" Size="22" /></button>
+        }
+    </header>
+
+    <div class="tu-scroll" @ref="_scroll" aria-live="polite">
+        @if (_loading)
+        {
+            <Loading Text="Chargement de ta discussion…" />
+        }
+        else
+        {
+            @if (_messages.Count == 0)
+            {
+                <div class="tu-intro">
+                    <p><strong>Bonjour @(Session.Profile?.Username) !</strong> Je connais ce cours par cœur. Pose-moi une question,
+                        ou photographie un exercice que tu as traité sur papier : je vérifie ta démarche.</p>
+                    <p class="ga-small ga-muted">Notre discussion est enregistrée : tu pourras la relire plus tard, même après avoir fermé le cours.</p>
+                </div>
+            }
+            else
+            {
+                <p class="tu-saved ga-small"><Icon Name="history" Size="14" /> Discussion enregistrée · @_messages.Count message(s)</p>
+            }
+
+            @foreach (var m in _messages)
+            {
+                <article class="tu-msg @(m.FromStudent ? "me" : "bot")" id="m-@m.Id">
+                    @if (m.ImageId is { } imageId)
+                    {
+                        <SecureImage Load="() => Tutor.ImageAsync(imageId)" Key="imageId" Alt="Photo envoyée au tuteur" />
+                    }
+                    @if (m.FromStudent)
+                    {
+                        <p class="tu-text">@m.Content</p>
+                    }
+                    else
+                    {
+                        <div class="tu-md">@((MarkupString)Html(m))</div>
+                        <div class="tu-tools">
+                            <span class="ga-small ga-muted">@Labels.Date(m.CreatedAt)</span>
+                            <button class="ga-btn ghost small @(m.Pinned ? "on" : "")" aria-pressed="@m.Pinned" @onclick="() => PinAsync(m)">
+                                <Icon Name="pin" Size="16" /> @(m.Pinned ? "Épinglée" : "Épingler")
+                            </button>
+                        </div>
+                    }
+                </article>
+            }
+
+            @if (_busy)
+            {
+                <article class="tu-msg me pending">
+                    @if (_photoPreview is not null) { <span class="ga-photo"><img src="@_photoPreview" alt="Photo en cours d'envoi" /></span> }
+                    <p class="tu-text">@_sending</p>
+                </article>
+                <article class="tu-msg bot typing" aria-label="Le tuteur rédige sa réponse"><span></span><span></span><span></span>
+                    <span class="ga-small ga-muted" style="margin-left:8px">@(_photo is not null ? "Je lis ta copie…" : "Je réfléchis…")</span>
+                </article>
+            }
+        }
+    </div>
+
+    <Alert Message="@_error" />
+
+    @if (!Session.IsPremium)
+    {
+        <a class="ga-premium-lock tu-lock" href="/app/abonnement">
+            <Icon Name="chat" Size="22" />
+            <span><strong>Pose de nouvelles questions avec Premium</strong><br />
+                <span class="ga-small" style="color:#C9D3EA">Tes discussions passées restent consultables.</span></span>
+        </a>
+    }
+    else if (!_loading)
+    {
+        @if (!_busy && _messages.Count == 0)
+        {
+            <div class="tu-suggest" role="group" aria-label="Suggestions">
+                @foreach (var s in Suggestions)
+                {
+                    <button class="ga-chip" @onclick="() => AskAsync(s)">@s</button>
+                }
+            </div>
+        }
+        else if (!_busy && _messages.Count > 0 && !_messages[^1].FromStudent)
+        {
+            <div class="tu-suggest" role="group" aria-label="Relances">
+                @foreach (var s in FollowUps)
+                {
+                    <button class="ga-chip" @onclick="() => AskAsync(s)">@s</button>
+                }
+            </div>
+        }
+
+        @if (_photo is not null && !_busy)
+        {
+            <div class="tu-attach">
+                <span class="ga-photo"><img src="@_photoPreview" alt="Photo à envoyer" /></span>
+                <span class="ga-small grow">Photo prête. Ajoute une question (facultatif) puis envoie.</span>
+                <button class="ga-icon-btn" aria-label="Retirer la photo" title="Retirer la photo" @onclick="RemovePhoto"><Icon Name="x" /></button>
+            </div>
+        }
+
+        <form class="tu-input" @onsubmit="SendAsync" @onsubmit:preventDefault>
+            <PhotoPicker Css="secondary tu-cam" ShowLabel="false" Label="Joindre la photo de ma copie" Disabled="_busy"
+                         OnPicked="OnPhoto" OnError="e => _error = e" />
+            <label for="tu-q-@CourseId" class="ga-sr-only">Ta question au tuteur</label>
+            <textarea id="tu-q-@CourseId" class="ga-input" rows="1" placeholder="Pose ta question sur ce cours…" maxlength="4000"
+                      @bind="_input" @bind:event="oninput" @onkeydown="OnKeyDown" disabled="@_busy"></textarea>
+            <button type="submit" class="ga-btn tu-send" disabled="@(_busy || (string.IsNullOrWhiteSpace(_input) && _photo is null))" aria-label="Envoyer">
+                <Icon Name="send" />
+            </button>
+        </form>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public Guid CourseId { get; set; }
+    [Parameter] public string? CourseTitle { get; set; }
+    /// <summary>Panneau latéral dans le lecteur de cours (sinon : pleine page)</summary>
+    [Parameter] public bool Docked { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    /// <summary>Message à mettre en évidence (lien depuis une explication épinglée)</summary>
+    [Parameter] public Guid? Highlight { get; set; }
+
+    private static readonly string[] Suggestions =
+    [
+        "Résume-moi ce cours en 5 points",
+        "Quelle est la notion la plus difficile ? Explique-la simplement",
+        "Donne-moi un exercice d'application",
+    ];
+
+    private static readonly string[] FollowUps =
+    [
+        "Explique plus simplement",
+        "Donne-moi un exemple",
+        "Pose-moi une question pour vérifier",
+    ];
+
+    private readonly List<TutorMessage> _messages = new();
+    private readonly Dictionary<Guid, string> _html = new();
+    private TutorConversation? _conversation;
+    private ElementReference _scroll;
+    private IJSObjectReference? _module;
+    private bool _loading = true, _busy, _confirmClear, _scrollPending = true;
+    private string? _input, _error, _sending, _photoPreview;
+    private ImageUpload? _photo;
+    private Guid _loadedCourse;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedCourse == CourseId) return;
+        _loadedCourse = CourseId;
+        _loading = true;
+        var result = await Tutor.ConversationAsync(CourseId);
+        _conversation = result.Value;
+        _error = result.Error;
+        _messages.Clear();
+        _messages.AddRange(_conversation?.Messages ?? []);
+        _loading = false;
+        _scrollPending = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./_content/GPOE26.UI/gpoe-app.js");
+            await _module.InvokeVoidAsync("renderMath", _scroll);
+            if (_scrollPending && !_loading)
+            {
+                _scrollPending = false;
+                if (Highlight is { } id)
+                    await _module.InvokeVoidAsync("reveal", $"m-{id}");
+                else
+                    await _module.InvokeVoidAsync("scrollToEnd", _scroll);
+            }
+        }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { }
+    }
+
+    private string Html(TutorMessage m)
+    {
+        if (!_html.TryGetValue(m.Id, out var html))
+            _html[m.Id] = html = MarkdownRenderer.Render(m.Content).Html;
+        return html;
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        // Entrée envoie, Maj+Entrée va à la ligne
+        if (e.Key == "Enter" && !e.ShiftKey) await SendAsync();
+    }
+
+    private void OnPhoto(ImageUpload photo)
+    {
+        _error = null;
+        _photo = photo;
+        _photoPreview = $"data:{photo.ContentType};base64,{Convert.ToBase64String(photo.Data)}";
+    }
+
+    private void RemovePhoto()
+    {
+        _photo = null;
+        _photoPreview = null;
+    }
+
+    private Task SendAsync() => AskAsync(_input);
+
+    private async Task AskAsync(string? text)
+    {
+        if (_busy || (string.IsNullOrWhiteSpace(text) && _photo is null)) return;
+        _busy = true;
+        _error = null;
+        _sending = string.IsNullOrWhiteSpace(text) ? "Voici ma copie : peux-tu vérifier ma démarche ?" : text.Trim();
+        _scrollPending = true;
+        StateHasChanged();
+
+        Guid? imageId = null;
+        if (_photo is not null)
+        {
+            var upload = await Tutor.UploadImageAsync(_photo);
+            if (!upload.Ok) { _error = upload.Error; _busy = false; return; }
+            imageId = upload.Value!.Id;
+        }
+
+        var result = await Tutor.AskAsync(CourseId, text, imageId);
+        _busy = false;
+        if (!result.Ok)
+        {
+            // La question reste dans la zone de saisie : l'élève peut réessayer
+            _error = result.Error;
+            _input = text;
+            return;
+        }
+
+        _messages.Add(result.Value!.Question);
+        _messages.Add(result.Value.Answer);
+        _input = null;
+        RemovePhoto();
+        _scrollPending = true;
+    }
+
+    private async Task PinAsync(TutorMessage m)
+    {
+        var result = await Tutor.PinAsync(m.Id, !m.Pinned);
+        if (!result.Ok) { _error = result.Error; return; }
+        _messages[_messages.IndexOf(m)] = result.Value!;
+    }
+
+    private async Task ClearAsync()
+    {
+        var result = await Tutor.ClearAsync(CourseId);
+        _confirmClear = false;
+        if (!result.Ok) { _error = result.Error; return; }
+        _messages.Clear();
+        _html.Clear();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { if (_module is not null) await _module.DisposeAsync(); }
+        catch (JSDisconnectedException) { }
+    }
+}
