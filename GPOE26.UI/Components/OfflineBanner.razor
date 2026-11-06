@@ -1,0 +1,44 @@
+@* Bandeau d'état de l'application hors connexion : pas de réseau, envois en attente, synchronisation. *@
+@implements IDisposable
+@inject IOfflineStatus Offline
+@inject SessionState Session
+
+@if (Offline.Supported && (!Offline.Online || Offline.Pending > 0 || Offline.Problems.Count > 0 || Offline.Syncing))
+{
+    <div class="ga-offline @(Offline.Online ? "online" : "")" role="status" aria-live="polite">
+        @if (!Offline.Online)
+        {
+            <Icon Name="cloud-off" Size="18" />
+            <span><strong>Hors connexion.</strong> Tes cours et évaluations téléchargés restent disponibles.
+                @if (Offline.Pending > 0) { <text>@Offline.Pending envoi(s) en attente : ils partiront dès le retour du réseau.</text> }</span>
+        }
+        else if (Offline.Syncing)
+        {
+            <span class="ga-spinner" aria-hidden="true"></span>
+            <span>Synchronisation : envoi de tes copies…</span>
+        }
+        else if (Offline.Pending > 0)
+        {
+            <Icon Name="clock" Size="18" />
+            <span>@Offline.Pending envoi(s) en attente@(Session.TokenExpired ? " : reconnecte-toi pour les envoyer." : ".")</span>
+            @if (Session.TokenExpired)
+            {
+                <a class="ga-btn small light" href="/login?retour=/app">Me reconnecter</a>
+            }
+            else
+            {
+                <button class="ga-btn small light" @onclick="Offline.SyncNowAsync">Envoyer maintenant</button>
+            }
+        }
+        @foreach (var problem in Offline.Problems)
+        {
+            <span class="ga-offline-problem"><Icon Name="x" Size="16" /> @problem</span>
+        }
+    </div>
+}
+
+@code {
+    protected override void OnInitialized() => Offline.Changed += OnChanged;
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+    public void Dispose() => Offline.Changed -= OnChanged;
+}

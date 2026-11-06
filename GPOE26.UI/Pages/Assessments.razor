@@ -101,6 +101,10 @@
                         {
                             <a class="ga-btn secondary small" href="/app/evaluations/@a.Id/copies/@sid">Voir ma copie</a>
                         }
+                        @if (a.AllowOffline && a.CanStart(DateTime.UtcNow))
+                        {
+                            <OfflineToggle Kind="OfflineItemKind.Assessment" Id="a.Id" Label="Composer hors ligne" />
+                        }
                     </div>
                 </article>
             }

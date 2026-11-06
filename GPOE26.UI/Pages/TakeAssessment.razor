@@ -275,11 +275,14 @@ else
         _result = result.Value;
     }
 
-    private string ResultTitle => _result!.ResultsReleased && _result.ScoreScaled is not null
+    private string ResultTitle => _result!.PendingSync ? "Copie enregistrée"
+        : _result.ResultsReleased && _result.ScoreScaled is not null
         ? _result.ScoreScaled >= _result.ScaleTo * 0.75m ? "Excellent travail !" : _result.ScoreScaled >= _result.ScaleTo / 2m ? "Bien joué !" : "Continue tes efforts"
         : "Copie rendue";
 
-    private string ResultText => _result!.Status == SubmissionStatus.Submitted
+    private string ResultText => _result!.PendingSync
+        ? "Tu es hors connexion : ta copie est enregistrée sur cet appareil. Elle sera envoyée automatiquement à ton enseignant dès le retour du réseau."
+        : _result.Status == SubmissionStatus.Submitted
         ? "Ton enseignant doit encore corriger les réponses rédigées. Tu verras ta note dans « Mes évaluations »."
         : _result.ResultsReleased
             ? "Consulte ta copie pour voir la correction de chaque question."

@@ -2,6 +2,7 @@
 @implements IDisposable
 @inject SessionState Session
 @inject NavigationManager Nav
+@inject SiteLinks Links
 
 <div class="ga-app">
     <div class="ga-shell">
@@ -40,7 +41,7 @@
 
                 <div class="ga-nav-title">SITE</div>
                 <div class="ga-nav">
-                    <a href="/"><Icon Name="home" /> <span>Site de l'établissement</span></a>
+                    <a href="@Links.Home"><Icon Name="home" /> <span>Site de l'établissement</span></a>
                 </div>
 
                 <div class="ga-me">
@@ -57,6 +58,7 @@
         </nav>
 
         <main class="ga-main" id="contenu">
+            <OfflineBanner />
             @Body
         </main>
     </div>

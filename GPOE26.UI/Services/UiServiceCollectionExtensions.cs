@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GPOE26.UI.Services;
 
@@ -18,6 +19,9 @@ public static class UiServiceCollectionExtensions
         services.AddScoped<IAssessmentApi, AssessmentApi>();
         services.AddScoped<IProgressApi, ProgressApi>();
         services.AddScoped<ITutorApi, TutorApi>();
+        // Remplacé par GPOE26.Offline dans l'application Windows
+        services.TryAddScoped<IOfflineStatus, OnlineOnlyStatus>();
+        services.TryAddSingleton(new SiteLinks());
         return services;
     }
 }

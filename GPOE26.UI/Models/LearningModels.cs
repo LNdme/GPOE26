@@ -169,12 +169,16 @@ public record SubmissionReview(
     Guid SubmissionId, Guid AssessmentId, string Title, Guid StudentId, int AttemptNumber, SubmissionStatus Status,
     DateTime StartedAt, DateTime? SubmittedAt, bool IsLate,
     bool ResultsReleased, decimal? Score, decimal MaxScore, decimal? ScoreScaled, int ScaleTo,
-    List<AnswerReview>? Answers);
+    List<AnswerReview>? Answers, bool Offline = false)
+{
+    /// <summary>Copie composée hors connexion, enregistrée sur l'appareil et pas encore reçue par le serveur</summary>
+    public bool PendingSync { get; init; }
+}
 
 public record SubmissionRow(
     Guid SubmissionId, Guid StudentId, string StudentName, int AttemptNumber, SubmissionStatus Status,
     DateTime StartedAt, DateTime? SubmittedAt, bool IsLate, decimal? Score, decimal MaxScore, decimal? ScoreScaled,
-    int PendingManualAnswers);
+    int PendingManualAnswers, bool Offline = false);
 
 public record GradeAnswerRequest(decimal Points, string? Feedback);
 public record AiSuggestion(Guid QuestionId, decimal Points, decimal MaxPoints, string Feedback);
@@ -214,3 +218,16 @@ public record UploadedImage(Guid Id);
 
 /// <summary>Image prête à envoyer (déjà redimensionnée par le navigateur).</summary>
 public record ImageUpload(string FileName, string ContentType, byte[] Data);
+
+// ─── Hors connexion (application Windows) ─────────────────────────────────────
+
+/// <summary>Évaluation téléchargée pour être composée sans réseau (jamais de bonne réponse dedans).</summary>
+public record OfflinePackage(
+    Guid AssessmentId, string Title, string? Description, AssessmentKind Kind, string? Subject,
+    DateTime? OpensAt, DateTime? DueAt, int? DurationMinutes, int AttemptsLeft, decimal MaxScore, int ScaleTo,
+    List<AttemptQuestion> Questions, DateTime UpdatedAt, DateTime DownloadedAt);
+
+public record OfflinePhotoInput(Guid QuestionId, int Page, string ContentType, string Base64);
+
+public record OfflineSubmissionRequest(Guid ClientSubmissionId, DateTime StartedAt, DateTime SubmittedAt,
+    List<AnswerDraft> Answers, List<OfflinePhotoInput> Photos);

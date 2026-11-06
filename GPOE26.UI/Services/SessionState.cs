@@ -19,7 +19,14 @@ public record StoredSession(string Token, DateTime ExpiresAt, UserProfile Profil
 /// Session de l'utilisateur connecté (une par circuit Blazor / par fenêtre de l'application).
 /// Restaurée au démarrage depuis ISessionStore pour survivre à un rechargement de page.
 /// </summary>
-public class SessionState(ISessionStore store)
+/// <summary>Réglages de session fournis par l'hôte.</summary>
+public class SessionOptions
+{
+    /// <summary>Voir SessionState.KeepExpiredSession (application hors connexion)</summary>
+    public bool KeepExpiredSession { get; init; }
+}
+
+public class SessionState(ISessionStore store, SessionOptions? options = null)
 {
     // Tâche partagée : la mise en page et la page appellent RestoreAsync en même temps ;
     // chacune doit attendre la même restauration (sinon la seconde croit l'utilisateur déconnecté)
@@ -29,7 +36,17 @@ public class SessionState(ISessionStore store)
     public DateTime ExpiresAt { get; private set; }
     public UserProfile? Profile { get; private set; }
 
-    public bool IsAuthenticated => Token is not null && DateTime.UtcNow < ExpiresAt;
+    /// <summary>
+    /// Application hors connexion : la session reste ouverte après l'expiration du jeton, pour lire ses cours
+    /// et composer sans réseau. Le serveur refusera le jeton au retour du réseau (401) : l'élève se reconnecte
+    /// alors, et ce qui attendait sur l'appareil est envoyé.
+    /// </summary>
+    public bool KeepExpiredSession { get; } = options?.KeepExpiredSession ?? false;
+
+    public bool IsAuthenticated => Token is not null && (KeepExpiredSession || DateTime.UtcNow < ExpiresAt);
+
+    /// <summary>Le jeton est périmé : les appels au serveur échoueront jusqu'à la prochaine connexion</summary>
+    public bool TokenExpired => Token is not null && DateTime.UtcNow >= ExpiresAt;
     public UserRole? Role => IsAuthenticated ? Profile?.Role : null;
     public bool IsPremium => Profile?.IsPremium == true;
 
@@ -43,7 +60,7 @@ public class SessionState(ISessionStore store)
         try
         {
             var saved = await store.LoadAsync();
-            if (saved is not null && saved.ExpiresAt > DateTime.UtcNow)
+            if (saved is not null && (KeepExpiredSession || saved.ExpiresAt > DateTime.UtcNow))
                 Apply(saved.Token, saved.ExpiresAt, saved.Profile, notify: true);
             else if (saved is not null)
                 await store.ClearAsync();

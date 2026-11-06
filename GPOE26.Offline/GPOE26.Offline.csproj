@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Fonctionnement hors connexion de l'espace d'apprentissage (application Windows, phase 4) :
+    cache SQLite par utilisateur, versions hors ligne des API de GPOE26.UI, file d'envoi et synchronisation.
+    Sans dépendance à MAUI : testée sous Linux (GPOE26.Offline.Tests) et utilisable par le Web en mode démonstration.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GPOE26.UI\GPOE26.UI.csproj" />
+  </ItemGroup>
+
+</Project>

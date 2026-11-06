@@ -55,6 +55,7 @@
                                     <td>
                                         <span class="ga-tag @(r.Status switch { SubmissionStatus.Graded => "green", SubmissionStatus.Submitted => "amber", _ => "grey" })">@Labels.Of(r.Status).ToUpperInvariant()</span>
                                         @if (r.IsLate) { <span class="ga-tag red">RETARD</span> }
+                                        @if (r.Offline) { <span class="ga-tag purple" title="Composée hors connexion">HORS LIGNE</span> }
                                     </td>
                                     <td>@Labels.When(r.SubmittedAt)</td>
                                     <td>@Labels.Score(r.ScoreScaled, _assessment.ScaleTo)</td>

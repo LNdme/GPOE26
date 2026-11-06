@@ -3,6 +3,7 @@
 @inject IAccountApi Account
 @inject SessionState Session
 @inject NavigationManager Nav
+@inject SiteLinks Links
 
 <PageTitle>Connexion — GPOE26</PageTitle>
 
@@ -32,7 +33,7 @@
 
         <hr class="ga-divider" />
         <p style="text-align:center; margin:0">Pas encore de compte ? <a href="/register" style="font-weight:600; text-decoration:none">Inscris-toi</a></p>
-        <p style="text-align:center; margin:0" class="ga-small"><a href="/">Retour au site de l'établissement</a></p>
+        <p style="text-align:center; margin:0" class="ga-small"><a href="@Links.Home">Retour au site de l'établissement</a></p>
     </form>
 </div>
 

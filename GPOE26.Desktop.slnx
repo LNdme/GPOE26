@@ -1,0 +1,7 @@
+<!-- Application Windows (MAUI) : à ouvrir dans Visual Studio sous Windows. Le reste de la plateforme : GPOE26.slnx -->
+<Solution>
+  <Project Path="GPOE26.Desktop/GPOE26.Desktop.csproj" />
+  <Project Path="GPOE26.Offline/GPOE26.Offline.csproj" />
+  <Project Path="GPOE26.Offline.Tests/GPOE26.Offline.Tests.csproj" />
+  <Project Path="GPOE26.UI/GPOE26.UI.csproj" />
+</Solution>

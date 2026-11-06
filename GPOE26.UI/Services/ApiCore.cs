@@ -8,9 +8,13 @@ using GPOE26.UI.Models;
 namespace GPOE26.UI.Services;
 
 /// <summary>Résultat d'un appel d'API : la valeur, ou un message d'erreur lisible par l'utilisateur.</summary>
-public record ApiResult<T>(T? Value, string? Error, HttpStatusCode Status)
+public record ApiResult<T>(T? Value, string? Error, HttpStatusCode Status, bool NetworkError = false)
 {
     public bool Ok => Error is null;
+
+    /// <summary>Le service n'a pas pu être joint (pas de réseau, serveur arrêté) : l'application peut passer en mode hors connexion.</summary>
+    public static ApiResult<T> Unreachable(string message = "Service injoignable. Vérifiez votre connexion et réessayez.") =>
+        new(default, message, HttpStatusCode.ServiceUnavailable, NetworkError: true);
 }
 
 /// <summary>Noms des HttpClient que l'hôte (Web ou application Windows) doit enregistrer.</summary>
@@ -70,7 +74,7 @@ public abstract class ApiBase(IHttpClientFactory factory, SessionState session, 
             var type = response.Content.Headers.ContentType?.MediaType ?? "image/jpeg";
             return $"data:{type};base64,{Convert.ToBase64String(await response.Content.ReadAsByteArrayAsync())}";
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException || IsResilienceRejection(ex))
         {
             return null;
         }
@@ -108,13 +112,21 @@ public abstract class ApiBase(IHttpClientFactory factory, SessionState session, 
         }
         catch (HttpRequestException)
         {
-            return new ApiResult<T>(default, "Service injoignable. Vérifiez votre connexion et réessayez.", HttpStatusCode.ServiceUnavailable);
+            return ApiResult<T>.Unreachable();
         }
         catch (TaskCanceledException)
         {
-            return new ApiResult<T>(default, "Le service met trop de temps à répondre.", HttpStatusCode.RequestTimeout);
+            return new ApiResult<T>(default, "Le service met trop de temps à répondre.", HttpStatusCode.RequestTimeout, NetworkError: true);
+        }
+        catch (Exception ex) when (IsResilienceRejection(ex))
+        {
+            // Disjoncteur ouvert ou délai dépassé (politiques de résilience de l'hôte) : service injoignable
+            return ApiResult<T>.Unreachable();
         }
     }
+
+    private static bool IsResilienceRejection(Exception ex) =>
+        ex.GetType().Name is "BrokenCircuitException" or "TimeoutRejectedException" or "IsolatedCircuitException";
 
     private static async Task<string> ReadErrorAsync(HttpResponseMessage response)
     {

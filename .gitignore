@@ -374,3 +374,4 @@ out*.txt
 
 # Secrets locaux
 .env
+**/App_Data/

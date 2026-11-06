@@ -442,3 +442,11 @@ label.ga-btn { cursor: pointer; }
 .tu-pinned { display: flex; flex-direction: column; gap: 14px; }
 .tu-pinned .ga-card .tu-md { font-size: 15px; line-height: 1.6; }
 .tu-q { font-weight: 600; color: var(--ga-navy); margin: 0; }
+
+/* ── Hors connexion (application Windows) ──────────────────────────────────── */
+.ga-offline { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px clamp(16px, 3vw, 32px); background: var(--ga-navy); color: #fff; font-size: 14px; position: sticky; top: 0; z-index: 20; }
+.ga-offline.online { background: var(--ga-navy-2); }
+.ga-offline span { flex: 1 1 260px; }
+.ga-offline .ga-btn { flex: 0 0 auto; }
+.ga-offline-problem { flex-basis: 100% !important; background: var(--ga-red-soft); color: var(--ga-red-ink); padding: 6px 10px; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; }
+.ga-offline .ga-spinner { flex: 0 0 auto; border-color: rgba(255,255,255,.3); border-top-color: #fff; }

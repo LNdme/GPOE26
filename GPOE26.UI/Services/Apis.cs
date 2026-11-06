@@ -164,6 +164,11 @@ public class AssessmentApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s,
     public Task<ApiResult<AiFeedback>> AiFeedbackAsync(Guid id, Guid submissionId, Guid questionId) =>
         PostAsync<AiFeedback>($"/assessments/{id}/submissions/{submissionId}/answers/{questionId}/ai-feedback");
 
+    // ── Hors connexion (utilisés par GPOE26.Offline, pas par les pages) ──
+    public Task<ApiResult<OfflinePackage>> OfflinePackageAsync(Guid id) => GetAsync<OfflinePackage>($"/assessments/{id}/offline-package");
+    public Task<ApiResult<SubmissionReview>> SubmitOfflineAsync(Guid id, OfflineSubmissionRequest request) =>
+        PostAsync<SubmissionReview>($"/assessments/{id}/offline-submissions", request);
+
     /// <summary>Dates saisies dans le fuseau de l'application, envoyées en UTC ; options vides retirées des questions sans choix.</summary>
     private static object ToInput(AssessmentDraft d) => new
     {

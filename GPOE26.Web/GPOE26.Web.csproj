@@ -17,6 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="..\GPOE26.ServiceDefaults\GPOE26.ServiceDefaults.csproj" />
     <ProjectReference Include="..\GPOE26.UI\GPOE26.UI.csproj" />
+    <ProjectReference Include="..\GPOE26.Offline\GPOE26.Offline.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,6 +1,7 @@
 using GPOE26.Web.Components;
 using GPOE26.UI.Services;
 using GPOE26.Web.Services;
+using GPOE26.Offline;
 using Microsoft.Extensions.Http.Resilience;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -68,6 +69,15 @@ builder.Services.AddScoped<AuthService>();
 // Session conservée dans le localStorage du navigateur (chiffrée par la protection des données ASP.NET)
 builder.Services.AddGpoeLearningUi();
 builder.Services.AddScoped<ISessionStore, BrowserSessionStore>();
+
+// Mode hors connexion de DÉMONSTRATION (désactivé par défaut) : le site se comporte comme l'application Windows
+// (cache SQLite par utilisateur sur le serveur web, file d'envoi, synchronisation). Sert à essayer et tester
+// GPOE26.Offline dans un navigateur, en arrêtant les services Cours/Quiz. À ne pas activer en production.
+if (builder.Configuration.GetValue<bool>("Offline:Enabled"))
+    builder.Services.AddGpoeOffline(new GPOE26.Offline.OfflineOptions
+    {
+        DataDirectory = Path.Combine(builder.Environment.ContentRootPath, "App_Data", "offline")
+    });
 AppTime.Zone = AppTime.Find(builder.Configuration["App:TimeZone"] ?? "Africa/Douala");
 
 var app = builder.Build();

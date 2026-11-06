@@ -3,6 +3,8 @@
 @inherits AppPage
 @inject ICourseApi CourseApi
 @inject IClassroomApi Classrooms
+@inject IOfflineStatus Offline
+@inject SiteLinks Links
 
 <PageTitle>Mes cours — GPOE26</PageTitle>
 
@@ -14,7 +16,13 @@
         </div>
         @if (IsTeacher)
         {
-            <a class="ga-btn" href="/cours/create"><Icon Name="plus" /> Nouveau cours</a>
+            <a class="ga-btn" href="@Links.NewCourse"><Icon Name="plus" /> Nouveau cours</a>
+        }
+        else if (Offline.Supported && _courses.Count > 0)
+        {
+            <button class="ga-btn secondary" disabled="@(_downloading || !Offline.Online)" @onclick="DownloadAllAsync">
+                <Icon Name="download" /> @(_downloading ? "Téléchargement…" : "Tout rendre disponible hors ligne")
+            </button>
         }
     </div>
 
@@ -51,9 +59,10 @@
                     }
                     <div class="ga-row" style="margin-top:auto">
                         <a class="ga-btn secondary small" href="/app/cours/@c.Id">Lire</a>
+                        @if (!IsTeacher) { <OfflineToggle Kind="OfflineItemKind.Course" Id="c.Id" Version="_offlineVersion" /> }
                         @if (IsTeacher)
                         {
-                            <a class="ga-btn ghost small" href="/cours/edit/@c.Id">Modifier</a>
+                            <a class="ga-btn ghost small" href="@Links.EditCourse(c.Id)">Modifier</a>
                             <button class="ga-btn ghost small" @onclick="() => OpenShare(c)"><Icon Name="share" /> Partager</button>
                         }
                     </div>
@@ -94,6 +103,17 @@
     private List<Classroom> _classes = new();
     private CourseSummary? _sharing;
     private HashSet<Guid> _selected = new();
+    private bool _downloading;
+    private int _offlineVersion;
+
+    private async Task DownloadAllAsync()
+    {
+        _downloading = true; _error = null;
+        foreach (var c in _courses)
+            if (await Offline.MakeAvailableOfflineAsync(OfflineItemKind.Course, c.Id) is { } error) _error = error;
+        _downloading = false;
+        _offlineVersion++;
+    }
 
     protected override async Task LoadAsync()
     {

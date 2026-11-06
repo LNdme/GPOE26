@@ -97,6 +97,12 @@ public static class EvaluationSchema
 
         @"ALTER TABLE ""SubmissionAnswers"" ADD COLUMN IF NOT EXISTS ""StudentAiFeedback"" text",
 
+        // Composition hors connexion (phase 4)
+        @"ALTER TABLE ""Submissions"" ADD COLUMN IF NOT EXISTS ""ClientSubmissionId"" uuid",
+        @"ALTER TABLE ""Submissions"" ADD COLUMN IF NOT EXISTS ""Offline"" boolean NOT NULL DEFAULT false",
+        @"ALTER TABLE ""Submissions"" ADD COLUMN IF NOT EXISTS ""ReceivedAt"" timestamp with time zone",
+        @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Submissions_StudentId_ClientSubmissionId"" ON ""Submissions"" (""StudentId"", ""ClientSubmissionId"") WHERE ""ClientSubmissionId"" IS NOT NULL",
+
         // Photos des copies traitées sur papier (réponses ouvertes)
         @"CREATE TABLE IF NOT EXISTS ""AnswerPhotos"" (
             ""Id"" uuid NOT NULL,

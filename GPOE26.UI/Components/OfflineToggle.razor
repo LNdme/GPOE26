@@ -1,0 +1,46 @@
+@* « Disponible hors connexion » : télécharge un cours ou une évaluation sur l'appareil (application Windows).
+   Invisible sur le site web. *@
+@inject IOfflineStatus Offline
+
+@if (Offline.Supported)
+{
+    @if (_available)
+    {
+        <span class="ga-tag green" title="Enregistré sur cet appareil"><Icon Name="tick" Size="13" /> HORS LIGNE</span>
+    }
+    else
+    {
+        <button type="button" class="ga-btn ghost small" disabled="@(_busy || !Offline.Online)" @onclick="DownloadAsync"
+                title="@(Offline.Online ? "Enregistrer sur cet appareil pour l'utiliser sans connexion" : "Connexion nécessaire pour télécharger")">
+            <Icon Name="download" Size="16" /> @(_busy ? "Téléchargement…" : Label)
+        </button>
+    }
+    @if (_error is not null) { <span class="ga-small" style="color:var(--ga-red-ink)">@_error</span> }
+}
+
+@code {
+    [Parameter, EditorRequired] public OfflineItemKind Kind { get; set; }
+    [Parameter, EditorRequired] public Guid Id { get; set; }
+    [Parameter] public string Label { get; set; } = "Disponible hors ligne";
+    /// <summary>Incrémenté par la page pour forcer la relecture (après « Tout télécharger »)</summary>
+    [Parameter] public int Version { get; set; }
+
+    private bool _available, _busy;
+    private string? _error;
+    private (Guid, int)? _checked;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!Offline.Supported || _checked == (Id, Version)) return;
+        _checked = (Id, Version);
+        _available = await Offline.IsAvailableOfflineAsync(Kind, Id);
+    }
+
+    private async Task DownloadAsync()
+    {
+        _busy = true; _error = null;
+        _error = await Offline.MakeAvailableOfflineAsync(Kind, Id);
+        _available = _error is null;
+        _busy = false;
+    }
+}

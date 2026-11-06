@@ -87,7 +87,25 @@ public record AssessmentDto(
 public record SubmissionRowDto(
     Guid SubmissionId, Guid StudentId, string StudentName, int AttemptNumber, SubmissionStatus Status,
     DateTime StartedAt, DateTime? SubmittedAt, bool IsLate, decimal? Score, decimal MaxScore, decimal? ScoreScaled,
-    int PendingManualAnswers);
+    int PendingManualAnswers, bool Offline = false);
+
+// ─── Composition hors connexion (application Windows) ─────────────────────────
+
+/// <summary>
+/// Tout ce qu'il faut pour composer sans réseau, sans démarrer de tentative (le minuteur part
+/// quand l'élève commence sur son appareil). Jamais de bonne réponse dedans.
+/// </summary>
+public record OfflinePackageDto(
+    Guid AssessmentId, string Title, string? Description, AssessmentKind Kind, string? Subject,
+    DateTime? OpensAt, DateTime? DueAt, int? DurationMinutes, int AttemptsLeft, decimal MaxScore, int ScaleTo,
+    List<StudentQuestionDto> Questions, DateTime UpdatedAt, DateTime DownloadedAt);
+
+public record OfflinePhotoInput(Guid QuestionId, int Page, string ContentType, string Base64);
+
+/// <summary>Copie composée hors ligne, envoyée au retour du réseau</summary>
+public record OfflineSubmissionRequest(
+    Guid ClientSubmissionId, DateTime StartedAt, DateTime SubmittedAt,
+    List<AnswerInput>? Answers, List<OfflinePhotoInput>? Photos);
 
 // ─── Vue élève ────────────────────────────────────────────────────────────────
 
@@ -131,7 +149,7 @@ public record SubmissionDto(
     Guid SubmissionId, Guid AssessmentId, string Title, Guid StudentId, int AttemptNumber, SubmissionStatus Status,
     DateTime StartedAt, DateTime? SubmittedAt, bool IsLate,
     bool ResultsReleased, decimal? Score, decimal MaxScore, decimal? ScoreScaled, int ScaleTo,
-    List<AnswerReviewDto>? Answers);
+    List<AnswerReviewDto>? Answers, bool Offline = false);
 
 // ─── Suivi de la maîtrise ─────────────────────────────────────────────────────
 

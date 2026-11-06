@@ -1,6 +1,7 @@
 @inject SessionState Session
 @inject IClassroomApi Classrooms
 @inject IAssessmentApi Assessments
+@inject SiteLinks Links
 
 <div class="ga-page">
     <div class="ga-head">
@@ -11,7 +12,7 @@
     </div>
 
     <section class="ga-grid" aria-label="Créer">
-        <a class="ga-card dark" style="flex-direction:row; align-items:center; text-decoration:none" href="/cours/create">
+        <a class="ga-card dark" style="flex-direction:row; align-items:center; text-decoration:none" href="@Links.NewCourse">
             <span class="ga-avatar" style="border-radius:12px; width:44px; height:44px; background:var(--ga-navy-3); color:var(--ga-lime)"><Icon Name="book" /></span>
             <span><strong style="font-size:16px">Nouveau cours</strong><br /><span class="ga-small" style="color:#C9D3EA">Éditeur, import PDF ou Word</span></span>
         </a>

@@ -132,6 +132,14 @@ public class Submission
 
     public DateTime? GradedAt { get; set; }
 
+    /// <summary>Copie composée hors connexion (application Windows) : identifiant choisi par l'appareil,
+    /// qui rend l'envoi idempotent (un renvoi après une coupure ne crée pas de doublon)</summary>
+    public Guid? ClientSubmissionId { get; set; }
+    public bool Offline { get; set; }
+
+    /// <summary>Réception par le serveur (pour une copie hors ligne, SubmittedAt est l'heure de l'appareil)</summary>
+    public DateTime? ReceivedAt { get; set; }
+
     public List<SubmissionAnswer> Answers { get; set; } = new();
 }
 

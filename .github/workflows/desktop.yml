@@ -1,0 +1,50 @@
+# Application Windows (phase 4) : tests du hors connexion sous Linux, puis compilation et publication
+# de l'application MAUI sur une machine Windows. L'exécutable est disponible dans les artefacts du workflow.
+name: Application Windows
+
+on:
+  push:
+    paths:
+      - 'GPOE26.Desktop/**'
+      - 'GPOE26.UI/**'
+      - 'GPOE26.Offline/**'
+      - 'GPOE26.Offline.Tests/**'
+      - '.github/workflows/desktop.yml'
+  pull_request:
+    paths:
+      - 'GPOE26.Desktop/**'
+      - 'GPOE26.UI/**'
+      - 'GPOE26.Offline/**'
+  workflow_dispatch:
+
+jobs:
+  offline-tests:
+    name: Tests hors connexion
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet test GPOE26.Offline.Tests --verbosity normal
+
+  windows:
+    name: Compilation Windows
+    runs-on: windows-latest
+    needs: offline-tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Charge de travail MAUI (Windows)
+        run: dotnet workload install maui-windows
+      - name: Publication (autonome, x64)
+        run: >
+          dotnet publish GPOE26.Desktop/GPOE26.Desktop.csproj -c Release -f net10.0-windows10.0.19041.0
+          -r win-x64 --self-contained true -p:WindowsAppSDKSelfContained=true -o publish
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GPOE26-Windows-x64
+          path: publish
+          retention-days: 30

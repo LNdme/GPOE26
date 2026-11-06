@@ -89,30 +89,9 @@ public static class SubmissionEndpoints
             var now = DateTime.UtcNow;
             var photographed = (await db.AnswerPhotos.Where(p => p.SubmissionId == submissionId)
                 .Select(p => p.QuestionId).ToListAsync()).ToHashSet();
-            var inputs = (req.Answers ?? new())
-                .GroupBy(a => a.QuestionId)
-                .ToDictionary(g => g.Key, g => g.First());
-
-            foreach (var question in assessment.Questions)
-            {
-                inputs.TryGetValue(question.Id, out var input);
-                var grade = Grader.Grade(question, input, photographed.Contains(question.Id));
-                submission.Answers.Add(new SubmissionAnswer
-                {
-                    SubmissionId = submission.Id,
-                    QuestionId = question.Id,
-                    SelectedOptions = input?.SelectedOptions?.Distinct().ToList() ?? new(),
-                    TrueFalse = input?.TrueFalse,
-                    Text = input?.Text,
-                    AttachmentUrl = input?.AttachmentUrl,
-                    IsCorrect = grade.IsCorrect,
-                    Points = grade.Points,
-                    NeedsManualGrading = grade.NeedsManualGrading
-                });
-            }
-
+            GradeAnswers(submission, assessment, req.Answers, photographed);
             submission.SubmittedAt = now;
-            submission.MaxScore = assessment.MaxScore;
+            submission.ReceivedAt = now;
             submission.IsLate = assessment.DueAt < now - Grace
                 || (assessment.DurationMinutes is { } minutes && now > submission.StartedAt.AddMinutes(minutes) + Grace);
             Recompute(submission);
@@ -166,7 +145,7 @@ public static class SubmissionEndpoints
                 s.Id, s.StudentId, names.GetValueOrDefault(s.StudentId, "(élève retiré de la classe)"), s.AttemptNumber, s.Status,
                 s.StartedAt, s.SubmittedAt, s.IsLate, s.Score, s.MaxScore,
                 ProgressService.Scale(s.Score, s.MaxScore, assessment.ScaleTo),
-                s.Answers.Count(a => a.NeedsManualGrading))));
+                s.Answers.Count(a => a.NeedsManualGrading), s.Offline)));
         })
         .RequireAuthorization(Roles.Teacher)
         .WithSummary("Copies rendues et en cours")
@@ -239,6 +218,143 @@ public static class SubmissionEndpoints
         .WithSummary("Demander une proposition de note à l'IA")
         .Produces<AiSuggestionDto>()
         .Produces(502);
+
+        // ═══ Composition hors connexion (application Windows) ══════════════════════
+
+        // ── GET /assessments/{id}/offline-package ─────────────────────────────────
+        // Télécharge l'évaluation pour la composer sans réseau. Aucune tentative n'est ouverte :
+        // le minuteur démarre sur l'appareil, quand l'élève commence.
+        group.MapGet("/offline-package", async (Guid id, ClaimsPrincipal principal, EvaluationContext db, UserDirectoryClient users) =>
+        {
+            var studentId = principal.UserId();
+            var assessment = (await AssessmentEndpoints.AssignedToStudentAsync(db, users)).FirstOrDefault(a => a.Id == id);
+            if (assessment is null) return Results.NotFound();
+            if (!assessment.AllowOffline)
+                return EndpointHelpers.Error(403, "Votre enseignant n'a pas autorisé la composition hors connexion pour cette évaluation.");
+            if (assessment.Status == AssessmentStatus.Closed)
+                return EndpointHelpers.Error(409, "Cette évaluation est clôturée.");
+            if (assessment.DueAt <= DateTime.UtcNow)
+                return EndpointHelpers.Error(409, "La date limite est passée.");
+
+            var used = await db.Submissions.CountAsync(s => s.AssessmentId == id && s.StudentId == studentId && s.Status != SubmissionStatus.InProgress);
+            var questions = assessment.Questions.OrderBy(q => q.Order)
+                .Select(q => new StudentQuestionDto(q.Id, q.Type, q.Text, q.Points,
+                    q.Options.Select((text, index) => new OptionDto(index, text)).ToList(), q.Unit))
+                .ToList();
+            return Results.Ok(new OfflinePackageDto(assessment.Id, assessment.Title, assessment.Description, assessment.Kind,
+                assessment.Subject, assessment.OpensAt, assessment.DueAt, assessment.DurationMinutes,
+                Math.Max(0, assessment.MaxAttempts - used), assessment.MaxScore, assessment.ScaleTo, questions,
+                assessment.UpdatedAt, DateTime.UtcNow));
+        })
+        .RequireAuthorization(Roles.Student)
+        .WithSummary("Télécharger une évaluation pour la composer hors connexion")
+        .Produces<OfflinePackageDto>()
+        .Produces(403)
+        .Produces(409);
+
+        // ── POST /assessments/{id}/offline-submissions ────────────────────────────
+        // Copie composée hors ligne, envoyée au retour du réseau. Idempotent : un renvoi
+        // (coupure pendant l'envoi) renvoie la copie déjà enregistrée.
+        group.MapPost("/offline-submissions", async (Guid id, OfflineSubmissionRequest req, ClaimsPrincipal principal,
+            EvaluationContext db, UserDirectoryClient users) =>
+        {
+            var studentId = principal.UserId();
+            var existing = await db.Submissions.Include(s => s.Answers).Include(s => s.Assessment).ThenInclude(a => a.Questions)
+                .FirstOrDefaultAsync(s => s.StudentId == studentId && s.ClientSubmissionId == req.ClientSubmissionId);
+            if (existing is not null)
+            {
+                if (existing.AssessmentId != id) return EndpointHelpers.Error(409, "Identifiant de copie déjà utilisé.");
+                return Results.Ok(ToDto(existing, existing.Assessment, teacherView: false, await PhotosAsync(db, existing.Id)));
+            }
+
+            var assessment = (await AssessmentEndpoints.AssignedToStudentAsync(db, users)).FirstOrDefault(a => a.Id == id);
+            if (assessment is null) return Results.NotFound();
+            if (!assessment.AllowOffline)
+                return EndpointHelpers.Error(403, "Cette évaluation ne peut pas être composée hors connexion.");
+
+            var used = await db.Submissions.CountAsync(s => s.AssessmentId == id && s.StudentId == studentId);
+            if (used >= assessment.MaxAttempts)
+                return EndpointHelpers.Error(409, "Vous avez utilisé toutes vos tentatives : cette copie n'a pas pu être enregistrée.");
+
+            // Photos : mêmes règles qu'en ligne
+            var photos = req.Photos ?? new();
+            var openEnded = assessment.Questions.Where(q => q.Type == QuestionType.OpenEnded).Select(q => q.Id).ToHashSet();
+            var decoded = new List<(OfflinePhotoInput Input, byte[] Data)>();
+            foreach (var group in photos.GroupBy(p => p.QuestionId))
+            {
+                if (!openEnded.Contains(group.Key))
+                    return EndpointHelpers.Error(400, "Les photos de copie concernent les réponses rédigées.");
+                if (group.Count() > MaxPhotosPerQuestion)
+                    return EndpointHelpers.Error(400, $"{MaxPhotosPerQuestion} photos au maximum par question.");
+                foreach (var photo in group)
+                {
+                    if (!PhotoTypes.Contains(photo.ContentType))
+                        return EndpointHelpers.Error(400, "Formats acceptés : JPEG, PNG ou WebP.");
+                    byte[] data;
+                    try { data = Convert.FromBase64String(photo.Base64); }
+                    catch (FormatException) { return EndpointHelpers.Error(400, "Photo illisible."); }
+                    if (data.Length == 0 || data.Length > MaxPhotoBytes)
+                        return EndpointHelpers.Error(400, "Chaque photo doit faire moins de 6 Mo.");
+                    decoded.Add((photo, data));
+                }
+            }
+
+            // L'heure de l'appareil fait foi, bornée par l'heure de réception
+            var now = DateTime.UtcNow;
+            var submittedAt = req.SubmittedAt.ToUniversalTime() > now ? now : req.SubmittedAt.ToUniversalTime();
+            var startedAt = req.StartedAt.ToUniversalTime() > submittedAt ? submittedAt : req.StartedAt.ToUniversalTime();
+
+            var submission = new Submission
+            {
+                AssessmentId = id,
+                StudentId = studentId,
+                AttemptNumber = used + 1,
+                StartedAt = startedAt,
+                SubmittedAt = submittedAt,
+                ReceivedAt = now,
+                ClientSubmissionId = req.ClientSubmissionId,
+                Offline = true,
+                IsLate = assessment.DueAt < submittedAt - Grace
+                    || assessment.Status == AssessmentStatus.Closed
+                    || (assessment.DurationMinutes is { } minutes && submittedAt > startedAt.AddMinutes(minutes) + Grace)
+            };
+            GradeAnswers(submission, assessment, req.Answers, decoded.Select(d => d.Input.QuestionId).ToHashSet());
+            Recompute(submission);
+
+            var savedPhotos = decoded
+                .OrderBy(d => d.Input.QuestionId).ThenBy(d => d.Input.Page)
+                .GroupBy(d => d.Input.QuestionId)
+                .SelectMany(g => g.Select((d, i) => new AnswerPhoto
+                {
+                    SubmissionId = submission.Id, QuestionId = g.Key, StudentId = studentId,
+                    Page = i + 1, ContentType = d.Input.ContentType, Data = d.Data
+                }))
+                .ToList();
+
+            // La copie d'abord, puis ses photos (clé étrangère sans navigation EF), dans une même transaction
+            await using var transaction = await db.Database.BeginTransactionAsync();
+            try
+            {
+                db.Submissions.Add(submission);
+                await db.SaveChangesAsync();
+                db.AnswerPhotos.AddRange(savedPhotos);
+                await db.SaveChangesAsync();
+                await transaction.CommitAsync();
+            }
+            catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException { SqlState: "23505" })
+            {
+                // Deux envois simultanés de la même copie : le premier l'enregistre, le second sera rejoué
+                await transaction.RollbackAsync();
+                return EndpointHelpers.Error(503, "Cette copie est déjà en cours d'enregistrement : réessayez dans un instant.");
+            }
+            return Results.Created($"/assessments/{id}/submissions/{submission.Id}",
+                ToDto(submission, assessment, teacherView: false, savedPhotos));
+        })
+        .RequireAuthorization(Roles.Student)
+        .WithSummary("Envoyer une copie composée hors connexion (idempotent)")
+        .Produces<SubmissionDto>(201)
+        .Produces<SubmissionDto>()
+        .Produces(409);
 
         // ═══ Copies photographiées (exercices traités sur papier) ═════════════════
 
@@ -364,6 +480,33 @@ public static class SubmissionEndpoints
         .Produces<AiFeedbackDto>();
     }
 
+    /// <summary>Correction automatique de chaque question (les réponses ouvertes attendent l'enseignant).</summary>
+    private static void GradeAnswers(Submission submission, Assessment assessment, List<AnswerInput>? answers, HashSet<Guid> photographed)
+    {
+        var inputs = (answers ?? new())
+            .GroupBy(a => a.QuestionId)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        foreach (var question in assessment.Questions)
+        {
+            inputs.TryGetValue(question.Id, out var input);
+            var grade = Grader.Grade(question, input, photographed.Contains(question.Id));
+            submission.Answers.Add(new SubmissionAnswer
+            {
+                SubmissionId = submission.Id,
+                QuestionId = question.Id,
+                SelectedOptions = input?.SelectedOptions?.Distinct().ToList() ?? new(),
+                TrueFalse = input?.TrueFalse,
+                Text = input?.Text,
+                AttachmentUrl = input?.AttachmentUrl,
+                IsCorrect = grade.IsCorrect,
+                Points = grade.Points,
+                NeedsManualGrading = grade.NeedsManualGrading
+            });
+        }
+        submission.MaxScore = assessment.MaxScore;
+    }
+
     /// <summary>Note finale dès que toutes les réponses ont des points ; sinon copie en attente de correction.</summary>
     private static void Recompute(Submission s)
     {
@@ -429,6 +572,6 @@ public static class SubmissionEndpoints
         var score = showScore ? s.Score : null;
         return new SubmissionDto(s.Id, a.Id, a.Title, s.StudentId, s.AttemptNumber, s.Status,
             s.StartedAt, s.SubmittedAt, s.IsLate, released, score, s.MaxScore,
-            ProgressService.Scale(score, s.MaxScore, a.ScaleTo), a.ScaleTo, answers);
+            ProgressService.Scale(score, s.MaxScore, a.ScaleTo), a.ScaleTo, answers, s.Offline);
     }
 }

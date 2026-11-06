@@ -32,7 +32,15 @@
         </div>
 
         <Alert Message="@_error" />
-        @if (!IsTeacher && !_review.ResultsReleased)
+        @if (_review.PendingSync)
+        {
+            <Alert Kind="warn" Message="Copie composée hors connexion, enregistrée sur cet appareil : elle sera envoyée à ton enseignant dès le retour du réseau. La correction s'affichera ensuite." />
+        }
+        else if (_review.Offline && IsTeacher)
+        {
+            <Alert Kind="" Message="Copie composée hors connexion (application Windows) : l'heure de remise est celle de l'appareil de l'élève." />
+        }
+        @if (!IsTeacher && !_review.ResultsReleased && !_review.PendingSync)
         {
             <Alert Kind="" Message="Ta copie est bien rendue. La note et la correction seront visibles après la date limite ou la clôture de l'évaluation." />
         }

@@ -1,0 +1,11 @@
+@* Routeur de l'application : les pages de l'espace d'apprentissage (GPOE26.UI). Toute autre adresse
+   (page du site web) renvoie vers le tableau de bord. *@
+<Router AppAssembly="typeof(AppPage).Assembly">
+    <Found Context="routeData">
+        <RouteView RouteData="routeData" DefaultLayout="typeof(AppLayout)" />
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+    <NotFound>
+        <RedirectToApp />
+    </NotFound>
+</Router>
