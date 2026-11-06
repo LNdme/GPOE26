@@ -4,6 +4,7 @@ using Quiz.Data;
 using Quiz.DTOs;
 using Quiz.Model;
 using Quiz.Service;
+using GPOE26.ServiceDefaults.Llm;
 
 namespace Quiz.Endpoints;
 
@@ -12,6 +13,22 @@ public static class SubmissionEndpoints
 {
     /// <summary>Marge accordée au-delà de la durée de composition (latence réseau, envoi hors ligne)</summary>
     private static readonly TimeSpan Grace = TimeSpan.FromMinutes(2);
+
+    private const long MaxPhotoBytes = 6 * 1024 * 1024;
+    private const int MaxPhotosPerQuestion = 4;
+    private static readonly string[] PhotoTypes = ["image/jpeg", "image/png", "image/webp"];
+
+    private static Task<List<AnswerPhoto>> PhotosAsync(EvaluationContext db, Guid submissionId) =>
+        db.AnswerPhotos.AsNoTracking().Where(p => p.SubmissionId == submissionId)
+            .OrderBy(p => p.QuestionId).ThenBy(p => p.Page)
+            .Select(p => new AnswerPhoto { Id = p.Id, QuestionId = p.QuestionId, Page = p.Page, Transcription = p.Transcription })
+            .ToListAsync();
+
+    private static async Task<List<LlmImage>> LlmPhotosAsync(EvaluationContext db, Guid submissionId, Guid questionId, CancellationToken ct) =>
+        (await db.AnswerPhotos.AsNoTracking()
+            .Where(p => p.SubmissionId == submissionId && p.QuestionId == questionId)
+            .OrderBy(p => p.Page).ToListAsync(ct))
+        .Select(p => new LlmImage(p.ContentType, p.Data)).ToList();
 
     public static void MapSubmissionEndpoints(this IEndpointRouteBuilder app)
     {
@@ -29,7 +46,7 @@ public static class SubmissionEndpoints
 
             var attempts = await db.Submissions.Where(s => s.AssessmentId == id && s.StudentId == studentId).ToListAsync();
             if (attempts.FirstOrDefault(s => s.Status == SubmissionStatus.InProgress) is { } current)
-                return Results.Ok(ToAttempt(current, assessment));
+                return Results.Ok(ToAttempt(current, assessment, await PhotosAsync(db, current.Id)));
 
             var now = DateTime.UtcNow;
             if (assessment.Status == AssessmentStatus.Closed)
@@ -50,7 +67,7 @@ public static class SubmissionEndpoints
             };
             db.Submissions.Add(submission);
             await db.SaveChangesAsync();
-            return Results.Created($"/assessments/{id}/submissions/{submission.Id}", ToAttempt(submission, assessment));
+            return Results.Created($"/assessments/{id}/submissions/{submission.Id}", ToAttempt(submission, assessment, new()));
         })
         .RequireAuthorization(Roles.Student)
         .WithSummary("Commencer (ou reprendre) une tentative")
@@ -70,6 +87,8 @@ public static class SubmissionEndpoints
 
             var assessment = await db.Assessments.Include(a => a.Questions).FirstAsync(a => a.Id == id);
             var now = DateTime.UtcNow;
+            var photographed = (await db.AnswerPhotos.Where(p => p.SubmissionId == submissionId)
+                .Select(p => p.QuestionId).ToListAsync()).ToHashSet();
             var inputs = (req.Answers ?? new())
                 .GroupBy(a => a.QuestionId)
                 .ToDictionary(g => g.Key, g => g.First());
@@ -77,7 +96,7 @@ public static class SubmissionEndpoints
             foreach (var question in assessment.Questions)
             {
                 inputs.TryGetValue(question.Id, out var input);
-                var grade = Grader.Grade(question, input);
+                var grade = Grader.Grade(question, input, photographed.Contains(question.Id));
                 submission.Answers.Add(new SubmissionAnswer
                 {
                     SubmissionId = submission.Id,
@@ -99,7 +118,7 @@ public static class SubmissionEndpoints
             Recompute(submission);
 
             await db.SaveChangesAsync();
-            return Results.Ok(ToDto(submission, assessment, teacherView: false));
+            return Results.Ok(ToDto(submission, assessment, teacherView: false, await PhotosAsync(db, submission.Id)));
         })
         .RequireAuthorization(Roles.Student)
         .WithSummary("Rendre sa copie (correction automatique immédiate)")
@@ -119,7 +138,7 @@ public static class SubmissionEndpoints
 
             var isTeacher = submission.Assessment.TeacherId == userId;
             if (!isTeacher && submission.StudentId != userId) return Results.NotFound();
-            return Results.Ok(ToDto(submission, submission.Assessment, teacherView: isTeacher));
+            return Results.Ok(ToDto(submission, submission.Assessment, teacherView: isTeacher, await PhotosAsync(db, submission.Id)));
         })
         .WithSummary("Une copie (correction selon les règles de publication pour l'élève)")
         .Produces<SubmissionDto>();
@@ -175,7 +194,7 @@ public static class SubmissionEndpoints
             Recompute(submission!);
 
             await db.SaveChangesAsync();
-            return Results.Ok(ToDto(submission!, assessment, teacherView: true));
+            return Results.Ok(ToDto(submission!, assessment, teacherView: true, await PhotosAsync(db, submission!.Id)));
         })
         .RequireAuthorization(Roles.Teacher)
         .WithSummary("Noter une réponse")
@@ -198,18 +217,19 @@ public static class SubmissionEndpoints
             if (question is null || answer is null) return Results.NotFound();
             if (question.Type != QuestionType.OpenEnded)
                 return EndpointHelpers.Error(400, "La correction assistée concerne les réponses ouvertes.");
-            if (string.IsNullOrWhiteSpace(answer.Text))
-                return EndpointHelpers.Error(400, "La correction assistée ne lit pas encore les copies photographiées : réponse écrite requise.");
+            var photos = await LlmPhotosAsync(db, submissionId, questionId, ct);
+            if (string.IsNullOrWhiteSpace(answer.Text) && photos.Count == 0)
+                return EndpointHelpers.Error(400, "Cette réponse est vide : rien à analyser.");
 
             try
             {
-                var suggestion = await ai.SuggestAsync(question.Text, question.Criteria, question.Points, answer.Text, ct);
+                var suggestion = await ai.SuggestAsync(question.Text, question.Criteria, question.Points, answer.Text, photos, ct);
                 answer.AiSuggestedPoints = suggestion.Points;
                 answer.AiFeedback = suggestion.Feedback;
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(new AiSuggestionDto(questionId, suggestion.Points, question.Points, suggestion.Feedback));
             }
-            catch (Exception ex) when (ex is HttpRequestException or FormatException or System.Text.Json.JsonException or KeyNotFoundException)
+            catch (Exception ex) when (ex is LlmUnavailableException or FormatException or System.Text.Json.JsonException)
             {
                 logger.LogWarning(ex, "Correction assistée indisponible");
                 return EndpointHelpers.Error(502, "L'IA n'a pas pu proposer de note. Réessayez ou notez manuellement.");
@@ -219,6 +239,129 @@ public static class SubmissionEndpoints
         .WithSummary("Demander une proposition de note à l'IA")
         .Produces<AiSuggestionDto>()
         .Produces(502);
+
+        // ═══ Copies photographiées (exercices traités sur papier) ═════════════════
+
+        // ── POST /assessments/{id}/attempts/{submissionId}/questions/{questionId}/photos ──
+        // L'élève photographie sa copie ; l'IA la lit pour qu'il vérifie la transcription avant de rendre.
+        group.MapPost("/attempts/{submissionId:guid}/questions/{questionId:guid}/photos", async (Guid id, Guid submissionId,
+            Guid questionId, IFormFile file, ClaimsPrincipal principal, EvaluationContext db, AiGradingService ai, CancellationToken ct) =>
+        {
+            var studentId = principal.UserId();
+            var submission = await db.Submissions.Include(s => s.Assessment).ThenInclude(a => a.Questions)
+                .FirstOrDefaultAsync(s => s.Id == submissionId && s.AssessmentId == id && s.StudentId == studentId, ct);
+            if (submission is null) return Results.NotFound();
+            if (submission.Status != SubmissionStatus.InProgress)
+                return EndpointHelpers.Error(409, "Cette copie a déjà été rendue.");
+            var question = submission.Assessment.Questions.FirstOrDefault(q => q.Id == questionId);
+            if (question is null) return Results.NotFound();
+            if (question.Type != QuestionType.OpenEnded)
+                return EndpointHelpers.Error(400, "Les photos de copie concernent les réponses rédigées.");
+            if (file.Length == 0 || file.Length > MaxPhotoBytes)
+                return EndpointHelpers.Error(400, "La photo doit faire moins de 6 Mo.");
+            if (!PhotoTypes.Contains(file.ContentType))
+                return EndpointHelpers.Error(400, "Formats acceptés : JPEG, PNG ou WebP.");
+
+            var pages = await db.AnswerPhotos.CountAsync(p => p.SubmissionId == submissionId && p.QuestionId == questionId, ct);
+            if (pages >= MaxPhotosPerQuestion)
+                return EndpointHelpers.Error(409, $"{MaxPhotosPerQuestion} photos au maximum par question.");
+
+            using var stream = new MemoryStream();
+            await file.CopyToAsync(stream, ct);
+            var photo = new AnswerPhoto
+            {
+                SubmissionId = submissionId, QuestionId = questionId, StudentId = studentId,
+                Page = pages + 1, ContentType = file.ContentType, Data = stream.ToArray()
+            };
+            photo.Transcription = await ai.TranscribeAsync(question.Text, new LlmImage(photo.ContentType, photo.Data), ct);
+            db.AnswerPhotos.Add(photo);
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new AnswerPhotoDto(photo));
+        })
+        .DisableAntiforgery()
+        .RequireAuthorization(Roles.Student)
+        .WithSummary("Joindre la photo d'une copie à une réponse ouverte (lue par l'IA)")
+        .Produces<AnswerPhotoDto>();
+
+        // ── DELETE /assessments/{id}/attempts/{submissionId}/photos/{photoId} ─────
+        group.MapDelete("/attempts/{submissionId:guid}/photos/{photoId:guid}", async (Guid id, Guid submissionId, Guid photoId,
+            ClaimsPrincipal principal, EvaluationContext db) =>
+        {
+            var studentId = principal.UserId();
+            var photo = await db.AnswerPhotos.FirstOrDefaultAsync(p => p.Id == photoId && p.SubmissionId == submissionId && p.StudentId == studentId);
+            var submission = await db.Submissions.FirstOrDefaultAsync(s => s.Id == submissionId && s.AssessmentId == id);
+            if (photo is null || submission is null) return Results.NotFound();
+            if (submission.Status != SubmissionStatus.InProgress)
+                return EndpointHelpers.Error(409, "Cette copie a déjà été rendue.");
+
+            db.AnswerPhotos.Remove(photo);
+            // Pages renumérotées pour rester continues
+            var others = await db.AnswerPhotos.Where(p => p.SubmissionId == submissionId && p.QuestionId == photo.QuestionId && p.Id != photoId)
+                .OrderBy(p => p.Page).ToListAsync();
+            for (var i = 0; i < others.Count; i++) others[i].Page = i + 1;
+            await db.SaveChangesAsync();
+            return Results.NoContent();
+        })
+        .RequireAuthorization(Roles.Student)
+        .WithSummary("Retirer une photo (avant de rendre la copie)");
+
+        // ── GET /assessments/{id}/submissions/{submissionId}/photos/{photoId} ─────
+        group.MapGet("/submissions/{submissionId:guid}/photos/{photoId:guid}", async (Guid id, Guid submissionId, Guid photoId,
+            ClaimsPrincipal principal, EvaluationContext db) =>
+        {
+            var userId = principal.UserId();
+            var photo = await db.AnswerPhotos.AsNoTracking()
+                .FirstOrDefaultAsync(p => p.Id == photoId && p.SubmissionId == submissionId);
+            if (photo is null) return Results.NotFound();
+            var teacherId = await db.Submissions.Where(s => s.Id == submissionId && s.AssessmentId == id)
+                .Select(s => (Guid?)s.Assessment.TeacherId).FirstOrDefaultAsync();
+            if (teacherId is null || (photo.StudentId != userId && teacherId != userId)) return Results.NotFound();
+            return Results.File(photo.Data, photo.ContentType);
+        })
+        .WithSummary("Image d'une copie photographiée (l'élève auteur ou l'enseignant)");
+
+        // ── POST /assessments/{id}/submissions/{submissionId}/answers/{questionId}/ai-feedback ──
+        // L'élève demande à l'IA d'analyser sa démarche, une fois les résultats publiés (jamais pendant l'épreuve).
+        group.MapPost("/submissions/{submissionId:guid}/answers/{questionId:guid}/ai-feedback", async (Guid id, Guid submissionId,
+            Guid questionId, ClaimsPrincipal principal, EvaluationContext db, AiGradingService ai, ILogger<AiGradingService> logger,
+            CancellationToken ct) =>
+        {
+            var studentId = principal.UserId();
+            var submission = await db.Submissions.Include(s => s.Assessment).ThenInclude(a => a.Questions)
+                .FirstOrDefaultAsync(s => s.Id == submissionId && s.AssessmentId == id && s.StudentId == studentId, ct);
+            if (submission is null) return Results.NotFound();
+            var assessment = submission.Assessment;
+            if (submission.Status == SubmissionStatus.InProgress || !assessment.ResultsReleased(DateTime.UtcNow))
+                return EndpointHelpers.Error(409, "L'analyse sera disponible quand les résultats seront publiés.");
+            if (!assessment.AiAssistedGrading || !assessment.ShowCorrection)
+                return EndpointHelpers.Error(403, "Votre enseignant n'a pas activé l'analyse par l'IA pour cette évaluation.");
+
+            var question = assessment.Questions.FirstOrDefault(q => q.Id == questionId);
+            var answer = await db.SubmissionAnswers.FirstOrDefaultAsync(a => a.SubmissionId == submissionId && a.QuestionId == questionId, ct);
+            if (question is null || answer is null) return Results.NotFound();
+            if (question.Type != QuestionType.OpenEnded)
+                return EndpointHelpers.Error(400, "L'analyse concerne les réponses rédigées ou photographiées.");
+
+            var photos = await LlmPhotosAsync(db, submissionId, questionId, ct);
+            if (string.IsNullOrWhiteSpace(answer.Text) && photos.Count == 0)
+                return EndpointHelpers.Error(400, "Tu n'as pas répondu à cette question : rien à analyser.");
+
+            try
+            {
+                var feedback = await ai.FeedbackAsync(question.Text, question.Explanation, question.Criteria, answer.Text, photos, ct);
+                answer.StudentAiFeedback = feedback;
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(new AiFeedbackDto(questionId, feedback));
+            }
+            catch (LlmUnavailableException ex)
+            {
+                logger.LogWarning(ex, "Analyse de copie indisponible");
+                return EndpointHelpers.Error(502, "L'IA n'a pas pu analyser ta copie. Réessaie dans un instant.");
+            }
+        })
+        .RequireAuthorization(Roles.Student)
+        .WithSummary("Analyse de ma démarche par l'IA (après publication des résultats)")
+        .Produces<AiFeedbackDto>();
     }
 
     /// <summary>Note finale dès que toutes les réponses ont des points ; sinon copie en attente de correction.</summary>
@@ -238,7 +381,7 @@ public static class SubmissionEndpoints
         }
     }
 
-    private static AttemptDto ToAttempt(Submission s, Assessment a)
+    private static AttemptDto ToAttempt(Submission s, Assessment a, List<AnswerPhoto> photos)
     {
         var questions = a.Questions.OrderBy(q => q.Order).ToList();
         if (a.Shuffle) questions = Grader.StableShuffle(questions, s.Id);
@@ -253,11 +396,13 @@ public static class SubmissionEndpoints
                 var options = q.Options.Select((text, index) => new OptionDto(index, text)).ToList();
                 if (a.Shuffle) options = Grader.StableShuffle(options, s.Id, q.Order + 1);
                 return new StudentQuestionDto(q.Id, q.Type, q.Text, q.Points, options, q.Unit);
-            }).ToList());
+            }).ToList(),
+            photos.Select(p => new AnswerPhotoDto(p)).ToList());
     }
 
-    private static SubmissionDto ToDto(Submission s, Assessment a, bool teacherView)
+    private static SubmissionDto ToDto(Submission s, Assessment a, bool teacherView, List<AnswerPhoto> photos)
     {
+        var photosByQuestion = photos.ToLookup(p => p.QuestionId);
         var released = a.ResultsReleased(DateTime.UtcNow);
         var showScore = teacherView || released;
         var showCorrection = teacherView || (released && a.ShowCorrection);
@@ -277,7 +422,8 @@ public static class SubmissionEndpoints
                     showCorrection ? ans.Feedback : null,
                     showCorrection ? new AssessmentQuestionDto(q) : null,
                     teacherView ? ans.AiSuggestedPoints : null,
-                    teacherView ? ans.AiFeedback : null);
+                    teacherView ? ans.AiFeedback : showCorrection ? ans.StudentAiFeedback : null,
+                    photosByQuestion[q.Id].OrderBy(p => p.Page).Select(p => new AnswerPhotoDto(p)).ToList());
             }).ToList();
 
         var score = showScore ? s.Score : null;

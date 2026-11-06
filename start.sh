@@ -9,6 +9,9 @@ JWT_AUDIENCE="GPOE2026Users"
 # Build Npgsql-compatible connection string from Replit PG env vars
 NPGSQL_CONN="Host=${PGHOST};Port=${PGPORT:-5432};Database=${PGDATABASE};Username=${PGUSER};Password=${PGPASSWORD};SSL Mode=Disable"
 
+# Clé du LLM : OpenRouter (LLM_API_KEY), ou l'ancienne variable DeepSeek
+LLM_KEY="${LLM_API_KEY:-$DEEPSEEK_API_KEY}"
+
 echo "Using connection: Host=${PGHOST};Port=${PGPORT:-5432};Database=${PGDATABASE};Username=${PGUSER}"
 
 # Start ApiService (port 5455)
@@ -42,14 +45,20 @@ COURSPID=$!
 # Start Chat service (port 5212)
 echo "Starting Chat service on port 5212..."
 ASPNETCORE_URLS="http://localhost:5212" \
-  DeepSeek__ApiKey="${DEEPSEEK_API_KEY}" \
+  LLM__ApiKey="$LLM_KEY" \
+  ConnectionStrings__ChatDB="$NPGSQL_CONN" \
+  Jwt__Key="$JWT_KEY" \
+  Jwt__Issuer="$JWT_ISSUER" \
+  Jwt__Audience="$JWT_AUDIENCE" \
+  Services__User="http://localhost:5197" \
+  Services__Cours="http://localhost:5188" \
   dotnet run --project Chat/Chat.csproj --no-launch-profile &
 CHATPID=$!
 
 # Start Quiz service (port 5163)
 echo "Starting Quiz service on port 5163..."
 ASPNETCORE_URLS="http://localhost:5163" \
-  LLM__ApiKey="${DEEPSEEK_API_KEY}" \
+  LLM__ApiKey="$LLM_KEY" \
   ConnectionStrings__QuizDB="$NPGSQL_CONN" \
   Jwt__Key="$JWT_KEY" \
   Jwt__Issuer="$JWT_ISSUER" \

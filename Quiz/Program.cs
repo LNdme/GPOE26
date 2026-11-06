@@ -6,6 +6,7 @@ using Quiz.Data;
 using Quiz.Endpoints;
 using Quiz.Service;
 using Microsoft.Extensions.Http.Resilience;
+using GPOE26.ServiceDefaults.Llm;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -37,15 +38,9 @@ var quizConnStr = builder.Configuration.GetConnectionString("QuizDB")
 builder.Services.AddDbContext<EvaluationContext>(options => options.UseNpgsql(quizConnStr));
 builder.Services.AddScoped<ProgressService>();
 
-// Correction assistée par l'IA (même LLM que la génération de quiz)
-builder.Services.AddHttpClient<AiGradingService>(client => client.Timeout = TimeSpan.FromMinutes(2))
-    .AddStandardResilienceHandler(options =>
-    {
-        options.AttemptTimeout.Timeout = TimeSpan.FromMinutes(2);
-        options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(2);
-        options.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(5);
-        options.Retry.MaxRetryAttempts = 1;
-    });
+// Correction assistée et lecture des copies photographiées (LLM compatible OpenAI, section "LLM")
+builder.AddLlmClient();
+builder.Services.AddScoped<AiGradingService>();
 
 // Service User : classes, élèves et rattachements (le JWT de l'appelant est transmis)
 var userServiceUrl = builder.Configuration["Services:User"] ?? "http://localhost:5197";

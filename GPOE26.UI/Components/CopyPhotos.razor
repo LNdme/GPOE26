@@ -1,0 +1,71 @@
+@* Photos d'une copie traitée sur papier, avec la lecture qu'en a faite l'IA. *@
+@implements IAsyncDisposable
+@inject IAssessmentApi Api
+@inject IJSRuntime JS
+
+@if (Photos is { Count: > 0 })
+{
+    <div class="ga-photos" @ref="_box">
+        @foreach (var p in Photos.OrderBy(p => p.Page))
+        {
+            <div class="ga-photo-card">
+                <div class="ga-row between">
+                    <span class="ga-small" style="font-weight:700">Page @p.Page</span>
+                    @if (OnDelete.HasDelegate)
+                    {
+                        <button type="button" class="ga-btn ghost small" disabled="@Disabled" @onclick="() => OnDelete.InvokeAsync(p)"><Icon Name="trash" Size="16" /> Retirer</button>
+                    }
+                </div>
+                <SecureImage Load="() => Api.PhotoAsync(AssessmentId, SubmissionId, p.Id)" Key="p.Id" Alt="@($"Copie, page {p.Page}")" />
+                @if (ShowTranscription)
+                {
+                    @if (p.Transcription is null)
+                    {
+                        <span class="ga-small ga-muted">L'IA n'a pas pu lire cette photo pour le moment@(OnDelete.HasDelegate ? " : ta copie sera tout de même transmise." : ".")</span>
+                    }
+                    else if (p.Transcription.Length == 0)
+                    {
+                        <span class="ga-small" style="color:var(--ga-red-ink)">Photo illisible pour l'IA@(OnDelete.HasDelegate ? " : reprends-la plus nette, bien éclairée et à plat." : ".")</span>
+                    }
+                    else
+                    {
+                        <details open="@OpenTranscription">
+                            <summary class="ga-small" style="cursor:pointer; font-weight:600">Ce que l'IA a lu</summary>
+                            <div class="ga-transcript tu-md">@((MarkupString)MarkdownRenderer.RenderLines(p.Transcription))</div>
+                        </details>
+                    }
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Guid AssessmentId { get; set; }
+    [Parameter, EditorRequired] public Guid SubmissionId { get; set; }
+    [Parameter] public List<AnswerPhoto>? Photos { get; set; }
+    [Parameter] public EventCallback<AnswerPhoto> OnDelete { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public bool ShowTranscription { get; set; } = true;
+    [Parameter] public bool OpenTranscription { get; set; }
+
+    private ElementReference _box;
+    private IJSObjectReference? _module;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Photos is not { Count: > 0 }) return;
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./_content/GPOE26.UI/gpoe-app.js");
+            await _module.InvokeVoidAsync("renderMath", _box);
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { if (_module is not null) await _module.DisposeAsync(); }
+        catch (JSDisconnectedException) { }
+    }
+}

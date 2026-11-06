@@ -3,6 +3,8 @@
 @inherits AppPage
 @inject ICourseApi Courses
 @inject IAssessmentApi Assessments
+@inject IJSRuntime JS
+@implements IAsyncDisposable
 
 <PageTitle>@(_course?.Title ?? "Cours") — GPOE26</PageTitle>
 
@@ -16,8 +18,8 @@ else if (_course is null)
 }
 else
 {
-    <div class="rd">
-        <article class="rd-article">
+    <div class="rd @(_tutorOpen ? "with-tutor" : "")">
+        <article class="rd-article" @ref="_article">
             <nav aria-label="Fil d'Ariane" class="rd-meta"><a href="/app/cours" style="color:inherit">Mes cours</a> › @_course.Subject</nav>
             <h1>@_course.Title</h1>
             <div class="rd-meta">
@@ -91,7 +93,8 @@ else
 
             @if (Session.IsPremium)
             {
-                <a class="ga-btn" href="/learning/course/@_course.Id"><Icon Name="chat" /> Demander au tuteur IA</a>
+                <button class="ga-btn" @onclick="() => _tutorOpen = true"><Icon Name="chat" /> Demander au tuteur IA</button>
+                <span class="ga-small ga-muted">Tes échanges avec le tuteur sont enregistrés : retrouve-les dans « Tuteur IA ».</span>
             }
             else
             {
@@ -99,9 +102,21 @@ else
                     <Icon Name="chat" Size="24" />
                     <span><strong>Tuteur IA</strong><br /><span class="ga-small" style="color:#C9D3EA">Pose tes questions sur ce cours avec Premium.</span></span>
                 </a>
+                <a class="ga-btn ghost small" href="/app/tuteur/@_course.Id"><Icon Name="history" /> Relire mes discussions</a>
             }
         </aside>
     </div>
+
+    @if (_tutorOpen)
+    {
+        <div class="tu-drawer" role="dialog" aria-label="Tuteur IA">
+            <TutorPanel CourseId="_course.Id" CourseTitle="@_course.Title" Docked="true" OnClose="() => _tutorOpen = false" />
+        </div>
+    }
+    else if (Session.IsPremium)
+    {
+        <button class="ga-btn tu-fab" @onclick="() => _tutorOpen = true"><Icon Name="spark" /> Tuteur IA</button>
+    }
 }
 
 @code {
@@ -113,6 +128,9 @@ else
     private List<TocEntry> _toc = new();
     private List<StudentAssessment> _related = new();
     private int _vote;
+    private bool _tutorOpen, _mathPending;
+    private ElementReference _article;
+    private IJSObjectReference? _module;
 
     private int ReadingMinutes => Math.Max(1, (_course?.ToMarkdown().Split(' ', StringSplitOptions.RemoveEmptyEntries).Length ?? 0) / 200);
 
@@ -123,6 +141,7 @@ else
         _error = result.Error;
         if (_course is not null)
             (_html, _toc) = MarkdownRenderer.Render(_course.ToMarkdown());
+        _mathPending = true;
 
         // Évaluations d'entraînement ouvertes : proposées à l'élève à la fin du cours
         if (Session.Role == UserRole.Student)
@@ -131,5 +150,24 @@ else
             _related = (mine.Value ?? new()).Where(a => a.Kind == AssessmentKind.Practice && a.CanStart(DateTime.UtcNow)).Take(3).ToList();
         }
         _loading = false;
+    }
+
+    /// <summary>Formules KaTeX et coloration du code, une fois le cours affiché</summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_mathPending || _course is null || _loading) return;
+        _mathPending = false;
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./_content/GPOE26.UI/gpoe-app.js");
+            await _module.InvokeVoidAsync("renderMath", _article);
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { if (_module is not null) await _module.DisposeAsync(); }
+        catch (JSDisconnectedException) { }
     }
 }

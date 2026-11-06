@@ -1,0 +1,39 @@
+@* Choix d'une photo (appareil photo ou galerie sur mobile). L'image est redimensionnée et recompressée
+   en JPEG par le navigateur avant l'envoi : une photo de téléphone de 5 Mo passe sous 1 Mo. *@
+<label class="ga-btn @Css @(Disabled ? "is-disabled" : "")" title="@Label">
+    <Icon Name="camera" /> @if (ShowLabel) { <span>@Label</span> }
+    <InputFile OnChange="OnChangeAsync" accept="image/*" class="ga-sr-only" disabled="@Disabled" aria-label="@Label" />
+</label>
+
+@code {
+    [Parameter] public string Label { get; set; } = "Photographier ma copie";
+    [Parameter] public bool ShowLabel { get; set; } = true;
+    [Parameter] public string Css { get; set; } = "secondary";
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback<ImageUpload> OnPicked { get; set; }
+    [Parameter] public EventCallback<string> OnError { get; set; }
+
+    private const long MaxBytes = 6 * 1024 * 1024;
+
+    private async Task OnChangeAsync(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var file = e.File;
+            if (!file.ContentType.StartsWith("image/"))
+            {
+                await OnError.InvokeAsync("Choisis une image (photo de ta copie).");
+                return;
+            }
+            var resized = await file.RequestImageFileAsync("image/jpeg", 1600, 2200);
+            using var stream = resized.OpenReadStream(MaxBytes);
+            using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory);
+            await OnPicked.InvokeAsync(new ImageUpload(Path.ChangeExtension(file.Name, ".jpg"), "image/jpeg", memory.ToArray()));
+        }
+        catch (IOException)
+        {
+            await OnError.InvokeAsync("La photo est trop lourde (6 Mo au maximum).");
+        }
+    }
+}

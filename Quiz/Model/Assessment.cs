@@ -163,6 +163,9 @@ public class SubmissionAnswer
     public decimal? AiSuggestedPoints { get; set; }
     public string? AiFeedback { get; set; }
 
+    /// <summary>Analyse de la démarche demandée par l'élève après publication des résultats</summary>
+    public string? StudentAiFeedback { get; set; }
+
     /// <summary>Commentaire de l'enseignant</summary>
     public string? Feedback { get; set; }
 }

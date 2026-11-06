@@ -128,10 +128,30 @@ else
                     break;
 
                 case QuestionType.OpenEnded:
+                    var photos = _photos.GetValueOrDefault(q.Id) ?? [];
                     <div class="ga-field">
                         <label for="ans-open">Ta réponse rédigée</label>
-                        <textarea id="ans-open" class="ga-textarea" rows="9" @bind="answer.Text" @bind:event="oninput"></textarea>
-                        <span class="help">Rédige ta démarche : ton enseignant corrige cette question.</span>
+                        <textarea id="ans-open" class="ga-textarea" rows="@(photos.Count > 0 ? 4 : 9)" @bind="answer.Text" @bind:event="oninput"
+                                  placeholder="Rédige ici, ou traite la question sur papier et photographie ta copie."></textarea>
+                        <span class="help">Ton enseignant corrige cette question. Calculs longs (maths, physique…) : traite-les sur papier et joins une photo par page.</span>
+                    </div>
+                    <div class="ga-card sunk" style="padding:14px; gap:10px">
+                        <div class="ga-row between">
+                            <strong><Icon Name="camera" Size="18" /> Copie sur papier</strong>
+                            <span class="ga-small ga-muted">@photos.Count / 4 page(s)</span>
+                        </div>
+                        <CopyPhotos AssessmentId="Id" SubmissionId="_attempt.SubmissionId" Photos="photos" Disabled="_uploading"
+                                    OnDelete="p => DeletePhotoAsync(q, p)" OpenTranscription="true" />
+                        @if (_uploading)
+                        {
+                            <Loading Text="Envoi et lecture de ta copie par l'IA…" />
+                        }
+                        else if (photos.Count < 4)
+                        {
+                            <PhotoPicker Label="@(photos.Count == 0 ? "Photographier ma copie" : "Ajouter une page")" Css="secondary small"
+                                         OnPicked="p => UploadPhotoAsync(q, p)" OnError="e => _error = e" />
+                            <span class="ga-small ga-muted">Pose ta feuille à plat, bien éclairée. Vérifie ensuite ce que l'IA a lu : reprends la photo si c'est flou.</span>
+                        }
                     </div>
                     break;
             }
@@ -162,6 +182,8 @@ else
     private SubmissionReview? _result;
     private int _current;
     private readonly Dictionary<Guid, AnswerDraft> _answers = new();
+    private readonly Dictionary<Guid, List<AnswerPhoto>> _photos = new();
+    private bool _uploading;
     private Timer? _timer;
 
     private int Answered => _attempt?.Questions.Count(IsAnswered) ?? 0;
@@ -171,6 +193,7 @@ else
     {
         QuestionType.SingleChoice or QuestionType.MultipleChoice => a.SelectedOptions.Count > 0,
         QuestionType.TrueFalse => a.TrueFalse is not null,
+        QuestionType.OpenEnded => !string.IsNullOrWhiteSpace(a.Text) || _photos.GetValueOrDefault(q.Id) is { Count: > 0 },
         _ => !string.IsNullOrWhiteSpace(a.Text)
     };
 
@@ -192,6 +215,9 @@ else
         if (_attempt is not null)
         {
             foreach (var q in _attempt.Questions) _answers[q.Id] = new AnswerDraft { QuestionId = q.Id };
+            // Tentative reprise : les photos déjà envoyées sont conservées
+            foreach (var group in (_attempt.Photos ?? []).GroupBy(p => p.QuestionId))
+                _photos[group.Key] = group.OrderBy(p => p.Page).ToList();
             if (_attempt.Deadline is not null)
                 _timer = new Timer(_ => InvokeAsync(TickAsync), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
         }
@@ -217,6 +243,26 @@ else
     }
 
     private void AskSubmit() => _confirm = true;
+
+    private async Task UploadPhotoAsync(AttemptQuestion q, ImageUpload photo)
+    {
+        _uploading = true; _error = null;
+        StateHasChanged();
+        var result = await Api.UploadPhotoAsync(Id, _attempt!.SubmissionId, q.Id, photo);
+        _uploading = false;
+        if (!result.Ok) { _error = result.Error; return; }
+        if (!_photos.TryGetValue(q.Id, out var list)) _photos[q.Id] = list = new();
+        list.Add(result.Value!);
+    }
+
+    private async Task DeletePhotoAsync(AttemptQuestion q, AnswerPhoto photo)
+    {
+        var result = await Api.DeletePhotoAsync(Id, _attempt!.SubmissionId, photo.Id);
+        if (!result.Ok) { _error = result.Error; return; }
+        var list = _photos[q.Id];
+        list.Remove(photo);
+        for (var i = 0; i < list.Count; i++) list[i] = list[i] with { Page = i + 1 };
+    }
 
     private async Task SubmitAsync()
     {

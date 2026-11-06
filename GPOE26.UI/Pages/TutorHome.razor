@@ -1,0 +1,121 @@
+@page "/app/tuteur"
+@layout AppLayout
+@inherits AppPage
+@inject ITutorApi Tutor
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<PageTitle>Mes discussions — GPOE26</PageTitle>
+
+<div class="ga-page">
+    <div class="ga-head">
+        <div>
+            <h1>Tuteur IA</h1>
+            <p>Toutes tes discussions sont conservées : relis les explications du tuteur quand tu révises.</p>
+        </div>
+    </div>
+
+    <div class="ga-chips" role="tablist" aria-label="Affichage">
+        <button role="tab" class="ga-chip @(_tab == 0 ? "on" : "")" aria-selected="@(_tab == 0)" @onclick="() => _tab = 0">
+            Discussions (@_conversations.Count)
+        </button>
+        <button role="tab" class="ga-chip @(_tab == 1 ? "on" : "")" aria-selected="@(_tab == 1)" @onclick="() => _tab = 1">
+            <Icon Name="pin" Size="16" /> Explications épinglées (@_pinned.Count)
+        </button>
+    </div>
+
+    @if (!Ready || _loading)
+    {
+        <Loading />
+    }
+    else
+    {
+        <Alert Message="@_error" />
+
+        @if (_tab == 0)
+        {
+            @if (_conversations.Count == 0)
+            {
+                <div class="ga-empty">
+                    <strong>Aucune discussion pour l'instant.</strong>
+                    <span>Ouvre un cours et clique sur « Tuteur IA » pour poser ta première question.</span>
+                    <a class="ga-btn secondary small" href="/app/cours">Voir mes cours</a>
+                </div>
+            }
+            <div class="tu-list">
+                @foreach (var c in _conversations)
+                {
+                    <a class="ga-card" href="/app/tuteur/@c.CourseId">
+                        <div class="ga-row between">
+                            <span class="ga-small ga-muted" style="font-weight:700; letter-spacing:.06em">@(c.Subject?.ToUpperInvariant())</span>
+                            @if (c.PinnedCount > 0) { <span class="ga-tag lime"><Icon Name="pin" Size="13" /> @c.PinnedCount</span> }
+                        </div>
+                        <h2 class="ga-h3">@c.CourseTitle</h2>
+                        <p class="tu-preview">@c.LastMessage</p>
+                        <span class="ga-small ga-muted">@c.MessageCount messages · @Labels.Date(c.UpdatedAt)</span>
+                    </a>
+                }
+            </div>
+        }
+        else
+        {
+            @if (_pinned.Count == 0)
+            {
+                <div class="ga-empty">
+                    <strong>Aucune explication épinglée.</strong>
+                    <span>Dans une discussion, clique sur « Épingler » sous une réponse du tuteur pour la retrouver ici.</span>
+                </div>
+            }
+            <div class="tu-pinned" @ref="_pinnedList">
+                @foreach (var p in _pinned)
+                {
+                    <article class="ga-card">
+                        <div class="ga-row between">
+                            <span class="ga-small ga-muted">@p.CourseTitle · @Labels.Date(p.CreatedAt)</span>
+                            <a class="ga-btn ghost small" href="/app/tuteur/@p.CourseId?message=@p.MessageId">Voir dans la discussion <Icon Name="right" /></a>
+                        </div>
+                        @if (p.Question is { Length: > 0 }) { <p class="tu-q">« @p.Question »</p> }
+                        <div class="tu-md">@((MarkupString)MarkdownRenderer.Render(p.Content).Html)</div>
+                    </article>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private bool _loading = true;
+    private int _tab;
+    private string? _error;
+    private List<TutorConversationSummary> _conversations = new();
+    private List<PinnedExplanation> _pinned = new();
+    private ElementReference _pinnedList;
+    private IJSObjectReference? _module;
+
+    protected override async Task LoadAsync()
+    {
+        var conversations = Tutor.ConversationsAsync();
+        var pinned = Tutor.PinnedAsync();
+        _conversations = (await conversations).Value ?? new();
+        _pinned = (await pinned).Value ?? new();
+        _error = (await conversations).Error ?? (await pinned).Error;
+        _loading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_tab != 1 || _pinned.Count == 0) return;
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./_content/GPOE26.UI/gpoe-app.js");
+            await _module.InvokeVoidAsync("renderMath", _pinnedList);
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { if (_module is not null) await _module.DisposeAsync(); }
+        catch (JSDisconnectedException) { }
+    }
+}

@@ -22,7 +22,7 @@ public static class MarkdownRenderer
 
     public static (string Html, List<TocEntry> Toc) Render(string markdown)
     {
-        var document = Markdown.Parse(markdown ?? "", Pipeline);
+        var document = Markdown.Parse(NormalizeMath(markdown ?? ""), Pipeline);
         var toc = document.Descendants<HeadingBlock>()
             .Where(h => h.Level is 2 or 3)
             .Select(h => new TocEntry(h.GetAttributes().Id ?? "", InlineText(h.Inline), h.Level))
@@ -30,6 +30,22 @@ public static class MarkdownRenderer
             .ToList();
         return (document.ToHtml(Pipeline), toc);
     }
+
+    /// <summary>
+    /// Les modèles d'IA écrivent souvent les formules en \( … \) ou \[ … \] : Markdown y verrait des parenthèses
+    /// échappées. On les convertit en $ … $ et $$ … $$, la syntaxe reconnue par le rendu des formules.
+    /// </summary>
+    public static string NormalizeMath(string markdown) =>
+        InlineDelimiters.Replace(DisplayDelimiters.Replace(markdown, "$$$$$1$$$$"), "$$$1$$");
+
+    /// <summary>Texte ligne à ligne (transcription d'une copie) : chaque retour à la ligne est conservé.</summary>
+    public static string RenderLines(string text) =>
+        Render(string.Join("  \n", (text ?? "").Replace("\r", "").Split('\n'))).Html;
+
+    private static readonly System.Text.RegularExpressions.Regex DisplayDelimiters =
+        new(@"\\\[(.+?)\\\]", System.Text.RegularExpressions.RegexOptions.Singleline);
+    private static readonly System.Text.RegularExpressions.Regex InlineDelimiters =
+        new(@"\\\((.+?)\\\)", System.Text.RegularExpressions.RegexOptions.Singleline);
 
     private static string InlineText(ContainerInline? inline) =>
         inline is null ? "" : string.Concat(inline.Descendants<LiteralInline>().Select(l => l.Content.ToString()));

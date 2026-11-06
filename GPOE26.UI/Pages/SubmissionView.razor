@@ -2,6 +2,8 @@
 @layout AppLayout
 @inherits AppPage
 @inject IAssessmentApi Api
+@inject IJSRuntime JS
+@implements IAsyncDisposable
 
 <PageTitle>Copie — GPOE26</PageTitle>
 
@@ -63,6 +65,7 @@
                     {
                         <p style="margin:0; white-space:pre-wrap">@AnswerText(a)</p>
                     }
+                    <CopyPhotos AssessmentId="Id" SubmissionId="SubmissionId" Photos="a.Photos" />
                 </div>
 
                 @if (a.Correction is { } corr)
@@ -75,6 +78,24 @@
                     @if (IsTeacher && corr.Criteria is { Length: > 0 }) { <div class="ga-alert"><strong>Critères :</strong> @corr.Criteria</div> }
                 }
                 @if (a.Feedback is { Length: > 0 }) { <div class="ga-alert warn"><strong>Commentaire de l'enseignant :</strong> @a.Feedback</div> }
+
+                @if (!IsTeacher && _review.ResultsReleased && a.Type == QuestionType.OpenEnded && HasContent(a))
+                {
+                    @if (a.AiFeedback is { Length: > 0 })
+                    {
+                        <div class="ga-ai-box tu-md" @ref="_aiBoxes[a.QuestionId]">
+                            <strong><Icon Name="spark" Size="16" /> Analyse de ta démarche par l'IA</strong>
+                            @((MarkupString)MarkdownRenderer.Render(a.AiFeedback).Html)
+                            <p class="ga-small" style="opacity:.8">Indicatif : seule la note de ton enseignant compte.</p>
+                        </div>
+                    }
+                    else if (_feedbackAllowed)
+                    {
+                        <button class="ga-btn secondary small" style="align-self:flex-start" disabled="@_busy" @onclick="() => AnalyseAsync(a)">
+                            <Icon Name="spark" /> @(_busy && _aiFor == a.QuestionId ? "L'IA lit ta copie…" : "Analyser ma démarche avec l'IA")
+                        </button>
+                    }
+                }
 
                 @if (IsTeacher && form is not null)
                 {
@@ -99,7 +120,7 @@
                         </div>
                         <div class="ga-row">
                             <button class="ga-btn small" disabled="@_busy" @onclick="() => GradeAsync(a, form)">@(a.NeedsManualGrading ? "Valider la note" : "Corriger la note")</button>
-                            @if (a.Type == QuestionType.OpenEnded && _aiEnabled && !string.IsNullOrWhiteSpace(a.AnswerText))
+                            @if (a.Type == QuestionType.OpenEnded && _aiEnabled && HasContent(a))
                             {
                                 <button class="ga-btn secondary small" disabled="@_busy" @onclick="() => SuggestAsync(a)"><Icon Name="spark" /> @(_busy && _aiFor == a.QuestionId ? "Analyse…" : "Proposition de l'IA")</button>
                             }
@@ -124,6 +145,9 @@
     private string? _error;
     private SubmissionReview? _review;
     private readonly Dictionary<Guid, GradeForm> _forms = new();
+    private readonly Dictionary<Guid, ElementReference> _aiBoxes = new();
+    private bool _feedbackAllowed = true;
+    private IJSObjectReference? _module;
 
     protected override async Task LoadAsync()
     {
@@ -162,12 +186,48 @@
         Show((await Api.GetSubmissionAsync(Id, SubmissionId)).Value);
     }
 
+    private async Task AnalyseAsync(AnswerReview a)
+    {
+        _busy = true; _aiFor = a.QuestionId; _error = null;
+        var result = await Api.AiFeedbackAsync(Id, SubmissionId, a.QuestionId);
+        _busy = false; _aiFor = null;
+        if (!result.Ok)
+        {
+            _error = result.Error;
+            if (result.Status == System.Net.HttpStatusCode.Forbidden) _feedbackAllowed = false;
+            return;
+        }
+        var answers = _review!.Answers!;
+        answers[answers.IndexOf(a)] = a with { AiFeedback = result.Value!.Feedback };
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_aiBoxes.Count == 0) return;
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./_content/GPOE26.UI/gpoe-app.js");
+            foreach (var box in _aiBoxes.Values) await _module.InvokeVoidAsync("renderMath", box);
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { if (_module is not null) await _module.DisposeAsync(); }
+        catch (JSDisconnectedException) { }
+    }
+
+    private static bool HasContent(AnswerReview a) => !string.IsNullOrWhiteSpace(a.AnswerText) || a.Photos is { Count: > 0 };
+
     private static string AnswerText(AnswerReview a) => a.Type switch
     {
         QuestionType.TrueFalse => a.TrueFalse is null ? "Sans réponse" : a.TrueFalse.Value ? "Vrai" : "Faux",
         QuestionType.SingleChoice or QuestionType.MultipleChoice =>
             a.SelectedOptions.Count == 0 ? "Sans réponse" : "Réponse enregistrée",
-        _ => string.IsNullOrWhiteSpace(a.AnswerText) ? (a.AttachmentUrl is null ? "Sans réponse" : "Copie jointe") : a.AnswerText
+        _ => string.IsNullOrWhiteSpace(a.AnswerText)
+            ? (a.Photos is { Count: > 0 } ? $"Réponse sur papier ({a.Photos.Count} photo(s)) :" : a.AttachmentUrl is null ? "Sans réponse" : "Copie jointe")
+            : a.AnswerText
     };
 
     private static string? CorrectAnswer(AssessmentQuestion q) => q.Type switch

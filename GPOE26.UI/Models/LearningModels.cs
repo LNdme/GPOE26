@@ -140,7 +140,12 @@ public record StudentAssessment(
 public record AttemptOption(int Index, string Text);
 public record AttemptQuestion(Guid Id, QuestionType Type, string Text, decimal Points, List<AttemptOption> Options, string? Unit);
 public record Attempt(Guid SubmissionId, Guid AssessmentId, string Title, int AttemptNumber, DateTime StartedAt,
-    DateTime? Deadline, List<AttemptQuestion> Questions);
+    DateTime? Deadline, List<AttemptQuestion> Questions, List<AnswerPhoto>? Photos = null);
+
+/// <summary>Photo d'une copie traitée sur papier ; Transcription = lecture par l'IA (null si elle n'a pas pu la lire).</summary>
+public record AnswerPhoto(Guid Id, Guid QuestionId, int Page, string? Transcription);
+
+public record AiFeedback(Guid QuestionId, string Feedback);
 
 /// <summary>Réponse en cours de saisie par l'élève (mutable pour le binding).</summary>
 public class AnswerDraft
@@ -158,7 +163,7 @@ public record AnswerReview(
     Guid QuestionId, int Order, QuestionType Type, string Text, decimal MaxPoints,
     List<int> SelectedOptions, bool? TrueFalse, string? AnswerText, string? AttachmentUrl,
     bool? IsCorrect, decimal? Points, bool NeedsManualGrading, string? Feedback,
-    AssessmentQuestion? Correction, decimal? AiSuggestedPoints, string? AiFeedback);
+    AssessmentQuestion? Correction, decimal? AiSuggestedPoints, string? AiFeedback, List<AnswerPhoto>? Photos = null);
 
 public record SubmissionReview(
     Guid SubmissionId, Guid AssessmentId, string Title, Guid StudentId, int AttemptNumber, SubmissionStatus Status,
@@ -187,3 +192,25 @@ public record StudentProgress(Guid StudentId, string? Username, DateTime? LastLo
 public record AssessmentHeader(Guid Id, string Title, AssessmentKind Kind, DateTime? DueAt, Guid? CourseId);
 
 public record ClassroomProgress(Guid ClassroomId, List<AssessmentHeader> Assessments, List<StudentProgress> Students);
+
+// ─── Tuteur IA ────────────────────────────────────────────────────────────────
+
+public record TutorMessage(Guid Id, string Role, string Content, Guid? ImageId, bool Pinned, DateTime CreatedAt)
+{
+    public bool FromStudent => Role == "user";
+}
+
+public record TutorConversation(Guid? Id, Guid CourseId, string? CourseTitle, List<TutorMessage> Messages);
+
+public record TutorConversationSummary(Guid Id, Guid CourseId, string CourseTitle, string? Subject,
+    int MessageCount, int PinnedCount, string? LastMessage, DateTime UpdatedAt);
+
+public record TutorExchange(TutorMessage Question, TutorMessage Answer);
+
+public record PinnedExplanation(Guid MessageId, Guid CourseId, string CourseTitle, string? Subject,
+    string? Question, string Content, DateTime CreatedAt);
+
+public record UploadedImage(Guid Id);
+
+/// <summary>Image prête à envoyer (déjà redimensionnée par le navigateur).</summary>
+public record ImageUpload(string FileName, string ContentType, byte[] Data);

@@ -6,7 +6,7 @@ public static class UiServiceCollectionExtensions
 {
     /// <summary>
     /// Services de l'espace d'apprentissage. L'hôte doit fournir ISessionStore et les HttpClient
-    /// nommés ApiClients.User / Cours / Quiz.
+    /// nommés ApiClients.User / Cours / Quiz / Chat.
     /// </summary>
     public static IServiceCollection AddGpoeLearningUi(this IServiceCollection services)
     {
@@ -17,6 +17,7 @@ public static class UiServiceCollectionExtensions
         services.AddScoped<ICourseApi, CourseApi>();
         services.AddScoped<IAssessmentApi, AssessmentApi>();
         services.AddScoped<IProgressApi, ProgressApi>();
+        services.AddScoped<ITutorApi, TutorApi>();
         return services;
     }
 }

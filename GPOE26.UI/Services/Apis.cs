@@ -62,6 +62,23 @@ public interface IAssessmentApi
     Task<ApiResult<List<SubmissionRow>>> SubmissionsAsync(Guid id);
     Task<ApiResult<SubmissionReview>> GradeAsync(Guid id, Guid submissionId, Guid questionId, decimal points, string? feedback);
     Task<ApiResult<AiSuggestion>> AiSuggestionAsync(Guid id, Guid submissionId, Guid questionId);
+    Task<ApiResult<AnswerPhoto>> UploadPhotoAsync(Guid id, Guid submissionId, Guid questionId, ImageUpload photo);
+    Task<ApiResult<bool>> DeletePhotoAsync(Guid id, Guid submissionId, Guid photoId);
+    Task<string?> PhotoAsync(Guid id, Guid submissionId, Guid photoId);
+    Task<ApiResult<AiFeedback>> AiFeedbackAsync(Guid id, Guid submissionId, Guid questionId);
+}
+
+/// <summary>Tuteur IA : une discussion conservée par cours, explications épinglées, photos d'exercices.</summary>
+public interface ITutorApi
+{
+    Task<ApiResult<List<TutorConversationSummary>>> ConversationsAsync();
+    Task<ApiResult<TutorConversation>> ConversationAsync(Guid courseId);
+    Task<ApiResult<TutorExchange>> AskAsync(Guid courseId, string? message, Guid? imageId);
+    Task<ApiResult<UploadedImage>> UploadImageAsync(ImageUpload image);
+    Task<string?> ImageAsync(Guid imageId);
+    Task<ApiResult<TutorMessage>> PinAsync(Guid messageId, bool pinned);
+    Task<ApiResult<List<PinnedExplanation>>> PinnedAsync();
+    Task<ApiResult<bool>> ClearAsync(Guid courseId);
 }
 
 public interface IProgressApi
@@ -138,6 +155,15 @@ public class AssessmentApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s,
     public Task<ApiResult<AiSuggestion>> AiSuggestionAsync(Guid id, Guid submissionId, Guid questionId) =>
         PostAsync<AiSuggestion>($"/assessments/{id}/submissions/{submissionId}/answers/{questionId}/ai-suggestion");
 
+    public Task<ApiResult<AnswerPhoto>> UploadPhotoAsync(Guid id, Guid submissionId, Guid questionId, ImageUpload photo) =>
+        UploadAsync<AnswerPhoto>($"/assessments/{id}/attempts/{submissionId}/questions/{questionId}/photos", photo);
+    public Task<ApiResult<bool>> DeletePhotoAsync(Guid id, Guid submissionId, Guid photoId) =>
+        DeleteAsync<bool>($"/assessments/{id}/attempts/{submissionId}/photos/{photoId}");
+    public Task<string?> PhotoAsync(Guid id, Guid submissionId, Guid photoId) =>
+        DataUrlAsync($"/assessments/{id}/submissions/{submissionId}/photos/{photoId}");
+    public Task<ApiResult<AiFeedback>> AiFeedbackAsync(Guid id, Guid submissionId, Guid questionId) =>
+        PostAsync<AiFeedback>($"/assessments/{id}/submissions/{submissionId}/answers/{questionId}/ai-feedback");
+
     /// <summary>Dates saisies dans le fuseau de l'application, envoyées en UTC ; options vides retirées des questions sans choix.</summary>
     private static object ToInput(AssessmentDraft d) => new
     {
@@ -165,4 +191,19 @@ public class ProgressApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, A
     public Task<ApiResult<StudentProgress>> MineAsync() => GetAsync<StudentProgress>("/progress/me");
     public Task<ApiResult<StudentProgress>> ChildAsync(Guid studentId) => GetAsync<StudentProgress>($"/progress/students/{studentId}");
     public Task<ApiResult<ClassroomProgress>> ClassroomAsync(Guid classroomId) => GetAsync<ClassroomProgress>($"/progress/classrooms/{classroomId}");
+}
+
+public class TutorApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.Chat), ITutorApi
+{
+    public Task<ApiResult<List<TutorConversationSummary>>> ConversationsAsync() =>
+        GetAsync<List<TutorConversationSummary>>("/tutor/conversations");
+    public Task<ApiResult<TutorConversation>> ConversationAsync(Guid courseId) => GetAsync<TutorConversation>($"/tutor/courses/{courseId}");
+    public Task<ApiResult<TutorExchange>> AskAsync(Guid courseId, string? message, Guid? imageId) =>
+        PostAsync<TutorExchange>($"/tutor/courses/{courseId}/messages", new { message, imageId });
+    public Task<ApiResult<UploadedImage>> UploadImageAsync(ImageUpload image) => UploadAsync<UploadedImage>("/tutor/images", image);
+    public Task<string?> ImageAsync(Guid imageId) => DataUrlAsync($"/tutor/images/{imageId}");
+    public Task<ApiResult<TutorMessage>> PinAsync(Guid messageId, bool pinned) =>
+        PutAsync<TutorMessage>($"/tutor/messages/{messageId}/pin", new { pinned });
+    public Task<ApiResult<List<PinnedExplanation>>> PinnedAsync() => GetAsync<List<PinnedExplanation>>("/tutor/pinned");
+    public Task<ApiResult<bool>> ClearAsync(Guid courseId) => DeleteAsync<bool>($"/tutor/courses/{courseId}");
 }

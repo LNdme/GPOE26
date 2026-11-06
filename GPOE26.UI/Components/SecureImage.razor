@@ -1,0 +1,31 @@
+@* Image protégée (photo de copie) : téléchargée avec le jeton de la session puis affichée en data URL.
+   Un clic l'agrandit. *@
+@if (_src is null)
+{
+    <span class="ga-photo loading" aria-label="Chargement de la photo">@(_failed ? "Photo indisponible" : "…")</span>
+}
+else
+{
+    <button type="button" class="ga-photo @(_zoom ? "zoom" : "")" aria-label="@(_zoom ? "Réduire" : "Agrandir") : @Alt" @onclick="() => _zoom = !_zoom">
+        <img src="@_src" alt="@Alt" />
+    </button>
+}
+
+@code {
+    [Parameter, EditorRequired] public Func<Task<string?>> Load { get; set; } = default!;
+    [Parameter] public string Alt { get; set; } = "Photo de la copie";
+    /// <summary>Change quand l'image change (évite de recharger à chaque rendu)</summary>
+    [Parameter] public object? Key { get; set; }
+
+    private string? _src;
+    private bool _failed, _zoom;
+    private object? _loadedKey;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_src is not null && Equals(_loadedKey, Key)) return;
+        _loadedKey = Key;
+        _src = await Load();
+        _failed = _src is null;
+    }
+}

@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using GPOE26.UI.Models;
 
 namespace GPOE26.UI.Services;
 
@@ -18,6 +19,7 @@ public static class ApiClients
     public const string User = "user";
     public const string Cours = "cours";
     public const string Quiz = "quiz";
+    public const string Chat = "chat";
 }
 
 /// <summary>
@@ -45,6 +47,35 @@ public abstract class ApiBase(IHttpClientFactory factory, SessionState session, 
     protected Task<ApiResult<T>> PutAsync<T>(string path, object body) => SendAsync<T>(HttpMethod.Put, path, body);
     protected Task<ApiResult<T>> DeleteAsync<T>(string path) => SendAsync<T>(HttpMethod.Delete, path, null);
 
+    /// <summary>Envoi d'une image en multipart/form-data (champ "file").</summary>
+    protected Task<ApiResult<T>> UploadAsync<T>(string path, ImageUpload image)
+    {
+        var form = new MultipartFormDataContent();
+        var file = new ByteArrayContent(image.Data);
+        file.Headers.ContentType = new MediaTypeHeaderValue(image.ContentType);
+        form.Add(file, "file", image.FileName);
+        return SendAsync<T>(HttpMethod.Post, path, form);
+    }
+
+    /// <summary>Contenu binaire protégé (photo d'une copie) affiché en data URL : le navigateur n'a pas le jeton.</summary>
+    protected async Task<string?> DataUrlAsync(string path)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, path);
+            if (session.Token is { } token)
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            using var response = await factory.CreateClient(clientName).SendAsync(request);
+            if (!response.IsSuccessStatusCode) return null;
+            var type = response.Content.Headers.ContentType?.MediaType ?? "image/jpeg";
+            return $"data:{type};base64,{Convert.ToBase64String(await response.Content.ReadAsByteArrayAsync())}";
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            return null;
+        }
+    }
+
     protected async Task<ApiResult<T>> SendAsync<T>(HttpMethod method, string path, object? body)
     {
         try
@@ -53,7 +84,9 @@ public abstract class ApiBase(IHttpClientFactory factory, SessionState session, 
             using var request = new HttpRequestMessage(method, path);
             if (session.Token is { } token)
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            if (body is not null)
+            if (body is HttpContent content)
+                request.Content = content;
+            else if (body is not null)
                 request.Content = JsonContent.Create(body, body.GetType(), options: Json);
 
             using var response = await client.SendAsync(request);

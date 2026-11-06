@@ -104,7 +104,16 @@ public record StudentAssessmentDto(
 
 public record AttemptDto(
     Guid SubmissionId, Guid AssessmentId, string Title, int AttemptNumber, DateTime StartedAt,
-    DateTime? Deadline, List<StudentQuestionDto> Questions);
+    DateTime? Deadline, List<StudentQuestionDto> Questions, List<AnswerPhotoDto> Photos);
+
+/// <summary>Photo d'une copie (l'image se télécharge à part : GET …/submissions/{sid}/photos/{id})</summary>
+public record AnswerPhotoDto(Guid Id, Guid QuestionId, int Page, string? Transcription)
+{
+    public AnswerPhotoDto(AnswerPhoto p) : this(p.Id, p.QuestionId, p.Page, p.Transcription) { }
+}
+
+/// <summary>Analyse de la démarche par l'IA, demandée par l'élève une fois les résultats publiés</summary>
+public record AiFeedbackDto(Guid QuestionId, string Feedback);
 
 // ─── Copie corrigée ───────────────────────────────────────────────────────────
 
@@ -116,7 +125,7 @@ public record AnswerReviewDto(
     Guid QuestionId, int Order, QuestionType Type, string Text, decimal MaxPoints,
     List<int> SelectedOptions, bool? TrueFalse, string? AnswerText, string? AttachmentUrl,
     bool? IsCorrect, decimal? Points, bool NeedsManualGrading, string? Feedback,
-    AssessmentQuestionDto? Correction, decimal? AiSuggestedPoints, string? AiFeedback);
+    AssessmentQuestionDto? Correction, decimal? AiSuggestedPoints, string? AiFeedback, List<AnswerPhotoDto> Photos);
 
 public record SubmissionDto(
     Guid SubmissionId, Guid AssessmentId, string Title, Guid StudentId, int AttemptNumber, SubmissionStatus Status,
