@@ -14,8 +14,8 @@ namespace Quiz.DTOs;
 
 public record QuestionInput(
     QuestionType Type,
-    [Required] string Text,
-    [Range(0.25, 100)] decimal Points = 1,
+    [Required(ErrorMessage = "Chaque question doit avoir un énoncé.")] string Text,
+    [Range(0.25, 100, ErrorMessage = "Une question vaut entre 0,25 et 100 points.")] decimal Points = 1,
     List<string>? Options = null,
     List<int>? CorrectOptions = null,
     bool? TrueFalseAnswer = null,
@@ -30,7 +30,7 @@ public record QuestionInput(
 );
 
 public record AssessmentInput(
-    [Required, MinLength(1), MaxLength(200)] string Title,
+    [Required(ErrorMessage = "Le titre est obligatoire."), MaxLength(200, ErrorMessage = "Le titre ne doit pas dépasser 200 caractères.")] string Title,
     AssessmentKind Kind = AssessmentKind.Practice,
     string? Description = null,
     string? Subject = null,
@@ -38,8 +38,8 @@ public record AssessmentInput(
     List<Guid>? ClassroomIds = null,
     DateTime? OpensAt = null,
     DateTime? DueAt = null,
-    [Range(1, 600)] int? DurationMinutes = null,
-    [Range(1, 20)] int MaxAttempts = 1,
+    [Range(1, 600, ErrorMessage = "La durée doit être comprise entre 1 et 600 minutes.")] int? DurationMinutes = null,
+    [Range(1, 20, ErrorMessage = "Le nombre de tentatives doit être compris entre 1 et 20.")] int MaxAttempts = 1,
     bool Shuffle = false,
     bool ShowCorrection = true,
     bool AllowOffline = false,
@@ -48,7 +48,7 @@ public record AssessmentInput(
     List<QuestionInput>? Questions = null
 );
 
-public record GradeAnswerRequest([Range(0, 100)] decimal Points, string? Feedback = null);
+public record GradeAnswerRequest([Range(0, 100, ErrorMessage = "La note doit être positive.")] decimal Points, string? Feedback = null);
 
 public record SubmitAttemptRequest(List<AnswerInput> Answers);
 
@@ -100,7 +100,7 @@ public record StudentAssessmentDto(
     Guid Id, string Title, string? Description, AssessmentKind Kind, AssessmentStatus Status, string? Subject,
     DateTime? OpensAt, DateTime? DueAt, int? DurationMinutes, int MaxAttempts, int AttemptsUsed,
     bool HasAttemptInProgress, int QuestionCount, decimal MaxScore, bool AllowOffline,
-    decimal? BestScoreScaled, int ScaleTo);
+    decimal? BestScoreScaled, int ScaleTo, Guid? LastSubmissionId);
 
 public record AttemptDto(
     Guid SubmissionId, Guid AssessmentId, string Title, int AttemptNumber, DateTime StartedAt,

@@ -63,7 +63,8 @@ public static class AssessmentEndpoints
                     mine.Count(s => s.Status != SubmissionStatus.InProgress),
                     mine.Any(s => s.Status == SubmissionStatus.InProgress),
                     a.Questions.Count, a.MaxScore, a.AllowOffline,
-                    best is null ? null : ProgressService.Scale(best.Score, best.MaxScore, a.ScaleTo), a.ScaleTo);
+                    best is null ? null : ProgressService.Scale(best.Score, best.MaxScore, a.ScaleTo), a.ScaleTo,
+                    mine.Where(s => s.Status != SubmissionStatus.InProgress).MaxBy(s => s.SubmittedAt)?.Id);
             }));
         })
         .WithSummary("Mes évaluations")

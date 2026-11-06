@@ -1,0 +1,186 @@
+@page "/app/evaluations/{Id:guid}/copies/{SubmissionId:guid}"
+@layout AppLayout
+@inherits AppPage
+@inject IAssessmentApi Api
+
+<PageTitle>Copie — GPOE26</PageTitle>
+
+<div class="ga-page narrow">
+    @if (!Ready || _loading)
+    {
+        <Loading />
+    }
+    else if (_review is null)
+    {
+        <Alert Message="@(_error ?? "Copie introuvable.")" />
+    }
+    else
+    {
+        <div class="ga-head">
+            <div>
+                <a class="ga-back" href="@(IsTeacher ? $"/app/evaluations/{Id}/copies" : "/app/evaluations")"><Icon Name="left" /> @(IsTeacher ? "Toutes les copies" : "Mes évaluations")</a>
+                <h1>@_review.Title</h1>
+                <p>@(IsTeacher && Student is { Length: > 0 } ? $"{Student} · " : "")tentative @_review.AttemptNumber · rendue @Labels.When(_review.SubmittedAt)@(_review.IsLate ? " · en retard" : "")</p>
+            </div>
+            <div class="ga-stat" style="min-width:170px">
+                <span class="lbl">Note</span>
+                <span class="val">@(_review.ScoreScaled is null ? "—" : Labels.Number(_review.ScoreScaled.Value))<small>/@_review.ScaleTo</small></span>
+                <span class="sub">@(_review.Score is null ? Labels.Of(_review.Status) : $"{Labels.Number(_review.Score.Value)} / {Labels.Number(_review.MaxScore)} points")</span>
+            </div>
+        </div>
+
+        <Alert Message="@_error" />
+        @if (!IsTeacher && !_review.ResultsReleased)
+        {
+            <Alert Kind="" Message="Ta copie est bien rendue. La note et la correction seront visibles après la date limite ou la clôture de l'évaluation." />
+        }
+
+        @foreach (var a in _review.Answers ?? [])
+        {
+            var form = _forms.GetValueOrDefault(a.QuestionId);
+            <article class="ga-card">
+                <div class="ga-row between" style="align-items:flex-start">
+                    <span class="ga-kbd ga-small ga-muted">QUESTION @(a.Order + 1) · @Labels.Of(a.Type).ToUpperInvariant()</span>
+                    <span class="ga-tag @PointsCss(a)">@PointsText(a)</span>
+                </div>
+                <h2 class="ga-h3" style="font-family:var(--ga-display); font-weight:500; font-size:20px">@a.Text</h2>
+
+                <div class="ga-stack" style="gap:6px">
+                    <span class="ga-label">@(IsTeacher ? "Réponse de l'élève" : "Ta réponse")</span>
+                    @if (a.Correction is { } c && c.Options.Count > 0)
+                    {
+                        @for (var i = 0; i < c.Options.Count; i++)
+                        {
+                            var picked = a.SelectedOptions.Contains(i);
+                            var good = c.CorrectOptions.Contains(i);
+                            <div class="ex-opt @(good ? "good" : picked ? "bad" : "")" style="cursor:default; min-height:46px">
+                                <span class="letter">@((char)('A' + i))</span><span>@c.Options[i]</span>
+                                @if (picked) { <span class="ga-tag grey" style="margin-left:auto">@(IsTeacher ? "CHOISIE" : "TON CHOIX")</span> }
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <p style="margin:0; white-space:pre-wrap">@AnswerText(a)</p>
+                    }
+                </div>
+
+                @if (a.Correction is { } corr)
+                {
+                    @if (CorrectAnswer(corr) is { } expected)
+                    {
+                        <div class="ga-alert success"><strong>Bonne réponse :</strong> @expected</div>
+                    }
+                    @if (corr.Explanation is { Length: > 0 }) { <div class="ga-alert"><strong>Explication :</strong> @corr.Explanation</div> }
+                    @if (IsTeacher && corr.Criteria is { Length: > 0 }) { <div class="ga-alert"><strong>Critères :</strong> @corr.Criteria</div> }
+                }
+                @if (a.Feedback is { Length: > 0 }) { <div class="ga-alert warn"><strong>Commentaire de l'enseignant :</strong> @a.Feedback</div> }
+
+                @if (IsTeacher && form is not null)
+                {
+                    <div class="ga-card sunk" style="padding:14px; gap:10px">
+                        @if (a.AiSuggestedPoints is not null)
+                        {
+                            <div class="ga-alert">
+                                <strong>Proposition de l'IA : @Labels.Number(a.AiSuggestedPoints.Value) / @Labels.Number(a.MaxPoints)</strong>
+                                @if (a.AiFeedback is { Length: > 0 }) { <br />@a.AiFeedback }
+                                <br /><button class="ga-btn ghost small" style="padding:0" @onclick="() => { form.Points = a.AiSuggestedPoints.Value; form.Feedback = a.AiFeedback; }">Reprendre cette proposition</button>
+                            </div>
+                        }
+                        <div class="ga-row" style="align-items:flex-end">
+                            <div class="ga-field" style="width:120px">
+                                <label for="pts-@a.QuestionId">Points / @Labels.Number(a.MaxPoints)</label>
+                                <input id="pts-@a.QuestionId" class="ga-input" type="number" min="0" max="@a.MaxPoints" step="0.25" @bind="form.Points" />
+                            </div>
+                            <div class="ga-field" style="flex:1 1 240px">
+                                <label for="fb-@a.QuestionId">Commentaire (facultatif)</label>
+                                <input id="fb-@a.QuestionId" class="ga-input" @bind="form.Feedback" />
+                            </div>
+                        </div>
+                        <div class="ga-row">
+                            <button class="ga-btn small" disabled="@_busy" @onclick="() => GradeAsync(a, form)">@(a.NeedsManualGrading ? "Valider la note" : "Corriger la note")</button>
+                            @if (a.Type == QuestionType.OpenEnded && _aiEnabled && !string.IsNullOrWhiteSpace(a.AnswerText))
+                            {
+                                <button class="ga-btn secondary small" disabled="@_busy" @onclick="() => SuggestAsync(a)"><Icon Name="spark" /> @(_busy && _aiFor == a.QuestionId ? "Analyse…" : "Proposition de l'IA")</button>
+                            }
+                        </div>
+                    </div>
+                }
+            </article>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    [Parameter] public Guid SubmissionId { get; set; }
+    [SupplyParameterFromQuery(Name = "eleve")] public string? Student { get; set; }
+
+    private class GradeForm { public decimal Points { get; set; } public string? Feedback { get; set; } }
+
+    private bool IsTeacher => Session.Role == UserRole.Teacher;
+    private bool _loading = true, _busy, _aiEnabled;
+    private Guid? _aiFor;
+    private string? _error;
+    private SubmissionReview? _review;
+    private readonly Dictionary<Guid, GradeForm> _forms = new();
+
+    protected override async Task LoadAsync()
+    {
+        var review = await Api.GetSubmissionAsync(Id, SubmissionId);
+        _error = review.Error;
+        Show(review.Value);
+        if (IsTeacher)
+            _aiEnabled = (await Api.GetAsync(Id)).Value?.AiAssistedGrading == true;
+        _loading = false;
+    }
+
+    private void Show(SubmissionReview? review)
+    {
+        _review = review;
+        _forms.Clear();
+        if (IsTeacher && review?.Answers is { } answers)
+            foreach (var a in answers)
+                _forms[a.QuestionId] = new GradeForm { Points = a.Points ?? a.AiSuggestedPoints ?? 0, Feedback = a.Feedback };
+    }
+
+    private async Task GradeAsync(AnswerReview a, GradeForm form)
+    {
+        _busy = true; _error = null;
+        var result = await Api.GradeAsync(Id, SubmissionId, a.QuestionId, form.Points, form.Feedback);
+        _busy = false;
+        if (!result.Ok) { _error = result.Error; return; }
+        Show(result.Value);
+    }
+
+    private async Task SuggestAsync(AnswerReview a)
+    {
+        _busy = true; _aiFor = a.QuestionId; _error = null;
+        var result = await Api.AiSuggestionAsync(Id, SubmissionId, a.QuestionId);
+        _busy = false; _aiFor = null;
+        if (!result.Ok) { _error = result.Error; return; }
+        Show((await Api.GetSubmissionAsync(Id, SubmissionId)).Value);
+    }
+
+    private static string AnswerText(AnswerReview a) => a.Type switch
+    {
+        QuestionType.TrueFalse => a.TrueFalse is null ? "Sans réponse" : a.TrueFalse.Value ? "Vrai" : "Faux",
+        QuestionType.SingleChoice or QuestionType.MultipleChoice =>
+            a.SelectedOptions.Count == 0 ? "Sans réponse" : "Réponse enregistrée",
+        _ => string.IsNullOrWhiteSpace(a.AnswerText) ? (a.AttachmentUrl is null ? "Sans réponse" : "Copie jointe") : a.AnswerText
+    };
+
+    private static string? CorrectAnswer(AssessmentQuestion q) => q.Type switch
+    {
+        QuestionType.TrueFalse => q.TrueFalseAnswer is null ? null : q.TrueFalseAnswer.Value ? "Vrai" : "Faux",
+        QuestionType.ShortAnswer => string.Join(" ou ", q.AcceptedAnswers),
+        QuestionType.Numeric => q.NumericAnswer is null ? null : $"{q.NumericAnswer}{(q.Tolerance is > 0 ? $" (± {q.Tolerance})" : "")}{(q.Unit is { Length: > 0 } ? $" {q.Unit}" : "")}",
+        _ => null
+    };
+
+    private static string PointsText(AnswerReview a) =>
+        a.NeedsManualGrading ? "À CORRIGER" : a.Points is null ? $"/ {Labels.Number(a.MaxPoints)} PT" : $"{Labels.Number(a.Points.Value)} / {Labels.Number(a.MaxPoints)} PT";
+
+    private static string PointsCss(AnswerReview a) =>
+        a.NeedsManualGrading ? "amber" : a.IsCorrect == true ? "green" : a.IsCorrect == false ? "red" : "grey";
+}

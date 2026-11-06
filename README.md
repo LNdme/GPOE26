@@ -90,7 +90,8 @@ Aucun secret ne doit être commité. Copiez `.env.example` en `.env` (ignoré pa
 GPOE26.slnx                 Solution
 GPOE26.AppHost/             Orchestrateur Aspire
 GPOE26.ServiceDefaults/     Configuration commune des services
-GPOE26.Web/                 Frontend Blazor
+GPOE26.UI/                  Espace d'apprentissage (bibliothèque Razor partagée Web / Windows)
+GPOE26.Web/                 Frontend Blazor (site + hôte de GPOE26.UI)
   Components/Pages/         Pages (Learning, Cours, Blog, Event, Activity, Hierarchy…)
   Components/UI/            MarkdownViewer, TableOfContents
   Services/                 ApiClient, AuthService
@@ -105,6 +106,30 @@ start.sh                    Lancement sans Aspire
 ```
 
 Les fichiers envoyés par les utilisateurs sont enregistrés dans `*/wwwroot/uploads/` et ne sont pas versionnés.
+
+---
+
+## Espace d'apprentissage (`GPOE26.UI`)
+
+L'interface des élèves, enseignants et parents est une **bibliothèque Razor** sans dépendance au serveur ASP.NET : elle est hébergée par `GPOE26.Web` aujourd'hui et le sera par l'application Windows (MAUI Blazor Hybrid) en phase 4.
+
+| Adresse | Écran |
+|---|---|
+| `/register`, `/login` | Inscription guidée en questions-réponses (élève, enseignant, parent), connexion |
+| `/app` | Tableau de bord selon le rôle : plan d'études (élève), mes classes (enseignant), suivi des enfants (parent) |
+| `/app/cours`, `/app/cours/{id}` | Cours partagés / mes cours et partage avec les classes ; lecture avec sommaire « Sur cette page » |
+| `/app/evaluations` | Évaluations de l'élève, ou épreuves et devoirs de l'enseignant |
+| `/app/evaluations/nouvelle`, `…/{id}/modifier` | Éditeur d'épreuve (6 types de questions, paramètres, publication) |
+| `/app/evaluations/{id}/composer` | Composition (une question par écran, minuteur, envoi automatique à l'échéance) |
+| `/app/evaluations/{id}/copies[/{copie}]` | Copies et correction (proposition de l'IA), ou copie corrigée de l'élève |
+| `/app/classes/{id}` | Suivi d'une classe : résultats, maîtrise par cours, élèves à accompagner |
+| `/app/abonnement` | Accès Premium, activation d'une clé, souscription, essai |
+
+- **Architecture** : les pages consomment des interfaces (`IAccountApi`, `IClassroomApi`, `IFamilyApi`, `ICourseApi`, `IAssessmentApi`, `IProgressApi`) implémentées en HTTP ; l'application Windows pourra les décorer d'un cache hors ligne.
+- **Session** : `SessionState` (une par circuit), persistée par l'hôte via `ISessionStore` — côté Web, dans le `localStorage` du navigateur, chiffrée par la protection des données ASP.NET. Le site fonctionne en un seul circuit interactif sans prérendu (`App.razor`), si bien que la connexion survit à la navigation et au rechargement.
+- **Fuseau horaire** : les dates sont affichées et saisies dans le fuseau `App:TimeZone` (`Africa/Douala` par défaut), pas celui du serveur.
+- **Sécurité** : le Markdown des cours est rendu sans HTML brut (un cours ne peut pas injecter de script chez les élèves).
+- Les pages historiques du site (`/cours`, `/learning`, blog…) restent disponibles ; la connexion est partagée.
 
 ---
 
@@ -154,6 +179,8 @@ Le test existant démarre l'AppHost complet (Docker requis) et vérifie que la p
 
 `Quiz.Tests` contient les tests unitaires de la correction automatique (`dotnet test Quiz.Tests`). Le script `scripts/test-evaluations.sh` rejoue les parcours de la phase 1 bis (63 vérifications : partage des cours, création et publication, droits d'accès, tentatives, correction manuelle et assistée, publication des résultats, suivi enseignant/élève/parent).
 
+Le script `scripts/ui-e2e.js` (Playwright) rejoue dans un navigateur le parcours complet : inscription d'un enseignant, partage d'un cours, création et publication d'un devoir, inscription d'un élève sur mobile, lecture, composition, correction assistée, clôture, rattachement d'un parent et suivi — `node scripts/ui-e2e.js <dossier-captures>` sur une pile démarrée avec des bases neuves.
+
 Le script `scripts/test-user-api.sh` rejoue les parcours de la phase 1 sur le service User (57 vérifications : inscriptions, clés, places, rôles, rattachements) — voir l'en-tête du script pour le lancer.
 
 ---
@@ -166,7 +193,7 @@ Le script `scripts/test-user-api.sh` rejoue les parcours de la phase 1 sur le se
 | 1 | ✅ (API) **Comptes et rôles** : Élève, Enseignant, Parent, Admin ; structures (établissement scolaire, autre institution : entreprise, startup, centre de formation…) ; classes et groupes avec code d'invitation ; lien parent ↔ enfant ; abonnements et **clés d'abonnement** (familiale, établissement/institution) ; plan d'études et progression : à faire | Backend fait, interface en phase 3 |
 | 1 bis | ✅ (API) **Évaluations enseignant** : cours, devoirs et épreuves (quiz d'entraînement, devoir, épreuve notée, épreuve blanche) avec questions QCM, choix multiples, vrai/faux, réponse courte, numérique et réponse ouverte (correction manuelle assistée par IA) ; suivi de la maîtrise par élève et par chapitre ; partage des cours avec les classes | Backend fait, interface en phase 3 |
 | 2 | **Maquettes** : inscription guidée en questions-réponses (système scolaire camerounais bilingue : classes, séries, BEPC/Probatoire/BAC, GCE O/A Level) ; tableaux de bord par rôle ; lecture de cours à 3 colonnes | À faire |
-| 3 | Intégration Blazor : bibliothèque de composants partagée `GPOE26.UI`, services derrière des interfaces | À faire |
+| 3 | ✅ Intégration Blazor : bibliothèque partagée `GPOE26.UI` (pages, API derrière des interfaces, session persistante), inscription guidée, tableaux de bord élève / enseignant / parent, lecture des cours, composition, éditeur d'épreuve, correction assistée, suivi de classe, abonnement, version mobile | Fait |
 | 4 | **Application Windows hybride** (.NET MAUI Blazor Hybrid) : lecture des cours et exercices hors connexion (SQLite), synchronisation au retour du réseau | À faire |
 | 5 | Paiement des abonnements (Mobile Money / carte) | Plus tard |
 | 6 | Import PDF/DOCX/image → Markdown par IA, éditeur de cours à 3 modes, quiz persistés en base, tests | À faire |

@@ -1,0 +1,170 @@
+@page "/app/classes/{Id:guid}"
+@layout AppLayout
+@inherits AppPage
+@inject IClassroomApi Classrooms
+@inject IProgressApi Progress
+@inject ICourseApi Courses
+
+<PageTitle>@(_class?.Name ?? "Classe") — GPOE26</PageTitle>
+
+<div class="ga-page">
+    @if (!Ready || _loading)
+    {
+        <Loading />
+    }
+    else if (_class is null)
+    {
+        <Alert Message="@(_error ?? "Classe introuvable.")" />
+    }
+    else
+    {
+        <div class="ga-head">
+            <div>
+                <a class="ga-back" href="/app"><Icon Name="left" /> Mes classes</a>
+                <h1>@_class.Name</h1>
+                <p>@_members.Count @(_class.Kind == ClassroomKind.Group ? "apprenant(s)" : "élève(s)")@(_class.Subject is { Length: > 0 } ? $" · {_class.Subject}" : "") · code d'invitation <span class="ga-code">@_class.InviteCode</span></p>
+            </div>
+            <div class="ga-actions">
+                <button class="ga-btn secondary" @onclick="RegenerateAsync">Nouveau code</button>
+                <a class="ga-btn" href="/app/evaluations/nouvelle">Nouvelle épreuve</a>
+            </div>
+        </div>
+        <Alert Message="@_error" />
+
+        <div class="ga-grid tight">
+            <div class="ga-stat"><span class="lbl">Moyenne de la classe</span><span class="val">@Labels.Number(ClassAverage)<small>/20</small></span></div>
+            <div class="ga-stat green"><span class="lbl">Actifs cette semaine</span><span class="val">@_members.Count(m => m.LastLoginAt > DateTime.UtcNow.AddDays(-7))<small>/@_members.Count</small></span></div>
+            <div class="ga-stat purple"><span class="lbl">Évaluations publiées</span><span class="val">@(_progress?.Assessments.Count ?? 0)</span></div>
+            <div class="ga-stat amber"><span class="lbl">À accompagner</span><span class="val">@Students.Count(NeedsHelp)</span></div>
+        </div>
+
+        <section class="ga-card" aria-labelledby="h-grid">
+            <div class="ga-card-head">
+                <h2 id="h-grid" class="ga-h2">Résultats et maîtrise</h2>
+                <div class="ga-chips" role="tablist">
+                    <button role="tab" class="ga-chip @(!_onlyHelp ? "on" : "")" aria-selected="@(!_onlyHelp)" @onclick="() => _onlyHelp = false">Tous</button>
+                    <button role="tab" class="ga-chip @(_onlyHelp ? "on" : "")" aria-selected="@_onlyHelp" @onclick="() => _onlyHelp = true">À accompagner</button>
+                </div>
+            </div>
+            @if (_members.Count == 0)
+            {
+                <div class="ga-empty"><span>Aucun élève pour l'instant : partagez le code <strong>@_class.InviteCode</strong>.</span></div>
+            }
+            else
+            {
+                <div class="ga-table-wrap">
+                    <table class="ga-table ga-heat">
+                        <thead>
+                            <tr>
+                                <th scope="col">Élève</th>
+                                <th scope="col">Dernière connexion</th>
+                                @foreach (var a in _progress?.Assessments ?? []) { <th scope="col" style="text-align:center" title="@a.Title">@Short(a.Title)</th> }
+                                @foreach (var c in CourseIds) { <th scope="col" style="text-align:center">Maîtrise · @Short(CourseTitle(c))</th> }
+                                <th scope="col">Moyenne</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var s in Students.Where(s => !_onlyHelp || NeedsHelp(s)))
+                            {
+                                <tr>
+                                    <th scope="row" style="text-align:left; white-space:nowrap">@s.Username</th>
+                                    <td style="white-space:nowrap" class="ga-muted">@Labels.Date(s.LastLoginAt)</td>
+                                    @foreach (var a in _progress?.Assessments ?? [])
+                                    {
+                                        var r = s.Results.FirstOrDefault(x => x.AssessmentId == a.Id);
+                                        var pct = r?.ScoreScaled is { } v ? (double)(v / r.ScaleTo * 100) : (double?)null;
+                                        <td class="cell @Bucket(pct)">@(r?.ScoreScaled is not null ? Labels.Score(r.ScoreScaled, r.ScaleTo) : r?.Status == SubmissionStatus.Submitted ? "à corriger" : "—")</td>
+                                    }
+                                    @foreach (var c in CourseIds)
+                                    {
+                                        var m = s.Mastery.FirstOrDefault(x => x.CourseId == c);
+                                        <td class="cell @Bucket(m?.Percent)">@(m is null ? "—" : $"{Labels.Number(m.Percent)} %")</td>
+                                    }
+                                    <td><strong>@Labels.Number(s.AverageOn20)</strong></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="ga-legend">
+                    <span><i style="background:var(--ga-navy)"></i>Maîtrisé (70 % et plus)</span>
+                    <span><i style="background:#AFC3EE"></i>En cours (50 à 69 %)</span>
+                    <span><i style="background:var(--ga-amber-soft); box-shadow:inset 0 0 0 1px #E0B565"></i>Fragile (moins de 50 %)</span>
+                    <span><i style="background:#F1EFE8"></i>Pas encore évalué</span>
+                </div>
+            }
+        </section>
+
+        <section class="ga-card" aria-labelledby="h-members">
+            <h2 id="h-members" class="ga-h2">Membres</h2>
+            <div class="ga-list">
+                @foreach (var m in _members)
+                {
+                    <div class="ga-item">
+                        <span class="ga-avatar">@Labels.Initial(m.Username)</span>
+                        <span class="grow"><strong>@m.Username</strong><span class="ga-small ga-muted">@(m.Level ?? "")@(m.Filiere is { Length: > 0 } ? $" {m.Filiere}" : "") · a rejoint le @Labels.Date(m.JoinedAt)</span></span>
+                        <button class="ga-btn ghost small" aria-label="Retirer @m.Username de la classe" @onclick="() => RemoveAsync(m)">Retirer</button>
+                    </div>
+                }
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    protected override UserRole[]? AllowedRoles => [UserRole.Teacher];
+
+    private bool _loading = true, _onlyHelp;
+    private string? _error;
+    private Classroom? _class;
+    private List<ClassroomMember> _members = new();
+    private ClassroomProgress? _progress;
+    private Dictionary<Guid, string> _courseTitles = new();
+
+    private List<StudentProgress> Students => _progress?.Students ?? new();
+    private List<Guid> CourseIds => Students.SelectMany(s => s.Mastery.Select(m => m.CourseId)).Distinct().ToList();
+    private double? ClassAverage
+    {
+        get
+        {
+            var averages = Students.Where(s => s.AverageOn20 is not null).Select(s => s.AverageOn20!.Value).ToList();
+            return averages.Count == 0 ? null : Math.Round(averages.Average(), 2);
+        }
+    }
+
+    private static bool NeedsHelp(StudentProgress s) => s.AverageOn20 < 10 || s.Mastery.Any(m => m.Percent < 50);
+    private static string Bucket(double? pct) => pct switch { null => "none", >= 70 => "hi", >= 50 => "mid", _ => "lo" };
+    private static string Short(string text) => text.Length > 22 ? text[..21] + "…" : text;
+    private string CourseTitle(Guid id) => _courseTitles.GetValueOrDefault(id, "Cours");
+
+    protected override async Task LoadAsync()
+    {
+        var cls = Classrooms.GetAsync(Id);
+        var members = Classrooms.MembersAsync(Id);
+        var progress = Progress.ClassroomAsync(Id);
+        var courses = Courses.MineAsync();
+        await Task.WhenAll(cls, members, progress, courses);
+        _class = cls.Result.Value;
+        _members = members.Result.Value ?? new();
+        _progress = progress.Result.Value;
+        _courseTitles = (courses.Result.Value ?? new()).ToDictionary(c => c.Id, c => c.Title);
+        _error = cls.Result.Error ?? progress.Result.Error;
+        _loading = false;
+    }
+
+    private async Task RegenerateAsync()
+    {
+        var r = await Classrooms.RegenerateCodeAsync(Id);
+        if (!r.Ok) { _error = r.Error; return; }
+        _class = (await Classrooms.GetAsync(Id)).Value ?? _class;
+    }
+
+    private async Task RemoveAsync(ClassroomMember m)
+    {
+        var r = await Classrooms.RemoveMemberAsync(Id, m.Id);
+        if (!r.Ok) { _error = r.Error; return; }
+        _members.Remove(m);
+        _progress = (await Progress.ClassroomAsync(Id)).Value ?? _progress;
+    }
+}

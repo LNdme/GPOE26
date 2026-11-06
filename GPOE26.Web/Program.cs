@@ -1,4 +1,5 @@
 using GPOE26.Web.Components;
+using GPOE26.UI.Services;
 using GPOE26.Web.Services;
 using Microsoft.Extensions.Http.Resilience;
 
@@ -63,6 +64,12 @@ builder.Services.AddHttpClient("apiservice", client =>
 builder.Services.AddScoped<ApiClient>();
 builder.Services.AddScoped<AuthService>();
 
+// ─── Espace d'apprentissage (bibliothèque GPOE26.UI, partagée avec l'application Windows) ──
+// Session conservée dans le localStorage du navigateur (chiffrée par la protection des données ASP.NET)
+builder.Services.AddGpoeLearningUi();
+builder.Services.AddScoped<ISessionStore, BrowserSessionStore>();
+AppTime.Zone = AppTime.Find(builder.Configuration["App:TimeZone"] ?? "Africa/Douala");
+
 var app = builder.Build();
 
 if (!app.Environment.IsDevelopment())
@@ -74,7 +81,9 @@ if (!app.Environment.IsDevelopment())
 app.UseAntiforgery();
 app.UseOutputCache();
 app.MapStaticAssets();
-app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
+app.MapRazorComponents<App>()
+    .AddInteractiveServerRenderMode()
+    .AddAdditionalAssemblies(typeof(GPOE26.UI.Components.AppPage).Assembly);   // pages de l'espace d'apprentissage
 app.MapDefaultEndpoints();
 
 app.MapGet("/uploads/images/{*path}", async (string path, IHttpClientFactory factory) =>

@@ -1,0 +1,128 @@
+@page "/app/cours"
+@layout AppLayout
+@inherits AppPage
+@inject ICourseApi CourseApi
+@inject IClassroomApi Classrooms
+
+<PageTitle>Mes cours — GPOE26</PageTitle>
+
+<div class="ga-page">
+    <div class="ga-head">
+        <div>
+            <h1>@(IsTeacher ? "Mes cours" : "Cours de mes classes")</h1>
+            <p>@(IsTeacher ? "Publiez vos cours pour vos classes : vos élèves les lisent gratuitement." : "Les cours partagés par tes enseignants.")</p>
+        </div>
+        @if (IsTeacher)
+        {
+            <a class="ga-btn" href="/cours/create"><Icon Name="plus" /> Nouveau cours</a>
+        }
+    </div>
+
+    @if (!Ready || _loading)
+    {
+        <Loading />
+    }
+    else
+    {
+        <Alert Message="@_error" />
+        @if (_courses.Count == 0)
+        {
+            <div class="ga-empty">
+                <strong>@(IsTeacher ? "Vous n'avez pas encore de cours." : "Aucun cours partagé pour l'instant.")</strong>
+                <span>@(IsTeacher ? "Créez votre premier cours, puis partagez-le avec vos classes." : "Rejoins une classe depuis ton plan d'études pour voir les cours de tes enseignants.")</span>
+            </div>
+        }
+        <div class="ga-grid">
+            @foreach (var c in _courses)
+            {
+                <article class="ga-card">
+                    <div class="ga-row between" style="align-items:flex-start">
+                        <span class="ga-small ga-muted" style="font-weight:700; letter-spacing:.06em">@c.Subject.ToUpperInvariant()</span>
+                        @if (IsTeacher)
+                        {
+                            <span class="ga-tag @(c.Status == CourseStatus.Published ? "green" : "grey")">@(c.Status == CourseStatus.Published ? "PUBLIÉ" : "BROUILLON")</span>
+                        }
+                    </div>
+                    <h2 class="ga-h3">@c.Title</h2>
+                    @if (c.Description is { Length: > 0 }) { <p class="ga-muted" style="margin:0">@c.Description</p> }
+                    @if (IsTeacher && c.Status == CourseStatus.Published)
+                    {
+                        <span class="ga-small ga-muted">Partagé avec : @string.Join(", ", (c.ClassroomIds ?? []).Select(ClassName))</span>
+                    }
+                    <div class="ga-row" style="margin-top:auto">
+                        <a class="ga-btn secondary small" href="/app/cours/@c.Id">Lire</a>
+                        @if (IsTeacher)
+                        {
+                            <a class="ga-btn ghost small" href="/cours/edit/@c.Id">Modifier</a>
+                            <button class="ga-btn ghost small" @onclick="() => OpenShare(c)"><Icon Name="share" /> Partager</button>
+                        }
+                    </div>
+
+                    @if (_sharing?.Id == c.Id)
+                    {
+                        <fieldset class="ga-stack" style="border:none; padding:0; margin:0">
+                            <legend class="ga-label">Classes qui voient ce cours</legend>
+                            @if (_classes.Count == 0) { <span class="ga-small ga-muted">Créez d'abord une classe depuis « Mes classes ».</span> }
+                            @foreach (var cl in _classes)
+                            {
+                                <label class="ga-check">
+                                    <input type="checkbox" checked="@_selected.Contains(cl.Id)" @onchange="e => ToggleClass(cl.Id, (bool)e.Value!)" />
+                                    @cl.Name
+                                </label>
+                            }
+                            <div class="ga-row">
+                                <button class="ga-btn small" @onclick="() => SaveShareAsync(true)" disabled="@(_selected.Count == 0)">Publier</button>
+                                @if (c.Status == CourseStatus.Published)
+                                {
+                                    <button class="ga-btn small danger" @onclick="() => SaveShareAsync(false)">Repasser en brouillon</button>
+                                }
+                                <button class="ga-btn small ghost" @onclick="() => _sharing = null">Annuler</button>
+                            </div>
+                        </fieldset>
+                    }
+                </article>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private bool IsTeacher => Session.Role == UserRole.Teacher;
+    private bool _loading = true;
+    private string? _error;
+    private List<CourseSummary> _courses = new();
+    private List<Classroom> _classes = new();
+    private CourseSummary? _sharing;
+    private HashSet<Guid> _selected = new();
+
+    protected override async Task LoadAsync()
+    {
+        var courses = IsTeacher ? await CourseApi.MineAsync() : await CourseApi.SharedWithMeAsync();
+        _error = courses.Error;
+        _courses = courses.Value ?? new();
+        if (IsTeacher) _classes = (await Classrooms.MineAsync()).Value ?? new();
+        _loading = false;
+    }
+
+    private string ClassName(Guid id) => _classes.FirstOrDefault(c => c.Id == id)?.Name ?? "classe";
+
+    private void OpenShare(CourseSummary c)
+    {
+        _sharing = c;
+        _selected = (c.ClassroomIds ?? []).ToHashSet();
+    }
+
+    private void ToggleClass(Guid id, bool on)
+    {
+        if (on) _selected.Add(id); else _selected.Remove(id);
+    }
+
+    private async Task SaveShareAsync(bool publish)
+    {
+        var result = await CourseApi.ShareAsync(_sharing!.Id, publish, publish ? _selected.ToList() : []);
+        if (!result.Ok) { _error = result.Error; return; }
+        var i = _courses.FindIndex(c => c.Id == _sharing.Id);
+        _courses[i] = result.Value!;
+        _sharing = null;
+    }
+}

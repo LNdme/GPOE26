@@ -1,0 +1,114 @@
+@page "/app/evaluations/{Id:guid}/copies"
+@layout AppLayout
+@inherits AppPage
+@inject IAssessmentApi Api
+
+<PageTitle>Copies — GPOE26</PageTitle>
+
+<div class="ga-page">
+    @if (!Ready || _loading)
+    {
+        <Loading />
+    }
+    else if (_assessment is null)
+    {
+        <Alert Message="@(_error ?? "Évaluation introuvable.")" />
+    }
+    else
+    {
+        <div class="ga-head">
+            <div>
+                <a class="ga-back" href="/app/evaluations"><Icon Name="left" /> Épreuves et devoirs</a>
+                <h1>@_assessment.Title</h1>
+                <p>@Labels.Of(_assessment.Kind) · @Labels.Of(_assessment.Status) · @_assessment.QuestionCount questions, @Labels.Number(_assessment.MaxScore) points · échéance @Labels.When(_assessment.DueAt)</p>
+            </div>
+            @if (_assessment.Status == AssessmentStatus.Published)
+            {
+                <button class="ga-btn" @onclick="CloseAsync">Clôturer et publier les résultats</button>
+            }
+        </div>
+        <Alert Message="@_error" />
+
+        <div class="ga-grid tight">
+            <div class="ga-stat"><span class="lbl">Copies rendues</span><span class="val">@_rows.Count(r => r.Status != SubmissionStatus.InProgress)</span></div>
+            <div class="ga-stat amber"><span class="lbl">À corriger</span><span class="val">@_rows.Count(r => r.Status == SubmissionStatus.Submitted)</span></div>
+            <div class="ga-stat green"><span class="lbl">Moyenne</span><span class="val">@Average<small>/@_assessment.ScaleTo</small></span></div>
+            <div class="ga-stat purple"><span class="lbl">En cours</span><span class="val">@_rows.Count(r => r.Status == SubmissionStatus.InProgress)</span></div>
+        </div>
+
+        <div class="ga-card">
+            @if (_rows.Count == 0)
+            {
+                <div class="ga-empty"><span>Aucun élève n'a encore commencé.</span></div>
+            }
+            else
+            {
+                <div class="ga-table-wrap">
+                    <table class="ga-table">
+                        <thead><tr><th scope="col">Élève</th><th scope="col">Tentative</th><th scope="col">Statut</th><th scope="col">Rendue</th><th scope="col">Note</th><th scope="col"><span class="ga-sr">Action</span></th></tr></thead>
+                        <tbody>
+                            @foreach (var r in _rows)
+                            {
+                                <tr>
+                                    <td><strong>@r.StudentName</strong></td>
+                                    <td>@r.AttemptNumber</td>
+                                    <td>
+                                        <span class="ga-tag @(r.Status switch { SubmissionStatus.Graded => "green", SubmissionStatus.Submitted => "amber", _ => "grey" })">@Labels.Of(r.Status).ToUpperInvariant()</span>
+                                        @if (r.IsLate) { <span class="ga-tag red">RETARD</span> }
+                                    </td>
+                                    <td>@Labels.When(r.SubmittedAt)</td>
+                                    <td>@Labels.Score(r.ScoreScaled, _assessment.ScaleTo)</td>
+                                    <td>
+                                        @if (r.Status != SubmissionStatus.InProgress)
+                                        {
+                                            <a class="ga-btn small @(r.Status == SubmissionStatus.Submitted ? "" : "secondary")" href="/app/evaluations/@Id/copies/@r.SubmissionId?eleve=@Uri.EscapeDataString(r.StudentName)">
+                                                @(r.Status == SubmissionStatus.Submitted ? $"Corriger ({r.PendingManualAnswers})" : "Voir")
+                                            </a>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    protected override UserRole[]? AllowedRoles => [UserRole.Teacher];
+
+    private bool _loading = true;
+    private string? _error;
+    private Assessment? _assessment;
+    private List<SubmissionRow> _rows = new();
+
+    private string Average
+    {
+        get
+        {
+            var scored = _rows.Where(r => r.ScoreScaled is not null).ToList();
+            return scored.Count == 0 ? "—" : Labels.Number(Math.Round(scored.Average(r => r.ScoreScaled!.Value), 2));
+        }
+    }
+
+    protected override async Task LoadAsync()
+    {
+        var assessment = Api.GetAsync(Id);
+        var rows = Api.SubmissionsAsync(Id);
+        await Task.WhenAll(assessment, rows);
+        _assessment = assessment.Result.Value;
+        _rows = rows.Result.Value ?? new();
+        _error = assessment.Result.Error ?? rows.Result.Error;
+        _loading = false;
+    }
+
+    private async Task CloseAsync()
+    {
+        var result = await Api.CloseAsync(Id);
+        if (!result.Ok) { _error = result.Error; return; }
+        await LoadAsync();
+    }
+}

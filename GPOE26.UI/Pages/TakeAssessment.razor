@@ -1,0 +1,243 @@
+@page "/app/evaluations/{Id:guid}/composer"
+@layout FocusLayout
+@inherits AppPage
+@implements IDisposable
+@inject IAssessmentApi Api
+
+<PageTitle>@(_attempt?.Title ?? "Évaluation") — GPOE26</PageTitle>
+
+@if (!Ready || _loading)
+{
+    <div class="ga-page narrow"><Loading Text="Préparation de ta copie…" /></div>
+}
+else if (_attempt is null)
+{
+    <div class="ga-page narrow">
+        <Alert Message="@_error" />
+        <a class="ga-back" href="/app/evaluations"><Icon Name="left" /> Mes évaluations</a>
+    </div>
+}
+else if (_result is not null)
+{
+    <div class="ga-page narrow">
+        <div class="ga-card" style="flex-direction:row; flex-wrap:wrap; align-items:center; gap:24px; padding:28px">
+            <div class="ga-stat" style="width:130px; height:130px; border-radius:999px; align-items:center; justify-content:center">
+                @if (_result.ResultsReleased && _result.ScoreScaled is not null)
+                {
+                    <span class="val">@Labels.Number(_result.ScoreScaled.Value)</span><span class="sub">sur @_result.ScaleTo</span>
+                }
+                else
+                {
+                    <Icon Name="tick" Size="44" Stroke="2.2" />
+                }
+            </div>
+            <div class="ga-stack" style="flex:1 1 260px; gap:8px">
+                <h1 class="ga-h1" style="font-size:30px">@ResultTitle</h1>
+                <p class="ga-muted" style="margin:0">@ResultText</p>
+                @if (_result.IsLate) { <span class="ga-tag amber" style="align-self:flex-start">RENDUE EN RETARD</span> }
+            </div>
+        </div>
+        <div class="ga-actions">
+            <a class="ga-btn" href="/app/evaluations/@Id/copies/@_result.SubmissionId">Voir ma copie</a>
+            <a class="ga-btn secondary" href="/app">Retour au plan d'études</a>
+        </div>
+    </div>
+}
+else
+{
+    var q = _attempt.Questions[_current];
+    var answer = _answers[q.Id];
+    <header class="ex-head">
+        <a class="ga-icon-btn" href="/app/evaluations" aria-label="Quitter (ta tentative reste ouverte)" title="Quitter (ta tentative reste ouverte)"><Icon Name="x" Size="22" /></a>
+        <div class="grow">
+            <strong>@_attempt.Title</strong><br />
+            <span class="ga-small ga-muted">Tentative @_attempt.AttemptNumber · @Answered / @_attempt.Questions.Count réponses</span>
+        </div>
+        <div class="ex-progress" role="progressbar" aria-label="Questions répondues" aria-valuenow="@Answered" aria-valuemin="0" aria-valuemax="@_attempt.Questions.Count">
+            <span style="width:@(Answered * 100 / Math.Max(1, _attempt.Questions.Count))%"></span>
+        </div>
+        @if (_attempt.Deadline is not null)
+        {
+            <span class="ex-timer" role="timer" aria-live="off" title="Temps restant">@Remaining</span>
+        }
+        <button class="ga-btn small" @onclick="AskSubmit">Rendre ma copie</button>
+    </header>
+
+    <div class="ga-page narrow">
+        <Alert Message="@_error" />
+
+        @if (_confirm)
+        {
+            <div class="ga-alert warn ga-stack" role="alertdialog" aria-label="Confirmer l'envoi">
+                <strong>@(Unanswered > 0 ? $"Il reste {Unanswered} question(s) sans réponse." : "Prêt à rendre ta copie ?")</strong>
+                <span>Une fois rendue, ta copie ne peut plus être modifiée.</span>
+                <div class="ga-row">
+                    <button class="ga-btn" disabled="@_busy" @onclick="SubmitAsync">@(_busy ? "Envoi…" : "Oui, rendre ma copie")</button>
+                    <button class="ga-btn secondary" @onclick="() => _confirm = false">Continuer à composer</button>
+                </div>
+            </div>
+        }
+
+        <nav class="ex-dots" aria-label="Aller à une question">
+            @for (var i = 0; i < _attempt.Questions.Count; i++)
+            {
+                var index = i;
+                var answered = IsAnswered(_attempt.Questions[index]);
+                var css = (answered ? "answered " : "") + (index == _current ? "current" : "");
+                var label = $"Question {index + 1}" + (answered ? ", répondue" : "");
+                <button class="@css" aria-label="@label" aria-current="@(index == _current)" @onclick="() => _current = index">@(index + 1)</button>
+            }
+        </nav>
+
+        <section class="ex-q" aria-labelledby="q-title">
+            <span class="ga-kbd ga-small ga-muted">QUESTION @(_current + 1) SUR @_attempt.Questions.Count · @Labels.Number(q.Points) POINT(S) · @Labels.Of(q.Type).ToUpperInvariant()</span>
+            <h2 id="q-title">@q.Text</h2>
+
+            @switch (q.Type)
+            {
+                case QuestionType.SingleChoice:
+                case QuestionType.MultipleChoice:
+                    @if (q.Type == QuestionType.MultipleChoice) { <span class="ga-small ga-muted">Plusieurs réponses possibles.</span> }
+                    <div class="ga-stack" role="group" aria-labelledby="q-title">
+                        @for (var i = 0; i < q.Options.Count; i++)
+                        {
+                            var opt = q.Options[i];
+                            var on = answer.SelectedOptions.Contains(opt.Index);
+                            <button type="button" class="ex-opt @(on ? "on" : "")" aria-pressed="@on" @onclick="() => Choose(q, answer, opt.Index)">
+                                <span class="letter">@((char)('A' + i))</span><span>@opt.Text</span>
+                            </button>
+                        }
+                    </div>
+                    break;
+
+                case QuestionType.TrueFalse:
+                    <div class="ga-grid tight" role="group" aria-labelledby="q-title">
+                        <button type="button" class="ex-opt @(answer.TrueFalse == true ? "on" : "")" aria-pressed="@(answer.TrueFalse == true)" @onclick="() => answer.TrueFalse = true"><span class="letter">V</span>Vrai</button>
+                        <button type="button" class="ex-opt @(answer.TrueFalse == false ? "on" : "")" aria-pressed="@(answer.TrueFalse == false)" @onclick="() => answer.TrueFalse = false"><span class="letter">F</span>Faux</button>
+                    </div>
+                    break;
+
+                case QuestionType.ShortAnswer:
+                case QuestionType.Numeric:
+                    <div class="ga-field">
+                        <label for="ans-text">Ta réponse@(q.Unit is { Length: > 0 } ? $" (en {q.Unit})" : "")</label>
+                        <input id="ans-text" class="ga-input big" inputmode="@(q.Type == QuestionType.Numeric ? "decimal" : "text")" autocomplete="off"
+                               @bind="answer.Text" @bind:event="oninput" />
+                        @if (q.Type == QuestionType.Numeric) { <span class="help">Tu peux utiliser la virgule ou le point.</span> }
+                    </div>
+                    break;
+
+                case QuestionType.OpenEnded:
+                    <div class="ga-field">
+                        <label for="ans-open">Ta réponse rédigée</label>
+                        <textarea id="ans-open" class="ga-textarea" rows="9" @bind="answer.Text" @bind:event="oninput"></textarea>
+                        <span class="help">Rédige ta démarche : ton enseignant corrige cette question.</span>
+                    </div>
+                    break;
+            }
+
+            <div class="ga-row between" style="margin-top:6px">
+                <button class="ga-btn secondary" disabled="@(_current == 0)" @onclick="() => _current--"><Icon Name="left" /> Précédente</button>
+                @if (_current < _attempt.Questions.Count - 1)
+                {
+                    <button class="ga-btn" @onclick="() => _current++">Suivante <Icon Name="right" /></button>
+                }
+                else
+                {
+                    <button class="ga-btn" @onclick="AskSubmit">Rendre ma copie</button>
+                }
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    protected override UserRole[]? AllowedRoles => [UserRole.Student];
+
+    private bool _loading = true, _busy, _confirm;
+    private string? _error;
+    private Attempt? _attempt;
+    private SubmissionReview? _result;
+    private int _current;
+    private readonly Dictionary<Guid, AnswerDraft> _answers = new();
+    private Timer? _timer;
+
+    private int Answered => _attempt?.Questions.Count(IsAnswered) ?? 0;
+    private int Unanswered => (_attempt?.Questions.Count ?? 0) - Answered;
+
+    private bool IsAnswered(AttemptQuestion q) => _answers.TryGetValue(q.Id, out var a) && q.Type switch
+    {
+        QuestionType.SingleChoice or QuestionType.MultipleChoice => a.SelectedOptions.Count > 0,
+        QuestionType.TrueFalse => a.TrueFalse is not null,
+        _ => !string.IsNullOrWhiteSpace(a.Text)
+    };
+
+    private string Remaining
+    {
+        get
+        {
+            var left = _attempt!.Deadline!.Value - DateTime.UtcNow;
+            if (left <= TimeSpan.Zero) return "Temps écoulé";
+            return left.TotalHours >= 1 ? $"{(int)left.TotalHours} h {left.Minutes:00}" : $"{left.Minutes:00}:{left.Seconds:00}";
+        }
+    }
+
+    protected override async Task LoadAsync()
+    {
+        var result = await Api.StartAttemptAsync(Id);
+        _attempt = result.Value;
+        _error = result.Error;
+        if (_attempt is not null)
+        {
+            foreach (var q in _attempt.Questions) _answers[q.Id] = new AnswerDraft { QuestionId = q.Id };
+            if (_attempt.Deadline is not null)
+                _timer = new Timer(_ => InvokeAsync(TickAsync), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+        }
+        _loading = false;
+    }
+
+    private async Task TickAsync()
+    {
+        if (_attempt?.Deadline is { } deadline && DateTime.UtcNow >= deadline && _result is null && !_busy)
+        {
+            // Temps écoulé : la copie est rendue automatiquement pour ne rien perdre
+            _timer?.Dispose();
+            _error = "Le temps est écoulé : ta copie a été rendue automatiquement.";
+            await SubmitAsync();
+        }
+        StateHasChanged();
+    }
+
+    private static void Choose(AttemptQuestion q, AnswerDraft a, int index)
+    {
+        if (q.Type == QuestionType.SingleChoice) a.SelectedOptions = [index];
+        else if (!a.SelectedOptions.Remove(index)) a.SelectedOptions.Add(index);
+    }
+
+    private void AskSubmit() => _confirm = true;
+
+    private async Task SubmitAsync()
+    {
+        _busy = true;
+        var result = await Api.SubmitAsync(Id, _attempt!.SubmissionId, _answers.Values.ToList());
+        _busy = false;
+        _confirm = false;
+        if (!result.Ok) { _error = result.Error; return; }
+        _timer?.Dispose();
+        _result = result.Value;
+    }
+
+    private string ResultTitle => _result!.ResultsReleased && _result.ScoreScaled is not null
+        ? _result.ScoreScaled >= _result.ScaleTo * 0.75m ? "Excellent travail !" : _result.ScoreScaled >= _result.ScaleTo / 2m ? "Bien joué !" : "Continue tes efforts"
+        : "Copie rendue";
+
+    private string ResultText => _result!.Status == SubmissionStatus.Submitted
+        ? "Ton enseignant doit encore corriger les réponses rédigées. Tu verras ta note dans « Mes évaluations »."
+        : _result.ResultsReleased
+            ? "Consulte ta copie pour voir la correction de chaque question."
+            : "Ta note et la correction seront visibles après la date limite.";
+
+    public void Dispose() => _timer?.Dispose();
+}

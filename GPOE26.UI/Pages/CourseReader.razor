@@ -1,0 +1,135 @@
+@page "/app/cours/{Id:guid}"
+@layout AppLayout
+@inherits AppPage
+@inject ICourseApi Courses
+@inject IAssessmentApi Assessments
+
+<PageTitle>@(_course?.Title ?? "Cours") — GPOE26</PageTitle>
+
+@if (!Ready || _loading)
+{
+    <div class="ga-page"><Loading /></div>
+}
+else if (_course is null)
+{
+    <div class="ga-page"><Alert Message="@(_error ?? "Cours introuvable.")" /><a class="ga-back" href="/app/cours"><Icon Name="left" /> Mes cours</a></div>
+}
+else
+{
+    <div class="rd">
+        <article class="rd-article">
+            <nav aria-label="Fil d'Ariane" class="rd-meta"><a href="/app/cours" style="color:inherit">Mes cours</a> › @_course.Subject</nav>
+            <h1>@_course.Title</h1>
+            <div class="rd-meta">
+                <span>@_course.Subject</span><span aria-hidden="true">·</span>
+                <span>@ReadingMinutes min de lecture</span><span aria-hidden="true">·</span>
+                <span>Mis à jour @Labels.Date(_course.UpdatedAt)</span>
+            </div>
+
+            @if (_toc.Count > 0)
+            {
+                <details class="rd-toc-mobile" open>
+                    <summary>Sur cette page</summary>
+                    @foreach (var t in _toc) { <a href="@($"{Nav.ToBaseRelativePath(Nav.Uri).Split('#')[0]}#{t.Id}")">@t.Title</a> }
+                </details>
+            }
+
+            @if (_course.Description is { Length: > 0 })
+            {
+                <p style="font-size:19px; color:var(--ga-muted)">@_course.Description</p>
+            }
+
+            @if (string.IsNullOrWhiteSpace(_html))
+            {
+                <div class="ga-empty" style="font-family:var(--ga-font)">
+                    @if (_course.ContentType == CourseContentType.Pdf && _course.PdfPath is not null)
+                    {
+                        <span>Ce cours est un document PDF.</span>
+                    }
+                    else
+                    {
+                        <span>Ce cours n'a pas encore de contenu.</span>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="rd-content">@((MarkupString)_html)</div>
+            }
+
+            <div class="ga-row between" style="margin-top:28px; padding-top:18px; border-top:1px solid #ECEAE3; font-family:var(--ga-font)">
+                <span class="ga-small ga-muted">Ce cours vous a-t-il été utile ?</span>
+                <span class="ga-actions">
+                    <button class="ga-btn small @(_vote == 1 ? "" : "secondary")" aria-pressed="@(_vote == 1)" @onclick="() => _vote = 1">Oui</button>
+                    <button class="ga-btn small @(_vote == -1 ? "" : "secondary")" aria-pressed="@(_vote == -1)" @onclick="() => _vote = -1">Non</button>
+                </span>
+            </div>
+        </article>
+
+        <aside class="rd-side">
+            @if (_toc.Count > 0)
+            {
+                <nav class="rd-toc" aria-labelledby="toc-title">
+                    <h2 id="toc-title" style="font-size:14px; font-weight:700; margin:0 0 6px">Sur cette page</h2>
+                    @foreach (var t in _toc)
+                    {
+                        <a class="@(t.Level == 3 ? "l3" : "")" href="@($"{Nav.ToBaseRelativePath(Nav.Uri).Split('#')[0]}#{t.Id}")">@t.Title</a>
+                    }
+                </nav>
+            }
+
+            @if (_related.Count > 0)
+            {
+                <div class="ga-card">
+                    <h2 class="ga-h3">S'entraîner sur ce cours</h2>
+                    @foreach (var a in _related)
+                    {
+                        <a class="ga-btn secondary small" href="/app/evaluations/@a.Id/composer">@a.Title</a>
+                    }
+                </div>
+            }
+
+            @if (Session.IsPremium)
+            {
+                <a class="ga-btn" href="/learning/course/@_course.Id"><Icon Name="chat" /> Demander au tuteur IA</a>
+            }
+            else
+            {
+                <a class="ga-premium-lock" href="/app/abonnement">
+                    <Icon Name="chat" Size="24" />
+                    <span><strong>Tuteur IA</strong><br /><span class="ga-small" style="color:#C9D3EA">Pose tes questions sur ce cours avec Premium.</span></span>
+                </a>
+            }
+        </aside>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private bool _loading = true;
+    private string? _error, _html;
+    private CourseDetail? _course;
+    private List<TocEntry> _toc = new();
+    private List<StudentAssessment> _related = new();
+    private int _vote;
+
+    private int ReadingMinutes => Math.Max(1, (_course?.ToMarkdown().Split(' ', StringSplitOptions.RemoveEmptyEntries).Length ?? 0) / 200);
+
+    protected override async Task LoadAsync()
+    {
+        var result = await Courses.GetAsync(Id);
+        _course = result.Value;
+        _error = result.Error;
+        if (_course is not null)
+            (_html, _toc) = MarkdownRenderer.Render(_course.ToMarkdown());
+
+        // Évaluations d'entraînement ouvertes : proposées à l'élève à la fin du cours
+        if (Session.Role == UserRole.Student)
+        {
+            var mine = await Assessments.MineAsStudentAsync();
+            _related = (mine.Value ?? new()).Where(a => a.Kind == AssessmentKind.Practice && a.CanStart(DateTime.UtcNow)).Take(3).ToList();
+        }
+        _loading = false;
+    }
+}

@@ -1,0 +1,181 @@
+@inject SessionState Session
+@inject IFamilyApi Family
+@inject IProgressApi Progress
+@inject IAccountApi Account
+
+<div class="ga-page">
+    <div class="ga-head">
+        <div>
+            <h1>Bonjour, @Session.Profile!.Username</h1>
+            <p>@Labels.Today() · suivi de vos enfants</p>
+        </div>
+    </div>
+
+    @if (_loading)
+    {
+        <Loading />
+    }
+    else
+    {
+        <div class="ga-split">
+            <div class="main">
+                @if (_children.Count == 0)
+                {
+                    <div class="ga-empty">
+                        <strong>Aucun enfant rattaché pour l'instant.</strong>
+                        <span>Saisissez le code de votre enfant ou créez son compte ci-contre.</span>
+                    </div>
+                }
+                @foreach (var child in _children)
+                {
+                    <article class="ga-card">
+                        <div class="ga-row between">
+                            <div class="ga-item">
+                                <span class="ga-avatar green">@Labels.Initial(child.Username)</span>
+                                <span class="grow">
+                                    <strong style="font-size:18px">@child.Username</strong>
+                                    <span class="ga-small ga-muted">@(child.Level ?? "")@(child.Filiere is { Length: > 0 } ? $" {child.Filiere}" : "")@(child.ExamTarget is { Length: > 0 } ? $" · prépare le {child.ExamTarget}" : "")</span>
+                                </span>
+                            </div>
+                            @if (child.Status == LinkStatus.Pending)
+                            {
+                                <span class="ga-tag amber">EN ATTENTE D'ACCEPTATION</span>
+                            }
+                            else
+                            {
+                                <span class="ga-tag @(child.IsPremium ? "lime" : "grey")">@(child.IsPremium ? "PREMIUM" : "GRATUIT")</span>
+                            }
+                        </div>
+
+                        @if (child.Status == LinkStatus.Active && _progress.TryGetValue(child.ChildId, out var p))
+                        {
+                            <div class="ga-grid tight">
+                                <div class="ga-stat"><span class="lbl">Moyenne</span><span class="val">@Labels.Number(p.AverageOn20)<small>/20</small></span></div>
+                                <div class="ga-stat green"><span class="lbl">Évaluations</span><span class="val">@p.Results.Count(r => r.Status is not null)</span><span class="sub">rendues</span></div>
+                                <div class="ga-stat purple"><span class="lbl">Maîtrise</span><span class="val">@(p.Mastery.Count > 0 ? Labels.Number(p.Mastery.Average(m => m.Percent)) + " %" : "—")</span></div>
+                            </div>
+                            @if (p.Results.Count > 0)
+                            {
+                                <div class="ga-list">
+                                    @foreach (var r in p.Results.OrderByDescending(r => r.SubmittedAt).Take(5))
+                                    {
+                                        <div class="ga-item">
+                                            <span class="grow"><strong>@r.Title</strong><span class="ga-small ga-muted">@Labels.Of(r.Kind) · rendu @Labels.Date(r.SubmittedAt)@(r.IsLate ? " · en retard" : "")</span></span>
+                                            <span class="ga-tag @(r.ScoreScaled is null ? "grey" : "green")">@(r.ScoreScaled is null ? "EN CORRECTION" : Labels.Score(r.ScoreScaled, r.ScaleTo))</span>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <span class="ga-muted ga-small">Pas encore de résultat publié.</span>
+                            }
+                        }
+                        else if (child.Status == LinkStatus.Pending)
+                        {
+                            <span class="ga-muted ga-small">Votre enfant doit accepter la demande depuis son tableau de bord.</span>
+                        }
+                    </article>
+                }
+            </div>
+
+            <aside class="side">
+                @if (_family is { } fam)
+                {
+                    <section class="ga-card dark">
+                        <span class="ga-tag lime" style="align-self:flex-start">@Labels.Of(fam.Status).ToUpperInvariant()</span>
+                        <h2 class="ga-h3">Formule familiale</h2>
+                        @if (fam.Keys.FirstOrDefault() is { } key)
+                        {
+                            <div class="ga-badge-box" style="margin:0">
+                                Clé d'abonnement familiale
+                                <strong class="ga-kbd" style="display:block; font-size:18px; letter-spacing:.1em">@key.Code</strong>
+                                <small>@key.UsedCount place(s) utilisée(s) sur @key.MaxUses</small>
+                            </div>
+                        }
+                        else
+                        {
+                            <span class="ga-small" style="color:#C9D3EA">La clé à transmettre à vos enfants apparaîtra ici dès le paiement confirmé.</span>
+                        }
+                        <a class="ga-btn light small" style="align-self:flex-start" href="/app/abonnement">Gérer l'abonnement</a>
+                    </section>
+                }
+                else
+                {
+                    <a class="ga-premium-lock" href="/app/abonnement">
+                        <Icon Name="spark" Size="26" />
+                        <span><strong>Formule Premium familiale</strong><br /><span class="ga-small" style="color:#C9D3EA">Tuteur IA, quiz illimités, épreuves blanches et suivi détaillé pour vos enfants.</span></span>
+                    </a>
+                }
+
+                <form class="ga-card" @onsubmit="LinkAsync" @onsubmit:preventDefault>
+                    <h2 class="ga-h3">Rattacher un enfant</h2>
+                    <div class="ga-field">
+                        <label for="child-code">Code de l'élève</label>
+                        <input id="child-code" class="ga-input" placeholder="ex. AQ4-7KXM" @bind="_code" />
+                        <span class="help">Votre enfant le trouve sur son tableau de bord.</span>
+                    </div>
+                    <button class="ga-btn" type="submit" disabled="@string.IsNullOrWhiteSpace(_code)">Envoyer la demande</button>
+                    <Alert Message="@_linkMessage" Kind="@(_linkOk ? "success" : "error")" />
+                </form>
+
+                <details class="ga-card">
+                    <summary style="cursor:pointer; font-weight:600">Créer le compte de mon enfant</summary>
+                    <form class="ga-stack" @onsubmit="CreateAsync" @onsubmit:preventDefault>
+                        <div class="ga-field"><label for="c-user">Nom d'utilisateur</label><input id="c-user" class="ga-input" @bind="_child.Username" /></div>
+                        <div class="ga-field"><label for="c-mail">E-mail</label><input id="c-mail" class="ga-input" type="email" @bind="_child.Email" /></div>
+                        <div class="ga-field"><label for="c-pwd">Mot de passe (8 caractères min.)</label><input id="c-pwd" class="ga-input" type="password" autocomplete="new-password" @bind="_child.Password" /></div>
+                        <div class="ga-field"><label for="c-level">Classe</label><input id="c-level" class="ga-input" placeholder="ex. 4e, Form 2" @bind="_child.Level" /></div>
+                        <button class="ga-btn" type="submit">Créer le compte</button>
+                        <Alert Message="@_createMessage" Kind="@(_createOk ? "success" : "error")" />
+                    </form>
+                </details>
+            </aside>
+        </div>
+    }
+</div>
+
+@code {
+    private class ChildForm { public string Username { get; set; } = ""; public string Email { get; set; } = ""; public string Password { get; set; } = ""; public string? Level { get; set; } }
+
+    private bool _loading = true;
+    private List<ChildLink> _children = new();
+    private readonly Dictionary<Guid, StudentProgress> _progress = new();
+    private SubscriptionInfo? _family;
+    private string? _code, _linkMessage, _createMessage;
+    private bool _linkOk, _createOk;
+    private ChildForm _child = new();
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var children = Family.ChildrenAsync();
+        var subs = Account.MySubscriptionsAsync();
+        await Task.WhenAll(children, subs);
+        _children = children.Result.Value ?? new();
+        _family = subs.Result.Value?.Owned.FirstOrDefault(s => s.Plan == SubscriptionPlan.Family && s.Status != SubscriptionStatus.Cancelled);
+
+        var progress = await Task.WhenAll(_children.Where(c => c.Status == LinkStatus.Active)
+            .Select(async c => (c.ChildId, await Progress.ChildAsync(c.ChildId))));
+        foreach (var (id, result) in progress)
+            if (result.Value is { } p) _progress[id] = p;
+        _loading = false;
+    }
+
+    private async Task LinkAsync()
+    {
+        var result = await Family.LinkChildAsync(_code!.Trim());
+        _linkOk = result.Ok;
+        _linkMessage = result.Ok ? "Demande envoyée : votre enfant doit l'accepter depuis son tableau de bord." : result.Error;
+        if (result.Ok) { _code = null; await LoadAsync(); }
+    }
+
+    private async Task CreateAsync()
+    {
+        var result = await Family.CreateChildAsync(new CreateChildRequest(_child.Email.Trim(), _child.Username.Trim(), _child.Password, Level: _child.Level));
+        _createOk = result.Ok;
+        _createMessage = result.Ok ? $"Compte de {result.Value!.Username} créé. Il peut se connecter avec cet e-mail et ce mot de passe." : result.Error;
+        if (result.Ok) { _child = new(); await LoadAsync(); }
+    }
+}
