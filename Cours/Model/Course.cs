@@ -34,6 +34,9 @@ namespace Cours.Model
         /// </summary>
         public string? ExtractedText { get; set; }
 
+        /// <summary>Mise en forme d'un PDF par l'IA : Pending, Done ou Failed (vide pour un cours rédigé).</summary>
+        public string? StructuringStatus { get; set; }
+
         /// <summary>
         /// Sections ordonnées du cours (titres H1/H2/H3, paragraphes, images).
         /// Uniquement pour ContentType = Text.

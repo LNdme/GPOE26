@@ -30,6 +30,7 @@
 	  <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
 	  <PackageReference Include="pavi.pavi.pdfgen" Version="1.0.0" />
 	  <PackageReference Include="PdfPig" Version="0.1.16" />
+	  <PackageReference Include="PDFtoImage" Version="5.4.0" />
 	  <PackageReference Include="Scalar.AspNetCore" Version="2.19.0" />
 	  <PackageReference Include="Scalar.AspNetCore.Microsoft" Version="2.19.0" />
 	  <PackageReference Include="Scalar.AspNetCore.Swashbuckle" Version="2.19.0" />

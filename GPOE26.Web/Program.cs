@@ -94,4 +94,13 @@ app.MapGet("/uploads/images/{*path}", async (string path, IHttpClientFactory fac
     return Results.NotFound();
 });
 
+// Images extraites des PDF de cours, servies par le service Cours
+app.MapGet("/uploads/cours/{courseId:guid}/{file}", async (Guid courseId, string file, IHttpClientFactory factory) =>
+{
+    if (!System.Text.RegularExpressions.Regex.IsMatch(file, @"^fig-\d+\.(png|jpg)$")) return Results.NotFound();
+    var response = await factory.CreateClient("cours").GetAsync($"/uploads/cours/{courseId}/{file}");
+    if (!response.IsSuccessStatusCode) return Results.NotFound();
+    return Results.Stream(await response.Content.ReadAsStreamAsync(), response.Content.Headers.ContentType?.ToString() ?? "image/png");
+});
+
 app.Run();

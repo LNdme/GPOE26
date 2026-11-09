@@ -109,7 +109,8 @@ public record UserProfileDto(
         user.OrganizationName,
         entitlement?.IsPremium ?? false,
         entitlement?.Plan,
-        entitlement?.Until
+        entitlement?.Until,
+        entitlement?.Features
     )
     { }
 }

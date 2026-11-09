@@ -55,7 +55,8 @@ namespace Cours.DTOs
         DateTime UpdatedAt,
         CourseStatus Status,
         List<Guid> ClassroomIds,
-        Guid OwnerId
+        Guid OwnerId,
+        string? StructuringStatus = null
     )
     {
         public CourseDto(Course c) : this(
@@ -74,7 +75,8 @@ namespace Cours.DTOs
             c.UpdatedAt,
             c.Status,
             c.ClassroomIds,
-            c.OwnerId
+            c.OwnerId,
+            c.StructuringStatus
         )
         { }
     }

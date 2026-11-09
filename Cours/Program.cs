@@ -6,6 +6,7 @@ using Cours.DTOs;
 using Cours.Helpers;
 using Cours.Model;
 using Cours.Service;
+using GPOE26.ServiceDefaults.Llm;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -25,6 +26,10 @@ builder.Services.AddDbContext<CoursContext>(options =>
 
 // ─── Services ─────────────────────────────────────────────────────────────────
 builder.Services.AddScoped<PdfExtractorService>();
+builder.Services.AddScoped<PdfStructuringService>();
+builder.Services.AddSingleton<PdfStructuringQueue>();
+builder.Services.AddHostedService<PdfStructuringWorker>();
+builder.AddLlmClient();
 
 // Service User : classes de l'utilisateur, pour le partage des cours (JWT de l'appelant transmis)
 builder.Services.AddHttpContextAccessor();
@@ -120,6 +125,8 @@ using (var scope = app.Services.CreateScope())
         @"ALTER TABLE ""Courses"" ADD COLUMN IF NOT EXISTS ""PublishedAt"" timestamp with time zone");
     await db.Database.ExecuteSqlRawAsync(
         @"CREATE INDEX IF NOT EXISTS ""IX_Courses_ClassroomIds"" ON ""Courses"" USING gin (""ClassroomIds"")");
+    await db.Database.ExecuteSqlRawAsync(
+        @"ALTER TABLE ""Courses"" ADD COLUMN IF NOT EXISTS ""StructuringStatus"" text");
     await CoursSeeder.SeedAsync(db);
 }
 
@@ -263,6 +270,9 @@ cours.MapPost("/{id:guid}/upload", async (
     ClaimsPrincipal principal,
     CoursContext db,
     PdfExtractorService extractor,
+    PdfStructuringService structuring,
+    PdfStructuringQueue queue,
+    LlmClient llm,
     IWebHostEnvironment env) =>
 {
     var ownerId = ClaimsHelper.GetUserId(principal);
@@ -281,31 +291,31 @@ cours.MapPost("/{id:guid}/upload", async (
     if (file.Length > 10 * 1024 * 1024)
         return Results.BadRequest(new { message = "Le fichier ne doit pas dépasser 10 Mo." });
 
+    var root = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
+
     // Supprimer l'ancien PDF si existant
     if (course.PdfPath is not null)
     {
-        var webRoot = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
-        var oldPath = Path.Combine(webRoot, course.PdfPath);
+        var oldPath = Path.Combine(root, course.PdfPath);
         if (File.Exists(oldPath)) File.Delete(oldPath);
     }
 
-    // Sauvegarder le nouveau PDF (fallback si WebRootPath est null)
-    var root = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
-    var uploadFolder = Path.Combine(root, "uploads", "cours");
+    using var memory = new MemoryStream();
+    await file.CopyToAsync(memory);
+    course.PdfPath = await extractor.SavePdfAsync(file, Path.Combine(root, "uploads", "cours"));
 
-    // Extraire le texte du PDF
-    using var stream = file.OpenReadStream();
-    var extractedText = extractor.ExtractText(stream);
-    var relativePath = await extractor.SavePdfAsync(file, uploadFolder);
-
-    // Mettre à jour le cours — supprimer les sections texte
-    course.ContentType = ContentType.Pdf;
-    course.PdfPath = relativePath;
-    course.ExtractedText = extractedText;
-    course.Sections.Clear();
-    course.UpdatedAt = DateTime.UtcNow;
+    // Version construite d'après la mise en page, affichée tout de suite ; l'IA l'améliore ensuite
+    try
+    {
+        structuring.Import(db, course, memory.ToArray(), root, llm.IsConfigured);
+    }
+    catch (Exception ex) when (ex is not OutOfMemoryException)
+    {
+        return Results.BadRequest(new { message = "Ce PDF n'a pas pu être lu. Vérifiez qu'il n'est ni protégé ni endommagé." });
+    }
 
     await db.SaveChangesAsync();
+    if (llm.IsConfigured) queue.Enqueue(course.Id);
 
     return Results.Ok(new CourseDto(course));
 })
@@ -314,6 +324,39 @@ cours.MapPost("/{id:guid}/upload", async (
 .Produces(400)
 .Produces(404)
 .DisableAntiforgery();
+
+// ── POST /cours/{id}/restructure ──────────────────────────────────────────────
+// Relit un PDF déjà importé avec la mise en forme actuelle. Le texte retouché à la main est remplacé.
+cours.MapPost("/{id:guid}/restructure", async (
+    Guid id,
+    ClaimsPrincipal principal,
+    CoursContext db,
+    PdfStructuringService structuring,
+    PdfStructuringQueue queue,
+    LlmClient llm,
+    IWebHostEnvironment env) =>
+{
+    var ownerId = ClaimsHelper.GetUserId(principal);
+    if (ownerId is null) return Results.Unauthorized();
+
+    var course = await db.Courses.Include(c => c.Sections)
+        .FirstOrDefaultAsync(c => c.Id == id && c.OwnerId == ownerId);
+    if (course is null) return Results.NotFound(new { message = "Cours introuvable." });
+    if (course.PdfPath is null) return Results.BadRequest(new { message = "Ce cours ne provient pas d'un PDF." });
+
+    var root = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
+    var path = Path.Combine(root, course.PdfPath);
+    if (!File.Exists(path)) return Results.NotFound(new { message = "Le fichier PDF d'origine est introuvable." });
+
+    structuring.Import(db, course, await File.ReadAllBytesAsync(path), root, llm.IsConfigured);
+    await db.SaveChangesAsync();
+    if (llm.IsConfigured) queue.Enqueue(course.Id);
+    return Results.Ok(new CourseDto(course));
+})
+.WithSummary("Relire un PDF et reconstruire le cours")
+.Produces<CourseDto>()
+.Produces(400)
+.Produces(404);
 
 // ── PUT /cours/{id} ───────────────────────────────────────────────────────────
 cours.MapPut("/{id:guid}", async (
@@ -341,11 +384,11 @@ cours.MapPut("/{id:guid}", async (
     if (req.Sections is not null)
     {
         db.CourseSections.RemoveRange(course.Sections.ToList());
-        course.Sections = new List<CourseSection>();
+        
 
         foreach (var s in req.Sections)
         {
-            course.Sections.Add(new CourseSection
+            db.CourseSections.Add(new CourseSection
             {
                 CourseId = course.Id,
                 Type = s.Type,
@@ -355,8 +398,11 @@ cours.MapPut("/{id:guid}", async (
             });
         }
 
-        course.ContentType = ContentType.Text;
-        course.RebuildExtractedText();
+        // Un PDF retouché à la main reste un PDF : l'IA ne repassera pas dessus
+        if (course.ContentType == ContentType.Pdf)
+            course.StructuringStatus = PdfStructuringService.StatusDone;
+        else
+            course.RebuildExtractedText();
     }
 
     course.UpdatedAt = DateTime.UtcNow;
@@ -450,6 +496,8 @@ cours.MapDelete("/{id:guid}", async (
         var webRoot = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
         var fullPath = Path.Combine(webRoot, course.PdfPath);
         if (File.Exists(fullPath)) File.Delete(fullPath);
+        var figures = PdfStructuringService.FiguresFolder(webRoot, course.Id);
+        if (Directory.Exists(figures)) Directory.Delete(figures, recursive: true);
     }
 
     db.Courses.Remove(course);
@@ -460,5 +508,17 @@ cours.MapDelete("/{id:guid}", async (
 .WithSummary("Supprimer un cours")
 .Produces(204)
 .Produces(404);
+
+// ── GET /uploads/cours/{id}/{fichier} ─────────────────────────────────────────
+// Images extraites d'un PDF, lues par le navigateur (sans jeton) : seuls ces fichiers sont servis, jamais le PDF.
+app.MapGet("/uploads/cours/{courseId:guid}/{file}", (Guid courseId, string file, IWebHostEnvironment env) =>
+{
+    if (!System.Text.RegularExpressions.Regex.IsMatch(file, @"^fig-\d+\.(png|jpg)$")) return Results.NotFound();
+    var root = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
+    var path = Path.Combine(PdfStructuringService.FiguresFolder(root, courseId), file);
+    return File.Exists(path) ? Results.File(path, file.EndsWith(".png") ? "image/png" : "image/jpeg") : Results.NotFound();
+})
+.AllowAnonymous()
+.WithSummary("Image extraite d'un PDF");
 
 app.Run();

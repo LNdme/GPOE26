@@ -48,6 +48,11 @@ else
                 <p style="font-size:19px; color:var(--ga-muted)">@_course.Description</p>
             }
 
+            @if (_course.StructuringStatus == "Pending")
+            {
+                <div class="ga-alert" role="status" style="font-family:var(--ga-font)">Mise en forme en cours : titres et formules s'affineront d'ici quelques minutes.</div>
+            }
+
             @if (string.IsNullOrWhiteSpace(_html))
             {
                 <div class="ga-empty" style="font-family:var(--ga-font)">
@@ -92,6 +97,10 @@ else
                 @if (_course.OwnerId == Me.Id)
                 {
                     <a class="ga-btn ghost small" href="/app/cours/@_course.Id/modifier">Modifier</a>
+                    @if (_course.ContentType == CourseContentType.Pdf)
+                    {
+                        <button type="button" class="ga-btn ghost small" disabled="@_restructuring" @onclick="RestructureAsync">@(_restructuring ? "Lecture du PDF…" : "Restructurer")</button>
+                    }
                 }
             </div>
 
@@ -144,7 +153,8 @@ else
     private List<TocEntry> _toc = new();
     private List<StudentAssessment> _related = new();
     private int _vote;
-    private bool _tutorOpen, _mathPending, _tocOpen = true;
+    private bool _tutorOpen, _mathPending, _tocOpen = true, _restructuring;
+    private CancellationTokenSource? _poll;
     private ElementReference _article;
     private IJSObjectReference? _module;
 
@@ -153,11 +163,8 @@ else
     protected override async Task LoadAsync()
     {
         var result = await Courses.GetAsync(Id);
-        _course = result.Value;
         _error = result.Error;
-        if (_course is not null)
-            (_html, _toc) = MarkdownRenderer.Render(_course.ToMarkdown());
-        _mathPending = true;
+        Show(result.Value);
 
         // Évaluations d'entraînement ouvertes : proposées à l'élève à la fin du cours
         if (Session.Role == UserRole.Student)
@@ -166,6 +173,50 @@ else
             _related = (mine.Value ?? new()).Where(a => a.Kind == AssessmentKind.Practice && a.CanStart(DateTime.UtcNow)).Take(3).ToList();
         }
         _loading = false;
+    }
+
+    private void Show(CourseDetail? course)
+    {
+        _course = course;
+        if (_course is not null)
+            (_html, _toc) = MarkdownRenderer.Render(_course.ToMarkdown());
+        _mathPending = true;
+        if (_course?.StructuringStatus == "Pending") StartPolling();
+    }
+
+    /// <summary>Le PDF est encore mis en forme par l'IA : la page se met à jour dès que c'est prêt.</summary>
+    private void StartPolling()
+    {
+        if (_poll is not null) return;
+        _poll = new CancellationTokenSource();
+        var token = _poll.Token;
+        _ = InvokeAsync(async () =>
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(10));
+            try
+            {
+                while (await timer.WaitForNextTickAsync(token))
+                {
+                    var latest = (await Courses.GetAsync(Id)).Value;
+                    if (latest?.StructuringStatus == "Pending") continue;
+                    _poll = null;
+                    Show(latest);
+                    StateHasChanged();
+                    return;
+                }
+            }
+            catch (OperationCanceledException) { }
+        });
+    }
+
+    private async Task RestructureAsync()
+    {
+        _restructuring = true;
+        _error = null;
+        var result = await Courses.RestructureAsync(Id);
+        _restructuring = false;
+        if (result.Value is null) { _error = result.Error; return; }
+        Show(result.Value);
     }
 
     /// <summary>Formules KaTeX et coloration du code, une fois le cours affiché</summary>
@@ -183,6 +234,7 @@ else
 
     public async ValueTask DisposeAsync()
     {
+        _poll?.Cancel();
         try { if (_module is not null) await _module.DisposeAsync(); }
         catch (JSDisconnectedException) { }
     }

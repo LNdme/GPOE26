@@ -47,6 +47,7 @@ var userService = builder.AddProject<Projects.User>("user")
     .WaitFor(apiService);
 
 var coursService = builder.AddProject<Projects.Cours>("cours")
+    .WithEnvironment("LLM__ApiKey", llmApiKey)   // mise en forme des PDF
     .WithEnvironment("Jwt__Key", jwtKeyValue)
     .WithEnvironment("Jwt__Issuer", jwtIssuer)
     .WithEnvironment("Jwt__Audience", jwtAudience)

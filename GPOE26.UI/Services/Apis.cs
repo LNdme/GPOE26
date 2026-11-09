@@ -55,6 +55,7 @@ public interface ICourseApi
     Task<ApiResult<bool>> UpdateAsync(Guid id, CourseInput course);
     Task<ApiResult<bool>> DeleteAsync(Guid id);
     Task<ApiResult<CourseDetail>> UploadPdfAsync(Guid id, ImageUpload pdf);
+    Task<ApiResult<CourseDetail>> RestructureAsync(Guid id);
 }
 
 /// <summary>Images insérées dans un cours (hébergées par le service du site).</summary>
@@ -168,6 +169,7 @@ public class CourseApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, Api
     public Task<ApiResult<bool>> UpdateAsync(Guid id, CourseInput course) => PutAsync<bool>($"/cours/{id}", course);
     public Task<ApiResult<bool>> DeleteAsync(Guid id) => DeleteAsync<bool>($"/cours/{id}");
     public Task<ApiResult<CourseDetail>> UploadPdfAsync(Guid id, ImageUpload pdf) => UploadAsync<CourseDetail>($"/cours/{id}/upload", pdf);
+    public Task<ApiResult<CourseDetail>> RestructureAsync(Guid id) => PostAsync<CourseDetail>($"/cours/{id}/restructure");
 }
 
 public class MediaApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.Site), IMediaApi

@@ -19,7 +19,7 @@ public record CourseSection(Guid Id, CourseSectionType Type, string Content, int
 
 public record CourseDetail(Guid Id, string Title, string Subject, string? Description, CourseContentType ContentType,
     string? ExtractedText, string? PdfPath, List<CourseSection>? Sections, DateTime CreatedAt, DateTime UpdatedAt,
-    CourseStatus Status, List<Guid>? ClassroomIds, Guid OwnerId)
+    CourseStatus Status, List<Guid>? ClassroomIds, Guid OwnerId, string? StructuringStatus = null)
 {
     /// <summary>Contenu Markdown du cours, reconstitué à partir de ses sections.</summary>
     public string ToMarkdown()
