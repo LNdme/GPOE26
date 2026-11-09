@@ -5,6 +5,7 @@
 @inject ICourseApi Courses
 @inject IMediaApi Media
 @inject ITutorApi Tutor
+@inject IAgentApi Agent
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
@@ -68,7 +69,7 @@
                 <div class="ga-card-head">
                     <span class="ga-label">Contenu du cours</span>
                     <span class="ga-actions">
-                        @if (!IsEdit)
+                        @if (!IsEdit && !Session.HasFeature("teacher-agent"))
                         {
                             <button type="button" class="ga-btn secondary small" disabled="@_drafting" @onclick="DraftAsync"><Icon Name="spark" /> @(_drafting ? "Rédaction…" : "Proposer un plan")</button>
                         }
@@ -78,6 +79,21 @@
                         </label>
                     </span>
                 </div>
+
+                @if (Session.HasFeature("teacher-agent"))
+                {
+                    <div class="ga-card sunk">
+                        <span class="ga-label"><Icon Name="spark" Size="16" /> Votre assistant, dans votre ton</span>
+                        <label for="ce-instructions" class="ga-sr">Consignes pour l'assistant</label>
+                        <textarea id="ce-instructions" class="ga-textarea" rows="2" placeholder="ex. Rédige l'introduction avec un exemple tiré du marché local" @bind="_instructions"></textarea>
+                        <span class="ga-actions">
+                            <button type="button" class="ga-btn secondary small" disabled="@_composing" @onclick='() => ComposeAsync("plan")'>Proposer un plan</button>
+                            <button type="button" class="ga-btn secondary small" disabled="@_composing" @onclick='() => ComposeAsync("write")'>Rédiger une partie</button>
+                            <button type="button" class="ga-btn secondary small" disabled="@_composing" @onclick='() => ComposeAsync("rewrite")'>Réécrire la sélection</button>
+                            @if (_composing) { <span class="ga-small ga-muted" role="status">Rédaction…</span> }
+                        </span>
+                    </div>
+                }
 
                 <div class="ce-editor">
                     <div class="ce-pane">
@@ -156,7 +172,8 @@
 
     private CourseDetail? _course;
     private string _title = "", _subject = "", _markdown = "", _previewHtml = "";
-    private string? _description, _error, _pdfName;
+    private string? _description, _error, _pdfName, _instructions;
+    private bool _composing;
     private ImageUpload? _pdf;
     private bool _loading = true, _saving, _drafting, _uploadingImage, _pdfMode, _confirmDelete, _mathPending;
     private ElementReference _preview;
@@ -266,6 +283,42 @@
         RefreshPreview();
     }
 
+    private async Task ComposeAsync(string mode)
+    {
+        _error = null;
+        if (mode != "rewrite" && (string.IsNullOrWhiteSpace(_title) || string.IsNullOrWhiteSpace(_subject)))
+        {
+            _error = "Indiquez d'abord le titre et la matière du cours.";
+            return;
+        }
+
+        var module = await ModuleAsync();
+        string? selection = null;
+        if (mode == "rewrite")
+        {
+            selection = await module.InvokeAsync<string>("selectionText", "ce-markdown");
+            if (string.IsNullOrWhiteSpace(selection))
+            {
+                _error = "Sélectionnez d'abord le passage à réécrire.";
+                return;
+            }
+        }
+
+        _composing = true;
+        var result = await Agent.ComposeAsync(new ComposeRequest(mode, _subject.Trim(), _title.Trim(), _instructions, selection));
+        _composing = false;
+        if (result.Value is null)
+        {
+            _error = result.Error;
+            return;
+        }
+
+        _markdown = mode == "rewrite"
+            ? await module.InvokeAsync<string>("replaceSelection", "ce-markdown", result.Value.Markdown)
+            : string.IsNullOrWhiteSpace(_markdown) ? result.Value.Markdown : $"{_markdown}\n\n{result.Value.Markdown}";
+        RefreshPreview();
+    }
+
     private async Task SaveAsync()
     {
         _error = null;
@@ -318,6 +371,8 @@
         }
 
         _saving = false;
+        // L'assistant apprend le style de l'enseignant à partir de ce qu'il écrit lui-même
+        if (Session.HasFeature("teacher-agent") && sections is not null) await Agent.LearnStyleAsync(_markdown);
         Nav.NavigateTo($"/app/cours/{courseId}");
     }
 

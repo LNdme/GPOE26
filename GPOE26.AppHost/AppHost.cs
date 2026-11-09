@@ -17,7 +17,7 @@ var llmApiKey = builder.AddParameter(
 
 // ── 1 seul serveur PostgreSQL, toutes les DBs dessus ─────────────────────────
 var postgres = builder.AddPostgres("postgres")
-    .WithImage("postgres", "18.6")
+    .WithImage("pgvector/pgvector", "pg18")   // PostgreSQL 18 avec la recherche vectorielle des agents
     .WithDataVolume()
     .WithPgAdmin(); // interface admin dispo sur http://localhost:5050
 
@@ -75,6 +75,8 @@ var quizService = builder.AddProject<Projects.Quiz>("quiz")
     .WaitFor(quizDb)
     .WaitFor(userService);
 
+
+chatService.WithEnvironment("Services__Quiz", quizService.GetEndpoint("http"));   // progression de l'élève
 
 builder.AddProject<Projects.GPOE26_Web>("webfrontend")
     .WithExternalHttpEndpoints()

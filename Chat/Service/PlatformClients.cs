@@ -55,6 +55,20 @@ public class PlatformClients(IHttpClientFactory factory, IHttpContextAccessor co
         }
     }
 
+    /// <summary>Lecture JSON avec le JWT de l'appelant. Un service absent ne doit jamais empêcher l'agent de répondre : renvoie null.</summary>
+    public async Task<T?> GetJsonAsync<T>(string client, string path, CancellationToken ct) where T : class
+    {
+        try
+        {
+            using var response = await SendAsync(client, path, ct);
+            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<T>(Json, ct) : null;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException && !ct.IsCancellationRequested)
+        {
+            return null;
+        }
+    }
+
     /// <summary>La formule de l'utilisateur inclut-elle cette fonctionnalité ? (lu au service User, source des droits)</summary>
     public async Task<bool> HasFeatureAsync(string code, CancellationToken ct)
     {

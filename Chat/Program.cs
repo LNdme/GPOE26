@@ -53,7 +53,14 @@ builder.AddLlmClient();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient("cours", c => c.BaseAddress = new Uri(builder.Configuration["Services:Cours"] ?? "http://localhost:5188"));
 builder.Services.AddHttpClient("user", c => c.BaseAddress = new Uri(builder.Configuration["Services:User"] ?? "http://localhost:5197"));
+builder.Services.AddHttpClient("quiz", c => c.BaseAddress = new Uri(builder.Configuration["Services:Quiz"] ?? "http://localhost:5163"));
 builder.Services.AddScoped<PlatformClients>();
+
+// Mémoire des agents : relue à chaque question, consolidée en arrière-plan après chaque échange
+builder.Services.AddScoped<AgentMemoryStore>();
+builder.Services.AddScoped<AgentContextService>();
+builder.Services.AddSingleton<AgentReflectionQueue>();
+builder.Services.AddHostedService<AgentReflectionWorker>();
 
 var jwtKey = builder.Configuration["Jwt:Key"]
     ?? throw new InvalidOperationException("La configuration Jwt:Key est manquante.");
@@ -127,5 +134,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 app.MapTutorEndpoints();
+app.MapAgentEndpoints();
 
 app.Run();

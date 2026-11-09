@@ -3,6 +3,7 @@
   <Project Path="Cours/Cours.csproj" />
   <Project Path="GPOE26.ApiService/GPOE26.ApiService.csproj" />
   <Project Path="GPOE26.AppHost/GPOE26.AppHost.csproj" />
+  <Project Path="GPOE26.Logic.Tests/GPOE26.Logic.Tests.csproj" />
   <Project Path="GPOE26.ServiceDefaults/GPOE26.ServiceDefaults.csproj" />
   <Project Path="GPOE26.Tests/GPOE26.Tests.csproj" />
   <Project Path="GPOE26.UI/GPOE26.UI.csproj" />

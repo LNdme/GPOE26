@@ -3,6 +3,7 @@
 @inherits AppPage
 @inject ICourseApi Courses
 @inject IAssessmentApi Assessments
+@inject IAgentApi Agent
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
@@ -154,7 +155,8 @@ else
     private List<StudentAssessment> _related = new();
     private int _vote;
     private bool _tutorOpen, _mathPending, _tocOpen = true, _restructuring;
-    private CancellationTokenSource? _poll;
+    private CancellationTokenSource? _poll, _studyClock;
+    private const int StudyTickMinutes = 2;
     private ElementReference _article;
     private IJSObjectReference? _module;
 
@@ -169,10 +171,28 @@ else
         // Évaluations d'entraînement ouvertes : proposées à l'élève à la fin du cours
         if (Session.Role == UserRole.Student)
         {
+            StartStudyClock();
             var mine = await Assessments.MineAsStudentAsync();
             _related = (mine.Value ?? new()).Where(a => a.Kind == AssessmentKind.Practice && a.CanStart(DateTime.UtcNow)).Take(3).ToList();
         }
         _loading = false;
+    }
+
+    /// <summary>Temps réellement passé sur le cours : alimente le plan du jour et le tuteur.</summary>
+    private void StartStudyClock()
+    {
+        _studyClock = new CancellationTokenSource();
+        var token = _studyClock.Token;
+        _ = InvokeAsync(async () =>
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromMinutes(StudyTickMinutes));
+            try
+            {
+                while (await timer.WaitForNextTickAsync(token))
+                    await Agent.RecordStudyAsync(Id, StudyTickMinutes);
+            }
+            catch (OperationCanceledException) { }
+        });
     }
 
     private void Show(CourseDetail? course)
@@ -235,6 +255,7 @@ else
     public async ValueTask DisposeAsync()
     {
         _poll?.Cancel();
+        _studyClock?.Cancel();
         try { if (_module is not null) await _module.DisposeAsync(); }
         catch (JSDisconnectedException) { }
     }

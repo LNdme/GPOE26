@@ -4,6 +4,7 @@
 @inject IProgressApi Progress
 @inject IClassroomApi Classrooms
 @inject IFamilyApi Family
+@inject IAgentApi Agent
 
 <div class="ga-page">
     <div class="ga-head">
@@ -156,6 +157,32 @@
                     </div>
                 </div>
 
+                <section class="ga-card" aria-labelledby="h-today">
+                    <h2 id="h-today" class="ga-h3"><Icon Name="calendar" /> Ton plan du jour</h2>
+                    @if (_plan is not { HasSchedule: true })
+                    {
+                        <span class="ga-small ga-muted">Indique ton emploi du temps : on organisera tes révisions selon ton temps libre.</span>
+                        <a class="ga-btn secondary small" style="align-self:flex-start" href="/app/emploi-du-temps">Renseigner mon emploi du temps</a>
+                    }
+                    else if (_plan.Blocks.Count == 0)
+                    {
+                        <span class="ga-small ga-muted">Rien à planifier pour aujourd'hui.</span>
+                    }
+                    else
+                    {
+                        <span class="ga-small ga-muted">@_plan.AvailableMinutes min disponibles aujourd'hui</span>
+                        <div class="ga-list">
+                            @foreach (var block in _plan.Blocks)
+                            {
+                                <a class="ga-row" style="text-decoration:none; flex-wrap:nowrap" href="@(block.Kind == "assessment" ? $"/app/evaluations/{block.TargetId}/composer" : $"/app/cours/{block.TargetId}")">
+                                    <span class="ga-code">@BlockTime(block.StartMinutes)</span>
+                                    <span>@block.Title</span>
+                                </a>
+                            }
+                        </div>
+                    }
+                </section>
+
                 @if (!Me.IsPremium)
                 {
                     <a class="ga-premium-lock" href="/app/abonnement">
@@ -207,6 +234,9 @@
     private string? _joinCode, _joinMessage;
     private bool _joinOk;
     private string? _loadError;
+    private DayPlan? _plan;
+
+    private static string BlockTime(int minutes) => $"{minutes / 60:00}h{minutes % 60:00}";
 
     protected override async Task OnInitializedAsync()
     {
@@ -217,6 +247,7 @@
             var progress = Progress.MineAsync();
             var classes = Classrooms.MineAsync();
             var parents = Family.MyParentsAsync();
+            _plan = (await Agent.TodayPlanAsync()).Value;
             await Task.WhenAll(assessments, courses, progress, classes, parents);
 
             var assessmentResult = await assessments;

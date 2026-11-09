@@ -80,6 +80,30 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
         throw new LlmUnavailableException("Aucun modèle n'a pu répondre. Réessayez dans un instant.", last);
     }
 
+    /// <summary>Vecteur de sens d'un texte (réglage LLM:EmbeddingModel). Null si aucun modèle n'est configuré ou en cas d'échec.</summary>
+    public async Task<float[]?> EmbedAsync(string text, CancellationToken ct = default)
+    {
+        if (!IsConfigured || config["LLM:EmbeddingModel"] is not { Length: > 0 } model) return null;
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/embeddings")
+            {
+                Content = new StringContent(new JsonObject { ["model"] = model, ["input"] = text }.ToJsonString(), Encoding.UTF8, "application/json")
+            };
+            if (!string.IsNullOrWhiteSpace(ApiKey))
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ApiKey);
+            using var response = await http.SendAsync(request, ct);
+            if (!response.IsSuccessStatusCode) return null;
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+            return doc.RootElement.GetProperty("data")[0].GetProperty("embedding").EnumerateArray().Select(v => v.GetSingle()).ToArray();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            logger.LogWarning("Embedding indisponible : {Error}", ex.Message);
+            return null;
+        }
+    }
+
     private async Task<string?> CallAsync(string model, IReadOnlyList<LlmMessage> messages, int maxTokens,
         double temperature, CancellationToken ct)
     {

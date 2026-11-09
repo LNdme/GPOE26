@@ -19,6 +19,27 @@ public interface IAccountApi
     Task<ApiResult<SimulatedPayment>> SimulatePaymentAsync(SubscriptionPlan plan, BillingPeriod period, string provider);
 }
 
+/// <summary>Agents : emploi du temps, plan du jour, mémoire et assistant enseignant.</summary>
+public interface IAgentApi
+{
+    Task<ApiResult<List<StudySlot>>> ScheduleAsync();
+    Task<ApiResult<bool>> SaveScheduleAsync(List<StudySlot> slots);
+    Task<ApiResult<DayPlan>> TodayPlanAsync();
+    Task<ApiResult<bool>> RecordStudyAsync(Guid courseId, int minutes);
+    Task<ApiResult<List<AgentMemoryItem>>> MemoriesAsync();
+    Task<ApiResult<bool>> UpdateMemoryAsync(Guid id, string content);
+    Task<ApiResult<bool>> DeleteMemoryAsync(Guid id);
+    Task<ApiResult<bool>> ClearMemoriesAsync();
+    Task<ApiResult<MemorySettings>> MemorySettingsAsync();
+    Task<ApiResult<MemorySettings>> SetMemoryEnabledAsync(bool enabled);
+    Task<ApiResult<TeacherAgentProfile>> TeacherProfileAsync();
+    Task<ApiResult<TeacherAgentProfile>> SaveTeacherProfileAsync(TeacherAgentProfile profile);
+    Task<ApiResult<ComposeResult>> ComposeAsync(ComposeRequest request);
+    Task<ApiResult<bool>> LearnStyleAsync(string text);
+    Task<ApiResult<ClassInsightsResult>> ClassInsightsAsync(Guid classroomId);
+    Task<ApiResult<AssistantAnswer>> AskAssistantAsync(Guid? classroomId, string message);
+}
+
 /// <summary>Catalogue public des formules.</summary>
 public interface IPlanApi
 {
@@ -129,6 +150,26 @@ public class AccountApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, Ap
     public Task<ApiResult<SubscriptionInfo>> StartTrialAsync() => PostAsync<SubscriptionInfo>("/subscriptions/trial");
     public Task<ApiResult<SimulatedPayment>> SimulatePaymentAsync(SubscriptionPlan plan, BillingPeriod period, string provider) =>
         PostAsync<SimulatedPayment>("/subscriptions/simulate-payment", new SimulatePaymentRequest(plan, period, provider));
+}
+
+public class AgentApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.Chat), IAgentApi
+{
+    public Task<ApiResult<List<StudySlot>>> ScheduleAsync() => GetAsync<List<StudySlot>>("/agent/schedule");
+    public Task<ApiResult<bool>> SaveScheduleAsync(List<StudySlot> slots) => PutAsync<bool>("/agent/schedule", slots);
+    public Task<ApiResult<DayPlan>> TodayPlanAsync() => GetAsync<DayPlan>("/agent/plan/today");
+    public Task<ApiResult<bool>> RecordStudyAsync(Guid courseId, int minutes) => PostAsync<bool>("/agent/sessions", new { courseId, minutes });
+    public Task<ApiResult<List<AgentMemoryItem>>> MemoriesAsync() => GetAsync<List<AgentMemoryItem>>("/agent/memories");
+    public Task<ApiResult<bool>> UpdateMemoryAsync(Guid id, string content) => PutAsync<bool>($"/agent/memories/{id}", new { content });
+    public Task<ApiResult<bool>> DeleteMemoryAsync(Guid id) => DeleteAsync<bool>($"/agent/memories/{id}");
+    public Task<ApiResult<bool>> ClearMemoriesAsync() => DeleteAsync<bool>("/agent/memories");
+    public Task<ApiResult<MemorySettings>> MemorySettingsAsync() => GetAsync<MemorySettings>("/agent/memory-settings");
+    public Task<ApiResult<MemorySettings>> SetMemoryEnabledAsync(bool enabled) => PutAsync<MemorySettings>("/agent/memory-settings", new MemorySettings(enabled, null));
+    public Task<ApiResult<TeacherAgentProfile>> TeacherProfileAsync() => GetAsync<TeacherAgentProfile>("/teacher-agent/profile");
+    public Task<ApiResult<TeacherAgentProfile>> SaveTeacherProfileAsync(TeacherAgentProfile profile) => PutAsync<TeacherAgentProfile>("/teacher-agent/profile", profile);
+    public Task<ApiResult<ComposeResult>> ComposeAsync(ComposeRequest request) => PostAsync<ComposeResult>("/teacher-agent/compose", request);
+    public Task<ApiResult<bool>> LearnStyleAsync(string text) => PostAsync<bool>("/teacher-agent/learn-style", new { text });
+    public Task<ApiResult<ClassInsightsResult>> ClassInsightsAsync(Guid classroomId) => PostAsync<ClassInsightsResult>($"/teacher-agent/classes/{classroomId}/insights");
+    public Task<ApiResult<AssistantAnswer>> AskAssistantAsync(Guid? classroomId, string message) => PostAsync<AssistantAnswer>("/teacher-agent/ask", new { classroomId, message });
 }
 
 public class PlanApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.Site), IPlanApi

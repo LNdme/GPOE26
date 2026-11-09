@@ -37,7 +37,7 @@
                     {
                         <NavLink href="@item.Href" title="@item.Label" aria-label="@item.Label" Match="@(item.Href == "/app" ? NavLinkMatch.All : NavLinkMatch.Prefix)">
                             <Icon Name="@item.Icon" /> <span>@item.Label</span>
-                            @if (item.Premium && !Session.HasFeature("tutor-ai"))
+                            @if (item.Feature is { } feature && !Session.HasFeature(feature))
                             {
                                 <span class="ga-tag lime">PREMIUM</span>
                             }
@@ -76,7 +76,7 @@
     private static readonly System.Text.RegularExpressions.Regex ReaderPath =
         new(@"/app/cours/[0-9a-fA-F-]{36}/?($|[?#])", System.Text.RegularExpressions.RegexOptions.Compiled);
 
-    private record NavItem(string Href, string Label, string Icon, bool Premium = false);
+    private record NavItem(string Href, string Label, string Icon, string? Feature = null);
 
     private static IEnumerable<NavItem> Items(UserRole role) => role switch
     {
@@ -85,6 +85,7 @@
             new("/app", "Mes classes", "users"),
             new("/app/evaluations", "Épreuves et devoirs", "file"),
             new("/app/cours", "Mes cours", "book"),
+            new("/app/assistant", "Assistant IA", "spark", "teacher-agent"),
             new("/app/abonnement", "Abonnement", "card"),
         ],
         UserRole.Parent =>
@@ -97,7 +98,8 @@
             new("/app", "Plan d'études", "compass"),
             new("/app/cours", "Mes cours", "book"),
             new("/app/evaluations", "Évaluations", "check"),
-            new("/app/tuteur", "Tuteur IA", "spark", Premium: true),
+            new("/app/emploi-du-temps", "Emploi du temps", "calendar"),
+            new("/app/tuteur", "Tuteur IA", "spark", "tutor-ai"),
             new("/app/abonnement", "Abonnement", "card"),
         ]
     };

@@ -8,6 +8,11 @@ public class TutorContext(DbContextOptions<TutorContext> options) : DbContext(op
     public DbSet<TutorConversation> Conversations => Set<TutorConversation>();
     public DbSet<TutorMessage> Messages => Set<TutorMessage>();
     public DbSet<TutorImage> Images => Set<TutorImage>();
+    public DbSet<AgentProfile> AgentProfiles => Set<AgentProfile>();
+    public DbSet<AgentMemory> AgentMemories => Set<AgentMemory>();
+    public DbSet<CourseMasteryState> CourseMastery => Set<CourseMasteryState>();
+    public DbSet<StudySlot> StudySlots => Set<StudySlot>();
+    public DbSet<StudySession> StudySessions => Set<StudySession>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -29,11 +34,36 @@ public class TutorContext(DbContextOptions<TutorContext> options) : DbContext(op
             e.ToTable("TutorImages");
             e.Property(i => i.Id).ValueGeneratedNever();
         });
+        modelBuilder.Entity<AgentProfile>(e =>
+        {
+            e.ToTable("AgentProfiles");
+            e.Property(p => p.Id).ValueGeneratedNever();
+        });
+        modelBuilder.Entity<AgentMemory>(e =>
+        {
+            e.ToTable("AgentMemories");
+            e.Property(m => m.Id).ValueGeneratedNever();
+        });
+        modelBuilder.Entity<CourseMasteryState>(e =>
+        {
+            e.ToTable("CourseMastery");
+            e.HasKey(m => new { m.UserId, m.CourseId });
+        });
+        modelBuilder.Entity<StudySlot>(e =>
+        {
+            e.ToTable("StudySlots");
+            e.Property(s => s.Id).ValueGeneratedNever();
+        });
+        modelBuilder.Entity<StudySession>(e =>
+        {
+            e.ToTable("StudySessions");
+            e.Property(s => s.Id).ValueGeneratedNever();
+        });
     }
 }
 
 /// <summary>Création idempotente du schéma au démarrage (pas de migrations EF, comme les autres services).</summary>
-public static class TutorSchema
+public static partial class AgentSchema
 {
     private static readonly string[] Statements =
     {
@@ -67,11 +97,92 @@ public static class TutorSchema
             CONSTRAINT ""PK_TutorMessages"" PRIMARY KEY (""Id"")
         )",
         @"CREATE INDEX IF NOT EXISTS ""IX_TutorMessages_ConversationId_CreatedAt"" ON ""TutorMessages"" (""ConversationId"", ""CreatedAt"")",
+
+        // Mémoire des agents
+        @"CREATE TABLE IF NOT EXISTS ""AgentProfiles"" (
+            ""Id"" uuid NOT NULL,
+            ""UserId"" uuid NOT NULL,
+            ""Kind"" text NOT NULL,
+            ""Summary"" text,
+            ""Tone"" text,
+            ""DetailLevel"" text,
+            ""Samples"" text,
+            ""MemoryEnabled"" boolean NOT NULL DEFAULT true,
+            ""UpdatedAt"" timestamp with time zone NOT NULL,
+            CONSTRAINT ""PK_AgentProfiles"" PRIMARY KEY (""Id"")
+        )",
+        @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AgentProfiles_UserId_Kind"" ON ""AgentProfiles"" (""UserId"", ""Kind"")",
+        @"CREATE TABLE IF NOT EXISTS ""AgentMemories"" (
+            ""Id"" uuid NOT NULL,
+            ""UserId"" uuid NOT NULL,
+            ""Kind"" text NOT NULL,
+            ""Type"" text NOT NULL,
+            ""Content"" text NOT NULL,
+            ""Importance"" integer NOT NULL,
+            ""CourseId"" uuid,
+            ""SourceMessageId"" uuid,
+            ""CreatedAt"" timestamp with time zone NOT NULL,
+            ""UpdatedAt"" timestamp with time zone NOT NULL,
+            ""Search"" tsvector GENERATED ALWAYS AS (to_tsvector('french', ""Content"")) STORED,
+            CONSTRAINT ""PK_AgentMemories"" PRIMARY KEY (""Id"")
+        )",
+        @"CREATE INDEX IF NOT EXISTS ""IX_AgentMemories_UserId_Kind"" ON ""AgentMemories"" (""UserId"", ""Kind"")",
+        @"CREATE INDEX IF NOT EXISTS ""IX_AgentMemories_Search"" ON ""AgentMemories"" USING gin (""Search"")",
+        @"CREATE TABLE IF NOT EXISTS ""CourseMastery"" (
+            ""UserId"" uuid NOT NULL,
+            ""CourseId"" uuid NOT NULL,
+            ""CourseTitle"" text NOT NULL,
+            ""Subject"" text,
+            ""WeakPoints"" text,
+            ""LastStudiedAt"" timestamp with time zone NOT NULL,
+            CONSTRAINT ""PK_CourseMastery"" PRIMARY KEY (""UserId"", ""CourseId"")
+        )",
+        @"CREATE TABLE IF NOT EXISTS ""StudySlots"" (
+            ""Id"" uuid NOT NULL,
+            ""UserId"" uuid NOT NULL,
+            ""Day"" integer NOT NULL,
+            ""StartMinutes"" integer NOT NULL,
+            ""EndMinutes"" integer NOT NULL,
+            ""Kind"" text NOT NULL,
+            ""Label"" text,
+            CONSTRAINT ""PK_StudySlots"" PRIMARY KEY (""Id"")
+        )",
+        @"CREATE INDEX IF NOT EXISTS ""IX_StudySlots_UserId"" ON ""StudySlots"" (""UserId"")",
+        @"CREATE TABLE IF NOT EXISTS ""StudySessions"" (
+            ""Id"" uuid NOT NULL,
+            ""UserId"" uuid NOT NULL,
+            ""CourseId"" uuid NOT NULL,
+            ""Day"" date NOT NULL,
+            ""Minutes"" integer NOT NULL,
+            ""LastAt"" timestamp with time zone NOT NULL,
+            CONSTRAINT ""PK_StudySessions"" PRIMARY KEY (""Id"")
+        )",
+        @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_StudySessions_UserId_CourseId_Day"" ON ""StudySessions"" (""UserId"", ""CourseId"", ""Day"")",
     };
+
+    /// <summary>La recherche vectorielle est un plus : sans l'extension pgvector, le plein texte suffit.</summary>
+    public static bool VectorAvailable { get; private set; }
 
     public static async Task EnsureAsync(TutorContext db)
     {
         foreach (var sql in Statements)
             await db.Database.ExecuteSqlRawAsync(sql);
+
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(@"CREATE EXTENSION IF NOT EXISTS vector");
+            await db.Database.ExecuteSqlRawAsync(@"ALTER TABLE ""AgentMemories"" ADD COLUMN IF NOT EXISTS ""Embedding"" vector");
+            VectorAvailable = true;
+        }
+        catch (Npgsql.PostgresException)
+        {
+            VectorAvailable = false;
+        }
     }
+}
+
+/// <summary>Nom historique, utilisé au démarrage du service.</summary>
+public static class TutorSchema
+{
+    public static Task EnsureAsync(TutorContext db) => AgentSchema.EnsureAsync(db);
 }

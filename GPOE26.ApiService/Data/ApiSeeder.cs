@@ -27,7 +27,7 @@ public static class ApiSeeder
             {
                 Code = "free", Name = "Gratuit", Category = "Tous", DisplayOrder = 0, PriceMonthly = 0, PriceYearly = 0,
                 Description = "Pour découvrir la plateforme.",
-                Features = [Courses(), Schedule(), F("Quiz()-ai", "Quiz générés par l'IA", 3)]
+                Features = [Courses(), Schedule(), F("quiz-ai", "Quiz générés par l'IA", 3)]
             },
             new SubscriptionPlan
             {

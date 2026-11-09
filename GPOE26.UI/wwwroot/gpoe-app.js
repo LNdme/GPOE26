@@ -33,6 +33,20 @@ export function insertAtCursor(id, before, after) {
     return el.value;
 }
 
+/** Texte sélectionné dans un champ. */
+export function selectionText(id) {
+    const el = document.getElementById(id);
+    return el ? el.value.substring(el.selectionStart, el.selectionEnd) : '';
+}
+
+/** Remplace la sélection d'un champ et renvoie le nouveau contenu. */
+export function replaceSelection(id, text) {
+    const el = document.getElementById(id);
+    if (!el) return '';
+    el.value = el.value.substring(0, el.selectionStart) + text + el.value.substring(el.selectionEnd);
+    return el.value;
+}
+
 /** Fait défiler une zone jusqu'en bas (dernier message). */
 export function scrollToEnd(element) {
     if (element) element.scrollTop = element.scrollHeight;

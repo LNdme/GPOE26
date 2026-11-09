@@ -74,7 +74,8 @@ public static class TutorEndpoints
 
         // ── POST /tutor/courses/{courseId}/messages ───────────────────────────────
         group.MapPost("/courses/{courseId:guid}/messages", async (Guid courseId, AskTutorRequest req, ClaimsPrincipal principal,
-            TutorContext db, PlatformClients platform, LlmClient llm, ILogger<TutorContext> logger, CancellationToken ct) =>
+            TutorContext db, PlatformClients platform, LlmClient llm, AgentContextService agent, AgentReflectionQueue reflection,
+            ILogger<TutorContext> logger, CancellationToken ct) =>
         {
             var userId = UserId(principal);
             var text = req.Message?.Trim() ?? "";
@@ -113,7 +114,8 @@ public static class TutorEndpoints
             var messages = new List<LlmMessage>
             {
                 new("system", string.Format(SystemPrompt, string.IsNullOrWhiteSpace(level) ? "secondaire" : level,
-                    course.Title, course.Subject, course.Text()))
+                    course.Title, course.Subject, course.Text())
+                    + await agent.StudentContextAsync(userId, courseId, text, ct))
             };
             messages.AddRange(conversation.Messages.TakeLast(HistoryForModel)
                 .Select(m => new LlmMessage(m.Role, m.ImageId is null ? m.Content : $"{m.Content}\n[photo de copie jointe]")));
@@ -136,6 +138,9 @@ public static class TutorEndpoints
             db.Messages.AddRange(question, answer);
             conversation.UpdatedAt = now;
             await db.SaveChangesAsync(ct);
+
+            await agent.TouchCourseAsync(userId, courseId, course.Title, course.Subject, ct);
+            reflection.Enqueue(new ReflectionJob(userId, AgentKinds.Student, courseId, course.Title, text, reply, answer.Id));
 
             return Results.Ok(new AskTutorResponse(new TutorMessageDto(question), new TutorMessageDto(answer)));
         })
@@ -214,6 +219,7 @@ public static class TutorEndpoints
                 .Select(m => m.ImageId!.Value).ToListAsync();
             await db.Images.Where(i => imageIds.Contains(i.Id)).ExecuteDeleteAsync();
             db.Conversations.Remove(conversation);
+            await db.AgentMemories.Where(m => m.UserId == userId && m.CourseId == courseId).ExecuteDeleteAsync();
             await db.SaveChangesAsync();
             return Results.NoContent();
         })

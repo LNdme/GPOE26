@@ -1,0 +1,176 @@
+@page "/app/assistant"
+@layout AppLayout
+@inherits AppPage
+@inject IAgentApi Agent
+@inject IClassroomApi Classrooms
+
+<PageTitle>Assistant — GPOE26</PageTitle>
+
+<div class="ga-page">
+    <div class="ga-head">
+        <div>
+            <h1>Mon assistant</h1>
+            <p>Il écrit dans votre ton et vous aide à suivre vos classes, à partir de leurs résultats.</p>
+        </div>
+        <a class="ga-btn ghost" href="/app/tuteur/memoire"><Icon Name="history" /> Ce qu'il retient</a>
+    </div>
+
+    <Alert Message="@_error" />
+    <Alert Message="@_info" Kind="success" />
+
+    @if (!Ready || _loading)
+    {
+        <Loading />
+    }
+    else if (!Session.HasFeature("teacher-agent"))
+    {
+        <a class="ga-premium-lock" href="/app/abonnement">
+            <Icon Name="spark" Size="26" />
+            <span><strong>Assistant enseignant</strong><br /><span class="ga-small" style="color:#C9D3EA">Inclus dans les formules Enseignant et Établissement.</span></span>
+        </a>
+    }
+    else
+    {
+        <section class="ga-card" aria-labelledby="h-follow">
+            <h2 id="h-follow" class="ga-h3"><Icon Name="users" /> Suivi d'une classe</h2>
+            <div class="ga-row">
+                <label for="as-class" class="ga-sr">Classe</label>
+                <select id="as-class" class="ga-select" style="max-width:320px" @bind="_classId">
+                    <option value="">Choisir une classe</option>
+                    @foreach (var c in _classes) { <option value="@c.Id">@c.Name</option> }
+                </select>
+                <button type="button" class="ga-btn secondary" disabled="@(_classId is null || _analyzing)" @onclick="AnalyzeAsync">@(_analyzing ? "Analyse…" : "Analyser")</button>
+            </div>
+
+            @if (_insights is { } result)
+            {
+                <div class="ga-row">
+                    <span class="ga-tag grey">@result.Insights.StudentCount ÉLÈVES</span>
+                    <span class="ga-tag green">MOYENNE @(result.Insights.AverageOn20?.ToString() ?? "—")/20</span>
+                </div>
+                @if (result.Narrative is { Length: > 0 })
+                {
+                    <div class="ga-alert">@result.Narrative</div>
+                }
+                <div class="ga-field">
+                    <span class="ga-label">À accompagner</span>
+                    @if (result.Insights.AtRisk.Count == 0) { <span class="ga-muted">Aucun élève en difficulté pour l'instant.</span> }
+                    <div class="ga-list">
+                        @foreach (var s in result.Insights.AtRisk)
+                        {
+                            <div class="ga-row between"><strong>@s.Name</strong><span class="ga-small ga-muted">@s.Reason</span></div>
+                        }
+                    </div>
+                </div>
+                @if (result.Insights.WeakCourses.Count > 0)
+                {
+                    <div class="ga-field">
+                        <span class="ga-label">Notions à revoir</span>
+                        <div class="ga-list">
+                            @foreach (var c in result.Insights.WeakCourses)
+                            {
+                                <div class="ga-row between"><span>@c.Title</span><span class="ga-small ga-muted">@c.AveragePercent % de réussite</span></div>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+        </section>
+
+        <section class="ga-card" aria-labelledby="h-ask">
+            <h2 id="h-ask" class="ga-h3"><Icon Name="chat" /> Poser une question</h2>
+            @foreach (var exchange in _exchanges)
+            {
+                <div class="ga-field">
+                    <strong>@exchange.Question</strong>
+                    <div class="rd-content" style="font-size:15px">@((MarkupString)MarkdownRenderer.Render(exchange.Answer).Html)</div>
+                </div>
+            }
+            <form class="ga-stack" @onsubmit="AskAsync" @onsubmit:preventDefault>
+                <label for="as-q" class="ga-sr">Votre question</label>
+                <textarea id="as-q" class="ga-textarea" rows="2" placeholder="ex. Comment remotiver la classe avant l'examen ?" @bind="_question"></textarea>
+                <button type="submit" class="ga-btn" style="align-self:flex-start" disabled="@(_asking || string.IsNullOrWhiteSpace(_question))">@(_asking ? "Réflexion…" : "Envoyer")</button>
+            </form>
+        </section>
+
+        <form class="ga-card" @onsubmit="SaveProfileAsync" @onsubmit:preventDefault aria-labelledby="h-tone">
+            <h2 id="h-tone" class="ga-h3"><Icon Name="spark" /> Votre style</h2>
+            <div class="ga-field">
+                <label for="as-tone">Ton souhaité</label>
+                <input id="as-tone" class="ga-input" maxlength="300" placeholder="ex. Direct, encourageant, avec des exemples du quotidien" @bind="_tone" />
+            </div>
+            <div class="ga-field">
+                <label for="as-detail">Niveau de détail</label>
+                <select id="as-detail" class="ga-select" @bind="_detail">
+                    <option value="">Non précisé</option>
+                    <option>Synthétique</option>
+                    <option>Équilibré</option>
+                    <option>Très détaillé</option>
+                </select>
+            </div>
+            <div class="ga-field">
+                <label for="as-samples">Extraits de vos textes</label>
+                <textarea id="as-samples" class="ga-textarea" rows="4" maxlength="4000" @bind="_samples"></textarea>
+                <span class="help">Quelques paragraphes écrits par vous : l'assistant s'en inspire.</span>
+            </div>
+            <button type="submit" class="ga-btn" style="align-self:flex-start">Enregistrer</button>
+        </form>
+    }
+</div>
+
+@code {
+    private record Exchange(string Question, string Answer);
+
+    protected override UserRole[]? AllowedRoles => [UserRole.Teacher, UserRole.Admin];
+
+    private List<Classroom> _classes = new();
+    private readonly List<Exchange> _exchanges = new();
+    private ClassInsightsResult? _insights;
+    private Guid? _classId;
+    private bool _loading = true, _analyzing, _asking;
+    private string? _error, _info, _question, _tone, _detail, _samples;
+
+    protected override async Task LoadAsync()
+    {
+        if (Session.HasFeature("teacher-agent"))
+        {
+            _classes = (await Classrooms.MineAsync()).Value ?? new();
+            var profile = await Agent.TeacherProfileAsync();
+            _tone = profile.Value?.Tone;
+            _detail = profile.Value?.DetailLevel;
+            _samples = profile.Value?.Samples;
+            _error = profile.Error;
+        }
+        _loading = false;
+    }
+
+    private async Task AnalyzeAsync()
+    {
+        _analyzing = true;
+        _error = null;
+        var result = await Agent.ClassInsightsAsync(_classId!.Value);
+        _analyzing = false;
+        _insights = result.Value;
+        _error = result.Error;
+    }
+
+    private async Task AskAsync()
+    {
+        var question = _question!.Trim();
+        _asking = true;
+        _error = null;
+        var result = await Agent.AskAssistantAsync(_classId, question);
+        _asking = false;
+        if (result.Value is null) { _error = result.Error; return; }
+        _exchanges.Add(new Exchange(question, result.Value.Answer));
+        _question = null;
+    }
+
+    private async Task SaveProfileAsync()
+    {
+        _error = _info = null;
+        var result = await Agent.SaveTeacherProfileAsync(new TeacherAgentProfile(_tone, _detail, _samples, null));
+        if (!result.Ok) { _error = result.Error; return; }
+        _info = "Vos réglages sont enregistrés.";
+    }
+}

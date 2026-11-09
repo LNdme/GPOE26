@@ -1,0 +1,156 @@
+@page "/app/tuteur/memoire"
+@layout AppLayout
+@inherits AppPage
+@inject IAgentApi Agent
+
+<PageTitle>Mémoire de l'agent — GPOE26</PageTitle>
+
+<div class="ga-page narrow">
+    <a class="ga-back" href="@(Session.Role == UserRole.Teacher ? "/app/assistant" : "/app/tuteur")"><Icon Name="left" /> Retour</a>
+    <div class="ga-head">
+        <div>
+            <h1>@(Session.Role == UserRole.Teacher ? "Ce que mon assistant retient" : "Ce que le tuteur retient de moi")</h1>
+            <p>Ces informations servent uniquement à t'aider. Personne d'autre n'y a accès : ni les enseignants, ni les parents.</p>
+        </div>
+    </div>
+
+    <Alert Message="@_error" />
+
+    @if (!Ready || _loading)
+    {
+        <Loading />
+    }
+    else
+    {
+        <section class="ga-card">
+            <label class="ga-check">
+                <input type="checkbox" checked="@_enabled" @onchange="e => ToggleAsync((bool)e.Value!)" />
+                <span>Laisser l'agent apprendre de nos échanges</span>
+            </label>
+            @if (_summary is { Length: > 0 })
+            {
+                <div class="ga-field"><span class="ga-label">Portrait actuel</span><p class="ga-muted" style="margin:0">@_summary</p></div>
+            }
+        </section>
+
+        <section class="ga-card">
+            @if (_memories.Count == 0)
+            {
+                <div class="ga-empty"><span>Rien pour l'instant : les souvenirs apparaîtront ici au fil des échanges.</span></div>
+            }
+            <div class="ga-list">
+                @foreach (var memory in _memories)
+                {
+                    <div class="ga-stack" style="gap:8px">
+                        <div class="ga-row between">
+                            <span class="ga-tag @TypeColor(memory.Type)">@TypeLabel(memory.Type)</span>
+                            <span class="ga-actions">
+                                <button type="button" class="ga-btn ghost small" @onclick="() => StartEdit(memory)">Corriger</button>
+                                <button type="button" class="ga-btn ghost small" aria-label="Supprimer ce souvenir" @onclick="() => DeleteAsync(memory)"><Icon Name="trash" /></button>
+                            </span>
+                        </div>
+                        @if (_editing == memory.Id)
+                        {
+                            <textarea class="ga-textarea" rows="2" maxlength="240" aria-label="Corriger ce souvenir" @bind="_draft"></textarea>
+                            <span class="ga-actions">
+                                <button type="button" class="ga-btn small" @onclick="() => SaveEditAsync(memory)">Enregistrer</button>
+                                <button type="button" class="ga-btn ghost small" @onclick="() => _editing = null">Annuler</button>
+                            </span>
+                        }
+                        else
+                        {
+                            <span>@memory.Content</span>
+                        }
+                    </div>
+                }
+            </div>
+
+            @if (_memories.Count > 0)
+            {
+                @if (_confirmClear)
+                {
+                    <span class="ga-actions">
+                        <button type="button" class="ga-btn danger small" @onclick="ClearAsync">Confirmer : tout oublier</button>
+                        <button type="button" class="ga-btn ghost small" @onclick="() => _confirmClear = false">Annuler</button>
+                    </span>
+                }
+                else
+                {
+                    <button type="button" class="ga-btn danger small" style="align-self:flex-start" @onclick="() => _confirmClear = true">Tout oublier</button>
+                }
+            }
+        </section>
+    }
+</div>
+
+@code {
+    protected override UserRole[]? AllowedRoles => [UserRole.Student, UserRole.Teacher];
+
+    private List<AgentMemoryItem> _memories = new();
+    private bool _loading = true, _enabled = true, _confirmClear;
+    private string? _error, _summary, _draft;
+    private Guid? _editing;
+
+    protected override async Task LoadAsync()
+    {
+        var memories = await Agent.MemoriesAsync();
+        var settings = await Agent.MemorySettingsAsync();
+        _memories = memories.Value ?? new();
+        _enabled = settings.Value?.Enabled ?? true;
+        _summary = settings.Value?.Summary;
+        _error = memories.Error ?? settings.Error;
+        _loading = false;
+    }
+
+    private static string TypeLabel(string type) => type switch
+    {
+        "preference" => "PRÉFÉRENCE",
+        "difficulty" => "DIFFICULTÉ",
+        "goal" => "OBJECTIF",
+        _ => "À RETENIR"
+    };
+
+    private static string TypeColor(string type) => type switch
+    {
+        "preference" => "green",
+        "difficulty" => "amber",
+        "goal" => "lime",
+        _ => "grey"
+    };
+
+    private async Task ToggleAsync(bool enabled)
+    {
+        var result = await Agent.SetMemoryEnabledAsync(enabled);
+        if (!result.Ok) { _error = result.Error; return; }
+        _enabled = enabled;
+    }
+
+    private void StartEdit(AgentMemoryItem memory)
+    {
+        _editing = memory.Id;
+        _draft = memory.Content;
+    }
+
+    private async Task SaveEditAsync(AgentMemoryItem memory)
+    {
+        var result = await Agent.UpdateMemoryAsync(memory.Id, _draft ?? "");
+        if (!result.Ok) { _error = result.Error; return; }
+        _editing = null;
+        await LoadAsync();
+    }
+
+    private async Task DeleteAsync(AgentMemoryItem memory)
+    {
+        var result = await Agent.DeleteMemoryAsync(memory.Id);
+        if (!result.Ok) { _error = result.Error; return; }
+        _memories.Remove(memory);
+    }
+
+    private async Task ClearAsync()
+    {
+        var result = await Agent.ClearMemoriesAsync();
+        _confirmClear = false;
+        if (!result.Ok) { _error = result.Error; return; }
+        await LoadAsync();
+    }
+}
