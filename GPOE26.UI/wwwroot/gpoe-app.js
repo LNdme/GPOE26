@@ -20,6 +20,19 @@ export function renderMath(element) {
     if (window.Prism) window.Prism.highlightAllUnder(element);
 }
 
+/** Entoure la sélection d'un champ de texte (barre d'outils Markdown) et renvoie le nouveau contenu. */
+export function insertAtCursor(id, before, after) {
+    const el = document.getElementById(id);
+    if (!el) return '';
+    const { selectionStart: start, selectionEnd: end, value } = el;
+    const selected = value.substring(start, end);
+    el.value = value.substring(0, start) + before + selected + after + value.substring(end);
+    el.focus();
+    el.selectionStart = start + before.length;
+    el.selectionEnd = start + before.length + selected.length;
+    return el.value;
+}
+
 /** Fait défiler une zone jusqu'en bas (dernier message). */
 export function scrollToEnd(element) {
     if (element) element.scrollTop = element.scrollHeight;

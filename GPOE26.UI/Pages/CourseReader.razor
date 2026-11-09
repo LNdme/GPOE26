@@ -80,6 +80,14 @@ else
                 </nav>
             }
 
+            <div class="ga-actions">
+                <a class="ga-btn secondary small" href="/app/cours/@_course.Id/quiz"><Icon Name="check" /> Faire un quiz</a>
+                @if (_course.OwnerId == Me.Id)
+                {
+                    <a class="ga-btn ghost small" href="/app/cours/@_course.Id/modifier">Modifier</a>
+                }
+            </div>
+
             @if (_related.Count > 0)
             {
                 <div class="ga-card">

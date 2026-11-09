@@ -442,3 +442,24 @@ label.ga-btn { cursor: pointer; }
 .tu-pinned { display: flex; flex-direction: column; gap: 14px; }
 .tu-pinned .ga-card .tu-md { font-size: 15px; line-height: 1.6; }
 .tu-q { font-weight: 600; color: var(--ga-navy); margin: 0; }
+
+/* ── Éditeur de cours ──────────────────────────────────────────────────────── */
+.ce-editor { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.ce-pane { min-width: 0; min-height: 440px; border: 1px solid var(--ga-line); border-radius: 12px; background: var(--ga-surface); display: flex; flex-direction: column; overflow: hidden; }
+.ce-toolbar { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px; border-bottom: 1px solid var(--ga-line); background: var(--ga-bg); }
+.ce-tool { min-width: 36px; min-height: 36px; padding: 0 8px; border: 1px solid var(--ga-line); border-radius: 8px; background: var(--ga-surface); color: var(--ga-navy); font: 600 14px var(--ga-font); cursor: pointer; }
+.ce-tool:hover { background: var(--ga-blue-pale); }
+.ce-text { flex: 1; width: 100%; border: 0; padding: 14px; resize: none; font: 14px/1.6 var(--ga-mono); color: var(--ga-text); outline: none; }
+.ce-preview { padding: 16px 18px; overflow-y: auto; display: block; max-height: 70vh; font-family: var(--ga-reading); font-size: 17px; line-height: 1.6; color: var(--ga-text); }
+.ce-preview img { max-width: 100%; border-radius: 8px; }
+.ce-upload { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 32px 16px; border: 1.5px dashed #C9CFDD; border-radius: 12px; text-align: center; }
+@media (max-width: 900px) { .ce-editor { grid-template-columns: 1fr; } .ce-pane { min-height: 300px; } }
+
+/* ── Quiz d'entraînement ───────────────────────────────────────────────────── */
+.qz-progress { height: 8px; border-radius: 999px; background: var(--ga-line); overflow: hidden; }
+.qz-progress span { display: block; height: 100%; background: var(--ga-blue); }
+.qz-options { display: flex; flex-direction: column; gap: 10px; }
+.qz-option { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 10px 14px; border: 1.5px solid var(--ga-line); border-radius: 12px; background: var(--ga-surface); color: var(--ga-navy); font: 500 15px var(--ga-font); text-align: left; cursor: pointer; }
+.qz-option:hover { background: var(--ga-blue-pale); }
+.qz-option.on { border-color: var(--ga-blue); background: var(--ga-blue-pale); }
+.qz-letter { width: 30px; height: 30px; flex: 0 0 30px; border-radius: 999px; background: var(--ga-blue-soft); display: flex; align-items: center; justify-content: center; font-weight: 700; }

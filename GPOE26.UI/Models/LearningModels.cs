@@ -48,6 +48,22 @@ public record CourseDetail(Guid Id, string Title, string Subject, string? Descri
 
 public record ShareCourseRequest(bool Publish, List<Guid> ClassroomIds);
 
+public record CourseSectionInput(CourseSectionType Type, string Content, int Order, int Level = 0);
+
+/// <summary>Création ou modification d'un cours (le contenu rédigé tient dans une section Markdown).</summary>
+public record CourseInput(string Title, string Subject, string? Description, List<CourseSectionInput>? Sections);
+
+public record UploadedFile(string Url);
+
+// ─── Quiz d'entraînement généré à partir d'un cours ───────────────────────────
+
+public record GeneratePracticeQuizRequest(string Title, string CourseText, int NumberOfQuestions);
+public record PracticeQuestion(Guid Id, string Text, List<string> Options);
+public record PracticeQuiz(Guid QuizId, string Title, List<PracticeQuestion> Questions);
+public record PracticeAnswer(Guid QuestionId, int SelectedOptionIndex);
+public record PracticeFeedback(Guid QuestionId, string QuestionText, int SelectedOptionIndex, int CorrectOptionIndex, bool IsCorrect, string Explanation);
+public record PracticeResult(Guid QuizId, int Score, int Total, double Percentage, List<PracticeFeedback> Feedbacks);
+
 // ─── Évaluations ──────────────────────────────────────────────────────────────
 
 public enum AssessmentKind { Practice, Homework, GradedExam, MockExam }

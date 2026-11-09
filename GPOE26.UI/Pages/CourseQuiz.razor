@@ -1,0 +1,159 @@
+@page "/app/cours/{Id:guid}/quiz"
+@layout AppLayout
+@inherits AppPage
+@inject ICourseApi Courses
+@inject IPracticeQuizApi Quizzes
+
+<PageTitle>Quiz — GPOE26</PageTitle>
+
+<div class="ga-page narrow">
+    <a class="ga-back" href="/app/cours/@Id"><Icon Name="left" /> Retour au cours</a>
+    <Alert Message="@_error" />
+
+    @if (!Ready || _loading)
+    {
+        <Loading />
+    }
+    else if (_course is null)
+    {
+        <Alert Message="Cours introuvable." />
+    }
+    else if (_generating)
+    {
+        <div class="ga-card"><Loading Text="Préparation des questions à partir du cours…" /></div>
+    }
+    else if (_quiz is null)
+    {
+        <div class="ga-head"><div><h1>Un quiz sur ce cours</h1><p>@_course.Title</p></div></div>
+        <section class="ga-card">
+            @if (string.IsNullOrWhiteSpace(_course.ExtractedText))
+            {
+                <div class="ga-alert warn">Le contenu du cours est nécessaire pour créer un quiz.</div>
+            }
+            <div class="ga-field">
+                <label for="qz-count">Nombre de questions</label>
+                <select id="qz-count" class="ga-select" @bind="_count">
+                    <option value="3">3 questions</option>
+                    <option value="5">5 questions</option>
+                    <option value="10">10 questions</option>
+                </select>
+            </div>
+            <button class="ga-btn" disabled="@string.IsNullOrWhiteSpace(_course.ExtractedText)" @onclick="GenerateAsync"><Icon Name="spark" /> Générer mon quiz</button>
+        </section>
+    }
+    else if (_result is null)
+    {
+        var current = _quiz.Questions[_index];
+        <div class="ga-head">
+            <div><h1>@_quiz.Title</h1><p>Question @(_index + 1) sur @_quiz.Questions.Count</p></div>
+        </div>
+        <div class="qz-progress" role="progressbar" aria-label="Progression du quiz" aria-valuenow="@(_index + 1)" aria-valuemin="1" aria-valuemax="@_quiz.Questions.Count">
+            <span style="width:@($"{100.0 * (_index + 1) / _quiz.Questions.Count:0.##}".Replace(',', '.'))%"></span>
+        </div>
+        <section class="ga-card">
+            <h2 class="ga-h2">@current.Text</h2>
+            <div class="qz-options" role="group" aria-label="Choisissez une réponse">
+                @for (var i = 0; i < current.Options.Count; i++)
+                {
+                    var option = i;
+                    var selected = _answers.TryGetValue(current.Id, out var answer) && answer == option;
+                    <button type="button" class="qz-option @(selected ? "on" : "")" aria-pressed="@selected" @onclick="() => _answers[current.Id] = option">
+                        <span class="qz-letter">@((char)('A' + option))</span>
+                        <span>@current.Options[option]</span>
+                    </button>
+                }
+            </div>
+            <div class="ga-row between">
+                <button class="ga-btn secondary" disabled="@(_index == 0)" @onclick="() => _index--">Précédente</button>
+                @if (_index < _quiz.Questions.Count - 1)
+                {
+                    <button class="ga-btn" @onclick="() => _index++">Question suivante</button>
+                }
+                else
+                {
+                    <button class="ga-btn" disabled="@(_submitting || _answers.Count < _quiz.Questions.Count)" @onclick="SubmitAsync">@(_submitting ? "Correction…" : "Terminer le quiz")</button>
+                }
+            </div>
+            <span class="ga-small ga-muted" aria-live="polite">@_answers.Count sur @_quiz.Questions.Count réponses</span>
+        </section>
+    }
+    else
+    {
+        <section class="ga-card dark">
+            <span class="ga-tag lime" style="align-self:flex-start">VOTRE BILAN</span>
+            <h1 class="ga-h1" style="color:#fff">@_result.Score / @_result.Total</h1>
+            <span>@_result.Percentage.ToString("F0") % de bonnes réponses</span>
+        </section>
+        <div class="ga-list">
+            @foreach (var f in _result.Feedbacks)
+            {
+                <article class="ga-card">
+                    <span class="ga-tag @(f.IsCorrect ? "green" : "amber")" style="align-self:flex-start">@(f.IsCorrect ? "RÉPONSE JUSTE" : "À REVOIR")</span>
+                    <h2 class="ga-h3">@f.QuestionText</h2>
+                    @if (!f.IsCorrect)
+                    {
+                        <span class="ga-small">Votre réponse : @((char)('A' + f.SelectedOptionIndex)) · Bonne réponse : <strong>@((char)('A' + f.CorrectOptionIndex))</strong></span>
+                    }
+                    <p class="ga-muted" style="margin:0">@f.Explanation</p>
+                </article>
+            }
+        </div>
+        <div class="ga-actions">
+            <button class="ga-btn secondary" @onclick="Reset">Refaire un quiz</button>
+            <a class="ga-btn" href="/app/cours/@Id">Retour au cours</a>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private CourseDetail? _course;
+    private PracticeQuiz? _quiz;
+    private PracticeResult? _result;
+    private readonly Dictionary<Guid, int> _answers = new();
+    private bool _loading = true, _generating, _submitting;
+    private int _count = 5, _index;
+    private string? _error;
+
+    protected override async Task LoadAsync()
+    {
+        var result = await Courses.GetAsync(Id);
+        _course = result.Value;
+        _error = result.Error;
+        _loading = false;
+    }
+
+    private async Task GenerateAsync()
+    {
+        _generating = true;
+        _error = null;
+        var result = await Quizzes.GenerateAsync(_course!.Title, _course.ExtractedText!, _count);
+        _generating = false;
+        if (result.Value is not { Questions.Count: > 0 })
+        {
+            _error = result.Error ?? "Le quiz n'a pas pu être généré. Réessayez.";
+            return;
+        }
+        _quiz = result.Value;
+        _index = 0;
+    }
+
+    private async Task SubmitAsync()
+    {
+        _submitting = true;
+        _error = null;
+        var result = await Quizzes.SubmitAsync(_quiz!.QuizId, _answers.Select(a => new PracticeAnswer(a.Key, a.Value)).ToList());
+        _submitting = false;
+        _result = result.Value;
+        _error = result.Error;
+    }
+
+    private void Reset()
+    {
+        _quiz = null;
+        _result = null;
+        _answers.Clear();
+        _error = null;
+    }
+}

@@ -1,26 +1,35 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
 
 :root {
     --slate-50: #f8fafc;
     --slate-100: #f1f5f9;
     --slate-200: #e2e8f0;
-    --slate-700: #334155;
-    --slate-800: #1e293b;
-    --slate-900: #0f172a;
-    --accent-blue: #2563eb;
+    --slate-700: #16306A;
+    --slate-800: #0E2350;
+    --slate-900: #0E2350;
+    --accent-blue: #2456C9;
     --text-muted: #64748b;
-    --brand-navy: #102e50;
-    --brand-blue: #28647b;
-    --brand-sage: #eaf0e8;
-    --page-paper: #f8f8f4;
-    --ink-soft: #42546a;
+    --brand-navy: #0E2350;
+    --brand-blue: #2456C9;
+    --brand-sage: #EFEDE6;
+    --page-paper: #F6F5F1;
+    --ink-soft: #4A5068;
+}
+
+html {
+    color-scheme: light;
+}
+
+.gpoe-shell h1,
+.gpoe-shell h2,
+.gpoe-shell h3 {
+    font-family: 'Fraunces', Georgia, serif;
 }
 
 html,
 body {
-    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background-color: #fff;
-    color: #1c2c40;
+    font-family: 'DM Sans', system-ui, -apple-system, "Segoe UI", sans-serif;
+    background-color: #F6F5F1;
+    color: #1F2433;
     line-height: 1.6;
 }
 
@@ -111,8 +120,8 @@ a:hover {
 
 .lt-header {
     background: rgba(255, 255, 255, 0.96);
-    border-bottom: 1px solid #e8ece9;
-    box-shadow: 0 8px 24px rgba(16, 46, 80, 0.045);
+    border-bottom: 1px solid #E4E2DA;
+    box-shadow: 0 8px 24px rgba(14, 35, 80, 0.045);
     padding: 0.72rem 0;
     backdrop-filter: blur(12px);
 }
@@ -196,7 +205,7 @@ a:hover {
     color: #fff;
     background:
         radial-gradient(circle at 77% 17%, rgba(139, 179, 155, 0.22), transparent 28rem),
-        linear-gradient(118deg, #102e50 0%, #173d5b 66%, #234d5d 100%);
+        linear-gradient(118deg, #0E2350 0%, #173d5b 66%, #234d5d 100%);
 }
 
 .home-hero__grid {
@@ -224,7 +233,7 @@ a:hover {
 }
 
 .home-eyebrow--dark {
-    color: #487165;
+    color: #1E6B4A;
 }
 
 .home-hero h1 {
@@ -330,7 +339,7 @@ a:hover {
     max-width: 480px;
     max-height: 390px;
     object-fit: contain;
-    filter: drop-shadow(0 18px 18px rgba(16, 46, 80, 0.12));
+    filter: drop-shadow(0 18px 18px rgba(14, 35, 80, 0.12));
 }
 
 .home-hero__caption {
@@ -416,7 +425,7 @@ a:hover {
 .home-contact-list {
     display: grid;
     gap: 0.7rem;
-    color: #536679;
+    color: #4A5068;
     font-size: 0.92rem;
 }
 
@@ -429,7 +438,7 @@ a:hover {
 }
 
 .home-contact-list a {
-    color: #536679;
+    color: #4A5068;
 }
 
 .home-contact-list .bi {
@@ -437,7 +446,7 @@ a:hover {
     height: 1.1rem;
     flex: 0 0 1.1rem;
     margin: 0;
-    color: #487165;
+    color: #1E6B4A;
 }
 
 .home-about__visual {
@@ -502,7 +511,7 @@ a:hover {
 .story-card {
     height: 100%;
     overflow: hidden;
-    border: 1px solid #e6eae6;
+    border: 1px solid #E4E2DA;
     border-radius: 18px;
     background: #fff;
     transition: transform 0.22s ease, box-shadow 0.22s ease;
@@ -510,7 +519,7 @@ a:hover {
 
 .story-card:hover {
     transform: translateY(-4px);
-    box-shadow: 0 16px 36px rgba(16, 46, 80, 0.09);
+    box-shadow: 0 16px 36px rgba(14, 35, 80, 0.09);
 }
 
 .story-card__image {
@@ -539,7 +548,7 @@ a:hover {
     display: flex;
     justify-content: space-between;
     gap: 0.7rem;
-    color: #718095;
+    color: #8C93A6;
     font-size: 0.77rem;
 }
 
@@ -636,7 +645,7 @@ a:hover {
     display: flex;
     align-items: center;
     gap: 0.9rem;
-    border-top: 1px solid #edf0ed;
+    border-top: 1px solid #EFEDE6;
     padding: 0.9rem 0;
     color: inherit;
 }
@@ -656,7 +665,7 @@ a:hover {
     align-items: center;
     border-radius: 12px;
     color: #355d50;
-    background: #edf3e9;
+    background: #EFEDE6;
 }
 
 .home-event__date strong {
@@ -712,7 +721,7 @@ a:hover {
     border-radius: 12px;
     padding: 0.15rem;
     object-fit: contain;
-    background: #eaf0e8;
+    background: #EFEDE6;
 }
 
 .home-team-list {
@@ -726,7 +735,7 @@ a:hover {
     align-items: center;
     gap: 0.8rem;
     min-width: 0;
-    border: 1px solid #e6eae6;
+    border: 1px solid #E4E2DA;
     border-radius: 15px;
     padding: 0.85rem;
     background: #fff;
@@ -741,7 +750,7 @@ a:hover {
     overflow: hidden;
     border-radius: 50%;
     color: #335b4f;
-    background: #eaf0e8;
+    background: #EFEDE6;
     font-size: 1.1rem;
     font-weight: 700;
 }
@@ -767,7 +776,7 @@ a:hover {
 
 .home-team-member small {
     margin-top: 0.1rem;
-    color: #718095;
+    color: #8C93A6;
     font-size: 0.74rem;
 }
 
@@ -775,7 +784,7 @@ a:hover {
     display: grid;
     place-items: center;
     padding: 0.7rem;
-    background: radial-gradient(circle at 50% 35%, #edf2e9, #d9e3db);
+    background: radial-gradient(circle at 50% 35%, #EFEDE6, #d9e3db);
 }
 
 .story-card__image--illustration img {
@@ -804,7 +813,7 @@ a:hover {
 }
 
 .listing-eyebrow {
-    color: #487165;
+    color: #1E6B4A;
     font-size: 0.75rem;
     font-weight: 700;
     letter-spacing: 0.13em;
@@ -882,10 +891,10 @@ a:hover {
     place-content: center;
     justify-items: center;
     gap: 0.55rem;
-    border: 1px dashed #dce4dc;
+    border: 1px dashed #E4E2DA;
     border-radius: 20px;
-    color: #718095;
-    background: #fbfcfa;
+    color: #8C93A6;
+    background: #FFFFFF;
     text-align: center;
 }
 
@@ -910,7 +919,7 @@ a:hover {
 .content-card {
     height: 100%;
     overflow: hidden;
-    border: 1px solid #e6eae6;
+    border: 1px solid #E4E2DA;
     border-radius: 18px;
     background: #fff;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
@@ -918,7 +927,7 @@ a:hover {
 
 .content-card:hover {
     transform: translateY(-3px);
-    box-shadow: 0 14px 32px rgba(16, 46, 80, 0.08);
+    box-shadow: 0 14px 32px rgba(14, 35, 80, 0.08);
 }
 
 .content-card__image {
@@ -960,7 +969,7 @@ a:hover {
     border-radius: 999px;
     padding: 0.25rem 0.65rem;
     color: #416854;
-    background: #edf3e9;
+    background: #EFEDE6;
     font-size: 0.75rem;
     font-weight: 600;
     text-overflow: ellipsis;
@@ -987,7 +996,7 @@ a:hover {
     flex-wrap: wrap;
     gap: 0.75rem;
     margin: auto 0 1rem;
-    color: #718095;
+    color: #8C93A6;
     font-size: 0.79rem;
 }
 
@@ -1009,7 +1018,7 @@ a:hover {
     align-items: center;
     gap: 0.45rem;
     margin-top: auto;
-    border-top: 1px solid #edf0ed;
+    border-top: 1px solid #EFEDE6;
     padding-top: 0.85rem;
 }
 
@@ -1042,7 +1051,7 @@ a:hover {
 
 .content-card__icon-action:hover {
     color: var(--brand-navy);
-    background: #f3f6f2;
+    background: #F6F5F1;
 }
 
 .content-card__icon-action--danger {
@@ -1089,7 +1098,7 @@ a:hover {
     color: #fff;
     background:
         radial-gradient(circle at 82% 8%, rgba(149, 190, 164, 0.22), transparent 19rem),
-        linear-gradient(115deg, #102e50, #224e5a);
+        linear-gradient(115deg, #0E2350, #224e5a);
 }
 
 .learning-hero__copy {
@@ -1154,7 +1163,7 @@ a:hover {
 .content-card__image--illustration {
     display: grid;
     place-items: center;
-    background: radial-gradient(circle at 50% 35%, #edf2e9, #d9e3db);
+    background: radial-gradient(circle at 50% 35%, #EFEDE6, #d9e3db);
 }
 
 .content-card__image--illustration img {
@@ -1168,7 +1177,7 @@ a:hover {
     display: flex;
     flex-direction: column;
     align-items: center;
-    border: 1px solid #e6eae6;
+    border: 1px solid #E4E2DA;
     border-radius: 18px;
     padding: 1.5rem 1.2rem 1.1rem;
     background: #fff;
@@ -1178,7 +1187,7 @@ a:hover {
 
 .team-directory-card:hover {
     transform: translateY(-3px);
-    box-shadow: 0 14px 30px rgba(16, 46, 80, 0.08);
+    box-shadow: 0 14px 30px rgba(14, 35, 80, 0.08);
 }
 
 .team-directory-card__portrait {
@@ -1216,7 +1225,7 @@ a:hover {
 }
 
 .team-directory-card__role {
-    color: #487165;
+    color: #1E6B4A;
     font-weight: 600;
 }
 
@@ -1281,7 +1290,7 @@ a:hover {
 .lt-footer {
     padding: 3.2rem 0 1.2rem;
     color: #fff;
-    background: #102b49;
+    background: #0E2350;
 }
 
 .footer-grid {
@@ -1402,7 +1411,7 @@ a:hover {
 
     .lt-account-nav {
         align-items: stretch !important;
-        border-top: 1px solid #edf0ed;
+        border-top: 1px solid #EFEDE6;
         margin-top: 0.65rem;
         padding-top: 0.75rem;
     }
@@ -1678,11 +1687,11 @@ h1:focus {
     width: 100%;
     max-width: 800px;
     margin: 0 auto;
-    border: 1px solid #e6eae6;
+    border: 1px solid #E4E2DA;
     border-radius: 22px;
     padding: clamp(1.25rem, 4vw, 2.5rem);
     background: rgba(255, 255, 255, 0.96);
-    box-shadow: 0 12px 34px rgba(16, 46, 80, 0.055);
+    box-shadow: 0 12px 34px rgba(14, 35, 80, 0.055);
 }
 
 .management-shell--wide {
@@ -1727,10 +1736,10 @@ h1:focus {
 .management-form .form-select,
 .management-form .input-group .form-control {
     min-height: 46px;
-    border-color: #dfe7e1;
+    border-color: #E4E2DA;
     border-radius: 11px;
     color: #24384c;
-    background-color: #fcfdfb;
+    background-color: #FFFFFF;
     box-shadow: none;
 }
 
@@ -1776,23 +1785,23 @@ h1:focus {
 
 .management-form .form-text {
     margin-top: 0.55rem;
-    color: #718095;
+    color: #8C93A6;
 }
 
 .management-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 0.65rem;
-    border-top: 1px solid #edf0ed;
+    border-top: 1px solid #EFEDE6;
     margin-top: 1.5rem;
     padding-top: 1.25rem;
 }
 
 .management-page .btn-outline-secondary {
-    border-color: #dfe7e1;
+    border-color: #E4E2DA;
     border-radius: 999px;
     padding: 0.7rem 1.1rem;
-    color: #536679;
+    color: #4A5068;
     background: #fff;
     font-size: 0.9rem;
     font-weight: 600;
@@ -1800,7 +1809,7 @@ h1:focus {
 
 .management-page .btn-outline-secondary:hover {
     color: var(--brand-navy);
-    background: #f3f6f2;
+    background: #F6F5F1;
 }
 
 .management-page .btn-navy {
@@ -1815,16 +1824,16 @@ h1:focus {
     gap: 0.75rem;
     min-height: 220px;
     align-content: center;
-    border: 1px dashed #dce4dc;
+    border: 1px dashed #E4E2DA;
     border-radius: 18px;
     padding: 1.5rem;
-    color: #718095;
-    background: #fbfcfa;
+    color: #8C93A6;
+    background: #FFFFFF;
     text-align: center;
 }
 
 .management-state .spinner-border {
-    color: #487165 !important;
+    color: #1E6B4A !important;
 }
 
 .management-detail .management-cover {
@@ -1833,7 +1842,7 @@ h1:focus {
     margin: 0.9rem 0 1.5rem;
     border-radius: 17px;
     object-fit: cover;
-    background: #eaf0e8;
+    background: #EFEDE6;
 }
 
 .management-detail h1 {
@@ -1850,7 +1859,7 @@ h1:focus {
     flex-wrap: wrap;
     gap: 0.6rem 1rem;
     margin-bottom: 1.5rem;
-    color: #718095;
+    color: #8C93A6;
     font-size: 0.88rem;
 }
 
@@ -1862,7 +1871,7 @@ h1:focus {
 
 .management-detail__copy {
     margin: 0 0 1.7rem;
-    color: #42546a;
+    color: #4A5068;
     font-size: 1.02rem;
     line-height: 1.85;
     white-space: pre-wrap;
@@ -1885,13 +1894,13 @@ h1:focus {
     border-radius: 999px;
     padding: 0.38rem 0.75rem;
     color: #416854;
-    background: #edf3e9;
+    background: #EFEDE6;
     font-size: 0.79rem;
     font-weight: 600;
 }
 
 .management-editor .md-toolbar {
-    border: 1px solid #e1e8e2;
+    border: 1px solid #E4E2DA;
     border-bottom: 0 !important;
     border-radius: 13px 13px 0 0;
     background: #f3f7f2 !important;
@@ -1921,9 +1930,9 @@ h1:focus {
     padding: 1rem;
     font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
     font-size: 0.9rem;
-    border-color: #dfe7e1;
+    border-color: #E4E2DA;
     border-radius: 0 0 13px 13px;
-    background: #fcfdfb;
+    background: #FFFFFF;
     color: #24384c;
     line-height: 1.7;
 }
@@ -1935,18 +1944,18 @@ h1:focus {
     flex: 1;
     overflow-y: auto;
     padding: 1.5rem;
-    border-color: #e1e8e2;
+    border-color: #E4E2DA;
     border-radius: 13px;
-    background: #f8faf7;
-    color: #42546a;
+    background: #F6F5F1;
+    color: #4A5068;
 }
 
 .management-upload-zone {
     border: 1px dashed #bdcec2;
     border-radius: 15px;
     padding: 2rem;
-    color: #536679;
-    background: #f8faf7;
+    color: #4A5068;
+    background: #F6F5F1;
     text-align: center;
     cursor: pointer;
     transition: border-color 0.2s ease, background-color 0.2s ease;

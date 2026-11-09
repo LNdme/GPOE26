@@ -44,6 +44,23 @@ public interface ICourseApi
     Task<ApiResult<List<CourseSummary>>> SharedWithMeAsync();
     Task<ApiResult<CourseDetail>> GetAsync(Guid id);
     Task<ApiResult<CourseSummary>> ShareAsync(Guid id, bool publish, List<Guid> classroomIds);
+    Task<ApiResult<CourseDetail>> CreateAsync(CourseInput course);
+    Task<ApiResult<bool>> UpdateAsync(Guid id, CourseInput course);
+    Task<ApiResult<bool>> DeleteAsync(Guid id);
+    Task<ApiResult<CourseDetail>> UploadPdfAsync(Guid id, ImageUpload pdf);
+}
+
+/// <summary>Images insérées dans un cours (hébergées par le service du site).</summary>
+public interface IMediaApi
+{
+    Task<ApiResult<UploadedFile>> UploadImageAsync(ImageUpload image);
+}
+
+/// <summary>Quiz d'entraînement créé par l'IA à partir du texte d'un cours.</summary>
+public interface IPracticeQuizApi
+{
+    Task<ApiResult<PracticeQuiz>> GenerateAsync(string title, string courseText, int questions);
+    Task<ApiResult<PracticeResult>> SubmitAsync(Guid quizId, List<PracticeAnswer> answers);
 }
 
 public interface IAssessmentApi
@@ -79,6 +96,7 @@ public interface ITutorApi
     Task<ApiResult<TutorMessage>> PinAsync(Guid messageId, bool pinned);
     Task<ApiResult<List<PinnedExplanation>>> PinnedAsync();
     Task<ApiResult<bool>> ClearAsync(Guid courseId);
+    Task<ApiResult<string>> DraftCourseAsync(string subject, string? instructions);
 }
 
 public interface IProgressApi
@@ -132,6 +150,23 @@ public class CourseApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, Api
     public Task<ApiResult<CourseDetail>> GetAsync(Guid id) => GetAsync<CourseDetail>($"/cours/{id}");
     public Task<ApiResult<CourseSummary>> ShareAsync(Guid id, bool publish, List<Guid> classroomIds) =>
         PutAsync<CourseSummary>($"/cours/{id}/sharing", new ShareCourseRequest(publish, classroomIds));
+    public Task<ApiResult<CourseDetail>> CreateAsync(CourseInput course) => PostAsync<CourseDetail>("/cours", course);
+    public Task<ApiResult<bool>> UpdateAsync(Guid id, CourseInput course) => PutAsync<bool>($"/cours/{id}", course);
+    public Task<ApiResult<bool>> DeleteAsync(Guid id) => DeleteAsync<bool>($"/cours/{id}");
+    public Task<ApiResult<CourseDetail>> UploadPdfAsync(Guid id, ImageUpload pdf) => UploadAsync<CourseDetail>($"/cours/{id}/upload", pdf);
+}
+
+public class MediaApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.Site), IMediaApi
+{
+    public Task<ApiResult<UploadedFile>> UploadImageAsync(ImageUpload image) => UploadAsync<UploadedFile>("/api/upload", image);
+}
+
+public class PracticeQuizApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.Quiz), IPracticeQuizApi
+{
+    public Task<ApiResult<PracticeQuiz>> GenerateAsync(string title, string courseText, int questions) =>
+        PostAsync<PracticeQuiz>("/api/quiz/generate", new GeneratePracticeQuizRequest(title, courseText, questions));
+    public Task<ApiResult<PracticeResult>> SubmitAsync(Guid quizId, List<PracticeAnswer> answers) =>
+        PostAsync<PracticeResult>($"/api/quiz/{quizId}/submit", new { answers });
 }
 
 public class AssessmentApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.Quiz), IAssessmentApi
@@ -206,4 +241,6 @@ public class TutorApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiC
         PutAsync<TutorMessage>($"/tutor/messages/{messageId}/pin", new { pinned });
     public Task<ApiResult<List<PinnedExplanation>>> PinnedAsync() => GetAsync<List<PinnedExplanation>>("/tutor/pinned");
     public Task<ApiResult<bool>> ClearAsync(Guid courseId) => DeleteAsync<bool>($"/tutor/courses/{courseId}");
+    public Task<ApiResult<string>> DraftCourseAsync(string subject, string? instructions) =>
+        PostAsync<string>("/chat/draft", new { subject, additionalInstructions = instructions });
 }

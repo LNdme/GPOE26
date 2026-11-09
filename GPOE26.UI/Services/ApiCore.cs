@@ -20,6 +20,7 @@ public static class ApiClients
     public const string Cours = "cours";
     public const string Quiz = "quiz";
     public const string Chat = "chat";
+    public const string Site = "apiservice";
 }
 
 /// <summary>
@@ -97,6 +98,9 @@ public abstract class ApiBase(IHttpClientFactory factory, SessionState session, 
                     return new ApiResult<T>((T)(object)true, null, response.StatusCode);
                 if (response.StatusCode == HttpStatusCode.NoContent)
                     return new ApiResult<T>(default, null, response.StatusCode);
+                // Réponse en texte brut (brouillon de cours rédigé par l'IA, par exemple)
+                if (typeof(T) == typeof(string))
+                    return new ApiResult<T>((T)(object)await response.Content.ReadAsStringAsync(), null, response.StatusCode);
                 var value = await response.Content.ReadFromJsonAsync<T>(Json);
                 return new ApiResult<T>(value, null, response.StatusCode);
             }
