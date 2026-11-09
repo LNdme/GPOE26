@@ -1,4 +1,8 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Quiz.Data;
+using Quiz.Endpoints;
 using Quiz.Model;
 using Quiz.Service;
 
@@ -11,9 +15,14 @@ public class QuizController : ControllerBase
     private readonly IQuizGeneratorService _generator;
     private readonly IQuizStore _store;
     private readonly ILogger<QuizController> _logger;
+    private readonly UserDirectoryClient _users;
+    private readonly EvaluationContext _db;
 
-    public QuizController(IQuizGeneratorService generator, IQuizStore store, ILogger<QuizController> logger)
+    public QuizController(IQuizGeneratorService generator, IQuizStore store, ILogger<QuizController> logger,
+        UserDirectoryClient users, EvaluationContext db)
     {
+        _users = users;
+        _db = db;
         _generator = generator;
         _store = store;
         _logger = logger;
@@ -22,6 +31,7 @@ public class QuizController : ControllerBase
     /// <summary>
     /// Génère un quiz à partir d'un texte de cours via l'IA.
     /// </summary>
+    [Authorize]
     [HttpPost("generate")]
     [ProducesResponseType<GenerateQuizResponse>(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -32,6 +42,21 @@ public class QuizController : ControllerBase
 
         if (request.NumberOfQuestions is < 1 or > 20)
             return BadRequest("Le nombre de questions doit être entre 1 et 20.");
+
+        // Quota mensuel de la formule (aucun quota : illimité)
+        var userId = User.UserId();
+        var month = DateTime.UtcNow.ToString("yyyy-MM");
+        var feature = await _users.FeatureAsync("quiz-ai");
+        if (feature is null)
+            return StatusCode(403, new { message = "Les quiz générés par l'IA ne sont pas inclus dans votre formule." });
+        if (feature.Limit is { } limit)
+        {
+            var used = await _db.Database
+                .SqlQuery<int>($@"SELECT ""Count"" AS ""Value"" FROM ""QuizGenerationUsage"" WHERE ""UserId"" = {userId} AND ""Month"" = {month}")
+                .FirstOrDefaultAsync(ct);
+            if (used >= limit)
+                return StatusCode(403, new { message = $"Vous avez utilisé vos {limit} quiz gratuits de ce mois. Passez à Premium pour des quiz illimités." });
+        }
 
         _logger.LogInformation("Generating quiz '{Title}' with {N} questions.", request.Title, request.NumberOfQuestions);
 
@@ -45,6 +70,9 @@ public class QuizController : ControllerBase
         };
 
         _store.Save(session);
+        await _db.Database.ExecuteSqlInterpolatedAsync(
+            $@"INSERT INTO ""QuizGenerationUsage"" (""UserId"", ""Month"", ""Count"") VALUES ({userId}, {month}, 1)
+               ON CONFLICT (""UserId"", ""Month"") DO UPDATE SET ""Count"" = ""QuizGenerationUsage"".""Count"" + 1", ct);
 
         var response = new GenerateQuizResponse(
             session.Id,

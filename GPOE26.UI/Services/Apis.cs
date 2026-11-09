@@ -16,6 +16,13 @@ public interface IAccountApi
     Task<ApiResult<Entitlement>> RedeemKeyAsync(string code);
     Task<ApiResult<SubscriptionInfo>> CheckoutAsync(SubscriptionPlan plan, BillingPeriod period);
     Task<ApiResult<SubscriptionInfo>> StartTrialAsync();
+    Task<ApiResult<SimulatedPayment>> SimulatePaymentAsync(SubscriptionPlan plan, BillingPeriod period, string provider);
+}
+
+/// <summary>Catalogue public des formules.</summary>
+public interface IPlanApi
+{
+    Task<ApiResult<List<PlanInfo>>> ListAsync();
 }
 
 public interface IClassroomApi
@@ -119,6 +126,13 @@ public class AccountApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, Ap
     public Task<ApiResult<SubscriptionInfo>> CheckoutAsync(SubscriptionPlan plan, BillingPeriod period) =>
         PostAsync<SubscriptionInfo>("/subscriptions/checkout", new CheckoutRequest(plan, period));
     public Task<ApiResult<SubscriptionInfo>> StartTrialAsync() => PostAsync<SubscriptionInfo>("/subscriptions/trial");
+    public Task<ApiResult<SimulatedPayment>> SimulatePaymentAsync(SubscriptionPlan plan, BillingPeriod period, string provider) =>
+        PostAsync<SimulatedPayment>("/subscriptions/simulate-payment", new SimulatePaymentRequest(plan, period, provider));
+}
+
+public class PlanApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.Site), IPlanApi
+{
+    public Task<ApiResult<List<PlanInfo>>> ListAsync() => GetAsync<List<PlanInfo>>("/api/plans");
 }
 
 public class ClassroomApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.User), IClassroomApi

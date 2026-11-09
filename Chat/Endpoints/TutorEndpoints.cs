@@ -82,7 +82,7 @@ public static class TutorEndpoints
                 return Error(400, "Écris ta question ou joins une photo.");
             if (text.Length > 4000)
                 return Error(400, "Ta question est trop longue (4 000 caractères au maximum).");
-            if (!await platform.IsPremiumAsync(ct))
+            if (!await platform.HasFeatureAsync("tutor-ai", ct))
                 return Error(403, "Le tuteur IA est réservé aux abonnés Premium.");
 
             var course = await platform.CourseAsync(courseId, ct);
@@ -144,7 +144,7 @@ public static class TutorEndpoints
         // ── POST /tutor/images ────────────────────────────────────────────────────
         group.MapPost("/images", async (IFormFile file, ClaimsPrincipal principal, TutorContext db, PlatformClients platform, CancellationToken ct) =>
         {
-            if (!await platform.IsPremiumAsync(ct))
+            if (!await platform.HasFeatureAsync("tutor-ai", ct))
                 return Error(403, "Le tuteur IA est réservé aux abonnés Premium.");
             if (file.Length == 0 || file.Length > MaxImageBytes)
                 return Error(400, "La photo doit faire moins de 6 Mo.");

@@ -33,6 +33,9 @@ public class SessionState(ISessionStore store)
     public UserRole? Role => IsAuthenticated ? Profile?.Role : null;
     public bool IsPremium => Profile?.IsPremium == true;
 
+    /// <summary>La formule de l'utilisateur inclut-elle cette fonctionnalité ?</summary>
+    public bool HasFeature(string code) => Profile?.Features?.Any(f => f.Code == code) == true;
+
     /// <summary>Déclenché à chaque connexion, déconnexion ou mise à jour du profil.</summary>
     public event Action? Changed;
 

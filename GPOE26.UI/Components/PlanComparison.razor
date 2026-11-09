@@ -1,0 +1,85 @@
+@* Formules et comparatif des fonctionnalités : page publique des tarifs et page Abonnement. *@
+<div class="pl-period" role="group" aria-label="Période de facturation">
+    <button type="button" class="@(_period == BillingPeriod.Monthly ? "on" : "")" aria-pressed="@(_period == BillingPeriod.Monthly)" @onclick="() => _period = BillingPeriod.Monthly">Mensuel</button>
+    <button type="button" class="@(_period == BillingPeriod.Yearly ? "on" : "")" aria-pressed="@(_period == BillingPeriod.Yearly)" @onclick="() => _period = BillingPeriod.Yearly">Annuel</button>
+</div>
+
+<div class="pl-grid">
+    @foreach (var plan in Plans)
+    {
+        <article class="ga-card pl-card @(plan.Code == ActiveCode ? "active" : "")">
+            <span class="ga-small ga-muted pl-category">@plan.Category.ToUpperInvariant()</span>
+            <h3 class="ga-h2">@plan.Name</h3>
+            <div class="pl-price">@Price(plan)</div>
+            @if (plan.Description is { Length: > 0 }) { <p class="ga-muted ga-small" style="margin:0">@plan.Description</p> }
+            @if (plan.Seats > 1) { <span class="ga-small">Jusqu'à @plan.Seats comptes</span> }
+            <div style="margin-top:auto">
+                @if (plan.Code == ActiveCode)
+                {
+                    <span class="ga-tag green">VOTRE FORMULE</span>
+                }
+                else if (Action is not null)
+                {
+                    @Action(new PlanChoice(plan, _period))
+                }
+            </div>
+        </article>
+    }
+</div>
+
+<div class="pl-scroll">
+    <table class="pl-table">
+        <caption class="ga-sr">Fonctionnalités incluses dans chaque formule</caption>
+        <thead>
+            <tr>
+                <th scope="col">Fonctionnalité</th>
+                @foreach (var plan in Plans) { <th scope="col">@plan.Name</th> }
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var feature in AllFeatures)
+            {
+                <tr>
+                    <th scope="row">@feature.Label</th>
+                    @foreach (var plan in Plans)
+                    {
+                        var included = plan.Features.FirstOrDefault(f => f.Code == feature.Code);
+                        <td>
+                            @if (included is null)
+                            {
+                                <span class="pl-no">Non</span>
+                            }
+                            else if (included.Limit is { } limit)
+                            {
+                                <span>@limit par mois</span>
+                            }
+                            else
+                            {
+                                <span class="pl-yes"><Icon Name="tick" Size="18" /> Oui</span>
+                            }
+                        </td>
+                    }
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<PlanInfo> Plans { get; set; } = new();
+    [Parameter] public string? ActiveCode { get; set; }
+    [Parameter] public RenderFragment<PlanChoice>? Action { get; set; }
+
+    private BillingPeriod _period = BillingPeriod.Monthly;
+
+    private IEnumerable<PlanFeature> AllFeatures => Plans.SelectMany(p => p.Features).DistinctBy(f => f.Code);
+
+    private string Price(PlanInfo plan)
+    {
+        if (plan.PriceMonthly == 0) return "Gratuit";
+        var amount = _period == BillingPeriod.Yearly ? plan.PriceYearly : plan.PriceMonthly;
+        return amount is null
+            ? "Sur devis"
+            : $"{amount.Value.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"))} {plan.Currency} / {(_period == BillingPeriod.Yearly ? "an" : "mois")}";
+    }
+}

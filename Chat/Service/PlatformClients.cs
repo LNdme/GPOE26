@@ -55,6 +55,24 @@ public class PlatformClients(IHttpClientFactory factory, IHttpContextAccessor co
         }
     }
 
+    /// <summary>La formule de l'utilisateur inclut-elle cette fonctionnalité ? (lu au service User, source des droits)</summary>
+    public async Task<bool> HasFeatureAsync(string code, CancellationToken ct)
+    {
+        try
+        {
+            using var response = await SendAsync("user", "/subscriptions/me", ct);
+            if (!response.IsSuccessStatusCode) return false;
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+            return doc.RootElement.GetProperty("entitlement").TryGetProperty("features", out var features)
+                && features.ValueKind == JsonValueKind.Array
+                && features.EnumerateArray().Any(f => f.GetProperty("code").GetString() == code);
+        }
+        catch (HttpRequestException)
+        {
+            return false;
+        }
+    }
+
     private async Task<HttpResponseMessage> SendAsync(string client, string path, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, path);

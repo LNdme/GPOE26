@@ -59,6 +59,9 @@ builder.Services.AddSwaggerGen(c =>
 
 builder.Services.AddScoped<Jwtservice>();
 builder.Services.AddScoped<SubscriptionService>();
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient<PlanCatalogClient>(client =>
+    client.BaseAddress = new Uri(builder.Configuration["Services:ApiService"] ?? "http://localhost:5455"));
 builder.Services.AddScoped<ClassroomService>();
 
 // Applique les [Required], [MinLength]… des DTOs aux Minimal APIs (sinon ils sont ignorés)

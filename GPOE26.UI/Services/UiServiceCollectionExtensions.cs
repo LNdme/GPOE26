@@ -19,6 +19,7 @@ public static class UiServiceCollectionExtensions
         services.AddScoped<IProgressApi, ProgressApi>();
         services.AddScoped<ITutorApi, TutorApi>();
         services.AddScoped<IMediaApi, MediaApi>();
+        services.AddScoped<IPlanApi, PlanApi>();
         services.AddScoped<IPracticeQuizApi, PracticeQuizApi>();
         return services;
     }

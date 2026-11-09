@@ -41,8 +41,10 @@ var userService = builder.AddProject<Projects.User>("user")
     .WithEnvironment("Jwt__Key", jwtKeyValue)
     .WithEnvironment("Jwt__Issuer", jwtIssuer)
     .WithEnvironment("Jwt__Audience", jwtAudience)
+    .WithEnvironment("Services__ApiService", apiService.GetEndpoint("http"))   // catalogue des formules
     .WithReference(userDb)   // ← ajoute
-    .WaitFor(userDb);        // ← ajoute
+    .WaitFor(userDb)         // ← ajoute
+    .WaitFor(apiService);
 
 var coursService = builder.AddProject<Projects.Cours>("cours")
     .WithEnvironment("Jwt__Key", jwtKeyValue)

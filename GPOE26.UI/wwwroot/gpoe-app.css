@@ -490,3 +490,21 @@ label.ga-btn { cursor: pointer; }
   .rd.with-tutor { padding-right: 0; }
   .tu-fab { display: none; }
 }
+
+/* ── Formules d'abonnement ─────────────────────────────────────────────────── */
+.pl-public { min-height: 0; }
+.pl-period { display: inline-flex; align-self: flex-start; padding: 4px; border-radius: 999px; background: var(--ga-bg-2); }
+.pl-period button { min-height: 36px; padding: 0 18px; border: 0; border-radius: 999px; background: transparent; color: var(--ga-navy); font: 600 14px var(--ga-font); cursor: pointer; }
+.pl-period button.on { background: var(--ga-navy); color: #fff; }
+.pl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+.pl-card.active { border: 2px solid var(--ga-blue); }
+.pl-category { font-weight: 700; letter-spacing: .06em; }
+.pl-price { font-family: var(--ga-display); font-size: 24px; font-weight: 600; color: var(--ga-navy); }
+.pl-scroll { overflow-x: auto; background: var(--ga-surface); border: 1px solid var(--ga-line); border-radius: var(--ga-radius); }
+.pl-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.pl-table th, .pl-table td { padding: 11px 14px; border-bottom: 1px solid var(--ga-line-2); text-align: left; white-space: nowrap; }
+.pl-table tbody th { font-weight: 500; white-space: normal; min-width: 200px; }
+.pl-yes { display: inline-flex; align-items: center; gap: 4px; color: var(--ga-green); font-weight: 600; }
+.pl-no { color: var(--ga-subtle); }
+.pl-unlocked { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px 16px; font-size: 14px; }
+.pl-unlocked li { display: flex; align-items: center; gap: 6px; }

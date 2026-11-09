@@ -58,7 +58,8 @@ public record UserProfile(
     string? OrganizationName,
     bool IsPremium,
     SubscriptionPlan? Plan,
-    DateTime? PremiumUntil
+    DateTime? PremiumUntil,
+    List<EntitledFeature>? Features = null
 );
 
 public record AuthResponse(string Token, DateTime ExpiresAt, UserProfile Profile);
@@ -85,13 +86,27 @@ public record CreateChildRequest(string Email, string Username, string Password,
 
 // ─── Abonnements ──────────────────────────────────────────────────────────────
 
-public record Entitlement(bool IsPremium, SubscriptionPlan? Plan, DateTime? Until, string? Source);
+public record EntitledFeature(string Code, int? Limit);
+
+public record Entitlement(bool IsPremium, SubscriptionPlan? Plan, DateTime? Until, string? Source, List<EntitledFeature>? Features = null);
+
+public record PlanFeature(string Code, string Label, int? Limit);
+
+/// <summary>Formule d'abonnement (catalogue géré par le service du site).</summary>
+public record PlanInfo(int Id, string Code, string Name, string Category, string? Description, int? PriceMonthly, int? PriceYearly,
+    string Currency, int Seats, int DisplayOrder, List<PlanFeature> Features);
+
+public record PlanChoice(PlanInfo Plan, BillingPeriod Period);
+
+public record SimulatePaymentRequest(SubscriptionPlan Plan, BillingPeriod Period, string Provider);
+
+public record SimulatedPayment(string Code, SubscriptionPlan Plan, BillingPeriod Period, string Provider, int Seats, DateTime? EndsAt);
 
 public record SubscriptionKeyInfo(string Code, int UsedCount, int MaxUses, bool IsRevoked);
 
 public record SubscriptionInfo(Guid Id, SubscriptionPlan Plan, BillingPeriod Period, SubscriptionStatus Status, int Seats,
     DateTime? StartsAt, DateTime? EndsAt, Guid? OrganizationId, List<SubscriptionKeyInfo> Keys);
 
-public record MySubscriptions(Entitlement Entitlement, List<SubscriptionInfo> Owned);
+public record MySubscriptions(Entitlement Entitlement, List<SubscriptionInfo> Owned, bool PaymentSimulation = false);
 
 public record CheckoutRequest(SubscriptionPlan Plan, BillingPeriod Period);

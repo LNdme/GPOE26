@@ -83,7 +83,8 @@ public record UserProfileDto(
     string? OrganizationName,
     bool IsPremium,
     SubscriptionPlan? Plan,
-    DateTime? PremiumUntil
+    DateTime? PremiumUntil,
+    List<EntitledFeature>? Features = null
 )
 {
     public UserProfileDto(AppUser user, Entitlement? entitlement = null) : this(

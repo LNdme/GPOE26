@@ -37,7 +37,7 @@
                     {
                         <NavLink href="@item.Href" title="@item.Label" aria-label="@item.Label" Match="@(item.Href == "/app" ? NavLinkMatch.All : NavLinkMatch.Prefix)">
                             <Icon Name="@item.Icon" /> <span>@item.Label</span>
-                            @if (item.Premium && !me.IsPremium)
+                            @if (item.Premium && !Session.HasFeature("tutor-ai"))
                             {
                                 <span class="ga-tag lime">PREMIUM</span>
                             }

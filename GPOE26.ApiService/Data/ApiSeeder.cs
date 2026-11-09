@@ -5,6 +5,57 @@ namespace GPOE26.ApiService.Data;
 
 public static class ApiSeeder
 {
+    /// <summary>Formules de départ : les prix se modifient ensuite directement en base.</summary>
+    public static async Task SeedPlansAsync(ApiServiceContext db)
+    {
+        if (await db.SubscriptionPlans.AnyAsync()) return;
+
+        PlanFeature F(string code, string label, int? limit = null) => new() { Code = code, Label = label, Limit = limit };
+        var courses = F("courses-shared", "Cours partagés et évaluations");
+        var schedule = F("schedule", "Emploi du temps");
+        var quiz = F("quiz-ai", "Quiz générés par l'IA");
+        var tutor = F("tutor-ai", "Tuteur IA avec mémoire");
+        var mock = F("mock-exams", "Épreuves blanches");
+        var feedback = F("ai-feedback", "Retour de l'IA sur les copies");
+        var progress = F("detailed-progress", "Suivi détaillé de la progression");
+        var family = F("family-view", "Vue parent");
+        var assistant = F("teacher-agent", "Assistant IA de l'enseignant");
+        var grading = F("ai-grading", "Aide à la correction");
+
+        db.SubscriptionPlans.AddRange(
+            new SubscriptionPlan
+            {
+                Code = "free", Name = "Gratuit", Category = "Tous", DisplayOrder = 0, PriceMonthly = 0, PriceYearly = 0,
+                Description = "Pour découvrir la plateforme.",
+                Features = [courses, schedule, F("quiz-ai", "Quiz générés par l'IA", 3)]
+            },
+            new SubscriptionPlan
+            {
+                Code = "student-premium", Name = "Élève Premium", Category = "Élève", DisplayOrder = 1, PriceMonthly = 2000, PriceYearly = 20000,
+                Description = "Un tuteur personnel qui apprend à te connaître.",
+                Features = [courses, schedule, quiz, tutor, mock, feedback, progress]
+            },
+            new SubscriptionPlan
+            {
+                Code = "family", Name = "Famille", Category = "Famille", DisplayOrder = 2, PriceMonthly = 5000, PriceYearly = 50000, Seats = 3,
+                Description = "Premium pour vos enfants, et leur suivi.",
+                Features = [courses, schedule, quiz, tutor, mock, feedback, progress, family]
+            },
+            new SubscriptionPlan
+            {
+                Code = "teacher", Name = "Enseignant", Category = "Enseignant", DisplayOrder = 3, PriceMonthly = 3500, PriceYearly = 35000,
+                Description = "Créez vos cours et suivez vos classes avec votre assistant.",
+                Features = [courses, schedule, quiz, assistant, grading]
+            },
+            new SubscriptionPlan
+            {
+                Code = "organization-license", Name = "Licence établissement", Category = "Établissement", DisplayOrder = 4, Seats = 30,
+                Description = "Pour un établissement ou une institution.",
+                Features = [courses, schedule, quiz, tutor, mock, feedback, progress, assistant, grading]
+            });
+        await db.SaveChangesAsync();
+    }
+
     public static async Task SeedAsync(ApiServiceContext db)
     {
         if (await db.Contacts.AnyAsync())
