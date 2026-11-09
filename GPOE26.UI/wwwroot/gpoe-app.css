@@ -463,3 +463,30 @@ label.ga-btn { cursor: pointer; }
 .qz-option:hover { background: var(--ga-blue-pale); }
 .qz-option.on { border-color: var(--ga-blue); background: var(--ga-blue-pale); }
 .qz-letter { width: 30px; height: 30px; flex: 0 0 30px; border-radius: 999px; background: var(--ga-blue-soft); display: flex; align-items: center; justify-content: center; font-weight: 700; }
+
+/* ── Lecture plein écran : rail d'icônes, sommaire, article, tuteur ────────── */
+.ga-rail-toggle, .rd-bar { display: none; }
+@media (min-width: 901px) {
+  .ga-rail-toggle { display: inline-flex; align-self: center; }
+  .ga-shell.reading:not(.rail-open) .ga-sidebar { width: 68px; flex-basis: 68px; padding: 16px 12px; align-items: center; gap: 14px; }
+  .ga-shell.reading:not(.rail-open) .ga-brand { padding: 0; }
+  .ga-shell.reading:not(.rail-open) .ga-brand span,
+  .ga-shell.reading:not(.rail-open) .ga-badge-box,
+  .ga-shell.reading:not(.rail-open) .ga-nav-title,
+  .ga-shell.reading:not(.rail-open) .ga-nav a span,
+  .ga-shell.reading:not(.rail-open) .ga-me > span:nth-child(2),
+  .ga-shell.reading:not(.rail-open) .ga-me button { display: none; }
+  .ga-shell.reading:not(.rail-open) .ga-nav a { width: 44px; padding: 0; justify-content: center; }
+  .ga-shell.reading:not(.rail-open) .ga-me { padding: 0; background: none; }
+
+  .rd { flex-wrap: nowrap; background: #fff; }
+  .rd-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; font-family: var(--ga-font); }
+  .rd-side { order: -1; flex: 0 0 260px; max-width: 260px; height: 100vh; overflow-y: auto; border-right: 1px solid var(--ga-line); background: var(--ga-bg); }
+  .rd.no-toc .rd-side { display: none; }
+  .rd-article { flex: 1 1 0; max-width: none; margin: 0; padding-inline: clamp(24px, 4vw, 64px); }
+  .rd-article > * { max-width: 860px; margin-inline: auto; }
+  .tu-drawer { position: sticky; top: 0; flex: 0 0 440px; width: 440px; height: 100vh; padding: 0; background: none; z-index: auto; border-left: 1px solid var(--ga-line); }
+  .tu-drawer .tu { box-shadow: none; border: 0; border-radius: 0; }
+  .rd.with-tutor { padding-right: 0; }
+  .tu-fab { display: none; }
+}

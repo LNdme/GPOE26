@@ -4,7 +4,7 @@
 @inject NavigationManager Nav
 
 <div class="ga-app">
-    <div class="ga-shell">
+    <div class="ga-shell @(_reading ? "reading" : "") @(_railOpen ? "rail-open" : "")">
         <header class="ga-topbar">
             <button type="button" class="ga-icon-btn" aria-label="Ouvrir le menu" aria-expanded="@_open" @onclick="() => _open = true">
                 <Icon Name="menu" Size="24" Stroke="2" />
@@ -16,7 +16,14 @@
         <button type="button" class="ga-scrim @(_open ? "open" : "")" aria-label="Fermer le menu" tabindex="-1" @onclick="() => _open = false"></button>
 
         <nav class="ga-sidebar @(_open ? "open" : "")" aria-label="Navigation principale">
-            <a class="ga-brand" href="/app"><Icon Name="logo" Size="26" Stroke="2" /><span>GPOE26</span></a>
+            <a class="ga-brand" href="/app" aria-label="GPOE26, accueil de mon espace"><Icon Name="logo" Size="26" Stroke="2" /><span>GPOE26</span></a>
+
+            @if (_reading)
+            {
+                <button type="button" class="ga-icon-btn ga-rail-toggle" aria-label="@(_railOpen ? "Réduire le menu" : "Ouvrir le menu")" aria-expanded="@_railOpen" @onclick="() => _railOpen = !_railOpen">
+                    <Icon Name="menu" />
+                </button>
+            }
 
             @if (Session.Profile is { } me)
             {
@@ -28,7 +35,7 @@
                 <div class="ga-nav">
                     @foreach (var item in Items(me.Role))
                     {
-                        <NavLink href="@item.Href" Match="@(item.Href == "/app" ? NavLinkMatch.All : NavLinkMatch.Prefix)">
+                        <NavLink href="@item.Href" title="@item.Label" aria-label="@item.Label" Match="@(item.Href == "/app" ? NavLinkMatch.All : NavLinkMatch.Prefix)">
                             <Icon Name="@item.Icon" /> <span>@item.Label</span>
                             @if (item.Premium && !me.IsPremium)
                             {
@@ -40,7 +47,7 @@
 
                 <div class="ga-nav-title">SITE</div>
                 <div class="ga-nav">
-                    <a href="/"><Icon Name="home" /> <span>Site de l'établissement</span></a>
+                    <a href="/" title="Site de l'établissement" aria-label="Site de l'établissement"><Icon Name="home" /> <span>Site de l'établissement</span></a>
                 </div>
 
                 <div class="ga-me">
@@ -63,7 +70,11 @@
 </div>
 
 @code {
-    private bool _open;
+    private bool _open, _reading, _railOpen;
+
+    // Lecture d'un cours : le menu se réduit à un rail d'icônes pour laisser l'écran au texte
+    private static readonly System.Text.RegularExpressions.Regex ReaderPath =
+        new(@"/app/cours/[0-9a-fA-F-]{36}/?($|[?#])", System.Text.RegularExpressions.RegexOptions.Compiled);
 
     private record NavItem(string Href, string Label, string Icon, bool Premium = false);
 
@@ -103,6 +114,7 @@
     {
         Session.Changed += OnSessionChanged;
         Nav.LocationChanged += OnLocationChanged;
+        _reading = ReaderPath.IsMatch(Nav.Uri);
         await Session.RestoreAsync();
     }
 
@@ -115,8 +127,11 @@
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
-        if (!_open) return;
+        var reading = ReaderPath.IsMatch(e.Location);
+        if (!_open && reading == _reading) return;
         _open = false;
+        _reading = reading;
+        _railOpen = false;
         InvokeAsync(StateHasChanged);
     }
 

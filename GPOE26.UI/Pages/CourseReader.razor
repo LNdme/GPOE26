@@ -18,8 +18,15 @@ else if (_course is null)
 }
 else
 {
-    <div class="rd @(_tutorOpen ? "with-tutor" : "")">
+    <div class="rd @(_tutorOpen ? "with-tutor" : "") @(_tocOpen ? "" : "no-toc")">
         <article class="rd-article" @ref="_article">
+            <div class="rd-bar">
+                <button type="button" class="ga-btn ghost small" aria-pressed="@_tocOpen" @onclick="() => _tocOpen = !_tocOpen"><Icon Name="menu" /> Sommaire</button>
+                @if (Session.IsPremium)
+                {
+                    <button type="button" class="ga-btn ghost small" aria-pressed="@_tutorOpen" @onclick="() => _tutorOpen = !_tutorOpen"><Icon Name="spark" /> Tuteur IA</button>
+                }
+            </div>
             <nav aria-label="Fil d'Ariane" class="rd-meta"><a href="/app/cours" style="color:inherit">Mes cours</a> › @_course.Subject</nav>
             <h1>@_course.Title</h1>
             <div class="rd-meta">
@@ -113,15 +120,16 @@ else
                 <a class="ga-btn ghost small" href="/app/tuteur/@_course.Id"><Icon Name="history" /> Relire mes discussions</a>
             }
         </aside>
+
+        @if (_tutorOpen)
+        {
+            <div class="tu-drawer" aria-label="Tuteur IA">
+                <TutorPanel CourseId="_course.Id" CourseTitle="@_course.Title" Docked="true" OnClose="() => _tutorOpen = false" />
+            </div>
+        }
     </div>
 
-    @if (_tutorOpen)
-    {
-        <div class="tu-drawer" role="dialog" aria-label="Tuteur IA">
-            <TutorPanel CourseId="_course.Id" CourseTitle="@_course.Title" Docked="true" OnClose="() => _tutorOpen = false" />
-        </div>
-    }
-    else if (Session.IsPremium)
+    @if (!_tutorOpen && Session.IsPremium)
     {
         <button class="ga-btn tu-fab" @onclick="() => _tutorOpen = true"><Icon Name="spark" /> Tuteur IA</button>
     }
@@ -136,7 +144,7 @@ else
     private List<TocEntry> _toc = new();
     private List<StudentAssessment> _related = new();
     private int _vote;
-    private bool _tutorOpen, _mathPending;
+    private bool _tutorOpen, _mathPending, _tocOpen = true;
     private ElementReference _article;
     private IJSObjectReference? _module;
 
