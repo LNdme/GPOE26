@@ -116,7 +116,9 @@
 </div>
 
 @code {
-    private UserProfile Me => Session.Profile!;
+    // Garde le dernier profil connu : un 401 peut fermer la session juste avant la redirection vers /login
+    private UserProfile? _me;
+    private UserProfile Me => _me = Session.Profile ?? _me!;
     private bool _loading = true;
     private List<Classroom> _classes = new();
     private List<Assessment> _assessments = new();

@@ -106,7 +106,10 @@ app.Use(async (context, next) =>
     }
 });
 
-app.UseHttpsRedirection();
+// En développement, les services s'appellent en HTTP avec un JWT : une redirection vers HTTPS
+// ferait retirer l'en-tête Authorization par HttpClient, et chaque appel finirait en 401.
+if (!app.Environment.IsDevelopment())
+    app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

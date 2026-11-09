@@ -5,15 +5,19 @@ var jwtKeyValue = "votre_cle_secrete_tres_longue_et_aleatoire_ici_changez_moi_en
 var jwtIssuer   = "GPOE2026";
 var jwtAudience = "GPOE2026Users";
 
-// ── Clé du LLM (OpenRouter par défaut, modèles gratuits) : secret, à définir via
-//    `dotnet user-secrets set "Parameters:llm-apikey" "<clé>"`
-var llmApiKey = builder.AddParameter("llm-apikey", secret: true);
+// La clé LLM est facultative pour le démarrage local ; les fonctions IA l'exigent.
+// Pour l'activer : dotnet user-secrets set "Parameters:llm-apikey" "<clé>"
+var llmApiKey = builder.AddParameter(
+    "llm-apikey",
+    builder.Configuration["Parameters:llm-apikey"] ?? string.Empty,
+    secret: true);
 
 
 
 
 // ── 1 seul serveur PostgreSQL, toutes les DBs dessus ─────────────────────────
 var postgres = builder.AddPostgres("postgres")
+    .WithImage("postgres", "18.6")
     .WithDataVolume()
     .WithPgAdmin(); // interface admin dispo sur http://localhost:5050
 

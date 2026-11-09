@@ -7,11 +7,6 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 
-builder.WebHost.ConfigureKestrel(options =>
-{
-    options.ListenAnyIP(5000);
-});
-
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 

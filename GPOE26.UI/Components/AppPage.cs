@@ -19,7 +19,9 @@ public abstract class AppPage : ComponentBase
 
     protected bool Ready { get; private set; }
 
-    protected UserProfile Me => Session.Profile!;
+    // Garde le dernier profil connu : un 401 peut fermer la session juste avant la redirection vers /login
+    private UserProfile? _me;
+    protected UserProfile Me => _me = Session.Profile ?? _me!;
 
     protected override async Task OnInitializedAsync()
     {
