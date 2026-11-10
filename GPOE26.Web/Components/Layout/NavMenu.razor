@@ -15,7 +15,7 @@
 
         <button class="navbar-toggler shadow-none" type="button" @onclick="ToggleNavMenu"
                 aria-label="@(collapseNavMenu ? "Ouvrir le menu" : "Fermer le menu")"
-                aria-expanded="@(!collapseNavMenu)" aria-controls="main-navigation">
+                aria-expanded="@(collapseNavMenu ? "false" : "true")" aria-controls="main-navigation">
             <span class="navbar-toggler-icon"></span>
         </button>
 

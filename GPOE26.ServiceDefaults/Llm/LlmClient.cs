@@ -21,6 +21,9 @@ public record LlmMessage(string Role, string Content, IReadOnlyList<LlmImage>? I
 
 public class LlmUnavailableException(string message, Exception? inner = null) : Exception(message, inner);
 
+/// <summary>Aucun fournisseur d'IA n'est configuré : réessayer ne servira à rien.</summary>
+public class LlmNotConfiguredException() : LlmUnavailableException("Aucune clé LLM n'est configurée (LLM__ApiKey).");
+
 /// <summary>
 /// Client d'un LLM compatible OpenAI (OpenRouter, DeepSeek, OpenAI, Ollama…).
 /// Configuration (section "LLM") :
@@ -39,16 +42,19 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
     public IReadOnlyList<string> VisionModels => config["LLM:VisionModels"] is { Length: > 0 } v ? Split(v) : TextModels;
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(ApiKey) || BaseUrl.Contains("localhost");
-
     /// <summary>
     /// Envoie la conversation et renvoie la réponse du premier modèle qui répond.
     /// Les modèles de vision sont utilisés dès qu'un message contient une image.
     /// </summary>
+    /// <param name="requireComplete">
+    /// Une réponse coupée par la limite de longueur compte comme un échec : le modèle suivant est essayé.
+    /// Pour les retranscriptions, où une fin manquante serait du contenu perdu.
+    /// </param>
     public async Task<string> CompleteAsync(IReadOnlyList<LlmMessage> messages, int maxTokens = 4000,
-        double temperature = 0.4, CancellationToken ct = default)
+        double temperature = 0.4, CancellationToken ct = default, bool requireComplete = false)
     {
         if (!IsConfigured)
-            throw new LlmUnavailableException("Aucune clé LLM n'est configurée (LLM__ApiKey).");
+            throw new LlmNotConfiguredException();
 
         var vision = messages.Any(m => m.Images is { Count: > 0 });
         var models = vision ? VisionModels : TextModels;
@@ -61,7 +67,7 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
                 // Délai par modèle : un fournisseur gratuit saturé ne doit pas bloquer les suivants
                 using var attempt = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 attempt.CancelAfter(TimeSpan.FromSeconds(int.TryParse(config["LLM:AttemptTimeoutSeconds"], out var s) ? s : 90));
-                var reply = await CallAsync(model, messages, maxTokens, temperature, attempt.Token);
+                var reply = await CallAsync(model, messages, maxTokens, temperature, requireComplete, attempt.Token);
                 if (!string.IsNullOrWhiteSpace(reply)) return reply.Trim();
                 logger.LogWarning("Réponse vide du modèle {Model}, essai du suivant", model);
                 last = new LlmUnavailableException($"Réponse vide de {model}");
@@ -105,7 +111,7 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
     }
 
     private async Task<string?> CallAsync(string model, IReadOnlyList<LlmMessage> messages, int maxTokens,
-        double temperature, CancellationToken ct)
+        double temperature, bool requireComplete, CancellationToken ct)
     {
         var body = new JsonObject
         {
@@ -134,7 +140,11 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
         if (doc.RootElement.TryGetProperty("error", out var error))
             throw new HttpRequestException(Truncate(error.ToString()), null, HttpStatusCode.BadGateway);
 
-        var message = doc.RootElement.GetProperty("choices")[0].GetProperty("message");
+        var choice = doc.RootElement.GetProperty("choices")[0];
+        if (requireComplete && choice.TryGetProperty("finish_reason", out var finish) && finish.ValueKind == JsonValueKind.String && finish.GetString() == "length")
+            throw new InvalidOperationException("Réponse coupée par la limite de longueur");
+
+        var message = choice.GetProperty("message");
         var content = message.TryGetProperty("content", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString() : null;
         return StripThinking(content);
     }

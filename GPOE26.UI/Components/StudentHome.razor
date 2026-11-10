@@ -10,7 +10,7 @@
     <div class="ga-head">
         <div>
             <h1>Plan d'études de @Me.Username</h1>
-            <p>@(Me.Level ?? "Élève")@(Me.Filiere is { Length: > 0 } ? $" {Me.Filiere}" : "")@(Me.ExamTarget is { Length: > 0 } ? $" · prépare le {Me.ExamTarget}" : "")</p>
+            <p>@(Me.Level ?? (Me.Stage == EducationStage.Higher ? "Étudiant" : "Élève"))@(Me.Filiere is { Length: > 0 } ? $" {Me.Filiere}" : "")@(Me.ExamTarget is { Length: > 0 } ? $" · prépare le {Me.ExamTarget}" : "")</p>
         </div>
         <span class="ga-tag amber">@Labels.Today().ToUpperInvariant()</span>
     </div>
@@ -37,8 +37,8 @@
         <div class="ga-split">
             <section class="main ga-card sunk" aria-labelledby="h-todo">
                 <div class="ga-tabs" role="tablist">
-                    <button role="tab" class="@(_tab == 0 ? "on" : "")" aria-selected="@(_tab == 0)" @onclick="() => _tab = 0">À faire <span class="count">@_todo.Count</span></button>
-                    <button role="tab" class="@(_tab == 1 ? "on" : "")" aria-selected="@(_tab == 1)" @onclick="() => _tab = 1">Terminées <span class="count">@_finished.Count</span></button>
+                    <button role="tab" class="@(_tab == 0 ? "on" : "")" aria-selected="@Aria.State(_tab == 0)" @onclick="() => _tab = 0">À faire <span class="count">@_todo.Count</span></button>
+                    <button role="tab" class="@(_tab == 1 ? "on" : "")" aria-selected="@Aria.State(_tab == 1)" @onclick="() => _tab = 1">Terminées <span class="count">@_finished.Count</span></button>
                 </div>
                 <h2 id="h-todo" class="ga-sr">Mes évaluations</h2>
 

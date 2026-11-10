@@ -19,7 +19,7 @@ public record CourseSection(Guid Id, CourseSectionType Type, string Content, int
 
 public record CourseDetail(Guid Id, string Title, string Subject, string? Description, CourseContentType ContentType,
     string? ExtractedText, string? PdfPath, List<CourseSection>? Sections, DateTime CreatedAt, DateTime UpdatedAt,
-    CourseStatus Status, List<Guid>? ClassroomIds, Guid OwnerId, string? StructuringStatus = null)
+    CourseStatus Status, List<Guid>? ClassroomIds, Guid OwnerId, string? StructuringStatus = null, string? SourceUrl = null)
 {
     /// <summary>Contenu Markdown du cours, reconstitué à partir de ses sections.</summary>
     public string ToMarkdown()
@@ -55,9 +55,15 @@ public record CourseInput(string Title, string Subject, string? Description, Lis
 
 public record UploadedFile(string Url);
 
+/// <summary>Labo proposé par l'agent. Block : le bloc Markdown, affichable pour un essai.</summary>
+public record LabSuggestion(Guid Id, string Anchor, string Title, string Reason, string Block);
+
 // ─── Quiz d'entraînement généré à partir d'un cours ───────────────────────────
 
-public record GeneratePracticeQuizRequest(string Title, string CourseText, int NumberOfQuestions);
+public record GeneratePracticeQuizRequest(string Title, string CourseText, int NumberOfQuestions, string Difficulty);
+public record GeneratePracticeProblemsRequest(string Title, string CourseText, int Count, string Difficulty);
+public record PracticeProblem(string Statement, List<string> Hints, string Solution);
+public record PracticeProblemSet(string Title, List<PracticeProblem> Problems);
 public record PracticeQuestion(Guid Id, string Text, List<string> Options);
 public record PracticeQuiz(Guid QuizId, string Title, List<PracticeQuestion> Questions);
 public record PracticeAnswer(Guid QuestionId, int SelectedOptionIndex);

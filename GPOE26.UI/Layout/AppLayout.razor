@@ -6,7 +6,7 @@
 <div class="ga-app">
     <div class="ga-shell @(_reading ? "reading" : "") @(_railOpen ? "rail-open" : "")">
         <header class="ga-topbar">
-            <button type="button" class="ga-icon-btn" aria-label="Ouvrir le menu" aria-expanded="@_open" @onclick="() => _open = true">
+            <button type="button" class="ga-icon-btn" aria-label="Ouvrir le menu" aria-expanded="@Aria.State(_open)" @onclick="() => _open = true">
                 <Icon Name="menu" Size="24" Stroke="2" />
             </button>
             <a class="ga-brand" href="/app"><Icon Name="logo" Size="22" Stroke="2" /><span>GPOE26</span></a>
@@ -20,7 +20,7 @@
 
             @if (_reading)
             {
-                <button type="button" class="ga-icon-btn ga-rail-toggle" aria-label="@(_railOpen ? "Réduire le menu" : "Ouvrir le menu")" aria-expanded="@_railOpen" @onclick="() => _railOpen = !_railOpen">
+                <button type="button" class="ga-icon-btn ga-rail-toggle" aria-label="@(_railOpen ? "Réduire le menu" : "Ouvrir le menu")" aria-expanded="@Aria.State(_railOpen)" @onclick="() => _railOpen = !_railOpen">
                     <Icon Name="menu" />
                 </button>
             }
@@ -28,7 +28,7 @@
             @if (Session.Profile is { } me)
             {
                 <div class="ga-badge-box">
-                    @SpaceLabel(me.Role)
+                    @(me.Stage == EducationStage.Higher ? "Espace étudiant" : SpaceLabel(me.Role))
                     <small>@(me.IsPremium ? Labels.Of(me.Plan) : "Formule gratuite")</small>
                 </div>
 
@@ -54,7 +54,7 @@
                     <span class="ga-avatar">@Labels.Initial(me.Username)</span>
                     <span style="min-width:0">
                         <strong>@me.Username</strong>
-                        <small>@Labels.Of(me.Role)@(me.Level is { Length: > 0 } ? $" · {me.Level}" : "")</small>
+                        <small>@(me.Stage == EducationStage.Higher ? "Étudiant" : Labels.Of(me.Role))@(me.Level is { Length: > 0 } ? $" · {me.Level}" : "")</small>
                     </span>
                     <button type="button" class="ga-icon-btn" aria-label="Se déconnecter" title="Se déconnecter" @onclick="SignOutAsync">
                         <Icon Name="logout" />

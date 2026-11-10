@@ -47,7 +47,9 @@ public record RegisterRequest(
     List<string>? InitialClasses = null,
     bool StartTrial = false,
     // ── Élève ou enseignant : clé familiale / d'établissement / d'institution ──
-    string? SubscriptionKey = null
+    string? SubscriptionKey = null,
+    // ── Secondaire (élève) ou supérieur (étudiant) ──
+    EducationStage? Stage = null
 );
 
 public record LoginRequest(
@@ -84,7 +86,8 @@ public record UserProfileDto(
     bool IsPremium,
     SubscriptionPlan? Plan,
     DateTime? PremiumUntil,
-    List<EntitledFeature>? Features = null
+    List<EntitledFeature>? Features = null,
+    EducationStage? Stage = null
 )
 {
     public UserProfileDto(AppUser user, Entitlement? entitlement = null) : this(
@@ -110,7 +113,8 @@ public record UserProfileDto(
         entitlement?.IsPremium ?? false,
         entitlement?.Plan,
         entitlement?.Until,
-        entitlement?.Features
+        entitlement?.Features,
+        user.Stage
     )
     { }
 }

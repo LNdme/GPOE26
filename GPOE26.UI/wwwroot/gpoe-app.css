@@ -404,7 +404,8 @@ label.ga-btn { cursor: pointer; }
 .tu-md ul, .tu-md ol { margin: 0 0 10px; padding-left: 22px; }
 .tu-md h1, .tu-md h2, .tu-md h3 { font-size: 16px; font-weight: 700; margin: 10px 0 6px; }
 .tu-md pre { background: #F4F6FC; padding: 10px; border-radius: 8px; overflow-x: auto; font-size: 13px; }
-.tu-md .katex-display { overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
+/* Une formule centrée plus large que l'écran défile seule : la page, elle, ne déborde jamais */
+.katex-display { max-width: 100%; overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
 .tu-tools { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid var(--ga-line-2); padding-top: 6px; }
 .tu-tools .ga-btn.on { background: var(--ga-lime); color: var(--ga-navy) !important; }
 .tu-msg.typing { flex-direction: row; align-items: center; gap: 4px; }
@@ -512,3 +513,71 @@ label.ga-btn { cursor: pointer; }
 /* ── Emploi du temps ───────────────────────────────────────────────────────── */
 .sc-row { display: grid; grid-template-columns: 1.1fr .8fr .8fr 1.2fr 1.4fr 44px; gap: 10px; align-items: end; padding-bottom: 12px; border-bottom: 1px solid var(--ga-line-2); }
 @media (max-width: 900px) { .sc-row { grid-template-columns: 1fr 1fr; } }
+
+/* ── Laboratoires interactifs ──────────────────────────────────────────────── */
+.lab { margin: 22px 0; border: 1px solid var(--ga-line); border-radius: var(--ga-radius); background: var(--ga-surface); font-family: var(--ga-font); font-size: 14px; line-height: 1.5; color: var(--ga-text); overflow: hidden; }
+.lab-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: var(--ga-navy); color: #fff; }
+.lab-title { font-size: 15px; }
+.lab-kicker { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--ga-lime); }
+.lab-predict .lab-kicker, .lab-check .lab-kicker { color: var(--ga-blue); }
+.lab-body { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(220px, 1fr); }
+.lab-body.lab-locked { opacity: .35; pointer-events: none; }
+.lab-stage { padding: 12px; min-width: 0; }
+.lab-canvas { display: block; width: 100%; border-radius: 8px; }
+.lab-panel { padding: 14px 16px; border-left: 1px solid var(--ga-line); display: flex; flex-direction: column; gap: 14px; }
+.lab-controls { display: flex; flex-direction: column; gap: 10px; }
+.lab-slider { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; font-weight: 600; font-size: 13px; }
+.lab-slider input { grid-column: 1 / -1; width: 100%; accent-color: var(--ga-blue); }
+.lab-slider output { font-family: var(--ga-mono); font-weight: 500; color: var(--ga-blue); }
+.lab-toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.lab-toggle input { width: 18px; height: 18px; accent-color: var(--ga-navy); }
+.lab-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.lab-readouts { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; margin: 0; padding-top: 10px; border-top: 1px solid var(--ga-line-2); font-size: 13px; }
+.lab-readouts dt { color: var(--ga-muted); font-weight: 500; }
+.lab-readouts dd { margin: 0; font-family: var(--ga-mono); text-align: right; color: var(--ga-navy); }
+.lab-caption { padding: 10px 16px; border-top: 1px solid var(--ga-line-2); color: var(--ga-muted); font-size: 13px; }
+.lab-predict, .lab-check { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; background: var(--ga-blue-pale); }
+.lab-check { background: var(--ga-bg); border-top: 1px solid var(--ga-line-2); }
+.lab-predict p, .lab-check p { margin: 0; }
+.lab-options { display: flex; flex-direction: column; gap: 6px; }
+.lab-option { padding: 9px 12px; border: 1.5px solid var(--ga-line); border-radius: 10px; background: var(--ga-surface); color: var(--ga-navy); font: 500 14px var(--ga-font); text-align: left; cursor: pointer; }
+.lab-option:hover:not(:disabled) { border-color: var(--ga-blue); }
+.lab-option.good { border-color: var(--ga-green); background: var(--ga-green-soft); }
+.lab-option.bad { border-color: var(--ga-red-ink); background: var(--ga-red-soft); }
+.lab-check-row { display: flex; align-items: center; gap: 8px; max-width: 340px; }
+.lab-unit { font-family: var(--ga-mono); }
+.lab-result { font-weight: 600; }
+.lab-result.good { color: var(--ga-green); }
+.lab-result.bad { color: var(--ga-red-ink); }
+.lab-error { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; background: var(--ga-red-soft); color: var(--ga-red-ink); }
+@media (max-width: 760px) { .lab-body { grid-template-columns: 1fr; } .lab-panel { border-left: none; border-top: 1px solid var(--ga-line); } }
+
+/* Choix d'une simulation dans l'éditeur */
+.sb-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
+.sb-type { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border: 1.5px solid var(--ga-line); border-radius: 10px; background: var(--ga-surface); color: var(--ga-navy); font: 13px var(--ga-font); text-align: left; cursor: pointer; }
+.sb-type span { color: var(--ga-muted); }
+.sb-type.on { border-color: var(--ga-blue); background: var(--ga-blue-pale); }
+.sb-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+.sb-more { display: flex; flex-direction: column; gap: 10px; }
+.sb-more summary { cursor: pointer; font-weight: 600; font-size: 14px; color: var(--ga-blue); padding: 4px 0; }
+.sb-more[open] { display: flex; }
+
+/* Exercices */
+.qz-text p { margin: 0 0 6px; }
+.qz-text p:last-child { margin-bottom: 0; }
+.qz-solution { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-left: 3px solid var(--ga-green); background: var(--ga-bg); }
+
+/* La coloration de code (Prism) s'applique à tout <pre> : un labo n'en est pas un */
+pre.lab-host { background: none !important; border: 0 !important; box-shadow: none !important; padding: 0 !important; margin: 0 !important; overflow: visible !important; white-space: normal !important; font: inherit !important; text-shadow: none !important; color: inherit !important; }
+pre.lab-host > code { display: none; }
+
+/* ── Import par lien et labos proposés ─────────────────────────────────────── */
+.il-card { border: 1.5px solid var(--ga-blue-soft); background: var(--ga-blue-pale); }
+.il-row { display: flex; gap: 8px; }
+.il-row .ga-input { flex: 1; min-width: 0; }
+@media (max-width: 560px) { .il-row { flex-direction: column; } }
+.ls-panel { display: flex; flex-direction: column; gap: 12px; margin: 16px 0; padding: 16px 18px; border: 1.5px solid var(--ga-blue-soft); border-radius: var(--ga-radius); background: var(--ga-blue-pale); font-family: var(--ga-font); font-size: 15px; line-height: 1.5; }
+.ls-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.ls-kicker { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--ga-blue); }
+.ls-item { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 12px; background: var(--ga-surface); border: 1px solid var(--ga-line); }
+.ls-item p { margin: 0; }

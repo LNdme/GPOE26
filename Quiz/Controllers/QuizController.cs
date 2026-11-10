@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Quiz.Data;
@@ -28,6 +28,72 @@ public class QuizController : ControllerBase
         _logger = logger;
     }
 
+    private static string Difficulty(string? value) => value is "exigeant" or "approfondi" ? value : "standard";
+
+    private string? Learner()
+    {
+        var parts = new[] { User.FindFirst("level")?.Value, User.FindFirst("filiere")?.Value }.Where(p => !string.IsNullOrWhiteSpace(p));
+        return string.Join(", ", parts);
+    }
+
+    /// <summary>Quota mensuel de la formule (aucun quota : illimité), partagé entre quiz et séries d'exercices.</summary>
+    private async Task<IActionResult?> QuotaExceededAsync(CancellationToken ct)
+    {
+        var userId = User.UserId();
+        var month = DateTime.UtcNow.ToString("yyyy-MM");
+        var feature = await _users.FeatureAsync("quiz-ai");
+        if (feature is null)
+            return StatusCode(403, new { message = "Les exercices générés par l'IA ne sont pas inclus dans votre formule." });
+        if (feature.Limit is { } limit)
+        {
+            var used = await _db.Database
+                .SqlQuery<int>($@"SELECT ""Count"" AS ""Value"" FROM ""QuizGenerationUsage"" WHERE ""UserId"" = {userId} AND ""Month"" = {month}")
+                .FirstOrDefaultAsync(ct);
+            if (used >= limit)
+                return StatusCode(403, new { message = $"Vous avez utilisé vos {limit} générations gratuites de ce mois. Passez à Premium pour un accès illimité." });
+        }
+        return null;
+    }
+
+    private async Task CountGenerationAsync(CancellationToken ct)
+    {
+        var userId = User.UserId();
+        var month = DateTime.UtcNow.ToString("yyyy-MM");
+        await _db.Database.ExecuteSqlInterpolatedAsync(
+            $@"INSERT INTO ""QuizGenerationUsage"" (""UserId"", ""Month"", ""Count"") VALUES ({userId}, {month}, 1)
+               ON CONFLICT (""UserId"", ""Month"") DO UPDATE SET ""Count"" = ""QuizGenerationUsage"".""Count"" + 1", ct);
+    }
+
+    /// <summary>Série d'exercices corrigés : énoncés, indices et solutions détaillées.</summary>
+    [Authorize]
+    [HttpPost("problems")]
+    public async Task<IActionResult> Problems([FromBody] GenerateProblemsRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.CourseText))
+            return BadRequest(new { message = "Le texte du cours est requis." });
+        if (request.Count is < 1 or > 5)
+            return BadRequest(new { message = "Le nombre d'exercices doit être entre 1 et 5." });
+        if (await QuotaExceededAsync(ct) is { } refused) return refused;
+
+        try
+        {
+            var problems = await _generator.GenerateProblemsAsync(request.CourseText, request.Count, Difficulty(request.Difficulty), Learner(), ct);
+            if (problems.Count == 0)
+                return StatusCode(502, new { message = "L'IA n'a pas pu préparer ces exercices. Réessayez dans un instant." });
+            await CountGenerationAsync(ct);
+            return Ok(new ProblemSetResponse(request.Title, problems));
+        }
+        catch (GPOE26.ServiceDefaults.Llm.LlmNotConfiguredException)
+        {
+            return StatusCode(503, new { message = "Les exercices par l'IA ne sont pas activés sur ce serveur : aucune clé d'IA n'est configurée." });
+        }
+        catch (GPOE26.ServiceDefaults.Llm.LlmUnavailableException ex)
+        {
+            _logger.LogWarning(ex, "Exercices non générés");
+            return StatusCode(502, new { message = "L'IA ne répond pas pour le moment. Réessayez dans un instant." });
+        }
+    }
+
     /// <summary>
     /// Génère un quiz à partir d'un texte de cours via l'IA.
     /// </summary>
@@ -43,24 +109,24 @@ public class QuizController : ControllerBase
         if (request.NumberOfQuestions is < 1 or > 20)
             return BadRequest("Le nombre de questions doit être entre 1 et 20.");
 
-        // Quota mensuel de la formule (aucun quota : illimité)
-        var userId = User.UserId();
-        var month = DateTime.UtcNow.ToString("yyyy-MM");
-        var feature = await _users.FeatureAsync("quiz-ai");
-        if (feature is null)
-            return StatusCode(403, new { message = "Les quiz générés par l'IA ne sont pas inclus dans votre formule." });
-        if (feature.Limit is { } limit)
-        {
-            var used = await _db.Database
-                .SqlQuery<int>($@"SELECT ""Count"" AS ""Value"" FROM ""QuizGenerationUsage"" WHERE ""UserId"" = {userId} AND ""Month"" = {month}")
-                .FirstOrDefaultAsync(ct);
-            if (used >= limit)
-                return StatusCode(403, new { message = $"Vous avez utilisé vos {limit} quiz gratuits de ce mois. Passez à Premium pour des quiz illimités." });
-        }
+        if (await QuotaExceededAsync(ct) is { } refused) return refused;
 
         _logger.LogInformation("Generating quiz '{Title}' with {N} questions.", request.Title, request.NumberOfQuestions);
 
-        var questions = await _generator.GenerateQuestionsAsync(request.CourseText, request.NumberOfQuestions, ct);
+        List<Question> questions;
+        try
+        {
+            questions = await _generator.GenerateQuestionsAsync(request.CourseText, request.NumberOfQuestions, Difficulty(request.Difficulty), Learner(), ct);
+        }
+        catch (GPOE26.ServiceDefaults.Llm.LlmNotConfiguredException)
+        {
+            return StatusCode(503, new { message = "Les quiz par l'IA ne sont pas activés sur ce serveur : aucune clé d'IA n'est configurée." });
+        }
+        catch (Exception ex) when (ex is GPOE26.ServiceDefaults.Llm.LlmUnavailableException or System.Text.Json.JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            _logger.LogWarning(ex, "Quiz non généré");
+            return StatusCode(502, new { message = "L'IA n'a pas pu préparer ce quiz. Réessayez dans un instant." });
+        }
 
         var session = new QuizSession
         {
@@ -70,9 +136,7 @@ public class QuizController : ControllerBase
         };
 
         _store.Save(session);
-        await _db.Database.ExecuteSqlInterpolatedAsync(
-            $@"INSERT INTO ""QuizGenerationUsage"" (""UserId"", ""Month"", ""Count"") VALUES ({userId}, {month}, 1)
-               ON CONFLICT (""UserId"", ""Month"") DO UPDATE SET ""Count"" = ""QuizGenerationUsage"".""Count"" + 1", ct);
+        await CountGenerationAsync(ct);
 
         var response = new GenerateQuizResponse(
             session.Id,

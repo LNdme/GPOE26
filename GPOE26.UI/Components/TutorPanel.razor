@@ -66,7 +66,7 @@
                         <div class="tu-md">@((MarkupString)Html(m))</div>
                         <div class="tu-tools">
                             <span class="ga-small ga-muted">@Labels.Date(m.CreatedAt)</span>
-                            <button class="ga-btn ghost small @(m.Pinned ? "on" : "")" aria-pressed="@m.Pinned" @onclick="() => PinAsync(m)">
+                            <button class="ga-btn ghost small @(m.Pinned ? "on" : "")" aria-pressed="@Aria.State(m.Pinned)" @onclick="() => PinAsync(m)">
                                 <Icon Name="pin" Size="16" /> @(m.Pinned ? "Épinglée" : "Épingler")
                             </button>
                         </div>

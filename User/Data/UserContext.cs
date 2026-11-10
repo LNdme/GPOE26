@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using User.Model;
 
 namespace User.Data
@@ -30,6 +30,7 @@ namespace User.Data
                 entity.Property(u => u.LinkCode).HasMaxLength(16);
                 entity.Property(u => u.Role).HasConversion<string>();
                 entity.Property(u => u.SubSystem).HasConversion<string>();
+                entity.Property(u => u.Stage).HasConversion<string>();
                 entity.Property(u => u.TeachingContext).HasConversion<string>();
             });
 

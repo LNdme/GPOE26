@@ -3,10 +3,12 @@
 @inherits AppPage
 @inject ICourseApi Courses
 @inject IPracticeQuizApi Quizzes
+@inject IJSRuntime JS
+@implements IAsyncDisposable
 
-<PageTitle>Quiz — GPOE26</PageTitle>
+<PageTitle>S'entraîner — GPOE26</PageTitle>
 
-<div class="ga-page narrow">
+<div class="ga-page narrow" @ref="_root">
     <a class="ga-back" href="/app/cours/@Id"><Icon Name="left" /> Retour au cours</a>
     <Alert Message="@_error" />
 
@@ -20,25 +22,72 @@
     }
     else if (_generating)
     {
-        <div class="ga-card"><Loading Text="Préparation des questions à partir du cours…" /></div>
+        <div class="ga-card"><Loading Text="Préparation des exercices à partir du cours…" /></div>
+    }
+    else if (_problems is not null)
+    {
+        <div class="ga-head"><div><h1>Série d'exercices</h1><p>@_course.Title · @DifficultyLabel</p></div></div>
+        @foreach (var (problem, index) in _problems.Problems.Select((p, i) => (p, i)))
+        {
+            var shown = _shownHints.GetValueOrDefault(index);
+            <section class="ga-card">
+                <span class="ga-tag grey" style="align-self:flex-start">EXERCICE @(index + 1)</span>
+                <div class="rd-content qz-text">@Md(problem.Statement)</div>
+                @for (var h = 0; h < shown && h < problem.Hints.Count; h++)
+                {
+                    <div class="ga-alert"><strong>Indice @(h + 1).</strong> <span class="rd-content qz-text">@Md(problem.Hints[h])</span></div>
+                }
+                @if (_solutions.Contains(index))
+                {
+                    <div class="qz-solution">
+                        <span class="ga-label">Solution détaillée</span>
+                        <div class="rd-content qz-text">@Md(problem.Solution)</div>
+                    </div>
+                }
+                <div class="ga-actions">
+                    @if (shown < problem.Hints.Count)
+                    {
+                        <button class="ga-btn secondary small" @onclick="() => _shownHints[index] = shown + 1">Voir un indice</button>
+                    }
+                    @if (!_solutions.Contains(index))
+                    {
+                        <button class="ga-btn ghost small" @onclick="() => _solutions.Add(index)">Afficher la solution</button>
+                    }
+                </div>
+            </section>
+        }
+        <button class="ga-btn secondary" style="align-self:flex-start" @onclick="Reset">Nouvelle série</button>
     }
     else if (_quiz is null)
     {
-        <div class="ga-head"><div><h1>Un quiz sur ce cours</h1><p>@_course.Title</p></div></div>
+        <div class="ga-head"><div><h1>S'entraîner sur ce cours</h1><p>@_course.Title</p></div></div>
         <section class="ga-card">
             @if (string.IsNullOrWhiteSpace(_course.ExtractedText))
             {
-                <div class="ga-alert warn">Le contenu du cours est nécessaire pour créer un quiz.</div>
+                <div class="ga-alert warn">Le contenu du cours est nécessaire pour créer des exercices.</div>
             }
+            <div class="ga-tabs" role="tablist" aria-label="Type d'entraînement">
+                <button role="tab" class="@(_problemMode ? "" : "on")" aria-selected="@Aria.State(!_problemMode)" @onclick="() => _problemMode = false">Quiz à choix multiples</button>
+                <button role="tab" class="@(_problemMode ? "on" : "")" aria-selected="@Aria.State(_problemMode)" @onclick="() => _problemMode = true">Série d'exercices corrigés</button>
+            </div>
             <div class="ga-field">
-                <label for="qz-count">Nombre de questions</label>
-                <select id="qz-count" class="ga-select" @bind="_count">
-                    <option value="3">3 questions</option>
-                    <option value="5">5 questions</option>
-                    <option value="10">10 questions</option>
+                <label for="qz-level">Niveau d'exigence</label>
+                <select id="qz-level" class="ga-select" @bind="_difficulty">
+                    <option value="standard">Standard : applications directes</option>
+                    <option value="approfondi">Approfondi : raisonnement en plusieurs étapes</option>
+                    <option value="exigeant">Exigeant : niveau universitaire, cas limites et démonstrations</option>
                 </select>
             </div>
-            <button class="ga-btn" disabled="@string.IsNullOrWhiteSpace(_course.ExtractedText)" @onclick="GenerateAsync"><Icon Name="spark" /> Générer mon quiz</button>
+            <div class="ga-field">
+                <label for="qz-count">@(_problemMode ? "Nombre d'exercices" : "Nombre de questions")</label>
+                <select id="qz-count" class="ga-select" @bind="_count">
+                    @foreach (var n in _problemMode ? new[] { 1, 2, 3, 5 } : new[] { 3, 5, 10 })
+                    {
+                        <option value="@n">@n</option>
+                    }
+                </select>
+            </div>
+            <button class="ga-btn" disabled="@string.IsNullOrWhiteSpace(_course.ExtractedText)" @onclick="GenerateAsync"><Icon Name="spark" /> Générer</button>
         </section>
     }
     else if (_result is null)
@@ -51,15 +100,15 @@
             <span style="width:@($"{100.0 * (_index + 1) / _quiz.Questions.Count:0.##}".Replace(',', '.'))%"></span>
         </div>
         <section class="ga-card">
-            <h2 class="ga-h2">@current.Text</h2>
+            <div class="rd-content qz-text ga-h2">@Md(current.Text)</div>
             <div class="qz-options" role="group" aria-label="Choisissez une réponse">
                 @for (var i = 0; i < current.Options.Count; i++)
                 {
                     var option = i;
                     var selected = _answers.TryGetValue(current.Id, out var answer) && answer == option;
-                    <button type="button" class="qz-option @(selected ? "on" : "")" aria-pressed="@selected" @onclick="() => _answers[current.Id] = option">
+                    <button type="button" class="qz-option @(selected ? "on" : "")" aria-pressed="@Aria.State(selected)" @onclick="() => _answers[current.Id] = option">
                         <span class="qz-letter">@((char)('A' + option))</span>
-                        <span>@current.Options[option]</span>
+                        <span class="rd-content qz-text">@Md(current.Options[option])</span>
                     </button>
                 }
             </div>
@@ -89,12 +138,12 @@
             {
                 <article class="ga-card">
                     <span class="ga-tag @(f.IsCorrect ? "green" : "amber")" style="align-self:flex-start">@(f.IsCorrect ? "RÉPONSE JUSTE" : "À REVOIR")</span>
-                    <h2 class="ga-h3">@f.QuestionText</h2>
+                    <div class="rd-content qz-text ga-h3">@Md(f.QuestionText)</div>
                     @if (!f.IsCorrect)
                     {
                         <span class="ga-small">Votre réponse : @((char)('A' + f.SelectedOptionIndex)) · Bonne réponse : <strong>@((char)('A' + f.CorrectOptionIndex))</strong></span>
                     }
-                    <p class="ga-muted" style="margin:0">@f.Explanation</p>
+                    <div class="rd-content qz-text ga-muted">@Md(f.Explanation)</div>
                 </article>
             }
         </div>
@@ -111,24 +160,67 @@
     private CourseDetail? _course;
     private PracticeQuiz? _quiz;
     private PracticeResult? _result;
+    private PracticeProblemSet? _problems;
     private readonly Dictionary<Guid, int> _answers = new();
-    private bool _loading = true, _generating, _submitting;
+    private readonly Dictionary<int, int> _shownHints = new();
+    private readonly HashSet<int> _solutions = new();
+    private bool _loading = true, _generating, _submitting, _problemMode;
     private int _count = 5, _index;
+    private string _difficulty = "standard";
     private string? _error;
+    private ElementReference _root;
+    private IJSObjectReference? _module;
+
+    private string DifficultyLabel => _difficulty switch
+    {
+        "exigeant" => "niveau exigeant",
+        "approfondi" => "niveau approfondi",
+        _ => "niveau standard"
+    };
+
+    private static MarkupString Md(string text) => new(MarkdownRenderer.Render(text).Html);
 
     protected override async Task LoadAsync()
     {
+        // Un étudiant arrive directement sur le niveau qui lui correspond
+        if (Me.Stage == EducationStage.Higher) _difficulty = "exigeant";
+
         var result = await Courses.GetAsync(Id);
         _course = result.Value;
         _error = result.Error;
         _loading = false;
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_quiz is null && _problems is null) return;
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./_content/GPOE26.UI/gpoe-app.js");
+            await _module.InvokeVoidAsync("renderMath", _root);
+        }
+        catch (JSDisconnectedException) { }
+    }
+
     private async Task GenerateAsync()
     {
         _generating = true;
         _error = null;
-        var result = await Quizzes.GenerateAsync(_course!.Title, _course.ExtractedText!, _count);
+
+        if (_problemMode)
+        {
+            var problems = await Quizzes.GenerateProblemsAsync(_course!.Title, _course.ExtractedText!, Math.Min(_count, 5), _difficulty);
+            _generating = false;
+            if (problems.Value is not { Problems.Count: > 0 })
+            {
+                _error = problems.Error ?? "Les exercices n'ont pas pu être préparés. Réessayez.";
+                return;
+            }
+            _problems = problems.Value;
+            return;
+        }
+
+        var result = await Quizzes.GenerateAsync(_course!.Title, _course.ExtractedText!, _count, _difficulty);
         _generating = false;
         if (result.Value is not { Questions.Count: > 0 })
         {
@@ -153,7 +245,16 @@
     {
         _quiz = null;
         _result = null;
+        _problems = null;
         _answers.Clear();
+        _shownHints.Clear();
+        _solutions.Clear();
         _error = null;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { if (_module is not null) await _module.DisposeAsync(); }
+        catch (JSDisconnectedException) { }
     }
 }

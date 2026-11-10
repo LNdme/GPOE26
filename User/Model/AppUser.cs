@@ -37,6 +37,9 @@
         public string? Specialite { get; set; }
         public string? Filiere { get; set; }
 
+        /// <summary>Secondaire ou supérieur : règle le niveau d'exigence du tuteur et des exercices.</summary>
+        public EducationStage? Stage { get; set; }
+
 
 
         /// <summary>Préférence de langue pour les réponses du LLM</summary>
@@ -81,6 +84,13 @@
 
         // ─── Métadonnées ──────────────────────────────────────────────────────────
         public DateTime? LastLoginAt { get; set; }
+    }
+
+    /// <summary>Enseignement secondaire (élève) ou supérieur (étudiant).</summary>
+    public enum EducationStage
+    {
+        Secondary,
+        Higher
     }
 
     public enum UserRole

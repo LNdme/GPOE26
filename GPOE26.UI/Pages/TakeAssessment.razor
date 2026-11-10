@@ -85,7 +85,7 @@ else
                 var answered = IsAnswered(_attempt.Questions[index]);
                 var css = (answered ? "answered " : "") + (index == _current ? "current" : "");
                 var label = $"Question {index + 1}" + (answered ? ", répondue" : "");
-                <button class="@css" aria-label="@label" aria-current="@(index == _current)" @onclick="() => _current = index">@(index + 1)</button>
+                <button class="@css" aria-label="@label" aria-current="@Aria.Current(index == _current)" @onclick="() => _current = index">@(index + 1)</button>
             }
         </nav>
 
@@ -103,7 +103,7 @@ else
                         {
                             var opt = q.Options[i];
                             var on = answer.SelectedOptions.Contains(opt.Index);
-                            <button type="button" class="ex-opt @(on ? "on" : "")" aria-pressed="@on" @onclick="() => Choose(q, answer, opt.Index)">
+                            <button type="button" class="ex-opt @(on ? "on" : "")" aria-pressed="@Aria.State(on)" @onclick="() => Choose(q, answer, opt.Index)">
                                 <span class="letter">@((char)('A' + i))</span><span>@opt.Text</span>
                             </button>
                         }
@@ -112,8 +112,8 @@ else
 
                 case QuestionType.TrueFalse:
                     <div class="ga-grid tight" role="group" aria-labelledby="q-title">
-                        <button type="button" class="ex-opt @(answer.TrueFalse == true ? "on" : "")" aria-pressed="@(answer.TrueFalse == true)" @onclick="() => answer.TrueFalse = true"><span class="letter">V</span>Vrai</button>
-                        <button type="button" class="ex-opt @(answer.TrueFalse == false ? "on" : "")" aria-pressed="@(answer.TrueFalse == false)" @onclick="() => answer.TrueFalse = false"><span class="letter">F</span>Faux</button>
+                        <button type="button" class="ex-opt @(answer.TrueFalse == true ? "on" : "")" aria-pressed="@Aria.State(answer.TrueFalse == true)" @onclick="() => answer.TrueFalse = true"><span class="letter">V</span>Vrai</button>
+                        <button type="button" class="ex-opt @(answer.TrueFalse == false ? "on" : "")" aria-pressed="@Aria.State(answer.TrueFalse == false)" @onclick="() => answer.TrueFalse = false"><span class="letter">F</span>Faux</button>
                     </div>
                     break;
 

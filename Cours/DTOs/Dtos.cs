@@ -56,7 +56,8 @@ namespace Cours.DTOs
         CourseStatus Status,
         List<Guid> ClassroomIds,
         Guid OwnerId,
-        string? StructuringStatus = null
+        string? StructuringStatus = null,
+        string? SourceUrl = null
     )
     {
         public CourseDto(Course c) : this(
@@ -76,7 +77,8 @@ namespace Cours.DTOs
             c.Status,
             c.ClassroomIds,
             c.OwnerId,
-            c.StructuringStatus
+            c.StructuringStatus,
+            c.SourceUrl
         )
         { }
     }
@@ -88,6 +90,10 @@ namespace Cours.DTOs
         int Order,
         int Level
     );
+
+    public record ImportLinkRequest(string? Url);
+
+    public record LabSuggestionDto(Guid Id, string Anchor, string Title, string Reason, string Block);
 
     /// <summary>
     /// Version allégée pour la liste des cours (sans contenu ni sections)

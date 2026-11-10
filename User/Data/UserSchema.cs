@@ -29,6 +29,7 @@ public static class UserSchema
 
         // ── Phase 1 : profil d'apprentissage, profil enseignant, rattachements ──
         @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""SubSystem"" text",
+        @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""Stage"" text",
         @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""ExamTarget"" text",
         @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""ExamDate"" date",
         @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""FocusSubjects"" text[] NOT NULL DEFAULT ARRAY[]::text[]",

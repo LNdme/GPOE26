@@ -76,8 +76,8 @@
     else
     {
         <div class="ga-tabs" role="tablist">
-            <button role="tab" class="@(_tab == 0 ? "on" : "")" aria-selected="@(_tab == 0)" @onclick="() => _tab = 0">Disponibles <span class="count">@Open.Count()</span></button>
-            <button role="tab" class="@(_tab == 1 ? "on" : "")" aria-selected="@(_tab == 1)" @onclick="() => _tab = 1">Rendues <span class="count">@Done.Count()</span></button>
+            <button role="tab" class="@(_tab == 0 ? "on" : "")" aria-selected="@Aria.State(_tab == 0)" @onclick="() => _tab = 0">Disponibles <span class="count">@Open.Count()</span></button>
+            <button role="tab" class="@(_tab == 1 ? "on" : "")" aria-selected="@Aria.State(_tab == 1)" @onclick="() => _tab = 1">Rendues <span class="count">@Done.Count()</span></button>
         </div>
         <div class="ga-grid">
             @foreach (var a in _tab == 0 ? Open : Done)

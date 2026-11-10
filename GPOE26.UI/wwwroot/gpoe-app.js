@@ -17,6 +17,8 @@ export function renderMath(element) {
         });
     };
     run(20);
+    if (element.querySelector('code.language-simulation'))
+        import('./gpoe-labs.js').then(labs => labs.mountLabs(element));
     if (window.Prism) window.Prism.highlightAllUnder(element);
 }
 

@@ -27,6 +27,7 @@ builder.Services.AddDbContext<CoursContext>(options =>
 // ─── Services ─────────────────────────────────────────────────────────────────
 builder.Services.AddScoped<PdfExtractorService>();
 builder.Services.AddScoped<PdfStructuringService>();
+builder.Services.AddScoped<CourseImportService>();
 builder.Services.AddSingleton<PdfStructuringQueue>();
 builder.Services.AddHostedService<PdfStructuringWorker>();
 builder.AddLlmClient();
@@ -127,6 +128,22 @@ using (var scope = app.Services.CreateScope())
         @"CREATE INDEX IF NOT EXISTS ""IX_Courses_ClassroomIds"" ON ""Courses"" USING gin (""ClassroomIds"")");
     await db.Database.ExecuteSqlRawAsync(
         @"ALTER TABLE ""Courses"" ADD COLUMN IF NOT EXISTS ""StructuringStatus"" text");
+    await db.Database.ExecuteSqlRawAsync(
+        @"ALTER TABLE ""Courses"" ADD COLUMN IF NOT EXISTS ""SourceUrl"" text");
+    await db.Database.ExecuteSqlRawAsync(
+        @"CREATE TABLE IF NOT EXISTS ""CourseLabSuggestions"" (
+            ""Id"" uuid NOT NULL,
+            ""CourseId"" uuid NOT NULL REFERENCES ""Courses"" (""Id"") ON DELETE CASCADE,
+            ""Anchor"" text NOT NULL,
+            ""Title"" text NOT NULL,
+            ""Reason"" text NOT NULL,
+            ""Block"" text NOT NULL,
+            ""Status"" text NOT NULL,
+            ""CreatedAt"" timestamp with time zone NOT NULL,
+            CONSTRAINT ""PK_CourseLabSuggestions"" PRIMARY KEY (""Id"")
+        )");
+    await db.Database.ExecuteSqlRawAsync(
+        @"CREATE INDEX IF NOT EXISTS ""IX_CourseLabSuggestions_CourseId_Status"" ON ""CourseLabSuggestions"" (""CourseId"", ""Status"")");
     await CoursSeeder.SeedAsync(db);
 }
 
@@ -325,6 +342,120 @@ cours.MapPost("/{id:guid}/upload", async (
 .Produces(404)
 .DisableAntiforgery();
 
+// ── POST /cours/import-link ───────────────────────────────────────────────────
+// Page web ou PDF en ligne : le lien suffit, l'agent déduit le reste.
+cours.MapPost("/import-link", async (ImportLinkRequest req, ClaimsPrincipal principal, CoursContext db, CourseImportService importer,
+    PdfStructuringQueue queue, LlmClient llm, IWebHostEnvironment env, CancellationToken ct) =>
+{
+    var ownerId = ClaimsHelper.GetUserId(principal);
+    if (ownerId is null) return Results.Unauthorized();
+
+    try
+    {
+        var root = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
+        var course = await importer.ImportLinkAsync(db, ownerId.Value, req.Url, root, llm.IsConfigured, ct);
+        await db.SaveChangesAsync(ct);
+        if (llm.IsConfigured) queue.Enqueue(course.Id);
+        return Results.Ok(new CourseDto(course));
+    }
+    catch (CourseImportException ex)
+    {
+        return Results.BadRequest(new { message = ex.Message });
+    }
+})
+.WithSummary("Créer un cours à partir d'un lien")
+.Produces<CourseDto>()
+.Produces(400);
+
+// ── POST /cours/import-photos ─────────────────────────────────────────────────
+cours.MapPost("/import-photos", async (IFormFileCollection files, ClaimsPrincipal principal, CoursContext db, CourseImportService importer,
+    PdfStructuringQueue queue, LlmClient llm, IWebHostEnvironment env, CancellationToken ct) =>
+{
+    var ownerId = ClaimsHelper.GetUserId(principal);
+    if (ownerId is null) return Results.Unauthorized();
+
+    try
+    {
+        var root = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
+        var course = await importer.ImportPhotosAsync(db, ownerId.Value, files, root, llm.IsConfigured, ct);
+        await db.SaveChangesAsync(ct);
+        if (llm.IsConfigured) queue.Enqueue(course.Id);
+        return Results.Ok(new CourseDto(course));
+    }
+    catch (CourseImportException ex)
+    {
+        return Results.BadRequest(new { message = ex.Message });
+    }
+})
+.WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(100_000_000))
+.WithSummary("Créer un cours à partir de photos")
+.Produces<CourseDto>()
+.Produces(400)
+.DisableAntiforgery();
+
+// ── Labos proposés par l'agent (réservés au propriétaire du cours) ─────────────
+cours.MapGet("/{id:guid}/lab-suggestions", async (Guid id, ClaimsPrincipal principal, CoursContext db) =>
+{
+    var ownerId = ClaimsHelper.GetUserId(principal);
+    if (ownerId is null) return Results.Unauthorized();
+    if (!await db.Courses.AnyAsync(c => c.Id == id && c.OwnerId == ownerId)) return Results.Ok(new List<LabSuggestionDto>());
+
+    var items = await db.LabSuggestions.AsNoTracking()
+        .Where(s => s.CourseId == id && s.Status == CourseLabSuggestion.Pending)
+        .OrderBy(s => s.CreatedAt)
+        .Select(s => new LabSuggestionDto(s.Id, s.Anchor, s.Title, s.Reason, s.Block))
+        .ToListAsync();
+    return Results.Ok(items);
+})
+.WithSummary("Labos proposés pour ce cours")
+.Produces<List<LabSuggestionDto>>();
+
+static async Task<IResult> AcceptLabsAsync(Guid id, Guid? suggestionId, ClaimsPrincipal principal, CoursContext db)
+{
+    var ownerId = ClaimsHelper.GetUserId(principal);
+    if (ownerId is null) return Results.Unauthorized();
+
+    var course = await db.Courses.Include(c => c.Sections).FirstOrDefaultAsync(c => c.Id == id && c.OwnerId == ownerId);
+    var section = course?.Sections.OrderBy(s => s.Order).FirstOrDefault();
+    if (course is null || section is null) return Results.NotFound(new { message = "Cours introuvable." });
+
+    var pending = await db.LabSuggestions
+        .Where(s => s.CourseId == id && s.Status == CourseLabSuggestion.Pending && (suggestionId == null || s.Id == suggestionId))
+        .ToListAsync();
+    if (pending.Count == 0) return Results.NotFound(new { message = "Cette proposition n'est plus disponible." });
+
+    foreach (var suggestion in pending.OrderBy(s => s.CreatedAt))
+    {
+        section.Content = LabProposalRules.InsertAfterSection(section.Content, suggestion.Anchor, suggestion.Block);
+        suggestion.Status = CourseLabSuggestion.Accepted;
+    }
+    course.UpdatedAt = DateTime.UtcNow;
+    course.RebuildExtractedText();
+    await db.SaveChangesAsync();
+    return Results.Ok(new CourseDto(course));
+}
+
+cours.MapPost("/{id:guid}/lab-suggestions/accept-all", (Guid id, ClaimsPrincipal principal, CoursContext db) => AcceptLabsAsync(id, null, principal, db))
+    .WithSummary("Ajouter au cours tous les labos proposés")
+    .Produces<CourseDto>();
+
+cours.MapPost("/{id:guid}/lab-suggestions/{suggestionId:guid}/accept", (Guid id, Guid suggestionId, ClaimsPrincipal principal, CoursContext db) =>
+        AcceptLabsAsync(id, suggestionId, principal, db))
+    .WithSummary("Ajouter au cours un labo proposé")
+    .Produces<CourseDto>();
+
+cours.MapPost("/{id:guid}/lab-suggestions/{suggestionId:guid}/refuse", async (Guid id, Guid suggestionId, ClaimsPrincipal principal, CoursContext db) =>
+{
+    var ownerId = ClaimsHelper.GetUserId(principal);
+    if (ownerId is null) return Results.Unauthorized();
+    if (!await db.Courses.AnyAsync(c => c.Id == id && c.OwnerId == ownerId)) return Results.NotFound();
+
+    await db.LabSuggestions.Where(s => s.Id == suggestionId && s.CourseId == id)
+        .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, CourseLabSuggestion.Refused));
+    return Results.NoContent();
+})
+.WithSummary("Refuser un labo proposé");
+
 // ── POST /cours/{id}/restructure ──────────────────────────────────────────────
 // Relit un PDF déjà importé avec la mise en forme actuelle. Le texte retouché à la main est remplacé.
 cours.MapPost("/{id:guid}/restructure", async (
@@ -342,7 +473,19 @@ cours.MapPost("/{id:guid}/restructure", async (
     var course = await db.Courses.Include(c => c.Sections)
         .FirstOrDefaultAsync(c => c.Id == id && c.OwnerId == ownerId);
     if (course is null) return Results.NotFound(new { message = "Cours introuvable." });
-    if (course.PdfPath is null) return Results.BadRequest(new { message = "Ce cours ne provient pas d'un PDF." });
+
+    // Cours importé par lien ou par photos : l'agent le relit tel quel (pages restées en photo, labos à proposer)
+    if (course.PdfPath is null)
+    {
+        var imported = course.Sections.Count == 1 && (course.SourceUrl is not null || course.Sections[0].Content.Contains("(scan)](", StringComparison.Ordinal));
+        if (!imported) return Results.BadRequest(new { message = "Seul un cours importé (PDF, lien ou photos) peut être relu par l'agent." });
+        if (!llm.IsConfigured) return Results.Json(new { message = "L'agent n'est pas disponible : aucune clé d'IA n'est configurée." }, statusCode: 503);
+
+        course.StructuringStatus = PdfStructuringService.StatusPending;
+        await db.SaveChangesAsync();
+        queue.Enqueue(course.Id);
+        return Results.Ok(new CourseDto(course));
+    }
 
     var root = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
     var path = Path.Combine(root, course.PdfPath);
@@ -353,7 +496,7 @@ cours.MapPost("/{id:guid}/restructure", async (
     if (llm.IsConfigured) queue.Enqueue(course.Id);
     return Results.Ok(new CourseDto(course));
 })
-.WithSummary("Relire un PDF et reconstruire le cours")
+.WithSummary("Relire un cours importé : PDF reconstruit, ou nouvelle lecture par l'agent")
 .Produces<CourseDto>()
 .Produces(400)
 .Produces(404);
@@ -513,10 +656,11 @@ cours.MapDelete("/{id:guid}", async (
 // Images extraites d'un PDF, lues par le navigateur (sans jeton) : seuls ces fichiers sont servis, jamais le PDF.
 app.MapGet("/uploads/cours/{courseId:guid}/{file}", (Guid courseId, string file, IWebHostEnvironment env) =>
 {
-    if (!System.Text.RegularExpressions.Regex.IsMatch(file, @"^fig-\d+\.(png|jpg)$")) return Results.NotFound();
+    if (!System.Text.RegularExpressions.Regex.IsMatch(file, @"^fig-\d+\.(png|jpg|gif|webp)$")) return Results.NotFound();
     var root = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
     var path = Path.Combine(PdfStructuringService.FiguresFolder(root, courseId), file);
-    return File.Exists(path) ? Results.File(path, file.EndsWith(".png") ? "image/png" : "image/jpeg") : Results.NotFound();
+    var contentType = Path.GetExtension(file) switch { ".png" => "image/png", ".gif" => "image/gif", ".webp" => "image/webp", _ => "image/jpeg" };
+    return File.Exists(path) ? Results.File(path, contentType) : Results.NotFound();
 })
 .AllowAnonymous()
 .WithSummary("Image extraite d'un PDF");

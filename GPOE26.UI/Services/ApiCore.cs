@@ -58,6 +58,19 @@ public abstract class ApiBase(IHttpClientFactory factory, SessionState session, 
         return SendAsync<T>(HttpMethod.Post, path, form);
     }
 
+    /// <summary>Envoi de plusieurs images dans une même requête (champ "files").</summary>
+    protected Task<ApiResult<T>> UploadManyAsync<T>(string path, IEnumerable<ImageUpload> images)
+    {
+        var form = new MultipartFormDataContent();
+        foreach (var image in images)
+        {
+            var file = new ByteArrayContent(image.Data);
+            file.Headers.ContentType = new MediaTypeHeaderValue(image.ContentType);
+            form.Add(file, "files", image.FileName);
+        }
+        return SendAsync<T>(HttpMethod.Post, path, form);
+    }
+
     /// <summary>Contenu binaire protégé (photo d'une copie) affiché en data URL : le navigateur n'a pas le jeton.</summary>
     protected async Task<string?> DataUrlAsync(string path)
     {

@@ -24,9 +24,19 @@ builder.Services.AddHttpClient("user", client =>
     client.BaseAddress = new Uri(userServiceUrl))
     .AddStandardResilienceHandler();
 
+// Lire un PDF ou récupérer un cours en ligne prend du temps, et un import ne doit jamais être rejoué
 builder.Services.AddHttpClient("cours", client =>
-    client.BaseAddress = new Uri(coursServiceUrl))
-    .AddStandardResilienceHandler();
+{
+    client.BaseAddress = new Uri(coursServiceUrl);
+    client.Timeout = TimeSpan.FromMinutes(3);
+})
+    .AddStandardResilienceHandler(options =>
+    {
+        options.AttemptTimeout.Timeout = TimeSpan.FromMinutes(3);
+        options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(3);
+        options.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(10);
+        options.Retry.DisableForUnsafeHttpMethods();
+    });
 
 builder.Services.AddHttpClient("chat", client =>
 {
@@ -97,7 +107,7 @@ app.MapGet("/uploads/images/{*path}", async (string path, IHttpClientFactory fac
 // Images extraites des PDF de cours, servies par le service Cours
 app.MapGet("/uploads/cours/{courseId:guid}/{file}", async (Guid courseId, string file, IHttpClientFactory factory) =>
 {
-    if (!System.Text.RegularExpressions.Regex.IsMatch(file, @"^fig-\d+\.(png|jpg)$")) return Results.NotFound();
+    if (!System.Text.RegularExpressions.Regex.IsMatch(file, @"^fig-\d+\.(png|jpg|gif|webp)$")) return Results.NotFound();
     var response = await factory.CreateClient("cours").GetAsync($"/uploads/cours/{courseId}/{file}");
     if (!response.IsSuccessStatusCode) return Results.NotFound();
     return Results.Stream(await response.Content.ReadAsStreamAsync(), response.Content.Headers.ContentType?.ToString() ?? "image/png");

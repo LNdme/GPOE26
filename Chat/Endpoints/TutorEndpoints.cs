@@ -18,7 +18,7 @@ public static class TutorEndpoints
     private static readonly string[] ImageTypes = ["image/jpeg", "image/png", "image/webp"];
 
     private const string SystemPrompt = """
-        Tu es le tuteur personnel d'un élève sur la plateforme GPOE26 (enseignement secondaire camerounais).
+        Tu es le tuteur personnel d'un apprenant sur la plateforme GPOE26 (Cameroun).
         Niveau de l'élève : {0}.
         Ton rôle : faire comprendre le cours, pas faire les devoirs à la place de l'élève.
         - Réponds en français (en anglais si l'élève écrit en anglais), clairement, en paragraphes courts.
@@ -36,6 +36,15 @@ public static class TutorEndpoints
         <cours>
         {3}
         </cours>
+        """;
+
+    private const string HigherEducation = """
+
+
+        Cet apprenant est dans l'enseignement supérieur : travaille à son niveau.
+        - Sois rigoureux : définitions exactes, hypothèses explicites, notations du domaine, démonstrations quand elles sont utiles.
+        - Ne simplifie pas à l'excès et distingue ce qui est exact de ce qui est une approximation, en précisant son domaine de validité.
+        - Propose des prolongements exigeants et, si le cours comporte un laboratoire, invite à prédire puis à vérifier avec ses curseurs.
         """;
 
     public static void MapTutorEndpoints(this IEndpointRouteBuilder app)
@@ -115,6 +124,7 @@ public static class TutorEndpoints
             {
                 new("system", string.Format(SystemPrompt, string.IsNullOrWhiteSpace(level) ? "secondaire" : level,
                     course.Title, course.Subject, course.Text())
+                    + (principal.FindFirst("stage")?.Value == "Higher" ? HigherEducation : "")
                     + await agent.StudentContextAsync(userId, courseId, text, ct))
             };
             messages.AddRange(conversation.Messages.TakeLast(HistoryForModel)
@@ -129,7 +139,9 @@ public static class TutorEndpoints
             catch (LlmUnavailableException ex)
             {
                 logger.LogWarning(ex, "Tuteur indisponible");
-                return Error(502, "Le tuteur ne répond pas pour le moment. Ta question n'a pas été perdue : réessaie dans un instant.");
+                return ex is LlmNotConfiguredException
+                    ? Error(503, "Le tuteur n'est pas activé sur ce serveur : aucune clé d'IA n'est configurée.")
+                    : Error(502, "Le tuteur ne répond pas pour le moment. Ta question n'a pas été perdue : réessaie dans un instant.");
             }
 
             var now = DateTime.UtcNow;

@@ -205,6 +205,7 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
         // La spécialité (claim JWT lu par le LLM) reprend les matières enseignées
         Specialite = req.Specialite ?? (teachingSubjects.Count > 0 ? string.Join(", ", teachingSubjects) : null),
         Filiere = req.Filiere,
+        Stage = req.Role == UserRole.Student ? req.Stage ?? EducationStage.Secondary : null,
         Language = req.Language,
         SubSystem = req.SubSystem,
         ExamTarget = req.ExamTarget,

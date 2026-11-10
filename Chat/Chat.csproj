@@ -7,7 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-	  <PackageReference Include="Anthropic" Version="13.6.0" />
+	  <PackageReference Include="Anthropic" Version="13.7.0" />
 	  <PackageReference Include="Anthropic.Foundry" Version="1.0.0" />
 	  <PackageReference Include="Anthropic.SDK" Version="5.10.0" />
 	  <PackageReference Include="Aspire.Hosting.PostgreSQL" Version="13.6.4" />

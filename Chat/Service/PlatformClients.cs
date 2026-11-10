@@ -14,6 +14,8 @@ public record CourseRef(Guid Id, string Title, string Subject, string? Descripti
         var text = Sections is { Count: > 0 }
             ? string.Join("\n\n", Sections.OrderBy(s => s.Order).Select(s => s.Content))
             : ExtractedText ?? "";
+        // Le tuteur n'a pas besoin de la description technique d'un laboratoire
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"```simulation[\s\S]*?```", "[Laboratoire interactif dans le cours]");
         if (string.IsNullOrWhiteSpace(text)) text = Description ?? "";
         return text.Length > max ? text[..max] + "\n[…]" : text;
     }

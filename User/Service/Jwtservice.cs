@@ -33,6 +33,7 @@ namespace User.Service
             new Claim("username", user.Username),
             new Claim("role", user.Role.ToString()),
             new Claim("level", user.Level ?? ""),
+            new Claim("stage", user.Stage?.ToString() ?? ""),
             new Claim("specialite", user.Specialite ?? ""),
             new Claim("filiere", user.Filiere ?? ""),
             new Claim("lang", user.Language),

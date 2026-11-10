@@ -15,6 +15,8 @@
         <a class="ga-btn" href="/app/cours/nouveau"><Icon Name="plus" /> @(IsTeacher ? "Nouveau cours" : "Ajouter un document")</a>
     </div>
 
+    <CourseImportLink />
+
     @if (!Ready || _loading)
     {
         <Loading />
@@ -41,7 +43,7 @@
             <h2 class="ga-h2">Mes documents</h2>
             @if (_documents.Count == 0)
             {
-                <div class="ga-empty"><span>Importe un PDF ou rédige tes notes : tu pourras les lire ici et t'entraîner dessus.</span></div>
+                <div class="ga-empty"><span>Colle un lien, importe un PDF ou des photos : l'agent en fait un cours à lire, avec des labos quand le sujet s'y prête.</span></div>
             }
             <div class="ga-grid">
                 @foreach (var c in _documents)

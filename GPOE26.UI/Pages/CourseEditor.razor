@@ -17,7 +17,7 @@
     <div class="ga-head">
         <div>
             <h1>@(IsEdit ? "Modifier le cours" : "Nouveau cours")</h1>
-            <p>@(IsEdit ? "Vos changements sont visibles dès l'enregistrement." : "Rédigez votre cours, demandez un premier plan à l'IA ou importez un document PDF.")</p>
+            <p>@(IsEdit ? "Vos changements sont visibles dès l'enregistrement." : "Donnez un lien, un PDF ou des photos : l'agent s'occupe du reste. Vous pouvez aussi rédiger vous-même.")</p>
         </div>
     </div>
 
@@ -33,7 +33,37 @@
     }
     else
     {
+        @if (!IsEdit)
+        {
+            <div class="ga-tabs" role="tablist" aria-label="Source du cours">
+                @foreach (var (mode, label) in Modes)
+                {
+                    <button type="button" role="tab" class="@(_mode == mode ? "on" : "")" aria-selected="@Aria.State(_mode == mode)" @onclick="() => _mode = mode">@label</button>
+                }
+            </div>
+        }
+
+        @if (!IsEdit && _mode == "link")
+        {
+            <CourseImportLink />
+        }
+        else if (!IsEdit && _mode == "photos")
+        {
+            <section class="ga-card">
+                <div class="ce-upload">
+                    <Icon Name="camera" Size="28" />
+                    <label for="ce-photos" class="ga-label">Photos des pages du cours (@MaxPhotos au maximum)</label>
+                    <InputFile id="ce-photos" OnChange="OnPhotosPicked" accept="image/*" multiple disabled="@_saving" />
+                    <span class="ga-small ga-muted">@(_readingPhotos ? "Préparation des photos…" : _photos.Count > 0 ? $"{_photos.Count} photo(s) prête(s)" : "Prenez chaque page bien à plat, dans l'ordre : l'agent retranscrit le texte et les formules.")</span>
+                </div>
+                <button type="button" class="ga-btn" style="align-self:flex-start" disabled="@(_saving || _readingPhotos || _photos.Count == 0)" @onclick="ImportPhotosAsync">@(_saving ? "Envoi…" : "Créer le cours")</button>
+            </section>
+        }
+        else
+        {
         <form class="ga-card" @onsubmit="SaveAsync" @onsubmit:preventDefault>
+            @if (!_pdfMode)
+            {
             <div class="ga-field">
                 <label for="ce-title">Titre</label>
                 <input id="ce-title" class="ga-input" maxlength="200" placeholder="ex. Introduction à l'algorithmique" @bind="_title" />
@@ -46,13 +76,6 @@
                 <label for="ce-description">Description</label>
                 <textarea id="ce-description" class="ga-textarea" rows="2" @bind="_description"></textarea>
             </div>
-
-            @if (!IsEdit)
-            {
-                <div class="ga-tabs" role="tablist" aria-label="Type de contenu">
-                    <button type="button" role="tab" class="@(_pdfMode ? "" : "on")" aria-selected="@(!_pdfMode)" @onclick="() => _pdfMode = false">Rédiger mon cours</button>
-                    <button type="button" role="tab" class="@(_pdfMode ? "on" : "")" aria-selected="@_pdfMode" @onclick="() => _pdfMode = true">Importer un PDF</button>
-                </div>
             }
 
             @if (_pdfMode)
@@ -73,12 +96,18 @@
                         {
                             <button type="button" class="ga-btn secondary small" disabled="@_drafting" @onclick="DraftAsync"><Icon Name="spark" /> @(_drafting ? "Rédaction…" : "Proposer un plan")</button>
                         }
+                        <button type="button" class="ga-btn secondary small" aria-expanded="@Aria.State(_simulationOpen)" @onclick="() => _simulationOpen = !_simulationOpen"><Icon Name="chart" /> Insérer une simulation</button>
                         <label class="ga-btn secondary small">
                             <Icon Name="camera" /> @(_uploadingImage ? "Envoi…" : "Insérer une image")
                             <InputFile OnChange="OnImagePicked" accept="image/*" class="ga-sr-only" aria-label="Choisir une image à insérer" />
                         </label>
                     </span>
                 </div>
+
+                @if (_simulationOpen)
+                {
+                    <SimulationBuilder OnInsert="InsertSimulationAsync" OnClose="() => _simulationOpen = false" />
+                }
 
                 @if (Session.HasFeature("teacher-agent"))
                 {
@@ -144,6 +173,7 @@
                 }
             </div>
         </form>
+        }
     }
 </div>
 
@@ -173,14 +203,28 @@
     private CourseDetail? _course;
     private string _title = "", _subject = "", _markdown = "", _previewHtml = "";
     private string? _description, _error, _pdfName, _instructions;
-    private bool _composing;
+    private bool _composing, _simulationOpen;
     private ImageUpload? _pdf;
-    private bool _loading = true, _saving, _drafting, _uploadingImage, _pdfMode, _confirmDelete, _mathPending;
+    private const string UnclassifiedSubject = "À classer";
+    private const int MaxPhotos = 30;
+    private const long MaxPhotoBytes = 8 * 1024 * 1024;
+
+    private static readonly (string Mode, string Label)[] Modes =
+        [("link", "Depuis un lien"), ("pdf", "Importer un PDF"), ("photos", "Depuis des photos"), ("write", "Rédiger moi-même")];
+
+    private string _mode = "write";
+    private bool _pdfMode => !IsEdit && _mode == "pdf";
+    private readonly List<ImageUpload> _photos = new();
+    private bool _readingPhotos;
+    private bool _loading = true, _saving, _drafting, _uploadingImage, _confirmDelete, _mathPending;
     private ElementReference _preview;
     private IJSObjectReference? _module;
 
     protected override async Task LoadAsync()
     {
+        // Un apprenant part le plus souvent d'un cours existant ; un enseignant rédige plus volontiers le sien
+        if (Session.Role == UserRole.Student) _mode = "link";
+
         if (IsEdit)
         {
             var result = await Courses.GetAsync(Id!.Value);
@@ -219,6 +263,12 @@
     {
         _markdown = await (await ModuleAsync()).InvokeAsync<string>("insertAtCursor", "ce-markdown", before, after);
         RefreshPreview();
+    }
+
+    private async Task InsertSimulationAsync(string block)
+    {
+        await InsertAsync(block, "");
+        _simulationOpen = false;
     }
 
     private async Task OnPdfPicked(InputFileChangeEventArgs e)
@@ -319,9 +369,63 @@
         RefreshPreview();
     }
 
+    private async Task OnPhotosPicked(InputFileChangeEventArgs e)
+    {
+        _error = null;
+        _photos.Clear();
+        _readingPhotos = true;
+        try
+        {
+            foreach (var file in e.GetMultipleFiles(MaxPhotos).OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                // Recompressée par le navigateur : une photo de téléphone de 5 Mo passe sous 1 Mo
+                var resized = await file.RequestImageFileAsync("image/jpeg", 2000, 2800);
+                _photos.Add(new ImageUpload(Path.ChangeExtension(file.Name, ".jpg"), "image/jpeg", await ReadAsync(resized, MaxPhotoBytes)));
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            _photos.Clear();
+            _error = $"{MaxPhotos} photos au maximum par cours.";
+        }
+        catch (IOException)
+        {
+            _photos.Clear();
+            _error = "Une photo est trop lourde (8 Mo au maximum).";
+        }
+        _readingPhotos = false;
+    }
+
+    private async Task ImportPhotosAsync()
+    {
+        _saving = true;
+        _error = null;
+        var result = await Courses.ImportPhotosAsync(_photos);
+        _saving = false;
+        if (result.Value is null)
+        {
+            _error = result.Error ?? "Les photos n'ont pas pu être importées.";
+            return;
+        }
+        Nav.NavigateTo($"/app/cours/{result.Value.Id}");
+    }
+
     private async Task SaveAsync()
     {
         _error = null;
+
+        // Un PDF n'a besoin que du fichier : son titre vient du nom, l'agent trouve la matière
+        if (_pdfMode)
+        {
+            if (_pdf is null)
+            {
+                _error = "Choisissez un fichier PDF.";
+                return;
+            }
+            _title = Path.GetFileNameWithoutExtension(_pdfName ?? "Document importé").Replace('_', ' ').Replace('-', ' ').Trim();
+            _subject = UnclassifiedSubject;
+        }
+
         if (string.IsNullOrWhiteSpace(_title) || string.IsNullOrWhiteSpace(_subject))
         {
             _error = "Le titre et la matière sont obligatoires.";

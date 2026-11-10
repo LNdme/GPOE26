@@ -194,9 +194,9 @@ public static class AgentEndpoints
                 reflection.Enqueue(new ReflectionJob(userId, AgentKinds.Teacher, null, req.Title, message, reply, null));
                 return Results.Ok(new ComposeResponse(reply));
             }
-            catch (LlmUnavailableException)
+            catch (LlmUnavailableException ex)
             {
-                return Error(502, "L'assistant ne répond pas pour le moment. Réessayez dans un instant.");
+                return AiError(ex);
             }
         })
         .WithSummary("Proposer un plan, rédiger ou réécrire dans le ton de l'enseignant");
@@ -241,9 +241,9 @@ public static class AgentEndpoints
                 reflection.Enqueue(new ReflectionJob(userId, AgentKinds.Teacher, null, null, message, reply, null));
                 return Results.Ok(new AssistantAnswerDto(reply));
             }
-            catch (LlmUnavailableException)
+            catch (LlmUnavailableException ex)
             {
-                return Error(502, "L'assistant ne répond pas pour le moment. Réessayez dans un instant.");
+                return AiError(ex);
             }
         })
         .WithSummary("Question libre à l'assistant");
@@ -295,6 +295,10 @@ public static class AgentEndpoints
             return null;
         }
     }
+
+    private static IResult AiError(LlmUnavailableException ex) => ex is LlmNotConfiguredException
+        ? Error(503, "L'assistant n'est pas activé sur ce serveur : aucune clé d'IA n'est configurée.")
+        : Error(502, "L'assistant ne répond pas pour le moment. Réessayez dans un instant.");
 
     private static string KindOf(ClaimsPrincipal principal) =>
         principal.FindFirstValue("role") is "Teacher" or "Admin" ? AgentKinds.Teacher : AgentKinds.Student;

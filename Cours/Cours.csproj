@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+	  <PackageReference Include="AngleSharp" Version="1.10.1" />
 	  <PackageReference Include="Aspire.Hosting.PostgreSQL" Version="13.6.4" />
 	  <PackageReference Include="Aspire.Npgsql" Version="13.6.4" />
 	  <PackageReference Include="Aspire.Npgsql.EntityFrameworkCore.PostgreSQL" Version="13.6.4" />

@@ -18,7 +18,8 @@ var llmApiKey = builder.AddParameter(
 // ── 1 seul serveur PostgreSQL, toutes les DBs dessus ─────────────────────────
 var postgres = builder.AddPostgres("postgres")
     .WithImage("pgvector/pgvector", "pg18")   // PostgreSQL 18 avec la recherche vectorielle des agents
-    .WithDataVolume()
+    // Le tag pg18 n'est pas détecté par WithDataVolume ; remonter l'ancien volume au chemin attendu par PostgreSQL 18.
+    .WithVolume("gpoe26.apphost-d7acfcd7e9-postgres-data", "/var/lib/postgresql")
     .WithPgAdmin(); // interface admin dispo sur http://localhost:5050
 
 var userDb = postgres.AddDatabase("userdb");
@@ -77,6 +78,17 @@ var quizService = builder.AddProject<Projects.Quiz>("quiz")
 
 
 chatService.WithEnvironment("Services__Quiz", quizService.GetEndpoint("http"));   // progression de l'élève
+
+// Fournisseur d'IA : OpenRouter par défaut, ou tout service compatible (Ollama local…) via Parameters:llm-baseurl et llm-models
+foreach (var service in new[] { coursService, chatService, quizService })
+{
+    if (builder.Configuration["Parameters:llm-baseurl"] is { Length: > 0 } baseUrl)
+        service.WithEnvironment("LLM__BaseUrl", baseUrl);
+    if (builder.Configuration["Parameters:llm-models"] is { Length: > 0 } models)
+        service.WithEnvironment("LLM__Models", models);
+    if (builder.Configuration["Parameters:llm-vision-models"] is { Length: > 0 } visionModels)
+        service.WithEnvironment("LLM__VisionModels", visionModels);
+}
 
 builder.AddProject<Projects.GPOE26_Web>("webfrontend")
     .WithExternalHttpEndpoints()

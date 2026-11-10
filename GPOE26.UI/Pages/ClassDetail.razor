@@ -42,8 +42,8 @@
             <div class="ga-card-head">
                 <h2 id="h-grid" class="ga-h2">Résultats et maîtrise</h2>
                 <div class="ga-chips" role="tablist">
-                    <button role="tab" class="ga-chip @(!_onlyHelp ? "on" : "")" aria-selected="@(!_onlyHelp)" @onclick="() => _onlyHelp = false">Tous</button>
-                    <button role="tab" class="ga-chip @(_onlyHelp ? "on" : "")" aria-selected="@_onlyHelp" @onclick="() => _onlyHelp = true">À accompagner</button>
+                    <button role="tab" class="ga-chip @(!_onlyHelp ? "on" : "")" aria-selected="@Aria.State(!_onlyHelp)" @onclick="() => _onlyHelp = false">Tous</button>
+                    <button role="tab" class="ga-chip @(_onlyHelp ? "on" : "")" aria-selected="@Aria.State(_onlyHelp)" @onclick="() => _onlyHelp = true">À accompagner</button>
                 </div>
             </div>
             @if (_members.Count == 0)

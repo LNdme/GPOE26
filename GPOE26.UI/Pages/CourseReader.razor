@@ -22,10 +22,10 @@ else
     <div class="rd @(_tutorOpen ? "with-tutor" : "") @(_tocOpen ? "" : "no-toc")">
         <article class="rd-article" @ref="_article">
             <div class="rd-bar">
-                <button type="button" class="ga-btn ghost small" aria-pressed="@_tocOpen" @onclick="() => _tocOpen = !_tocOpen"><Icon Name="menu" /> Sommaire</button>
+                <button type="button" class="ga-btn ghost small" aria-pressed="@Aria.State(_tocOpen)" @onclick="() => _tocOpen = !_tocOpen"><Icon Name="menu" /> Sommaire</button>
                 @if (Session.HasFeature("tutor-ai"))
                 {
-                    <button type="button" class="ga-btn ghost small" aria-pressed="@_tutorOpen" @onclick="() => _tutorOpen = !_tutorOpen"><Icon Name="spark" /> Tuteur IA</button>
+                    <button type="button" class="ga-btn ghost small" aria-pressed="@Aria.State(_tutorOpen)" @onclick="() => _tutorOpen = !_tutorOpen"><Icon Name="spark" /> Tuteur IA</button>
                 }
             </div>
             <nav aria-label="Fil d'Ariane" class="rd-meta"><a href="/app/cours" style="color:inherit">Mes cours</a> › @_course.Subject</nav>
@@ -49,9 +49,21 @@ else
                 <p style="font-size:19px; color:var(--ga-muted)">@_course.Description</p>
             }
 
+            <Alert Message="@_error" />
+            <Alert Message="@_info" Kind="success" />
+
             @if (_course.StructuringStatus == "Pending")
             {
-                <div class="ga-alert" role="status" style="font-family:var(--ga-font)">Mise en forme en cours : titres et formules s'affineront d'ici quelques minutes.</div>
+                <div class="ga-alert" role="status" style="font-family:var(--ga-font)">L'agent met le cours en forme et cherche où un labo pourrait t'aider. Cela prend quelques minutes, tu peux déjà lire.</div>
+            }
+            else if (_course.OwnerId == Me.Id)
+            {
+                <LabSuggestionsPanel CourseId="_course.Id" Version="_analysisVersion" OnChanged="OnLabsChanged" />
+            }
+
+            @if (_course.SourceUrl is { Length: > 0 } source)
+            {
+                <p class="ga-small ga-muted" style="font-family:var(--ga-font)">Source : <a href="@source" target="_blank" rel="noopener noreferrer">@(new Uri(source).Host)</a></p>
             }
 
             @if (string.IsNullOrWhiteSpace(_html))
@@ -75,8 +87,8 @@ else
             <div class="ga-row between" style="margin-top:28px; padding-top:18px; border-top:1px solid #ECEAE3; font-family:var(--ga-font)">
                 <span class="ga-small ga-muted">Ce cours vous a-t-il été utile ?</span>
                 <span class="ga-actions">
-                    <button class="ga-btn small @(_vote == 1 ? "" : "secondary")" aria-pressed="@(_vote == 1)" @onclick="() => _vote = 1">Oui</button>
-                    <button class="ga-btn small @(_vote == -1 ? "" : "secondary")" aria-pressed="@(_vote == -1)" @onclick="() => _vote = -1">Non</button>
+                    <button class="ga-btn small @(_vote == 1 ? "" : "secondary")" aria-pressed="@Aria.State(_vote == 1)" @onclick="() => _vote = 1">Oui</button>
+                    <button class="ga-btn small @(_vote == -1 ? "" : "secondary")" aria-pressed="@Aria.State(_vote == -1)" @onclick="() => _vote = -1">Non</button>
                 </span>
             </div>
         </article>
@@ -94,13 +106,17 @@ else
             }
 
             <div class="ga-actions">
-                <a class="ga-btn secondary small" href="/app/cours/@_course.Id/quiz"><Icon Name="check" /> Faire un quiz</a>
+                <a class="ga-btn secondary small" href="/app/cours/@_course.Id/quiz"><Icon Name="check" /> S'entraîner</a>
                 @if (_course.OwnerId == Me.Id)
                 {
                     <a class="ga-btn ghost small" href="/app/cours/@_course.Id/modifier">Modifier</a>
                     @if (_course.ContentType == CourseContentType.Pdf)
                     {
                         <button type="button" class="ga-btn ghost small" disabled="@_restructuring" @onclick="RestructureAsync">@(_restructuring ? "Lecture du PDF…" : "Restructurer")</button>
+                    }
+                    else if (IsImported && _course.StructuringStatus != "Pending")
+                    {
+                        <button type="button" class="ga-btn ghost small" disabled="@_restructuring" @onclick="RestructureAsync">Relancer l'agent</button>
                     }
                 }
             </div>
@@ -149,13 +165,14 @@ else
     [Parameter] public Guid Id { get; set; }
 
     private bool _loading = true;
-    private string? _error, _html;
+    private string? _error, _info, _html;
     private CourseDetail? _course;
     private List<TocEntry> _toc = new();
     private List<StudentAssessment> _related = new();
     private int _vote;
     private bool _tutorOpen, _mathPending, _tocOpen = true, _restructuring;
     private CancellationTokenSource? _poll, _studyClock;
+    private int _analysisVersion;
     private const int StudyTickMinutes = 2;
     private ElementReference _article;
     private IJSObjectReference? _module;
@@ -220,6 +237,7 @@ else
                     var latest = (await Courses.GetAsync(Id)).Value;
                     if (latest?.StructuringStatus == "Pending") continue;
                     _poll = null;
+                    _analysisVersion++;
                     Show(latest);
                     StateHasChanged();
                     return;
@@ -229,14 +247,37 @@ else
         });
     }
 
+    private void OnLabsChanged((CourseDetail Course, string Message) change)
+    {
+        Show(change.Course);
+        _error = null;
+        _info = change.Message;
+    }
+
+    /// <summary>Cours importé par lien ou par photos : l'agent peut le relire (pages restées en photo, labos).</summary>
+    private bool IsImported => _course is { } c && (c.SourceUrl is not null || c.ToMarkdown().Contains("(scan)](", StringComparison.Ordinal));
+
     private async Task RestructureAsync()
     {
         _restructuring = true;
-        _error = null;
+        _error = _info = null;
         var result = await Courses.RestructureAsync(Id);
         _restructuring = false;
-        if (result.Value is null) { _error = result.Error; return; }
+        if (result.Value is null) { _error = result.Error ?? "Le cours n'a pas pu être relu."; return; }
+        _analysisVersion++;
         Show(result.Value);
+
+        if (result.Value.ContentType != CourseContentType.Pdf)
+        {
+            _info = "L'agent relit le cours : les pages restées en photo seront retranscrites et des labos proposés si le sujet s'y prête.";
+            return;
+        }
+
+        var markdown = result.Value.ToMarkdown();
+        var figures = System.Text.RegularExpressions.Regex.Count(markdown, @"!\[");
+        var formulas = System.Text.RegularExpressions.Regex.Count(markdown, @"\$\$") / 2;
+        _info = $"PDF relu : {figures} schéma(s) et {formulas} formule(s) détachée(s) reconstruits."
+            + (result.Value.StructuringStatus == "Pending" ? " L'IA affine encore le texte." : "");
     }
 
     /// <summary>Formules KaTeX et coloration du code, une fois le cours affiché</summary>

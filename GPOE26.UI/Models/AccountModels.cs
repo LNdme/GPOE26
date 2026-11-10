@@ -6,6 +6,7 @@ namespace GPOE26.UI.Models;
 
 public enum UserRole { Student, Teacher, Parent, Admin }
 public enum SchoolSubSystem { Francophone, Anglophone }
+public enum EducationStage { Secondary, Higher }
 public enum TeachingContext { School, Institution, Independent }
 public enum ClassroomKind { Class, Group }
 public enum LinkStatus { Pending, Active, Rejected }
@@ -34,6 +35,7 @@ public record RegisterRequest
     public List<string>? InitialClasses { get; init; }
     public bool StartTrial { get; init; }
     public string? SubscriptionKey { get; init; }
+    public EducationStage? Stage { get; init; }
 }
 
 public record UserProfile(
@@ -59,7 +61,8 @@ public record UserProfile(
     bool IsPremium,
     SubscriptionPlan? Plan,
     DateTime? PremiumUntil,
-    List<EntitledFeature>? Features = null
+    List<EntitledFeature>? Features = null,
+    EducationStage? Stage = null
 );
 
 public record AuthResponse(string Token, DateTime ExpiresAt, UserProfile Profile);

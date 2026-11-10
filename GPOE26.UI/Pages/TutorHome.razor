@@ -17,10 +17,10 @@
     </div>
 
     <div class="ga-chips" role="tablist" aria-label="Affichage">
-        <button role="tab" class="ga-chip @(_tab == 0 ? "on" : "")" aria-selected="@(_tab == 0)" @onclick="() => _tab = 0">
+        <button role="tab" class="ga-chip @(_tab == 0 ? "on" : "")" aria-selected="@Aria.State(_tab == 0)" @onclick="() => _tab = 0">
             Discussions (@_conversations.Count)
         </button>
-        <button role="tab" class="ga-chip @(_tab == 1 ? "on" : "")" aria-selected="@(_tab == 1)" @onclick="() => _tab = 1">
+        <button role="tab" class="ga-chip @(_tab == 1 ? "on" : "")" aria-selected="@Aria.State(_tab == 1)" @onclick="() => _tab = 1">
             <Icon Name="pin" Size="16" /> Explications épinglées (@_pinned.Count)
         </button>
     </div>

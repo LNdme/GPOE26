@@ -1,7 +1,7 @@
 @* Formules et comparatif des fonctionnalités : page publique des tarifs et page Abonnement. *@
 <div class="pl-period" role="group" aria-label="Période de facturation">
-    <button type="button" class="@(_period == BillingPeriod.Monthly ? "on" : "")" aria-pressed="@(_period == BillingPeriod.Monthly)" @onclick="() => _period = BillingPeriod.Monthly">Mensuel</button>
-    <button type="button" class="@(_period == BillingPeriod.Yearly ? "on" : "")" aria-pressed="@(_period == BillingPeriod.Yearly)" @onclick="() => _period = BillingPeriod.Yearly">Annuel</button>
+    <button type="button" class="@(_period == BillingPeriod.Monthly ? "on" : "")" aria-pressed="@Aria.State(_period == BillingPeriod.Monthly)" @onclick="() => _period = BillingPeriod.Monthly">Mensuel</button>
+    <button type="button" class="@(_period == BillingPeriod.Yearly ? "on" : "")" aria-pressed="@Aria.State(_period == BillingPeriod.Yearly)" @onclick="() => _period = BillingPeriod.Yearly">Annuel</button>
 </div>
 
 <div class="pl-grid">
