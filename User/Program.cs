@@ -329,6 +329,7 @@ app.MapClassroomEndpoints();
 app.MapParentEndpoints();
 app.MapSubscriptionEndpoints();
 app.MapAdminEndpoints();
+app.MapProfileEndpoints();
 
 app.MapControllers();
 

@@ -132,5 +132,8 @@ public static class ApiSeeder
         db.NewsArticles.AddRange(news);
 
         await db.SaveChangesAsync();
+
+        // Base neuve : le site est présenté complet (équipe, actualités, événements, activités fictifs)
+        await DemoContent.AddMissingAsync(db);
     }
 }

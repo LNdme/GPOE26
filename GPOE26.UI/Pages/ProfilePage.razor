@@ -1,0 +1,258 @@
+@page "/app/profil"
+@layout AppLayout
+@inherits AppPage
+@inject IAccountApi Account
+
+<PageTitle>Mon profil — GPOE26</PageTitle>
+
+<div class="ga-page narrow">
+    @if (!Ready)
+    {
+        <Loading />
+    }
+    else
+    {
+        <div class="ga-head">
+            <div>
+                <h1>Mon profil</h1>
+                <p>Vos informations sur la plateforme. Le rôle et l'adresse e-mail ne se modifient pas ici : adressez-vous à un administrateur.</p>
+            </div>
+        </div>
+
+        <section class="ga-card pf-identity" aria-labelledby="h-identity">
+            <span class="pf-avatar" aria-hidden="true">@Labels.Initial(Me.Username)</span>
+            <div class="ga-stack">
+                <h2 id="h-identity" class="ga-h3">@Me.Username</h2>
+                <dl class="pf-facts">
+                    <div><dt>Rôle</dt><dd>@(Me.Stage == EducationStage.Higher ? "Étudiant" : Labels.Of(Me.Role))@(Me.SiteEditor && Me.Role != UserRole.Admin ? " · éditeur du site" : "")</dd></div>
+                    <div><dt>E-mail</dt><dd>@Me.Email</dd></div>
+                    <div><dt>Membre depuis</dt><dd>@Me.CreatedAt.ToLocalTime().ToString("d MMMM yyyy", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"))</dd></div>
+                    <div><dt>Abonnement</dt><dd>@(Me.IsPremium ? $"{Labels.Of(Me.Plan)}{(Me.PremiumUntil is { } until ? $" jusqu'au {until.ToLocalTime():dd/MM/yyyy}" : "")}" : "Gratuit")</dd></div>
+                    @if (Me.OrganizationName is { Length: > 0 })
+                    {
+                        <div><dt>Établissement</dt><dd>@Me.OrganizationName</dd></div>
+                    }
+                    @if (Me.Role == UserRole.Student && Me.LinkCode is { Length: > 0 })
+                    {
+                        <div><dt>Code parent</dt><dd><span class="ga-code">@Me.LinkCode</span> <span class="ga-small ga-muted">à donner à un parent pour qu'il suive ta progression</span></dd></div>
+                    }
+                </dl>
+            </div>
+        </section>
+
+        <form class="ga-card ga-stack" @onsubmit="SaveAsync" @onsubmit:preventDefault aria-labelledby="h-edit">
+            <h2 id="h-edit" class="ga-h3"><Icon Name="user" /> Modifier mes informations</h2>
+            <Alert Message="@_profileError" />
+            <Alert Message="@_profileOk" Kind="success" />
+
+            <div class="ga-field">
+                <label for="pf-name">Nom affiché</label>
+                <input id="pf-name" class="ga-input" maxlength="64" required minlength="3" autocomplete="name" @bind="_username" />
+            </div>
+            <div class="ga-field">
+                <label for="pf-lang">Langue</label>
+                <select id="pf-lang" class="ga-select" @bind="_language">
+                    <option value="fr">Français</option>
+                    <option value="en">English</option>
+                </select>
+            </div>
+
+            @if (Me.Role == UserRole.Student)
+            {
+                <div class="ga-grid tight pf-two">
+                    <div class="ga-field">
+                        <label for="pf-level">Classe</label>
+                        <input id="pf-level" class="ga-input" maxlength="64" placeholder="ex. Terminale" @bind="_level" />
+                    </div>
+                    <div class="ga-field">
+                        <label for="pf-filiere">Filière</label>
+                        <input id="pf-filiere" class="ga-input" maxlength="64" placeholder="ex. F3, MEM, C, D" @bind="_filiere" />
+                    </div>
+                    <div class="ga-field">
+                        <label for="pf-sub">Sous-système</label>
+                        <select id="pf-sub" class="ga-select" @bind="_subSystem">
+                            <option value="">Non précisé</option>
+                            <option value="@SchoolSubSystem.Francophone">Francophone</option>
+                            <option value="@SchoolSubSystem.Anglophone">Anglophone</option>
+                        </select>
+                    </div>
+                    <div class="ga-field">
+                        <label for="pf-minutes">Temps d'étude par jour (minutes)</label>
+                        <input id="pf-minutes" type="number" min="0" max="600" step="5" class="ga-input" @bind="_dailyMinutes" />
+                    </div>
+                    <div class="ga-field">
+                        <label for="pf-exam">Examen préparé</label>
+                        <input id="pf-exam" class="ga-input" maxlength="100" placeholder="ex. Baccalauréat F3" @bind="_examTarget" />
+                    </div>
+                    <div class="ga-field">
+                        <label for="pf-exam-date">Date de l'examen</label>
+                        <input id="pf-exam-date" type="date" class="ga-input" @bind="_examDate" />
+                    </div>
+                </div>
+                <div class="ga-field">
+                    <label for="pf-focus">Matières à renforcer</label>
+                    <input id="pf-focus" class="ga-input" maxlength="400" placeholder="ex. Mathématiques, Physique" @bind="_focusSubjects" />
+                    <span class="help">Séparées par des virgules. Le tuteur et le plan d'études en tiennent compte.</span>
+                </div>
+            }
+            else if (Me.Role == UserRole.Teacher)
+            {
+                <div class="ga-grid tight pf-two">
+                    <div class="ga-field">
+                        <label for="pf-spec">Spécialité</label>
+                        <input id="pf-spec" class="ga-input" maxlength="64" placeholder="ex. Électrotechnique" @bind="_specialite" />
+                    </div>
+                    <div class="ga-field">
+                        <label for="pf-context">Cadre d'enseignement</label>
+                        <select id="pf-context" class="ga-select" @bind="_teachingContext">
+                            <option value="">Non précisé</option>
+                            <option value="@TeachingContext.School">Établissement scolaire</option>
+                            <option value="@TeachingContext.Institution">Autre institution</option>
+                            <option value="@TeachingContext.Independent">À mon compte</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="ga-field">
+                    <label for="pf-subjects">Matières enseignées</label>
+                    <input id="pf-subjects" class="ga-input" maxlength="400" placeholder="ex. Électrotechnique, Physique appliquée" @bind="_teachingSubjects" />
+                    <span class="help">Séparées par des virgules.</span>
+                </div>
+            }
+
+            <button type="submit" class="ga-btn" style="align-self:flex-start" disabled="@_savingProfile">
+                @(_savingProfile ? "Enregistrement…" : "Enregistrer")
+            </button>
+        </form>
+
+        <form class="ga-card ga-stack" @onsubmit="ChangePasswordAsync" @onsubmit:preventDefault aria-labelledby="h-password">
+            <h2 id="h-password" class="ga-h3"><Icon Name="key" /> Mot de passe</h2>
+            <Alert Message="@_passwordError" />
+            <Alert Message="@_passwordOk" Kind="success" />
+            <div class="ga-field">
+                <label for="pf-current">Mot de passe actuel</label>
+                <input id="pf-current" type="password" class="ga-input" autocomplete="current-password" required @bind="_currentPassword" />
+            </div>
+            <div class="ga-grid tight pf-two">
+                <div class="ga-field">
+                    <label for="pf-new">Nouveau mot de passe</label>
+                    <input id="pf-new" type="password" class="ga-input" autocomplete="new-password" required minlength="8" @bind="_newPassword" />
+                    <span class="help">8 caractères au minimum.</span>
+                </div>
+                <div class="ga-field">
+                    <label for="pf-confirm">Confirmer</label>
+                    <input id="pf-confirm" type="password" class="ga-input" autocomplete="new-password" required minlength="8" @bind="_confirmPassword" />
+                </div>
+            </div>
+            <button type="submit" class="ga-btn secondary" style="align-self:flex-start" disabled="@_savingPassword">
+                @(_savingPassword ? "Modification…" : "Changer le mot de passe")
+            </button>
+        </form>
+    }
+</div>
+
+@code {
+    private string _username = "", _language = "fr";
+    private string? _level, _filiere, _examTarget, _focusSubjects, _specialite, _teachingSubjects;
+    private SchoolSubSystem? _subSystem;
+    private TeachingContext? _teachingContext;
+    private DateOnly? _examDate;
+    private int? _dailyMinutes;
+    private string? _profileError, _profileOk;
+    private bool _savingProfile;
+
+    private string _currentPassword = "", _newPassword = "", _confirmPassword = "";
+    private string? _passwordError, _passwordOk;
+    private bool _savingPassword;
+
+    protected override Task LoadAsync()
+    {
+        Fill(Me);
+        return Task.CompletedTask;
+    }
+
+    private void Fill(UserProfile me)
+    {
+        _username = me.Username;
+        _language = me.Language is "en" ? "en" : "fr";
+        _level = me.Level;
+        _filiere = me.Filiere;
+        _subSystem = me.SubSystem;
+        _examTarget = me.ExamTarget;
+        _examDate = me.ExamDate;
+        _focusSubjects = me.FocusSubjects is { Count: > 0 } f ? string.Join(", ", f) : null;
+        _dailyMinutes = me.DailyStudyMinutes;
+        _specialite = me.Specialite;
+        _teachingSubjects = me.TeachingSubjects is { Count: > 0 } t ? string.Join(", ", t) : null;
+        _teachingContext = me.TeachingContext;
+    }
+
+    private static List<string> SplitList(string? value) =>
+        (value ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+
+    private async Task SaveAsync()
+    {
+        _profileError = _profileOk = null;
+        if (_username.Trim().Length < 3)
+        {
+            _profileError = "Le nom affiché doit contenir au moins 3 caractères.";
+            return;
+        }
+
+        var student = Me.Role == UserRole.Student;
+        var teacher = Me.Role == UserRole.Teacher;
+        var request = new EditProfileRequest
+        {
+            Username = _username.Trim(),
+            Language = _language,
+            // Chaîne vide : le serveur efface la valeur
+            Level = student ? _level ?? "" : null,
+            Filiere = student ? _filiere ?? "" : null,
+            SubSystem = student ? _subSystem : null,
+            ExamTarget = student ? _examTarget ?? "" : null,
+            ExamDate = student ? _examDate : null,
+            FocusSubjects = student ? SplitList(_focusSubjects) : null,
+            DailyStudyMinutes = student ? _dailyMinutes : null,
+            Specialite = teacher ? _specialite ?? "" : null,
+            TeachingSubjects = teacher ? SplitList(_teachingSubjects) : null,
+            TeachingContext = teacher ? _teachingContext : null,
+        };
+
+        _savingProfile = true;
+        var result = await Account.UpdateProfileAsync(request);
+        _savingProfile = false;
+        if (!result.Ok || result.Value is null)
+        {
+            _profileError = result.Error;
+            return;
+        }
+        await Session.UpdateProfileAsync(result.Value);
+        Fill(result.Value);
+        _profileOk = "Profil enregistré.";
+    }
+
+    private async Task ChangePasswordAsync()
+    {
+        _passwordError = _passwordOk = null;
+        if (_newPassword.Length < 8)
+        {
+            _passwordError = "Le nouveau mot de passe doit contenir au moins 8 caractères.";
+            return;
+        }
+        if (_newPassword != _confirmPassword)
+        {
+            _passwordError = "La confirmation ne correspond pas au nouveau mot de passe.";
+            return;
+        }
+
+        _savingPassword = true;
+        var result = await Account.ChangePasswordAsync(_currentPassword, _newPassword);
+        _savingPassword = false;
+        if (!result.Ok)
+        {
+            _passwordError = result.Error;
+            return;
+        }
+        _currentPassword = _newPassword = _confirmPassword = "";
+        _passwordOk = "Mot de passe modifié.";
+    }
+}

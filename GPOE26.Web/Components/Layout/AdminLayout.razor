@@ -65,7 +65,15 @@
 
                 <div class="admin-side__foot">
                     <a href="/" target="_blank" rel="noopener"><Icon Name="external" Size="16" /> Voir le site</a>
-                    <a href="/app"><Icon Name="left" Size="16" /> Mon espace</a>
+                    @* Pour l'administrateur, /app renvoie ici : son lien utile est son profil *@
+                    @if (IsAdmin)
+                    {
+                        <a href="/app/profil"><Icon Name="user" Size="16" /> Mon profil</a>
+                    }
+                    else
+                    {
+                        <a href="/app"><Icon Name="left" Size="16" /> Mon espace</a>
+                    }
                     <div class="admin-me">
                         <span class="site-user__avatar">@(Session.Profile?.Username is { Length: > 0 } u ? u[..1].ToUpperInvariant() : "A")</span>
                         <span><strong>@Session.Profile?.Username</strong><small>@(IsAdmin ? "Administrateur" : "Éditeur du site")</small></span>

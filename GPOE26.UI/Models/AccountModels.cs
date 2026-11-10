@@ -38,6 +38,23 @@ public record RegisterRequest
     public EducationStage? Stage { get; init; }
 }
 
+/// <summary>Modification du profil (page « Mon profil ») : null = valeur inchangée, chaîne vide = valeur effacée.</summary>
+public record EditProfileRequest
+{
+    public string? Username { get; init; }
+    public string? Language { get; init; }
+    public string? Level { get; init; }
+    public string? Filiere { get; init; }
+    public SchoolSubSystem? SubSystem { get; init; }
+    public string? ExamTarget { get; init; }
+    public DateOnly? ExamDate { get; init; }
+    public List<string>? FocusSubjects { get; init; }
+    public int? DailyStudyMinutes { get; init; }
+    public string? Specialite { get; init; }
+    public List<string>? TeachingSubjects { get; init; }
+    public TeachingContext? TeachingContext { get; init; }
+}
+
 public record UserProfile(
     Guid Id,
     string Email,

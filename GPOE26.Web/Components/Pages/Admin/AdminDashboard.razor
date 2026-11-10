@@ -1,6 +1,7 @@
 @page "/admin"
 @layout GPOE26.Web.Components.Layout.AdminLayout
 @using GPOE26.UI.Components
+@inject GPOE26.UI.Services.SessionState Session
 
 <PageTitle>Administration – GPOE26</PageTitle>
 
@@ -85,6 +86,26 @@ else
         </section>
     </div>
 
+    @if (Session.Role == GPOE26.UI.Models.UserRole.Admin)
+    {
+        <section class="admin-card admin-card--tip">
+            <span class="admin-card__tip-icon"><Icon Name="spark" Size="20" /></span>
+            <div class="admin-demo">
+                <div>
+                    <strong>Compléter le site avec du contenu de démonstration</strong>
+                    <p>Ajoute une équipe éducative, des actualités, des événements (dont des rendez-vous en ligne) et des activités fictifs. Rien n’est remplacé : seuls les éléments absents sont ajoutés, et vous pouvez ensuite les modifier ou les supprimer.</p>
+                    @if (_demoMessage is not null)
+                    {
+                        <p class="admin-demo__result" role="status">@_demoMessage</p>
+                    }
+                </div>
+                <button type="button" class="site-btn site-btn--primary" disabled="@_demoBusy" @onclick="AddDemoContentAsync">
+                    @(_demoBusy ? "Ajout en cours…" : "Compléter le site")
+                </button>
+            </div>
+        </section>
+    }
+
     <section class="admin-card admin-card--tip">
         <span class="admin-card__tip-icon"><Icon Name="shield" Size="20" /></span>
         <div>
@@ -101,7 +122,27 @@ else
     private List<SchoolEvent> _events = new();
     private List<SchoolActivity> _activities = new();
 
-    protected override async Task OnInitializedAsync()
+    private bool _demoBusy;
+    private string? _demoMessage;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task AddDemoContentAsync()
+    {
+        _demoBusy = true;
+        _demoMessage = null;
+        var result = await Api.AddDemoContentAsync();
+        _demoBusy = false;
+        _demoMessage = result switch
+        {
+            null => "L’ajout a échoué. Vérifiez que vous êtes connecté avec un compte administrateur, puis réessayez.",
+            { Total: 0 } => "Le contenu de démonstration est déjà présent : rien à ajouter.",
+            _ => $"Ajouté : {result.Team} membre(s) de l’équipe, {result.News} actualité(s), {result.Events} événement(s) et {result.Activities} activité(s)."
+        };
+        if (result is { Total: > 0 }) await LoadAsync();
+    }
+
+    private async Task LoadAsync()
     {
         var all = Api.GetNewsAsync(pageSize: 5);
         var drafts = Api.GetNewsAsync(published: false, pageSize: 1);

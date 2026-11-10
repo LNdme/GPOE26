@@ -654,3 +654,8 @@
 .admin-search { display: flex; gap: 0.4rem; }
 .admin-search input { min-width: 220px; border-radius: 999px; }
 @media (max-width: 575.98px) { .admin-search, .admin-search input { width: 100%; min-width: 0; } }
+
+/* Contenu de démonstration (tableau de bord) */
+.admin-demo { display: flex; flex: 1; gap: 1rem; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.admin-demo > div { flex: 1 1 22rem; }
+.admin-demo__result { color: var(--brand-navy); font-weight: 600; }

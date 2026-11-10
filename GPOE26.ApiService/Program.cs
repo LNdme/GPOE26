@@ -189,6 +189,14 @@ app.MapPost("/api/upload", async (IFormFile file, IWebHostEnvironment env) =>
 .RequireAuthorization(ContentPolicy.Editor)
 .WithSummary("Uploader une image");
 
+// ── Contenu de démonstration ──────────────────────────────────────────────────
+// Complète le site avec une équipe, des actualités, des événements et des activités fictifs.
+// Rien n'est remplacé ni dupliqué : seuls les éléments absents sont ajoutés.
+app.MapPost("/api/admin/demo-content", async (ApiServiceContext db) =>
+        TypedResults.Ok(await GPOE26.ApiService.Data.DemoContent.AddMissingAsync(db)))
+    .RequireAuthorization(ContentPolicy.Admin)
+    .WithSummary("Ajouter le contenu de démonstration manquant");
+
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 var news = app.MapGroup("/api/news");

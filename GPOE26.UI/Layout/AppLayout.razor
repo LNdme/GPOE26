@@ -52,10 +52,10 @@
 
                 <div class="ga-me">
                     <span class="ga-avatar">@Labels.Initial(me.Username)</span>
-                    <span style="min-width:0">
+                    <a href="/app/profil" class="ga-me__profile" title="Mon profil" aria-label="Mon profil : @me.Username">
                         <strong>@me.Username</strong>
                         <small>@(me.Stage == EducationStage.Higher ? "Étudiant" : Labels.Of(me.Role))@(me.Level is { Length: > 0 } ? $" · {me.Level}" : "")</small>
-                    </span>
+                    </a>
                     <button type="button" class="ga-icon-btn" aria-label="Se déconnecter" title="Se déconnecter" @onclick="SignOutAsync">
                         <Icon Name="logout" />
                     </button>

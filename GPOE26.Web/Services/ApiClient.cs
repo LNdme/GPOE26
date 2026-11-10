@@ -657,6 +657,27 @@ namespace GPOE26.Web.Services
             }
         }
 
+        // ── Contenu de démonstration (administrateurs) ─────────────────────────────
+        public record DemoContentResult(int Team, int News, int Events, int Activities, int Total);
+
+        /// <summary>Ajoute l'équipe, les actualités, les événements et les activités fictifs absents. Null en cas d'échec.</summary>
+        public async Task<DemoContentResult?> AddDemoContentAsync()
+        {
+            try
+            {
+                var client = CreateAuthClient("apiservice");
+                var resp = await client.PostAsync("/api/admin/demo-content", null);
+                if (resp.IsSuccessStatusCode) return await resp.Content.ReadFromJsonAsync<DemoContentResult>();
+                _logger.LogWarning("Demo content failed: {Status}", resp.StatusCode);
+                return null;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+            {
+                _logger.LogError(ex, "Error adding demo content");
+                return null;
+            }
+        }
+
         // ── Upload Image (Hébergée sur ApiService) ──────────────────────────────────
         /// <summary>
         /// Envoie l'image et renvoie son adresse relative (servie par le proxy /uploads/images du site).

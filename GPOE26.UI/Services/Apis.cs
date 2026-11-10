@@ -12,6 +12,8 @@ public interface IAccountApi
     Task<ApiResult<AuthResponse>> LoginAsync(string email, string password);
     Task<ApiResult<AuthResponse>> RegisterAsync(RegisterRequest request);
     Task<ApiResult<UserProfile>> MeAsync();
+    Task<ApiResult<UserProfile>> UpdateProfileAsync(EditProfileRequest request);
+    Task<ApiResult<bool>> ChangePasswordAsync(string currentPassword, string newPassword);
     Task<ApiResult<MySubscriptions>> MySubscriptionsAsync();
     Task<ApiResult<Entitlement>> RedeemKeyAsync(string code);
     Task<ApiResult<SubscriptionInfo>> CheckoutAsync(SubscriptionPlan plan, BillingPeriod period);
@@ -150,6 +152,9 @@ public class AccountApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, Ap
         PostAsync<AuthResponse>("/auth/login", new LoginRequest(email, password));
     public Task<ApiResult<AuthResponse>> RegisterAsync(RegisterRequest request) => PostAsync<AuthResponse>("/auth/register", request);
     public Task<ApiResult<UserProfile>> MeAsync() => GetAsync<UserProfile>("/auth/me");
+    public Task<ApiResult<UserProfile>> UpdateProfileAsync(EditProfileRequest request) => PutAsync<UserProfile>("/auth/me/profile", request);
+    public Task<ApiResult<bool>> ChangePasswordAsync(string currentPassword, string newPassword) =>
+        PostAsync<bool>("/auth/me/password", new { currentPassword, newPassword });
     public Task<ApiResult<MySubscriptions>> MySubscriptionsAsync() => GetAsync<MySubscriptions>("/subscriptions/me");
     public Task<ApiResult<Entitlement>> RedeemKeyAsync(string code) => PostAsync<Entitlement>("/subscriptions/redeem", new { code });
     public Task<ApiResult<SubscriptionInfo>> CheckoutAsync(SubscriptionPlan plan, BillingPeriod period) =>

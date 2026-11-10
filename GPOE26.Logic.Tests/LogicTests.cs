@@ -916,3 +916,109 @@ public class ImageFormatTests
     public void Un_fichier_vide_est_refuse() =>
         Assert.Null(GPOE26.ApiService.Services.ImageFormat.ExtensionOf([]));
 }
+
+public class ProfileRulesTests
+{
+    private static AppUser NewUser(UserRole role) => new()
+    {
+        Email = "a@b.c", Username = "Ancien nom", PasswordHash = BCrypt.Net.BCrypt.HashPassword("motdepasse1"), Role = role,
+        Level = "Seconde", Specialite = "Maths"
+    };
+
+    [Fact]
+    public void Un_eleve_modifie_ses_informations_d_etude()
+    {
+        var user = NewUser(UserRole.Student);
+        var error = User.Endpoints.ProfileRules.Apply(user, new User.Endpoints.EditProfileRequest(
+            "  Nouveau nom ", Level: "Terminale", FocusSubjects: [" Maths ", "maths", "", "Physique"], DailyStudyMinutes: 90));
+        Assert.Null(error);
+        Assert.Equal("Nouveau nom", user.Username);
+        Assert.Equal("Terminale", user.Level);
+        Assert.Equal(["Maths", "Physique"], user.FocusSubjects);
+        Assert.Equal(90, user.DailyStudyMinutes);
+    }
+
+    [Fact]
+    public void Un_champ_vide_efface_la_valeur() 
+    {
+        var user = NewUser(UserRole.Student);
+        User.Endpoints.ProfileRules.Apply(user, new User.Endpoints.EditProfileRequest(null, Level: "  "));
+        Assert.Null(user.Level);
+        Assert.Equal("Ancien nom", user.Username);
+    }
+
+    [Fact]
+    public void Un_role_ne_touche_pas_aux_champs_d_un_autre()
+    {
+        var student = NewUser(UserRole.Student);
+        User.Endpoints.ProfileRules.Apply(student, new User.Endpoints.EditProfileRequest(null, Specialite: "Physique", TeachingSubjects: ["Physique"]));
+        Assert.Equal("Maths", student.Specialite);
+        Assert.Empty(student.TeachingSubjects);
+
+        var parent = NewUser(UserRole.Parent);
+        User.Endpoints.ProfileRules.Apply(parent, new User.Endpoints.EditProfileRequest(null, Level: "Terminale", DailyStudyMinutes: 30));
+        Assert.Equal("Seconde", parent.Level);
+        Assert.Null(parent.DailyStudyMinutes);
+    }
+
+    [Theory]
+    [InlineData("ab")]
+    [InlineData("   ")]
+    public void Un_nom_trop_court_est_refuse(string username)
+    {
+        var user = NewUser(UserRole.Teacher);
+        Assert.NotNull(User.Endpoints.ProfileRules.Apply(user, new User.Endpoints.EditProfileRequest(username)));
+        Assert.Equal("Ancien nom", user.Username);
+    }
+
+    [Fact]
+    public void Une_langue_inconnue_est_refusee() =>
+        Assert.NotNull(User.Endpoints.ProfileRules.Apply(NewUser(UserRole.Admin), new User.Endpoints.EditProfileRequest(null, Language: "de")));
+
+    [Theory]
+    [InlineData("mauvais", "nouveaumotdepasse", false)]
+    [InlineData("motdepasse1", "court", false)]
+    [InlineData("motdepasse1", "motdepasse1", false)]
+    [InlineData("motdepasse1", "nouveaumotdepasse", true)]
+    public void Le_changement_de_mot_de_passe_exige_l_actuel_et_8_caracteres(string current, string next, bool accepted) =>
+        Assert.Equal(accepted, User.Endpoints.ProfileRules.CheckPasswordChange(NewUser(UserRole.Student),
+            new User.Endpoints.ChangePasswordRequest(current, next)) is null);
+}
+
+public class DemoContentTests
+{
+    private static readonly Func<int, int, DateTime> Day =
+        (offset, hour) => DateTime.SpecifyKind(new DateTime(2026, 11, 10).AddDays(offset).AddHours(hour), DateTimeKind.Utc);
+
+    [Fact]
+    public void L_equipe_utilise_les_roles_du_formulaire() =>
+        // Le formulaire d'édition ne propose que ces rôles : un autre serait remplacé à la première modification
+        Assert.All(GPOE26.ApiService.Data.DemoContent.Team(), m => Assert.Contains(m.Role, new[] { "Administration", "Enseignants", "Étudiants" }));
+
+    [Fact]
+    public void Les_dates_sont_en_utc_et_les_evenements_coherents()
+    {
+        // PostgreSQL (timestamptz) refuse une date sans fuseau
+        Assert.All(GPOE26.ApiService.Data.DemoContent.News(Day), n => Assert.Equal(DateTimeKind.Utc, n.PublishedAt.Kind));
+        Assert.All(GPOE26.ApiService.Data.DemoContent.Events(Day), e =>
+        {
+            Assert.Equal(DateTimeKind.Utc, e.StartDate.Kind);
+            Assert.True(e.EndDate is null || e.EndDate >= e.StartDate, e.Title);
+        });
+    }
+
+    [Fact]
+    public void Les_titres_et_adresses_sont_uniques()
+    {
+        var news = GPOE26.ApiService.Data.DemoContent.News(Day).ToList();
+        Assert.Equal(news.Count, news.Select(n => n.Slug).Distinct().Count());
+        Assert.Equal(news.Count, news.Select(n => n.Title).Distinct().Count());
+        Assert.All(news, n => Assert.Matches("^[a-z0-9-]+$", n.Slug));
+        var events = GPOE26.ApiService.Data.DemoContent.Events(Day).ToList();
+        Assert.Equal(events.Count, events.Select(e => e.Title).Distinct().Count());
+    }
+
+    [Fact]
+    public void Les_activites_apparaissent_dans_les_filtres_du_site() =>
+        Assert.All(GPOE26.ApiService.Data.DemoContent.Activities(), a => Assert.Contains(a.Category, new[] { "Sport", "Art", "Science", "Club" }));
+}

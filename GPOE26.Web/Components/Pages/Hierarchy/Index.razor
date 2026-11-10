@@ -48,7 +48,7 @@
                                 }
                                 else
                                 {
-                                    <span>@(m.Name?.FirstOrDefault())</span>
+                                    <span>@Initials(m)</span>
                                 }
                             </div>
                             <h2>@m.PreName @m.Name</h2>
@@ -68,6 +68,15 @@
 
 @code {
     private bool IsAdmin => Session.IsAuthenticated && Session.Profile?.CanEditSite == true;
+
+    // « M. MBARGA » + « Serge » → « SM » : la civilité (M., Mme.) donnait un « M » à presque tout le monde
+    private static string Initials(Hierarchy m)
+    {
+        var last = (m.Name ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .LastOrDefault(w => !w.EndsWith('.')) ?? m.Name ?? "";
+        var initials = $"{m.PreName?.Trim().FirstOrDefault()}{last.FirstOrDefault()}".Trim('\0').ToUpperInvariant();
+        return initials.Length > 0 ? initials : "?";
+    }
 
     private bool _loading = true;
     private List<Hierarchy> _items = new();
