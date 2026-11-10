@@ -56,6 +56,9 @@
 </div>
 
 @code {
+    // Espace d'apprentissage : un parent n'y a rien à faire (il suit ses enfants depuis son accueil)
+    protected override UserRole[]? AllowedRoles => [UserRole.Student, UserRole.Teacher];
+
     private RenderFragment DocumentCard(CourseSummary c) =>
         @<article class="ga-card">
             <span class="ga-small ga-muted" style="font-weight:700; letter-spacing:.06em">@c.Subject.ToUpperInvariant()</span>

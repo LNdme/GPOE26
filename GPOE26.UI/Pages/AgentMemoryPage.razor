@@ -9,7 +9,7 @@
     <a class="ga-back" href="@(Session.Role == UserRole.Teacher ? "/app/assistant" : "/app/tuteur")"><Icon Name="left" /> Retour</a>
     <div class="ga-head">
         <div>
-            <h1>@(Session.Role == UserRole.Teacher ? "Ce que mon assistant retient" : "Ce que le tuteur retient de moi")</h1>
+            <h1>@(Session.Role == UserRole.Teacher ? "Ce que mes agents retiennent" : "Ce que le tuteur retient de moi")</h1>
             <p>Ces informations servent uniquement à t'aider. Personne d'autre n'y a accès : ni les enseignants, ni les parents.</p>
         </div>
     </div>
@@ -43,7 +43,13 @@
                 {
                     <div class="ga-stack" style="gap:8px">
                         <div class="ga-row between">
-                            <span class="ga-tag @TypeColor(memory.Type)">@TypeLabel(memory.Type)</span>
+                            <span class="ga-row" style="gap:6px">
+                                <span class="ga-tag @TypeColor(memory.Type)">@TypeLabel(memory.Type)</span>
+                                @if (Session.Role == UserRole.Teacher)
+                                {
+                                    <span class="ga-small ga-muted">@(memory.Kind == "teacher" ? "Assistant" : "Tuteur")</span>
+                                }
+                            </span>
                             <span class="ga-actions">
                                 <button type="button" class="ga-btn ghost small" @onclick="() => StartEdit(memory)">Corriger</button>
                                 <button type="button" class="ga-btn ghost small" aria-label="Supprimer ce souvenir" @onclick="() => DeleteAsync(memory)"><Icon Name="trash" /></button>

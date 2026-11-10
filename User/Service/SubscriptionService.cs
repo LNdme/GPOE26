@@ -41,12 +41,29 @@ public class SubscriptionService(UserContext db, IConfiguration config, PlanCata
         _ => "organization-license"
     };
 
-    /// <summary>Fonctionnalités cumulées : formule gratuite + abonnements en cours. Un accès illimité l'emporte sur un quota.</summary>
-    public static List<EntitledFeature> MergeFeatures(IEnumerable<PlanRef> catalog, IEnumerable<SubscriptionPlan> current)
+    /// <summary>
+    /// Une fonctionnalité réservée à un rôle n'est pas accordée aux autres, même si la formule la contient :
+    /// la licence d'établissement, partagée par enseignants et élèves, donnait l'assistant enseignant aux élèves.
+    /// Les fonctions d'apprentissage (tuteur, quiz, épreuves blanches…) restent ouvertes aux enseignants : ils s'en
+    /// servent pour essayer ce que voient leurs élèves.
+    /// </summary>
+    public static bool FeatureAllowedFor(string code, UserRole role) => code switch
+    {
+        "teacher-agent" or "ai-grading" => role == UserRole.Teacher,
+        "family-view" => role == UserRole.Parent,
+        _ => true
+    };
+
+    /// <summary>
+    /// Fonctionnalités cumulées : formule gratuite + abonnements en cours, filtrées par rôle (null : sans filtre).
+    /// Un accès illimité l'emporte sur un quota.
+    /// </summary>
+    public static List<EntitledFeature> MergeFeatures(IEnumerable<PlanRef> catalog, IEnumerable<SubscriptionPlan> current, UserRole? role = null)
     {
         var codes = current.Select(PlanCode).Append("free").ToHashSet();
         return catalog.Where(p => codes.Contains(p.Code))
             .SelectMany(p => p.Features)
+            .Where(f => role is not { } r || FeatureAllowedFor(f.Code, r))
             .GroupBy(f => f.Code)
             .Select(g => new EntitledFeature(g.Key, g.Any(f => f.Limit is null) ? null : g.Max(f => f.Limit)))
             .ToList();
@@ -89,7 +106,8 @@ public class SubscriptionService(UserContext db, IConfiguration config, PlanCata
             .Where(s => active.Contains(s.Status) && s.EndsAt > now)
             .ToListAsync();
 
-        var features = MergeFeatures(await catalog.GetAsync(), own.Concat(viaKey).Select(s => s.Plan));
+        var role = await db.AppUsers.Where(u => u.Id == userId).Select(u => (UserRole?)u.Role).FirstOrDefaultAsync();
+        var features = MergeFeatures(await catalog.GetAsync(), own.Concat(viaKey).Select(s => s.Plan), role);
         var best = own.Concat(viaKey).MaxBy(s => s.EndsAt);
         if (best is null) return new Entitlement(false, null, null, null, features);
 

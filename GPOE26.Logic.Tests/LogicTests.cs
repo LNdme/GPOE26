@@ -965,25 +965,143 @@ public class LlmReasoningTests
 
 public class HomeRedirectTests
 {
-    // L'administrateur envoyé sur /app voyait l'accueil élève, et l'API lui refusait ces données (403)
-    [Fact]
-    public void L_administrateur_arrive_sur_la_gestion_du_site_apres_connexion() =>
-        Assert.Equal("/admin", GPOE26.UI.Components.AppPage.SafeReturnUrl(null, GPOE26.UI.Models.UserRole.Admin));
-
+    // Un administrateur garde son rôle : il arrive dans son espace (classes, plan d'études…) comme les autres
     [Theory]
     [InlineData(GPOE26.UI.Models.UserRole.Student)]
     [InlineData(GPOE26.UI.Models.UserRole.Teacher)]
     [InlineData(GPOE26.UI.Models.UserRole.Parent)]
-    public void Les_autres_roles_arrivent_dans_leur_espace(GPOE26.UI.Models.UserRole role) =>
+    public void Chaque_role_arrive_dans_son_espace(GPOE26.UI.Models.UserRole role) =>
         Assert.Equal("/app", GPOE26.UI.Components.AppPage.SafeReturnUrl(null, role));
 
     [Fact]
     public void La_page_demandee_reste_prioritaire() =>
-        Assert.Equal("/app/assistant", GPOE26.UI.Components.AppPage.SafeReturnUrl("/app/assistant", GPOE26.UI.Models.UserRole.Admin));
+        Assert.Equal("/admin/abonnements", GPOE26.UI.Components.AppPage.SafeReturnUrl("/admin/abonnements", GPOE26.UI.Models.UserRole.Teacher));
 
     [Fact]
     public void Une_adresse_externe_renvoie_a_l_accueil_du_role() =>
-        Assert.Equal("/admin", GPOE26.UI.Components.AppPage.SafeReturnUrl("//evil.example", GPOE26.UI.Models.UserRole.Admin));
+        Assert.Equal("/app", GPOE26.UI.Components.AppPage.SafeReturnUrl("//evil.example", GPOE26.UI.Models.UserRole.Teacher));
+}
+
+/// <summary>Administrer est un droit ajouté au rôle, pas un rôle qui le remplace.</summary>
+public class AdminRightTests
+{
+    private static GPOE26.UI.Models.UserProfile Profile(GPOE26.UI.Models.UserRole role, bool isAdmin = false, bool siteEditor = false) =>
+        new(Guid.NewGuid(), "a@b.cm", "Compte", role, null, null, null, "fr", DateTime.UtcNow, null, null, null, null, null, null,
+            null, null, null, null, false, null, null, SiteEditor: siteEditor, IsAdmin: isAdmin);
+
+    [Fact]
+    public void Un_enseignant_administrateur_reste_enseignant()
+    {
+        var profile = Profile(GPOE26.UI.Models.UserRole.Teacher, isAdmin: true);
+        Assert.Equal(GPOE26.UI.Models.UserRole.Teacher, profile.Role);
+        Assert.True(profile.CanEditSite);
+    }
+
+    [Fact]
+    public void Un_editeur_gere_le_site_sans_etre_administrateur()
+    {
+        var profile = Profile(GPOE26.UI.Models.UserRole.Teacher, siteEditor: true);
+        Assert.True(profile.CanEditSite);
+        Assert.False(profile.IsAdmin);
+    }
+
+    [Fact]
+    public void Sans_droit_on_ne_gere_pas_le_site() =>
+        Assert.False(Profile(GPOE26.UI.Models.UserRole.Parent).CanEditSite);
+
+    [Fact]
+    public void Le_role_Admin_n_existe_plus()
+    {
+        Assert.DoesNotContain("Admin", Enum.GetNames<UserRole>());
+        Assert.DoesNotContain("Admin", Enum.GetNames<GPOE26.UI.Models.UserRole>());
+    }
+
+    [Fact]
+    public void Le_jeton_porte_le_droit_et_garde_le_role()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Jwt:Key"] = "une-cle-secrete-de-plus-de-trente-deux-caracteres",
+            ["Jwt:Issuer"] = "GPOE2026",
+            ["Jwt:Audience"] = "GPOE2026Users"
+        }).Build();
+        var user = new AppUser { Email = "prof@exemple.cm", Username = "Prof", PasswordHash = "x", Role = UserRole.Teacher, IsAdmin = true };
+        var (token, _) = new Jwtservice(config).GenerateToken(user, new User.Service.Entitlement(false, null, null, null));
+
+        var claims = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().ReadJwtToken(token).Claims.ToList();
+        Assert.Equal("Teacher", claims.Single(c => c.Type == "role").Value);
+        Assert.Equal("true", claims.Single(c => c.Type == "admin").Value);
+    }
+}
+
+/// <summary>Une fonctionnalité réservée à un rôle ne va pas aux autres, même si la formule la contient.</summary>
+public class FeatureRoleTests
+{
+    private static readonly PlanRef[] Catalog =
+    [
+        new("free", "Gratuit", 1, [new("courses-shared", "Cours", null)]),
+        new("organization-license", "Licence", 30,
+        [
+            new("courses-shared", "Cours", null), new("tutor-ai", "Tuteur", null), new("quiz-ai", "Quiz", null),
+            new("teacher-agent", "Assistant", null), new("ai-grading", "Correction", null)
+        ]),
+        new("family", "Famille", 3, [new("tutor-ai", "Tuteur", null), new("family-view", "Vue parent", null)]),
+    ];
+
+    private static HashSet<string> Codes(UserRole role, SubscriptionPlan plan) =>
+        SubscriptionService.MergeFeatures(Catalog, [plan], role).Select(f => f.Code).ToHashSet();
+
+    [Fact]
+    public void L_eleve_sous_licence_n_a_pas_l_assistant_enseignant()
+    {
+        var codes = Codes(UserRole.Student, SubscriptionPlan.OrganizationLicense);
+        Assert.Contains("tutor-ai", codes);
+        Assert.DoesNotContain("teacher-agent", codes);
+        Assert.DoesNotContain("ai-grading", codes);
+    }
+
+    [Fact]
+    public void L_enseignant_sous_licence_garde_le_tuteur_pour_essayer_ce_que_voient_ses_eleves()
+    {
+        var codes = Codes(UserRole.Teacher, SubscriptionPlan.OrganizationLicense);
+        Assert.Contains("teacher-agent", codes);
+        Assert.Contains("ai-grading", codes);
+        Assert.Contains("tutor-ai", codes);
+    }
+
+    [Fact]
+    public void La_vue_parent_ne_va_qu_au_parent()
+    {
+        Assert.DoesNotContain("family-view", Codes(UserRole.Student, SubscriptionPlan.Family));
+        Assert.Contains("family-view", Codes(UserRole.Parent, SubscriptionPlan.Family));
+    }
+
+    [Fact]
+    public void Sans_role_connu_rien_n_est_filtre() =>
+        Assert.Contains("teacher-agent", SubscriptionService.MergeFeatures(Catalog, [SubscriptionPlan.OrganizationLicense]).Select(f => f.Code));
+}
+
+/// <summary>Le tuteur sait à qui il parle : un enseignant n'est pas un élève de « secondaire ».</summary>
+public class TutorLearnerTests
+{
+    private static System.Security.Claims.ClaimsPrincipal Principal(params (string Type, string Value)[] claims) =>
+        new(new System.Security.Claims.ClaimsIdentity(claims.Select(c => new System.Security.Claims.Claim(c.Type, c.Value))));
+
+    [Fact]
+    public void Un_enseignant_est_traite_en_collegue()
+    {
+        var text = Chat.Endpoints.TutorEndpoints.Learner(Principal(("role", "Teacher"), ("specialite", "Physique"), ("level", "")));
+        Assert.Contains("enseignant (Physique)", text);
+        Assert.DoesNotContain("élève", text.Split(':')[0]);
+    }
+
+    [Fact]
+    public void Un_eleve_garde_son_niveau() =>
+        Assert.Equal("un élève de niveau Terminale C", Chat.Endpoints.TutorEndpoints.Learner(Principal(("role", "Student"), ("level", "Terminale C"))));
+
+    [Fact]
+    public void Sans_niveau_le_tuteur_suppose_le_secondaire() =>
+        Assert.Equal("un élève du secondaire", Chat.Endpoints.TutorEndpoints.Learner(Principal(("role", "Student"))));
 }
 
 public class ImageFormatTests
@@ -1086,7 +1204,7 @@ public class ProfileRulesTests
 
     [Fact]
     public void Une_langue_inconnue_est_refusee() =>
-        Assert.NotNull(User.Endpoints.ProfileRules.Apply(NewUser(UserRole.Admin), new User.Endpoints.EditProfileRequest(null, Language: "de")));
+        Assert.NotNull(User.Endpoints.ProfileRules.Apply(NewUser(UserRole.Parent), new User.Endpoints.EditProfileRequest(null, Language: "de")));
 
     [Theory]
     [InlineData("mauvais", "nouveaumotdepasse", false)]

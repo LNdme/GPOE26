@@ -89,11 +89,13 @@
 
     <Alert Message="@_error" />
 
-    @if (!Session.IsPremium)
+    @* Même règle que le serveur : la formule contient-elle le tuteur ? (« Premium » ne suffit pas : la formule
+       Enseignant est Premium sans tuteur, et l'élève voyait la saisie puis un refus) *@
+    @if (!Session.HasFeature("tutor-ai"))
     {
         <a class="ga-premium-lock tu-lock" href="/app/abonnement">
             <Icon Name="chat" Size="22" />
-            <span><strong>Pose de nouvelles questions avec Premium</strong><br />
+            <span><strong>Pose de nouvelles questions avec une formule qui inclut le tuteur</strong><br />
                 <span class="ga-small" style="color:#C9D3EA">Tes discussions passées restent consultables.</span></span>
         </a>
     }

@@ -92,7 +92,7 @@ public static class UserSeeder
             return;
 
         var admin = await db.AppUsers.FindAsync(AdminId);
-        if (admin is not null) admin.Role = UserRole.Admin;
+        if (admin is not null) admin.IsAdmin = true;   // reste enseignant
 
         if (!await db.AppUsers.AnyAsync(u => u.Id == ParentId || u.Email == "parent@gpoe26.cm"))
         {

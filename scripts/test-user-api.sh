@@ -23,7 +23,8 @@ login() { req POST /auth/login "" "{\"email\":\"$1\",\"password\":\"Test1234!\"}
 claim() { echo "$1" | cut -d. -f2 | tr '_-' '/+' | base64 -d 2>/dev/null | jq -r ".$2"; }
 
 echo "── Comptes de démonstration"
-ADMIN=$(login admin@gpoe26.cm);   check "admin a le rôle Admin" "$(claim "$ADMIN" role)" "Admin"
+ADMIN=$(login admin@gpoe26.cm);   check "admin garde son rôle (enseignant)" "$(claim "$ADMIN" role)" "Teacher"
+check "admin a le droit d'administration" "$(claim "$ADMIN" admin)" "true"
 PROF=$(login prof@gpoe26.cm);     check "prof connecté" "$(claim "$PROF" role)" "Teacher"
 PARENT=$(login parent@gpoe26.cm); check "parent connecté" "$(claim "$PARENT" role)" "Parent"
 
@@ -31,7 +32,9 @@ echo "── Validation de l'inscription"
 req POST /auth/register "" '{"email":"court@t.cm","username":"court","password":"123"}'
 check "mot de passe trop court refusé" "$CODE" "400"
 req POST /auth/register "" '{"email":"adm@t.cm","username":"adm","password":"Test1234!","role":"Admin"}'
-check "inscription Admin refusée" "$CODE" "400"
+check "inscription Admin refusée (ce n'est plus un rôle)" "$CODE" "400"
+req POST /auth/register "" '{"email":"adm3@t.cm","username":"adm3","password":"Test1234!","role":3}'
+check "rôle inconnu en nombre refusé" "$CODE" "400"
 req POST /auth/register "" '{"email":"cle@t.cm","username":"clefausse","password":"Test1234!","subscriptionKey":"FAM-XXXX-XXXX"}'
 check "clé inconnue refusée" "$CODE" "400"
 req POST /auth/register "" '{"email":"cle@t.cm","username":"clefausse","password":"Test1234!"}'

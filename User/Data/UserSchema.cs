@@ -41,6 +41,10 @@ public static class UserSchema
         @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""OrganizationName"" text",
         // Éditeurs du contenu du site de l'établissement
         @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""SiteEditor"" boolean NOT NULL DEFAULT false",
+        // Administrateur : un droit, plus un rôle. Les anciens comptes « Admin » gardent ce droit et redeviennent
+        // enseignants (le rôle qu'avait le compte administrateur de démonstration ; modifiable ensuite en base).
+        @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""IsAdmin"" boolean NOT NULL DEFAULT false",
+        @"UPDATE ""AppUsers"" SET ""IsAdmin"" = true, ""Role"" = 'Teacher' WHERE ""Role"" = 'Admin'",
         @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AppUsers_LinkCode"" ON ""AppUsers"" (""LinkCode"")",
 
         @"CREATE TABLE IF NOT EXISTS ""Organizations"" (

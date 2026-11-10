@@ -84,8 +84,8 @@ public class Speech
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
-/// <summary>Compte et accès au site (page Accès et rôles de l'administration).</summary>
-public record UserAccess(Guid Id, string Username, string Email, string Role, bool SiteEditor, DateTime CreatedAt, DateTime? LastLoginAt);
+/// <summary>Compte et accès (page Comptes et accès de l'administration). Role : élève, enseignant ou parent ; IsAdmin s'y ajoute.</summary>
+public record UserAccess(Guid Id, string Username, string Email, string Role, bool IsAdmin, bool SiteEditor, DateTime CreatedAt, DateTime? LastLoginAt);
 
 public class Contact
 {

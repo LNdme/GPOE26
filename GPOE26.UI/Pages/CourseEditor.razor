@@ -178,6 +178,9 @@
 </div>
 
 @code {
+    // Espace d'apprentissage : un parent n'y a rien à faire (il suit ses enfants depuis son accueil)
+    protected override UserRole[]? AllowedRoles => [UserRole.Student, UserRole.Teacher];
+
     private const long MaxPdfBytes = 10 * 1024 * 1024;
     private const long MaxImageBytes = 5 * 1024 * 1024;
 

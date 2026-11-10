@@ -2,6 +2,7 @@
 @layout GPOE26.Web.Components.Layout.AdminLayout
 @using GPOE26.UI.Components
 @inject GPOE26.UI.Services.SessionState Session
+@inject GPOE26.UI.Services.IPlatformAdminApi Platform
 
 <PageTitle>Administration – GPOE26</PageTitle>
 
@@ -86,7 +87,21 @@ else
         </section>
     </div>
 
-    @if (Session.Role == GPOE26.UI.Models.UserRole.Admin)
+    @if (Session.Profile?.IsAdmin == true && _pending is { Count: > 0 } pending)
+    {
+        <section class="admin-card admin-card--tip">
+            <span class="admin-card__tip-icon"><Icon Name="card" Size="20" /></span>
+            <div class="admin-demo">
+                <div>
+                    <strong>@pending.Count abonnement@(pending.Count > 1 ? "s" : "") en attente de paiement</strong>
+                    <p>Activez-les une fois le paiement reçu : tant que le paiement en ligne n’est pas branché, rien ne se fait sans vous.</p>
+                </div>
+                <a class="site-btn site-btn--primary" href="/admin/abonnements">Voir les abonnements</a>
+            </div>
+        </section>
+    }
+
+    @if (Session.Profile?.IsAdmin == true)
     {
         <section class="admin-card admin-card--tip">
             <span class="admin-card__tip-icon"><Icon Name="spark" Size="20" /></span>
@@ -125,7 +140,14 @@ else
     private bool _demoBusy;
     private string? _demoMessage;
 
-    protected override Task OnInitializedAsync() => LoadAsync();
+    private List<GPOE26.UI.Models.AdminSubscription>? _pending;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        if (Session.Profile?.IsAdmin == true)
+            _pending = (await Platform.SubscriptionsAsync(GPOE26.UI.Models.SubscriptionStatus.PendingPayment)).Value;
+    }
 
     private async Task AddDemoContentAsync()
     {

@@ -22,6 +22,7 @@ public static class UiServiceCollectionExtensions
         services.AddScoped<IPlanApi, PlanApi>();
         services.AddScoped<IAgentApi, AgentApi>();
         services.AddScoped<IPracticeQuizApi, PracticeQuizApi>();
+        services.AddScoped<IPlatformAdminApi, PlatformAdminApi>();
         return services;
     }
 }

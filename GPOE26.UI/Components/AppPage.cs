@@ -44,10 +44,10 @@ public abstract class AppPage : ComponentBase
     protected virtual Task LoadAsync() => Task.CompletedTask;
 
     /// <summary>
-    /// Accueil d'un rôle. L'administrateur n'a ni classe ni plan d'études : son espace est la gestion du site.
-    /// L'envoyer sur /app lui affichait l'accueil élève, dont l'API refuse les données (403).
+    /// Accueil d'un rôle : toujours l'espace /app, qui s'adapte au rôle (plan d'études, classes, suivi des enfants).
+    /// Un administrateur garde son rôle et son espace ; il rejoint l'administration par le menu.
     /// </summary>
-    public static string HomeFor(UserRole? role) => role == UserRole.Admin ? "/admin" : "/app";
+    public static string HomeFor(UserRole? role) => "/app";
 
     /// <summary>Adresse de retour sûre (chemin local uniquement, jamais un autre site), sinon l'accueil du rôle.</summary>
     public static string SafeReturnUrl(string? url, UserRole? role = null) =>

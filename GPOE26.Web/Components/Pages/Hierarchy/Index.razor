@@ -11,7 +11,7 @@
                 <h1 class="listing-title">Notre équipe</h1>
                 <p class="listing-description">Découvrez les personnes qui accompagnent les élèves au quotidien.</p>
             </div>
-            @if (IsAdmin)
+            @if (CanEditSite)
             {
                 <a href="/admin/equipe" class="listing-create-button">
                     <i class="bi bi-pencil" aria-hidden="true"></i> Gérer l’équipe
@@ -67,7 +67,7 @@
 
 
 @code {
-    private bool IsAdmin => Session.IsAuthenticated && Session.Profile?.CanEditSite == true;
+    private bool CanEditSite => Session.IsAuthenticated && Session.Profile?.CanEditSite == true;
 
     // « M. MBARGA » + « Serge » → « SM » : la civilité (M., Mme.) donnait un « M » à presque tout le monde
     private static string Initials(Hierarchy m)

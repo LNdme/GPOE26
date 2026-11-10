@@ -67,8 +67,6 @@ builder.Services.AddScoped<ClassroomService>();
 // Applique les [Required], [MinLength]… des DTOs aux Minimal APIs (sinon ils sont ignorés)
 builder.Services.AddValidation();
 
-// Nécessaire pour le PatchController uniquement
-builder.Services.AddControllers().AddNewtonsoftJson();
 
 
 
@@ -157,8 +155,10 @@ var auth = app.MapGroup("/auth").WithTags("Auth");
 auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice jwt,
     SubscriptionService subs, ClassroomService classrooms) =>
 {
-    if (req.Role == UserRole.Admin)
-        return Results.BadRequest(new { message = "Un compte administrateur ne peut pas être créé par inscription." });
+    // L'administration est un droit donné par un administrateur, jamais un rôle choisi à l'inscription.
+    // Un rôle inconnu (ancien « Admin » envoyé en nombre, par exemple) est refusé.
+    if (!Enum.IsDefined(req.Role))
+        return Results.BadRequest(new { message = "Rôle inconnu : choisissez élève, enseignant ou parent." });
 
     // Vérifications unicité
     if (await db.AppUsers.AnyAsync(u => u.Email == req.Email.ToLower()))
@@ -312,48 +312,12 @@ auth.MapGet("/me", async (ClaimsPrincipal principal, UserContext db, Subscriptio
 .Produces<UserProfileDto>()
 .Produces(401);
 
-// ── PUT /auth/me ──────────────────────────────────────────────────────────────
-// Remplacement COMPLET du profil.
-// Tous les champs doivent être envoyés — les champs omis seront mis à null.
-// Différence avec PATCH : PATCH = modification partielle, PUT = remplacement total.
-auth.MapPut("/me", async (UpdateProfileRequest req, ClaimsPrincipal principal, UserContext db, SubscriptionService subs) =>
-{
-    var user = await db.CurrentUserAsync(principal);
-    if (user is null) return Results.NotFound();
-
-    // Cohérence métier : vérifier la combinaison Role/Specialite/Filiere
-    if (user.Role == UserRole.Student && req.Specialite is not null)
-        return Results.BadRequest(new { message = "Un élève ne peut pas avoir de spécialité." });
-
-    if (user.Role == UserRole.Teacher && req.Filiere is not null)
-        return Results.BadRequest(new { message = "Un enseignant ne peut pas avoir de filière." });
-
-    // PUT remplace tout — même les valeurs null
-    user.Username = req.Username ?? user.Username;
-    user.Level = req.Level;
-    user.Specialite = req.Specialite;
-    user.Filiere = req.Filiere;
-    user.Language = req.Language ?? user.Language;
-
-    await db.SaveChangesAsync();
-    return Results.Ok(new UserProfileDto(user, await subs.GetEntitlementAsync(user.Id)));
-})
-.RequireAuthorization()
-.WithSummary("Remplacer le profil complet (PUT)")
-.Produces<UserProfileDto>()
-.Produces(400)
-.Produces(401);
-
-// PATCH /auth/me → voir Controllers/UsersController.cs
-
 // ─── Classes, parents, abonnements, administration ────────────────────────────
 app.MapClassroomEndpoints();
 app.MapParentEndpoints();
 app.MapSubscriptionEndpoints();
 app.MapAdminEndpoints();
 app.MapProfileEndpoints();
-
-app.MapControllers();
 
 
 

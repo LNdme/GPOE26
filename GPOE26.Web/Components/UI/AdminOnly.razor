@@ -3,7 +3,7 @@
 @inject GPOE26.UI.Services.SessionState Session
 
 @* Partie de l'administration réservée aux administrateurs (pas aux éditeurs du site) *@
-@if (Session.Role == UserRole.Admin)
+@if (Session.IsAuthenticated && Session.Profile?.IsAdmin == true)
 {
     @ChildContent
 }

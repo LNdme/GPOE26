@@ -4,7 +4,8 @@ namespace GPOE26.UI.Models;
 // Contrats du service User (enums sérialisés en texte, propriétés en camelCase).
 // ══════════════════════════════════════════════════════════════════════════════
 
-public enum UserRole { Student, Teacher, Parent, Admin }
+/// <summary>Rôle sur la plateforme. Administrer est un droit à part (UserProfile.IsAdmin), qui ne remplace pas le rôle.</summary>
+public enum UserRole { Student, Teacher, Parent }
 public enum SchoolSubSystem { Francophone, Anglophone }
 public enum EducationStage { Secondary, Higher }
 public enum TeachingContext { School, Institution, Independent }
@@ -80,11 +81,12 @@ public record UserProfile(
     DateTime? PremiumUntil,
     List<EntitledFeature>? Features = null,
     EducationStage? Stage = null,
-    bool SiteEditor = false
+    bool SiteEditor = false,
+    bool IsAdmin = false
 )
 {
     /// <summary>Peut gérer le contenu du site de l'établissement (administrateur ou éditeur).</summary>
-    public bool CanEditSite => Role == UserRole.Admin || SiteEditor;
+    public bool CanEditSite => IsAdmin || SiteEditor;
 }
 
 public record AuthResponse(string Token, DateTime ExpiresAt, UserProfile Profile);

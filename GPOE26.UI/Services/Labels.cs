@@ -79,7 +79,6 @@ public static class Labels
         UserRole.Student => "Élève",
         UserRole.Teacher => "Enseignant",
         UserRole.Parent => "Parent",
-        UserRole.Admin => "Administrateur",
         _ => ""
     };
 

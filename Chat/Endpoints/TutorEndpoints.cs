@@ -19,7 +19,7 @@ public static class TutorEndpoints
 
     private const string SystemPrompt = """
         Tu es le tuteur personnel d'un apprenant sur la plateforme GPOE26 (Cameroun).
-        Niveau de l'élève : {0}.
+        Personne qui te parle : {0}.
         Ton rôle : faire comprendre le cours, pas faire les devoirs à la place de l'élève.
         - Réponds en français (en anglais si l'élève écrit en anglais), clairement, en paragraphes courts.
         - Explique pas à pas, avec un exemple concret quand c'est utile ; termine si possible par une petite question
@@ -119,10 +119,9 @@ public static class TutorEndpoints
             if (text.Length == 0) text = "Voici ma copie : peux-tu vérifier ma démarche ?";
 
             // Contexte du modèle : le cours, les derniers échanges, puis la question (et sa photo)
-            var level = principal.FindFirst("level")?.Value;
             var messages = new List<LlmMessage>
             {
-                new("system", string.Format(SystemPrompt, string.IsNullOrWhiteSpace(level) ? "secondaire" : level,
+                new("system", string.Format(SystemPrompt, Learner(principal),
                     course.Title, course.Subject, course.Text())
                     + (principal.FindFirst("stage")?.Value == "Higher" ? HigherEducation : "")
                     + await agent.StudentContextAsync(userId, courseId, text, ct))
@@ -236,6 +235,23 @@ public static class TutorEndpoints
             return Results.NoContent();
         })
         .WithSummary("Effacer la discussion sur un cours (recommencer)");
+    }
+
+    /// <summary>
+    /// Qui parle au tuteur. Un enseignant y vient pour préparer ou essayer son cours : le traiter comme un élève
+    /// de « secondaire » faussait le ton et le niveau des réponses.
+    /// </summary>
+    public static string Learner(ClaimsPrincipal principal)
+    {
+        var level = principal.FindFirst("level")?.Value;
+        if (principal.FindFirst("role")?.Value == "Teacher")
+        {
+            var subjects = principal.FindFirst("specialite")?.Value;
+            return "un enseignant" + (string.IsNullOrWhiteSpace(subjects) ? "" : $" ({subjects})")
+                + " qui prépare ou essaie ce cours : réponds-lui comme à un collègue, sans simplifier à l'excès,"
+                + " et signale les points que ses élèves risquent de mal comprendre";
+        }
+        return string.IsNullOrWhiteSpace(level) ? "un élève du secondaire" : $"un élève de niveau {level}";
     }
 
     private static Guid UserId(ClaimsPrincipal principal) =>

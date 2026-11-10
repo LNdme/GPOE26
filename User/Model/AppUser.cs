@@ -23,8 +23,15 @@
         // Ces champs seront embarqués dans le JWT (claims) → les autres services
         // (chat, quiz) les liront directement sans appeler la DB User.
 
-        /// <summary>Élève, Enseignant, Parent ou Admin</summary>
+        /// <summary>Élève, Enseignant ou Parent : ce que la personne fait sur la plateforme.</summary>
         public UserRole Role { get; set; } = UserRole.Student;
+
+        /// <summary>
+        /// Administrateur : gère le site, la plateforme (abonnements, licences) et les accès.
+        /// C'est un droit ajouté au compte, comme SiteEditor : un enseignant nommé administrateur reste enseignant
+        /// et garde ses classes, ses cours et ses évaluations.
+        /// </summary>
+        public bool IsAdmin { get; set; }
 
         /// <summary>
         /// Niveau scolaire de l'élève (ex: "3ème", "Terminale", "Licence 1").
@@ -99,12 +106,15 @@
         Higher
     }
 
+    /// <summary>
+    /// Rôle sur la plateforme. L'administration n'en fait pas partie : c'est le droit AppUser.IsAdmin.
+    /// (Une ancienne valeur « Admin » en base est convertie au démarrage, cf. UserSchema.)
+    /// </summary>
     public enum UserRole
     {
         Student,
         Teacher,
-        Parent,
-        Admin
+        Parent
     }
 
     public enum SchoolSubSystem

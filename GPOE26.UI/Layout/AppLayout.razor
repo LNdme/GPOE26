@@ -48,6 +48,11 @@
                 <div class="ga-nav-title">SITE</div>
                 <div class="ga-nav">
                     <a href="/" title="Site de l'établissement" aria-label="Site de l'établissement"><Icon Name="home" /> <span>Site de l'établissement</span></a>
+                    @if (me.CanEditSite)
+                    {
+                        @* Droit ajouté au rôle : un enseignant administrateur garde ses classes et gère aussi le site *@
+                        <a href="/admin" title="@(me.IsAdmin ? "Administration" : "Gérer le site")" aria-label="@(me.IsAdmin ? "Administration" : "Gérer le site")"><Icon Name="shield" /> <span>@(me.IsAdmin ? "Administration" : "Gérer le site")</span></a>
+                    }
                 </div>
 
                 <div class="ga-me">
@@ -93,13 +98,6 @@
             new("/app", "Vue d'ensemble", "grid"),
             new("/app/abonnement", "Abonnement et paiements", "card"),
         ],
-        // L'administrateur n'a pas les pages élève (l'API les lui refuse) : gestion du site, assistant et licence
-        UserRole.Admin =>
-        [
-            new("/admin", "Gérer le site", "shield"),
-            new("/app/assistant", "Assistant IA", "spark", "teacher-agent"),
-            new("/app/abonnement", "Abonnement", "card"),
-        ],
         _ =>
         [
             new("/app", "Plan d'études", "compass"),
@@ -115,7 +113,6 @@
     {
         UserRole.Teacher => "Espace enseignant",
         UserRole.Parent => "Espace parent",
-        UserRole.Admin => "Administration",
         _ => "Espace élève"
     };
 

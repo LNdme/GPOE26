@@ -24,11 +24,11 @@
         <div class="site-nav__actions">
             @if (Session.Profile is { } me && Session.IsAuthenticated)
             {
-                @if (IsAdmin)
+                @if (CanEditSite)
                 {
-                    <a class="site-nav__admin" href="/admin" title="Administration du site" aria-label="Administration du site">
+                    <a class="site-nav__admin" href="/admin" title="@AdminLabel" aria-label="@AdminLabel">
                         <Icon Name="shield" Size="18" Stroke="2" />
-                        <span>Admin</span>
+                        <span>@(me.IsAdmin ? "Admin" : "Gérer le site")</span>
                     </a>
                 }
                 <a class="site-btn site-btn--primary site-nav__cta" href="/app">Mon espace</a>
@@ -46,15 +46,18 @@
                         <div class="site-user__menu" role="menu">
                             <div class="site-user__head">
                                 <strong>@me.Username</strong>
-                                <small>@GPOE26.UI.Services.Labels.Of(me.Role)</small>
+                                <small>@GPOE26.UI.Services.Labels.Of(me.Role)@(me.IsAdmin ? " · administrateur" : me.SiteEditor ? " · éditeur du site" : "")</small>
                             </div>
-                            <a role="menuitem" href="/app"><Icon Name="grid" Size="18" /> Mon espace</a>
+                            <a role="menuitem" href="/app"><Icon Name="grid" Size="18" /> @(me.Role == UserRole.Parent ? "Suivi de mes enfants" : "Mon espace")</a>
                             <a role="menuitem" href="/app/profil"><Icon Name="user" Size="18" /> Mon profil</a>
-                            <a role="menuitem" href="/app/cours"><Icon Name="book" Size="18" /> Mes cours</a>
-                            <a role="menuitem" href="/app/abonnement"><Icon Name="card" Size="18" /> Mon abonnement</a>
-                            @if (IsAdmin)
+                            @if (me.Role != UserRole.Parent)
                             {
-                                <a role="menuitem" href="/admin" class="is-admin"><Icon Name="shield" Size="18" /> Gérer le site</a>
+                                <a role="menuitem" href="/app/cours"><Icon Name="book" Size="18" /> @(me.Role == UserRole.Teacher ? "Mes cours" : "Cours de mes classes")</a>
+                            }
+                            <a role="menuitem" href="/app/abonnement"><Icon Name="card" Size="18" /> Mon abonnement</a>
+                            @if (CanEditSite)
+                            {
+                                <a role="menuitem" href="/admin" class="is-admin"><Icon Name="shield" Size="18" /> @AdminLabel</a>
                             }
                             <hr />
                             <button role="menuitem" type="button" class="is-danger" @onclick="Logout"><Icon Name="logout" Size="18" /> Se déconnecter</button>
@@ -91,9 +94,9 @@
                 @if (Session.IsAuthenticated)
                 {
                     <a class="site-btn site-btn--primary" href="/app">Mon espace</a>
-                    @if (IsAdmin)
+                    @if (CanEditSite)
                     {
-                        <a class="site-btn site-btn--ghost" href="/admin"><Icon Name="shield" Size="18" /> Administration</a>
+                        <a class="site-btn site-btn--ghost" href="/admin"><Icon Name="shield" Size="18" /> @AdminLabel</a>
                     }
                     <button type="button" class="site-btn site-btn--quiet" @onclick="Logout">Se déconnecter</button>
                 }
@@ -124,7 +127,10 @@
     ];
 
     // Administrateur ou éditeur du site : accès à l'espace de gestion du contenu
-    private bool IsAdmin => Session.IsAuthenticated && Session.Profile?.CanEditSite == true;
+    private bool CanEditSite => Session.IsAuthenticated && Session.Profile?.CanEditSite == true;
+
+    // L'éditeur gère le contenu ; seul l'administrateur gère aussi la plateforme et les accès
+    private string AdminLabel => Session.Profile?.IsAdmin == true ? "Administration" : "Gérer le site";
 
     protected override void OnInitialized()
     {

@@ -4,16 +4,17 @@
 @using GPOE26.Web.Components.UI
 @inject GPOE26.UI.Services.SessionState Session
 
-<PageTitle>Accès et rôles · Administration – GPOE26</PageTitle>
+<PageTitle>Comptes et accès · Administration – GPOE26</PageTitle>
 
 <AdminOnly>
     <div class="admin-head">
         <div>
-            <span class="admin-eyebrow">Établissement</span>
-            <h1>Accès et rôles</h1>
+            <span class="admin-eyebrow">Plateforme</span>
+            <h1>Comptes et accès</h1>
             <p>
-                Un <strong>administrateur</strong> gère tout le site, les coordonnées et les accès.
-                Un <strong>éditeur</strong> publie actualités, événements, activités et équipe, en gardant son rôle (enseignant, par exemple).
+                Chaque compte garde son <strong>rôle</strong> (élève, enseignant, parent) : les droits s'y ajoutent.
+                Un <strong>administrateur</strong> gère le site, les abonnements, les licences et les accès.
+                Un <strong>éditeur</strong> publie actualités, événements, activités et équipe.
             </p>
         </div>
     </div>
@@ -22,7 +23,7 @@
         <span class="admin-card__tip-icon"><Icon Name="key" Size="20" /></span>
         <div>
             <strong>La personne doit d’abord avoir un compte.</strong>
-            <p>Elle s’inscrit sur la plateforme, puis vous la retrouvez ici par son nom ou son e-mail. Le changement prend effet à sa prochaine connexion.</p>
+            <p>Elle s’inscrit sur la plateforme, puis vous la retrouvez ici par son nom ou son e-mail. L’administration de la plateforme en tient compte aussitôt ; ses menus et le site, dans les 20 minutes.</p>
         </div>
     </div>
 
@@ -62,7 +63,7 @@
                     <tbody>
                         @foreach (var u in _users)
                         {
-                            var isAdmin = u.Role == "Admin";
+                            var isAdmin = u.IsAdmin;
                             var isMe = u.Id == Session.Profile?.Id;
                             <tr>
                                 <td data-label="Compte">
@@ -112,7 +113,7 @@
         }
         else
         {
-            <p><strong>@_confirm?.User.Username</strong> redeviendra enseignant et perdra l’accès à l’administration.</p>
+            <p><strong>@_confirm?.User.Username</strong> perdra l’accès à l’administration. Son rôle (@RoleLabel(_confirm?.User.Role ?? "")) ne change pas.</p>
         }
     </ConfirmDialog>
 </AdminOnly>
@@ -128,7 +129,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        if (Session.Role != GPOE26.UI.Models.UserRole.Admin) return;
+        if (Session.Profile?.IsAdmin != true) return;
         await Load();
     }
 
@@ -158,12 +159,11 @@
 
         var i = _users.FindIndex(u => u.Id == user.Id);
         if (i >= 0) _users[i] = updated;
-        _notice = $"Accès de {updated.Username} mis à jour. Ils s’appliqueront à sa prochaine connexion.";
+        _notice = $"Accès de {updated.Username} mis à jour.";
     }
 
     private static string RoleLabel(string role) => role switch
     {
-        "Admin" => "Administrateur",
         "Teacher" => "Enseignant",
         "Parent" => "Parent",
         "Student" => "Élève",

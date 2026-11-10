@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Microsoft.EntityFrameworkCore;
 using User.Data;
 using User.DTOs;
 using User.Model;
@@ -105,6 +106,13 @@ public static class ProfileEndpoints
         {
             var user = await db.CurrentUserAsync(principal);
             if (user is null) return Results.Unauthorized();
+
+            // Le nom affiché est unique (index en base) : un doublon donnait une erreur 500
+            var username = req.Username?.Trim();
+            if (username is { Length: > 0 } && username != user.Username
+                && await db.AppUsers.AnyAsync(u => u.Username == username && u.Id != user.Id))
+                return Results.Conflict(new { message = "Ce nom d'utilisateur est déjà pris." });
+
             if (ProfileRules.Apply(user, req) is { } error)
                 return Results.BadRequest(new { message = error });
 
@@ -113,7 +121,8 @@ public static class ProfileEndpoints
         })
         .WithSummary("Modifier son profil (champs selon le rôle)")
         .Produces<UserProfileDto>()
-        .Produces(400);
+        .Produces(400)
+        .Produces(409);
 
         // ── POST /auth/me/password ────────────────────────────────────────────────
         me.MapPost("/password", async (ChangePasswordRequest req, ClaimsPrincipal principal, UserContext db) =>

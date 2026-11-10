@@ -1,0 +1,157 @@
+@page "/admin/licences"
+@layout GPOE26.Web.Components.Layout.AdminLayout
+@using GPOE26.UI.Components
+@using GPOE26.UI.Services
+@using GPOE26.Web.Components.UI
+@using M = GPOE26.UI.Models
+@inject SessionState Session
+@inject IPlatformAdminApi Platform
+
+<PageTitle>Licences · Administration – GPOE26</PageTitle>
+
+<AdminOnly>
+    <div class="admin-head">
+        <div>
+            <span class="admin-eyebrow">Plateforme</span>
+            <h1>Licences des établissements</h1>
+            <p>
+                Une licence donne l’accès Premium aux enseignants et aux élèves d’un établissement ou d’une institution.
+                Elle est active dès sa création : transmettez sa <strong>clé</strong> à la structure, chaque personne la saisit dans « Abonnement ».
+            </p>
+        </div>
+    </div>
+
+    @if (_error is not null) { <div class="alert alert-danger" role="alert">@_error</div> }
+    @if (_notice is not null) { <div class="alert alert-success" role="status">@_notice</div> }
+
+    <div class="admin-grid-2 admin-grid-2--form">
+        <section class="admin-card" aria-labelledby="h-orgs">
+            <div class="admin-card__head"><h2 id="h-orgs">Établissements et institutions</h2></div>
+
+            @if (_loading)
+            {
+                <div class="admin-empty"><span class="spinner-border spinner-border-sm text-brand-dark" role="status"></span> Chargement…</div>
+            }
+            else if (_organizations.Count == 0)
+            {
+                <p class="admin-muted">Aucune structure pour l’instant. Créez-en une, puis sa licence.</p>
+            }
+            else
+            {
+                <ul class="admin-list">
+                    @foreach (var org in _organizations)
+                    {
+                        <li style="display:block">
+                            <strong>@org.Name</strong>
+                            <small style="display:block">@(org.Type == M.OrganizationType.School ? "Établissement scolaire" : "Institution")@(org.City is { Length: > 0 } ? $" · {org.City}" : "")</small>
+
+                            @foreach (var license in org.Licenses)
+                            {
+                                <div style="margin-top:.5rem">
+                                    <span class="admin-badge @(license.Status == M.SubscriptionStatus.Active ? "is-ok" : "is-muted")">@Labels.Of(license.Status)</span>
+                                    <small>@license.Seats places@(license.EndsAt is { } end ? $" · jusqu’au {end.ToLocalTime():dd/MM/yyyy}" : "")</small>
+                                    @foreach (var key in license.Keys)
+                                    {
+                                        <small style="display:block">Clé <code>@key.Code</code> · @key.UsedCount / @key.MaxUses place(s) utilisée(s)</small>
+                                    }
+                                </div>
+                            }
+
+                            @if (_licenseFor == org.Id)
+                            {
+                                <form class="admin-form" style="margin-top:.75rem" @onsubmit="() => CreateLicenseAsync(org)" @onsubmit:preventDefault>
+                                    <div class="admin-form__row">
+                                        <label><span>Places</span><input type="number" class="form-control" min="1" max="100000" @bind="_seats" /></label>
+                                        <label><span>Durée (mois)</span><input type="number" class="form-control" min="1" max="36" @bind="_months" /></label>
+                                    </div>
+                                    <div class="admin-form__actions">
+                                        <button type="submit" class="site-btn site-btn--primary site-btn--sm" disabled="@_busy">Créer la licence</button>
+                                        <button type="button" class="site-btn site-btn--quiet site-btn--sm" @onclick="() => _licenseFor = null">Annuler</button>
+                                    </div>
+                                </form>
+                            }
+                            else
+                            {
+                                <button type="button" class="site-btn site-btn--ghost site-btn--sm" style="margin-top:.5rem" @onclick="() => OpenLicense(org)">Nouvelle licence</button>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+
+        <section class="admin-card" aria-labelledby="h-new-org">
+            <div class="admin-card__head"><h2 id="h-new-org">Nouvelle structure</h2></div>
+            <form class="admin-form" @onsubmit="CreateOrganizationAsync" @onsubmit:preventDefault>
+                <label><span>Nom</span><input class="form-control" maxlength="200" placeholder="Lycée bilingue de …" @bind="_name" /></label>
+                <label>
+                    <span>Type</span>
+                    <select class="form-select" @bind="_type">
+                        <option value="@M.OrganizationType.School">Établissement scolaire</option>
+                        <option value="@M.OrganizationType.Institution">Institution (entreprise, centre de formation…)</option>
+                    </select>
+                </label>
+                <label><span>Ville</span><input class="form-control" @bind="_city" /></label>
+                <div class="admin-form__actions">
+                    <button type="submit" class="site-btn site-btn--primary" disabled="@(_busy || string.IsNullOrWhiteSpace(_name))">Créer</button>
+                </div>
+            </form>
+        </section>
+    </div>
+</AdminOnly>
+
+@code {
+    private List<M.Organization> _organizations = new();
+    private bool _loading = true, _busy;
+    private string? _error, _notice, _name, _city;
+    private M.OrganizationType _type = M.OrganizationType.School;
+    private Guid? _licenseFor;
+    private int _seats = 30, _months = 12;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.Profile?.IsAdmin != true) return;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var result = await Platform.OrganizationsAsync();
+        _organizations = result.Value ?? new();
+        _error = result.Error;
+        _loading = false;
+    }
+
+    private void OpenLicense(M.Organization org)
+    {
+        _licenseFor = org.Id;
+        _seats = 30;
+        _months = 12;
+    }
+
+    private async Task CreateOrganizationAsync()
+    {
+        _busy = true;
+        _error = _notice = null;
+        var result = await Platform.CreateOrganizationAsync(new M.CreateOrganizationRequest(_name!.Trim(), _type, string.IsNullOrWhiteSpace(_city) ? null : _city.Trim()));
+        _busy = false;
+        if (!result.Ok) { _error = result.Error; return; }
+        _notice = $"« {result.Value!.Name} » est créé. Ajoutez-lui une licence.";
+        _name = _city = null;
+        await LoadAsync();
+        _licenseFor = result.Value.Id;
+    }
+
+    private async Task CreateLicenseAsync(M.Organization org)
+    {
+        _busy = true;
+        _error = _notice = null;
+        var result = await Platform.CreateLicenseAsync(org.Id, new M.CreateLicenseRequest(_seats, _months));
+        _busy = false;
+        if (!result.Ok) { _error = result.Error; return; }
+        var key = result.Value!.Keys.FirstOrDefault()?.Code;
+        _notice = $"Licence de {result.Value.Seats} places créée pour « {org.Name} »." + (key is null ? "" : $" Clé à transmettre : {key}.");
+        _licenseFor = null;
+        await LoadAsync();
+    }
+}

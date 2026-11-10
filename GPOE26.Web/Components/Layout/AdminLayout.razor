@@ -59,21 +59,17 @@
                     {
                         <span class="admin-nav__title">Établissement</span>
                         <NavLink href="/admin/etablissement"><Icon Name="building" Size="18" /> Coordonnées</NavLink>
-                        <NavLink href="/admin/utilisateurs"><Icon Name="key" Size="18" /> Accès et rôles</NavLink>
+                        @* La plateforme d'apprentissage : comptes, abonnements, licences des établissements *@
+                        <span class="admin-nav__title">Plateforme</span>
+                        <NavLink href="/admin/abonnements"><Icon Name="card" Size="18" /> Abonnements</NavLink>
+                        <NavLink href="/admin/licences"><Icon Name="building" Size="18" /> Licences</NavLink>
+                        <NavLink href="/admin/utilisateurs"><Icon Name="key" Size="18" /> Comptes et accès</NavLink>
                     }
                 </nav>
 
                 <div class="admin-side__foot">
                     <a href="/" target="_blank" rel="noopener"><Icon Name="external" Size="16" /> Voir le site</a>
-                    @* Pour l'administrateur, /app renvoie ici : son lien utile est son profil *@
-                    @if (IsAdmin)
-                    {
-                        <a href="/app/profil"><Icon Name="user" Size="16" /> Mon profil</a>
-                    }
-                    else
-                    {
-                        <a href="/app"><Icon Name="left" Size="16" /> Mon espace</a>
-                    }
+                    <a href="/app"><Icon Name="left" Size="16" /> Mon espace</a>
                     <div class="admin-me">
                         <span class="site-user__avatar">@(Session.Profile?.Username is { Length: > 0 } u ? u[..1].ToUpperInvariant() : "A")</span>
                         <span><strong>@Session.Profile?.Username</strong><small>@(IsAdmin ? "Administrateur" : "Éditeur du site")</small></span>
@@ -119,7 +115,7 @@
 
     private void Refresh() => InvokeAsync(StateHasChanged);
 
-    private bool IsAdmin => Session.Role == UserRole.Admin;
+    private bool IsAdmin => Session.IsAuthenticated && Session.Profile?.IsAdmin == true;
 
     // Retour sur la page d'administration demandée après la connexion
     private string LoginUrl => "/login?retour=" + Uri.EscapeDataString("/" + Nav.ToBaseRelativePath(Nav.Uri));

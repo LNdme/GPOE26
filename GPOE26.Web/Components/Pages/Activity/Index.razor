@@ -11,7 +11,7 @@
                 <h1 class="listing-title">Clubs et activités</h1>
                 <p class="listing-description">Explorez vos passions, rencontrez d’autres élèves et lancez-vous dans un nouveau projet.</p>
             </div>
-            @if (IsAdmin)
+            @if (CanEditSite)
             {
                 <a href="/admin/activites" class="listing-create-button">
                     <i class="bi bi-pencil" aria-hidden="true"></i> Gérer les activités
@@ -91,7 +91,7 @@
 
 
 @code {
-    private bool IsAdmin => Session.IsAuthenticated && Session.Profile?.CanEditSite == true;
+    private bool CanEditSite => Session.IsAuthenticated && Session.Profile?.CanEditSite == true;
 
     private bool _loading = true;
     private List<SchoolActivity> _items = new();

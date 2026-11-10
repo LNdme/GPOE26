@@ -59,6 +59,8 @@ namespace User.Service
             new Claim("plan", entitlement.Plan?.ToString() ?? ""),
             // "site_editor" → le service du site autorise la gestion du contenu (en plus du rôle Admin)
             new Claim("site_editor", user.SiteEditor ? "true" : "false"),
+            // "admin" → droit d'administration, indépendant du rôle (le service User le revérifie en base)
+            new Claim("admin", user.IsAdmin ? "true" : "false"),
             new Claim("auth_time", new DateTimeOffset(DateTime.SpecifyKind(signedInAt ?? DateTime.UtcNow, DateTimeKind.Utc)).ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };

@@ -17,7 +17,7 @@ namespace User.DTOs;
 //  UserProfileDto       = profil complet exposé par GET /auth/me
 //                         → lu par le LLM pour personnaliser ses réponses
 //
-//  UpdateProfileRequest = données acceptées par PATCH /auth/me
+//  EditProfileRequest   = données acceptées par PUT /auth/me/profile (Endpoints/ProfileEndpoints.cs)
 // ══════════════════════════════════════════════════════════════════════════════
 
 /// <summary>
@@ -88,7 +88,8 @@ public record UserProfileDto(
     DateTime? PremiumUntil,
     List<EntitledFeature>? Features = null,
     EducationStage? Stage = null,
-    bool SiteEditor = false
+    bool SiteEditor = false,
+    bool IsAdmin = false
 )
 {
     public UserProfileDto(AppUser user, Entitlement? entitlement = null) : this(
@@ -116,39 +117,8 @@ public record UserProfileDto(
         entitlement?.Until,
         entitlement?.Features,
         user.Stage,
-        user.SiteEditor
+        user.SiteEditor,
+        user.IsAdmin
     )
     { }
-}
-
-// ⚠️ BUG CRITIQUE CORRIGÉ
-// UpdateProfileRequest était un "record positionnel" ce qui génère des propriétés
-// init-only ({ get; init; }). JsonPatch utilise la réflexion pour SET les valeurs
-// APRÈS construction → impossible sur des init-only → le patch s'appliquait sur
-// un objet figé, les modifications étaient silencieusement ignorées.
-//
-// SOLUTION : classe normale avec { get; set; }
-// On garde la même interface publique, seule l'implémentation change.
-public class UpdateProfileRequest
-{
-    public string? Username { get; set; }
-    public string? Level { get; set; }
-    public string? Specialite { get; set; }
-    public string? Filiere { get; set; }
-    public string? Language { get; set; }
-
-    // Constructeur utilisé dans le controller pour initialiser depuis l'entité
-    public UpdateProfileRequest(
-        string? username,
-        string? level,
-        string? specialite,
-        string? filiere,
-        string? language)
-    {
-        Username = username;
-        Level = level;
-        Specialite = specialite;
-        Filiere = filiere;
-        Language = language;
-    }
 }

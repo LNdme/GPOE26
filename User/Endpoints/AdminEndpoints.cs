@@ -16,7 +16,7 @@ public static class AdminEndpoints
 {
     public static void MapAdminEndpoints(this IEndpointRouteBuilder app)
     {
-        var admin = app.MapGroup("/admin").WithTags("Administration").RequireAuthorization(Policies.Admin);
+        var admin = app.MapGroup("/admin").WithTags("Administration").RequireAdmin();
 
         // ── GET /admin/users ──────────────────────────────────────────────────────
         // Comptes à qui donner un accès d'administration ou d'édition du site.
@@ -24,18 +24,18 @@ public static class AdminEndpoints
         {
             var query = db.AppUsers.AsNoTracking();
             if (staffOnly)
-                query = query.Where(u => u.Role == UserRole.Admin || u.SiteEditor);
+                query = query.Where(u => u.IsAdmin || u.SiteEditor);
             if (!string.IsNullOrWhiteSpace(search))
             {
                 var s = $"%{search.Trim()}%";
                 query = query.Where(u => EF.Functions.ILike(u.Email, s) || EF.Functions.ILike(u.Username, s));
             }
             var users = await query
-                .OrderByDescending(u => u.Role == UserRole.Admin)
+                .OrderByDescending(u => u.IsAdmin)
                 .ThenByDescending(u => u.SiteEditor)
                 .ThenBy(u => u.Username)
                 .Take(50)
-                .Select(u => new UserAccessDto(u.Id, u.Username, u.Email, u.Role, u.SiteEditor, u.CreatedAt, u.LastLoginAt))
+                .Select(u => new UserAccessDto(u.Id, u.Username, u.Email, u.Role, u.IsAdmin, u.SiteEditor, u.CreatedAt, u.LastLoginAt))
                 .ToListAsync();
             return Results.Ok(users);
         })
@@ -43,30 +43,31 @@ public static class AdminEndpoints
         .Produces<List<UserAccessDto>>();
 
         // ── PUT /admin/users/{id}/access ──────────────────────────────────────────
-        // Nommer / retirer un administrateur, donner / retirer le droit d'éditer le site.
-        // Pris en compte à la prochaine connexion de l'utilisateur (nouveau jeton).
+        // Nommer / retirer un administrateur, donner / retirer le droit d'éditer le site. Le rôle (enseignant, parent…)
+        // ne change pas. L'administration de la plateforme en tient compte aussitôt (vérifiée en base) ;
+        // le site et les menus, au renouvellement du jeton (20 minutes au plus).
+
         admin.MapPut("/users/{id:guid}/access", async (Guid id, UpdateAccessRequest req, ClaimsPrincipal me, UserContext db) =>
         {
             var user = await db.AppUsers.FindAsync(id);
             if (user is null) return Results.NotFound();
 
-            if (req.Admin is { } makeAdmin && makeAdmin != (user.Role == UserRole.Admin))
+            if (req.Admin is { } makeAdmin && makeAdmin != user.IsAdmin)
             {
                 if (!makeAdmin)
                 {
                     if (user.Id == me.GetUserId())
                         return Results.Conflict(new { message = "Vous ne pouvez pas retirer vos propres droits d'administrateur." });
-                    if (await db.AppUsers.CountAsync(u => u.Role == UserRole.Admin) <= 1)
+                    if (await db.AppUsers.CountAsync(u => u.IsAdmin) <= 1)
                         return Results.Conflict(new { message = "Il doit rester au moins un administrateur." });
                 }
-                // Un administrateur retiré redevient enseignant : le rôle d'origine n'est pas conservé
-                user.Role = makeAdmin ? UserRole.Admin : (req.FallbackRole ?? UserRole.Teacher);
+                user.IsAdmin = makeAdmin;
             }
             if (req.SiteEditor is { } editor)
                 user.SiteEditor = editor;
 
             await db.SaveChangesAsync();
-            return Results.Ok(new UserAccessDto(user.Id, user.Username, user.Email, user.Role, user.SiteEditor, user.CreatedAt, user.LastLoginAt));
+            return Results.Ok(new UserAccessDto(user.Id, user.Username, user.Email, user.Role, user.IsAdmin, user.SiteEditor, user.CreatedAt, user.LastLoginAt));
         })
         .WithSummary("Nommer un administrateur ou un éditeur du site")
         .Produces<UserAccessDto>()
@@ -121,6 +122,34 @@ public static class AdminEndpoints
         .Produces<SubscriptionDto>(201)
         .Produces(404);
 
+        // ── GET /admin/subscriptions ──────────────────────────────────────────────
+        // Abonnements individuels et familiaux, avec leur titulaire. Sans filtre : ceux en attente de paiement,
+        // que personne ne pouvait retrouver tant que le paiement n'est pas branché.
+        admin.MapGet("/subscriptions", async (UserContext db, SubscriptionStatus? status) =>
+        {
+            var wanted = status ?? SubscriptionStatus.PendingPayment;
+            var subscriptions = await db.Subscriptions.AsNoTracking()
+                .Where(s => s.Status == wanted && s.OrganizationId == null)
+                .OrderBy(s => s.CreatedAt)
+                .Take(200)
+                .ToListAsync();
+
+            var ownerIds = subscriptions.Where(s => s.OwnerUserId != null).Select(s => s.OwnerUserId!.Value).Distinct().ToList();
+            var owners = await db.AppUsers.AsNoTracking().Where(u => ownerIds.Contains(u.Id))
+                .ToDictionaryAsync(u => u.Id, u => new { u.Username, u.Email, u.Role });
+            var ids = subscriptions.Select(s => s.Id).ToList();
+            var keys = await db.SubscriptionKeys.AsNoTracking().Where(k => ids.Contains(k.SubscriptionId)).ToListAsync();
+
+            return Results.Ok(subscriptions.Select(s =>
+            {
+                var owner = s.OwnerUserId is { } id ? owners.GetValueOrDefault(id) : null;
+                return new AdminSubscriptionDto(new SubscriptionDto(s, keys.Where(k => k.SubscriptionId == s.Id)),
+                    s.CreatedAt, owner?.Username, owner?.Email, owner?.Role);
+            }));
+        })
+        .WithSummary("Abonnements à traiter (par défaut : en attente de paiement)")
+        .Produces<List<AdminSubscriptionDto>>();
+
         // ── POST /admin/subscriptions/{id}/activate ───────────────────────────────
         // Remplacé par le webhook de paiement en phase 5.
         admin.MapPost("/subscriptions/{id:guid}/activate", async (Guid id, ActivateSubscriptionRequest req, UserContext db, SubscriptionService subs) =>
@@ -141,8 +170,11 @@ public static class AdminEndpoints
     }
 }
 
-/// <summary>Compte et accès au site, pour la page Utilisateurs de l'administration.</summary>
-public record UserAccessDto(Guid Id, string Username, string Email, UserRole Role, bool SiteEditor, DateTime CreatedAt, DateTime? LastLoginAt);
+/// <summary>Compte et accès au site, pour la page Comptes et accès de l'administration.</summary>
+public record UserAccessDto(Guid Id, string Username, string Email, UserRole Role, bool IsAdmin, bool SiteEditor, DateTime CreatedAt, DateTime? LastLoginAt);
 
-/// <summary>Champs absents = inchangés. FallbackRole : rôle donné à un administrateur retiré (Enseignant par défaut).</summary>
-public record UpdateAccessRequest(bool? Admin, bool? SiteEditor, UserRole? FallbackRole = null);
+/// <summary>Champs absents = inchangés. Le rôle du compte n'est jamais modifié.</summary>
+public record UpdateAccessRequest(bool? Admin, bool? SiteEditor);
+
+/// <summary>Abonnement vu par l'administration, avec son titulaire.</summary>
+public record AdminSubscriptionDto(SubscriptionDto Subscription, DateTime CreatedAt, string? OwnerName, string? OwnerEmail, UserRole? OwnerRole);

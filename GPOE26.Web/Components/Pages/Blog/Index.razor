@@ -11,7 +11,7 @@
                 <h1 class="listing-title">Actualités</h1>
                 <p class="listing-description">Les nouvelles, les projets et les temps forts du lycée.</p>
             </div>
-            @if (IsAdmin)
+            @if (CanEditSite)
             {
                 <a href="/admin/actualites" class="listing-create-button">
                     <i class="bi bi-pencil" aria-hidden="true"></i> Gérer les actualités
@@ -97,7 +97,7 @@
 
 
 @code {
-    private bool IsAdmin => Session.IsAuthenticated && Session.Profile?.CanEditSite == true;
+    private bool CanEditSite => Session.IsAuthenticated && Session.Profile?.CanEditSite == true;
 
     private bool _loading = true;
     private List<NewArticle> _articles = new();

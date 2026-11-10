@@ -11,7 +11,7 @@
                 <h1 class="listing-title">Événements</h1>
                 <p class="listing-description">Retrouvez les rendez-vous et les moments importants du lycée.</p>
             </div>
-            @if (IsAdmin)
+            @if (CanEditSite)
             {
                 <a href="/admin/evenements" class="listing-create-button">
                     <i class="bi bi-pencil" aria-hidden="true"></i> Gérer les événements
@@ -83,7 +83,7 @@
 
 
 @code {
-    private bool IsAdmin => Session.IsAuthenticated && Session.Profile?.CanEditSite == true;
+    private bool CanEditSite => Session.IsAuthenticated && Session.Profile?.CanEditSite == true;
 
     private bool _loading = true;
     private List<SchoolEvent> _events = new();

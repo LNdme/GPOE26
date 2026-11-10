@@ -15,8 +15,9 @@ public static class AssessmentEndpoints
         var group = app.MapGroup("/assessments").WithTags("Évaluations").RequireAuthorization();
 
         // ── POST /assessments ─────────────────────────────────────────────────────
-        group.MapPost("", async (AssessmentInput input, ClaimsPrincipal principal, EvaluationContext db) =>
+        group.MapPost("", async (AssessmentInput input, ClaimsPrincipal principal, EvaluationContext db, UserDirectoryClient users) =>
         {
+            if (await ForeignClassroomsAsync(input, principal, users) is { } refused) return refused;
             var assessment = new Assessment { TeacherId = principal.UserId(), Title = input.Title };
             Apply(assessment, input);
             db.Assessments.Add(assessment);
@@ -90,10 +91,13 @@ public static class AssessmentEndpoints
 
         // ── PUT /assessments/{id} ─────────────────────────────────────────────────
         // Modifiable tant qu'aucun élève n'a commencé à composer.
-        group.MapPut("/{id:guid}", async (Guid id, AssessmentInput input, ClaimsPrincipal principal, EvaluationContext db) =>
+        group.MapPut("/{id:guid}", async (Guid id, AssessmentInput input, ClaimsPrincipal principal, EvaluationContext db, UserDirectoryClient users) =>
         {
             var assessment = await db.OwnedAssessmentAsync(id, principal.UserId());
             if (assessment is null) return Results.NotFound();
+            // Vérifié à chaque modification, pas seulement à la publication : une évaluation déjà publiée
+            // pouvait être réassignée aux classes d'un collègue
+            if (await ForeignClassroomsAsync(input, principal, users) is { } refused) return refused;
             if (await db.Submissions.AnyAsync(s => s.AssessmentId == id))
                 return EndpointHelpers.Error(409, "Des élèves ont déjà composé : l'évaluation ne peut plus être modifiée.");
             if (assessment.Status == AssessmentStatus.Closed)
@@ -123,7 +127,7 @@ public static class AssessmentEndpoints
                 return EndpointHelpers.Error(409, "Cette évaluation est clôturée.");
 
             var errors = Grader.ValidateForPublish(assessment);
-            var owned = (await users.MyClassroomsAsync()).Select(c => c.Id).ToHashSet();
+            var owned = await OwnedClassroomIdsAsync(principal, users);
             if (assessment.ClassroomIds.Any(c => !owned.Contains(c)))
                 errors.Add("Vous ne pouvez assigner l'évaluation qu'à vos propres classes.");
             if (errors.Count > 0)
@@ -173,6 +177,24 @@ public static class AssessmentEndpoints
         })
         .RequireAuthorization(Roles.Teacher)
         .WithSummary("Supprimer une évaluation sans copie");
+    }
+
+    /// <summary>Classes dont l'utilisateur connecté est l'enseignant.</summary>
+    private static async Task<HashSet<Guid>> OwnedClassroomIdsAsync(ClaimsPrincipal principal, UserDirectoryClient users)
+    {
+        var userId = principal.UserId();
+        return (await users.MyClassroomsAsync()).Where(c => c.TeacherId == userId).Select(c => c.Id).ToHashSet();
+    }
+
+    /// <summary>Refus si l'évaluation vise une classe dont l'enseignant n'est pas le propriétaire, sinon null.</summary>
+    private static async Task<IResult?> ForeignClassroomsAsync(AssessmentInput input, ClaimsPrincipal principal, UserDirectoryClient users)
+    {
+        var wanted = input.ClassroomIds ?? [];
+        if (wanted.Count == 0) return null;
+        var owned = await OwnedClassroomIdsAsync(principal, users);
+        return wanted.All(owned.Contains)
+            ? null
+            : EndpointHelpers.Error(400, "Vous ne pouvez assigner l'évaluation qu'à vos propres classes.");
     }
 
     /// <summary>Évaluations publiées (ou clôturées) pour au moins une classe de l'élève connecté.</summary>

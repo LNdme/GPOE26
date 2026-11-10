@@ -5,7 +5,8 @@ namespace User.Data;
 
 /// <summary>
 /// Premiers administrateurs du site : les comptes dont l'e-mail figure dans Admin:Emails
-/// (séparés par des virgules ou des points-virgules) deviennent Admin au démarrage.
+/// (séparés par des virgules ou des points-virgules) reçoivent le droit d'administration au démarrage,
+/// en gardant leur rôle (enseignant, parent…).
 /// Seuls des comptes DÉJÀ inscrits sont promus : créez le compte d'abord, puis ajoutez son e-mail,
 /// sinon n'importe qui pourrait s'inscrire avec cette adresse et hériter des droits.
 /// Ensuite, un administrateur nomme les autres depuis /admin/utilisateurs.
@@ -21,9 +22,9 @@ public static class AdminBootstrap
         if (emails.Count == 0) return;
 
         var users = await db.AppUsers.Where(u => emails.Contains(u.Email.ToLower())).ToListAsync();
-        foreach (var user in users.Where(u => u.Role != UserRole.Admin))
+        foreach (var user in users.Where(u => !u.IsAdmin))
         {
-            user.Role = UserRole.Admin;
+            user.IsAdmin = true;
             logger.LogInformation("Compte {Email} promu administrateur (Admin:Emails).", user.Email);
         }
         await db.SaveChangesAsync();

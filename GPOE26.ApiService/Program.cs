@@ -73,7 +73,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         options.MapInboundClaims = false;
     });
 builder.Services.AddAuthorizationBuilder()
-    .AddPolicy(ContentPolicy.Admin, p => p.RequireRole("Admin"))
+    .AddPolicy(ContentPolicy.Admin, p => p.RequireClaim("admin", "true"))
     // Contenu éditorial : administrateurs et éditeurs du site (claim "site_editor")
     .AddPolicy(ContentPolicy.Editor, p => p.RequireAssertion(ctx => ContentPolicy.CanEdit(ctx.User)));
 
@@ -677,5 +677,5 @@ static class ContentPolicy
     public const string Editor = "ContentEditor";
 
     public static bool CanEdit(ClaimsPrincipal user) =>
-        user.IsInRole("Admin") || user.HasClaim("site_editor", "true");
+        user.HasClaim("admin", "true") || user.HasClaim("site_editor", "true");
 }

@@ -16,7 +16,8 @@ public record TimeWindow(int StartMinutes, int EndMinutes);
 public record PlanBlock(int StartMinutes, int EndMinutes, string Kind, string Title, Guid? TargetId);
 public record DayPlan(int AvailableMinutes, List<TimeWindow> FreeWindows, List<PlanBlock> Blocks, bool HasSchedule);
 
-public record AgentMemoryItem(Guid Id, string Type, string Content, int Importance, Guid? CourseId, DateTime CreatedAt);
+/// <summary>Kind : "student" (noté par le tuteur) ou "teacher" (noté par l'assistant enseignant).</summary>
+public record AgentMemoryItem(Guid Id, string Type, string Content, int Importance, Guid? CourseId, DateTime CreatedAt, string Kind = "student");
 public record MemorySettings(bool Enabled, string? Summary);
 
 public record TeacherAgentProfile(string? Tone, string? DetailLevel, string? Samples, string? Summary);

@@ -80,7 +80,7 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        if (Session.Role != GPOE26.UI.Models.UserRole.Admin) return;
+        if (Session.Profile?.IsAdmin != true) return;
         _contact = await Api.GetPrimaryContactAsync() ?? new Contact();
         _loading = false;
     }

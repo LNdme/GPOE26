@@ -10,7 +10,8 @@ namespace Chat.Endpoints;
 public record StudySlotDto(int Day, int StartMinutes, int EndMinutes, string Kind, string? Label);
 public record RecordSessionRequest(Guid CourseId, int Minutes);
 public record DayPlanDto(int AvailableMinutes, List<TimeWindow> FreeWindows, List<PlanBlock> Blocks, bool HasSchedule);
-public record MemoryDto(Guid Id, string Type, string Content, int Importance, Guid? CourseId, DateTime CreatedAt);
+/// <summary>Kind : "student" (tuteur) ou "teacher" (assistant enseignant).</summary>
+public record MemoryDto(Guid Id, string Type, string Content, int Importance, Guid? CourseId, DateTime CreatedAt, string Kind);
 public record UpdateMemoryRequest(string Content);
 public record MemorySettingsDto(bool Enabled, string? Summary);
 public record TeacherProfileDto(string? Tone, string? DetailLevel, string? Samples, string? Summary);
@@ -81,17 +82,19 @@ public static class AgentEndpoints
         })
         .WithSummary("Mon plan de travail du jour");
 
+        // Tous les souvenirs de la personne, quel que soit l'agent qui les a notés : un enseignant qui essaie le tuteur
+        // doit voir (et pouvoir effacer) ce que le tuteur a retenu, pas seulement ce qu'a retenu son assistant.
         agent.MapGet("/memories", async (ClaimsPrincipal principal, TutorContext db) =>
         {
             var userId = UserId(principal);
             var memories = await db.AgentMemories.AsNoTracking()
-                .Where(m => m.UserId == userId && m.Kind == KindOf(principal))
+                .Where(m => m.UserId == userId)
                 .OrderByDescending(m => m.UpdatedAt)
-                .Select(m => new MemoryDto(m.Id, m.Type, m.Content, m.Importance, m.CourseId, m.CreatedAt))
+                .Select(m => new MemoryDto(m.Id, m.Type, m.Content, m.Importance, m.CourseId, m.CreatedAt, m.Kind))
                 .ToListAsync();
             return Results.Ok(memories);
         })
-        .WithSummary("Ce que mon agent retient de moi");
+        .WithSummary("Ce que mes agents retiennent de moi");
 
         agent.MapPut("/memories/{id:guid}", async (Guid id, UpdateMemoryRequest req, ClaimsPrincipal principal, TutorContext db) =>
         {
@@ -118,13 +121,14 @@ public static class AgentEndpoints
         agent.MapDelete("/memories", async (ClaimsPrincipal principal, TutorContext db) =>
         {
             var userId = UserId(principal);
-            var kind = KindOf(principal);
-            await db.AgentMemories.Where(m => m.UserId == userId && m.Kind == kind).ExecuteDeleteAsync();
-            await db.AgentProfiles.Where(p => p.UserId == userId && p.Kind == kind)
+            await db.AgentMemories.Where(m => m.UserId == userId).ExecuteDeleteAsync();
+            await db.AgentProfiles.Where(p => p.UserId == userId)
                 .ExecuteUpdateAsync(s => s.SetProperty(p => p.Summary, (string?)null));
+            await db.CourseMastery.Where(m => m.UserId == userId)
+                .ExecuteUpdateAsync(s => s.SetProperty(m => m.WeakPoints, (string?)null));
             return Results.NoContent();
         })
-        .WithSummary("Tout oublier");
+        .WithSummary("Tout oublier (tous les agents)");
 
         agent.MapGet("/memory-settings", async (ClaimsPrincipal principal, AgentMemoryStore store, CancellationToken ct) =>
         {
@@ -133,21 +137,29 @@ public static class AgentEndpoints
         })
         .WithSummary("État de la mémoire");
 
+        // Le réglage vaut pour tous les agents : couper la mémoire du tuteur sans couper celle de l'assistant
+        // (ou l'inverse) laisserait croire à l'utilisateur que plus rien n'est retenu.
         agent.MapPut("/memory-settings", async (MemorySettingsDto req, ClaimsPrincipal principal, AgentMemoryStore store, TutorContext db, CancellationToken ct) =>
         {
-            var profile = await store.ProfileAsync(UserId(principal), KindOf(principal), ct);
-            profile.MemoryEnabled = req.Enabled;
+            var userId = UserId(principal);
+            AgentProfile? current = null;
+            foreach (var kind in new[] { AgentKinds.Student, AgentKinds.Teacher })
+            {
+                var profile = await store.ProfileAsync(userId, kind, ct);
+                profile.MemoryEnabled = req.Enabled;
+                if (kind == KindOf(principal)) current = profile;
+            }
             await db.SaveChangesAsync(ct);
-            return Results.Ok(new MemorySettingsDto(profile.MemoryEnabled, profile.Summary));
+            return Results.Ok(new MemorySettingsDto(current!.MemoryEnabled, current.Summary));
         })
-        .WithSummary("Activer ou couper la mémoire");
+        .WithSummary("Activer ou couper la mémoire (tous les agents)");
 
         // ─── Assistant de l'enseignant ───────────────────────────────────────────
         var teacher = app.MapGroup("/teacher-agent").WithTags("Assistant enseignant").RequireAuthorization()
             .AddEndpointFilter(async (context, next) =>
             {
                 var http = context.HttpContext;
-                if (http.User.FindFirstValue("role") is not ("Teacher" or "Admin"))
+                if (http.User.FindFirstValue("role") != "Teacher")
                     return Error(403, "L'assistant est réservé aux enseignants.");
                 if (!await http.RequestServices.GetRequiredService<PlatformClients>().HasFeatureAsync("teacher-agent", http.RequestAborted))
                     return Error(403, "L'assistant est inclus dans les formules Enseignant et Établissement.");
@@ -300,8 +312,9 @@ public static class AgentEndpoints
         ? Error(503, "L'assistant n'est pas activé sur ce serveur : aucune clé d'IA n'est configurée.")
         : Error(502, "L'assistant ne répond pas pour le moment. Réessayez dans un instant.");
 
+    /// <summary>Agent principal de la personne : l'assistant pour un enseignant, le tuteur pour les autres.</summary>
     private static string KindOf(ClaimsPrincipal principal) =>
-        principal.FindFirstValue("role") is "Teacher" or "Admin" ? AgentKinds.Teacher : AgentKinds.Student;
+        principal.FindFirstValue("role") == "Teacher" ? AgentKinds.Teacher : AgentKinds.Student;
 
     private static Guid UserId(ClaimsPrincipal principal) =>
         Guid.TryParse(principal.FindFirstValue("sub") ?? principal.FindFirstValue(ClaimTypes.NameIdentifier), out var id)

@@ -24,7 +24,7 @@
             <div class="ga-stack">
                 <h2 id="h-identity" class="ga-h3">@Me.Username</h2>
                 <dl class="pf-facts">
-                    <div><dt>Rôle</dt><dd>@(Me.Stage == EducationStage.Higher ? "Étudiant" : Labels.Of(Me.Role))@(Me.SiteEditor && Me.Role != UserRole.Admin ? " · éditeur du site" : "")</dd></div>
+                    <div><dt>Rôle</dt><dd>@(Me.Stage == EducationStage.Higher ? "Étudiant" : Labels.Of(Me.Role))@(Me.IsAdmin ? " · administrateur" : Me.SiteEditor ? " · éditeur du site" : "")</dd></div>
                     <div><dt>E-mail</dt><dd>@Me.Email</dd></div>
                     <div><dt>Membre depuis</dt><dd>@Me.CreatedAt.ToLocalTime().ToString("d MMMM yyyy", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"))</dd></div>
                     <div><dt>Abonnement</dt><dd>@(Me.IsPremium ? $"{Labels.Of(Me.Plan)}{(Me.PremiumUntil is { } until ? $" jusqu'au {until.ToLocalTime():dd/MM/yyyy}" : "")}" : "Gratuit")</dd></div>
