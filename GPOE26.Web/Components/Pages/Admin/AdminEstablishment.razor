@@ -1,0 +1,99 @@
+@page "/admin/etablissement"
+@layout GPOE26.Web.Components.Layout.AdminLayout
+@inject GPOE26.UI.Services.SessionState Session
+@using GPOE26.UI.Components
+@using GPOE26.Web.Components.UI
+
+<PageTitle>Coordonnées · Administration – GPOE26</PageTitle>
+
+<AdminOnly>
+<div class="admin-head">
+    <div>
+        <span class="admin-eyebrow">Établissement</span>
+        <h1>Coordonnées</h1>
+        <p>Le nom s’affiche en titre de l’accueil ; l’adresse, l’e-mail et le téléphone dans la présentation et le pied de page.</p>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="admin-empty"><span class="spinner-border spinner-border-sm text-brand-dark" role="status"></span> Chargement…</div>
+}
+else
+{
+    <div class="admin-grid-2 admin-grid-2--form">
+        <section class="admin-card">
+            @if (_saved) { <div class="alert alert-success" role="status">Coordonnées enregistrées.</div> }
+            @if (_error is not null) { <div class="alert alert-danger" role="alert">@_error</div> }
+
+            <EditForm Model="_contact" OnValidSubmit="Save" FormName="AdminContactForm" class="admin-form">
+                <label>
+                    <span>Nom de l’établissement</span>
+                    <InputText @bind-Value="_contact.Name" class="form-control" placeholder="Lycée Technique de Nanga-Eboko" />
+                </label>
+                <label>
+                    <span>Adresse</span>
+                    <InputText @bind-Value="_contact.Address" class="form-control" placeholder="BP 42, Nanga-Eboko" />
+                </label>
+                <label>
+                    <span>Ville</span>
+                    <InputText @bind-Value="_contact.City" class="form-control" placeholder="Nanga-Eboko, Cameroun" />
+                </label>
+                <div class="admin-form__row">
+                    <label>
+                        <span>E-mail</span>
+                        <InputText type="email" @bind-Value="_contact.Email" class="form-control" placeholder="@EmailPlaceholder" />
+                    </label>
+                    <label>
+                        <span>Téléphone</span>
+                        <InputText type="tel" @bind-Value="_contact.Phone" class="form-control" placeholder="+237 …" />
+                    </label>
+                </div>
+                <div class="admin-form__actions">
+                    <button type="submit" class="site-btn site-btn--primary" disabled="@_saving">
+                        @if (_saving) { <span class="spinner-border spinner-border-sm" role="status"></span> }
+                        Enregistrer
+                    </button>
+                </div>
+            </EditForm>
+        </section>
+
+        <aside class="admin-card admin-preview" aria-label="Aperçu">
+            <span class="admin-eyebrow">Aperçu du pied de page</span>
+            <div class="admin-preview__footer">
+                <strong>@(string.IsNullOrWhiteSpace(_contact.Name) ? "Nom de l’établissement" : _contact.Name)</strong>
+                <span>@_contact.Address</span>
+                <span>@_contact.City</span>
+                <span>@_contact.Email</span>
+                <span>@_contact.Phone</span>
+            </div>
+        </aside>
+    </div>
+}
+</AdminOnly>
+
+@code {
+    private bool _loading = true, _saving, _saved;
+    private Contact _contact = new();
+    private string? _error;
+    private const string EmailPlaceholder = "contact@exemple.cm";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.Role != GPOE26.UI.Models.UserRole.Admin) return;
+        _contact = await Api.GetPrimaryContactAsync() ?? new Contact();
+        _loading = false;
+    }
+
+    private async Task Save()
+    {
+        _saving = true; _saved = false; _error = null;
+        // Un seul jeu de coordonnées : l'API met à jour l'existant ou le crée
+        var ok = _contact.Id > 0
+            ? await Api.UpdateContactAsync(_contact.Id, _contact)
+            : await Api.CreateContactAsync(_contact);
+        if (ok) _saved = true;
+        else _error = "L’enregistrement a échoué. Votre session administrateur a peut-être expiré : reconnectez-vous.";
+        _saving = false;
+    }
+}

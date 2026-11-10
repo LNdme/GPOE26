@@ -46,7 +46,9 @@ public static class ProgressEndpoints
             var studentId = principal.UserId();
             var assessments = await AssessmentEndpoints.AssignedToStudentAsync(db, users);
             var computed = await progress.ComputeAsync([studentId], assessments, onlyReleased: true);
-            return Results.Ok(computed[studentId]);
+            // Sans suivi détaillé : les résultats restent visibles, pas la maîtrise par cours
+            var detailed = await users.FeatureAsync("detailed-progress") is not null;
+            return Results.Ok(detailed ? computed[studentId] : computed[studentId] with { Mastery = [] });
         })
         .RequireAuthorization(Roles.Student)
         .WithSummary("Mes résultats et ma maîtrise par cours")
@@ -65,7 +67,8 @@ public static class ProgressEndpoints
                 .AsNoTracking()
                 .ToListAsync();
             var computed = await progress.ComputeAsync([studentId], assessments, onlyReleased: true);
-            return Results.Ok(computed[studentId] with { Username = child.Username });
+            var detailed = await users.FeatureAsync("family-view") is not null;
+            return Results.Ok(computed[studentId] with { Username = child.Username, Mastery = detailed ? computed[studentId].Mastery : [] });
         })
         .RequireAuthorization(Roles.Parent)
         .WithSummary("Résultats d'un enfant (parent)")

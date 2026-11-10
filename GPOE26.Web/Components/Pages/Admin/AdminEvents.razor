@@ -1,0 +1,111 @@
+@page "/admin/evenements"
+@layout GPOE26.Web.Components.Layout.AdminLayout
+@using GPOE26.UI.Components
+@using GPOE26.Web.Components.UI
+
+<PageTitle>Événements · Administration – GPOE26</PageTitle>
+
+<div class="admin-head">
+    <div>
+        <span class="admin-eyebrow">Contenu</span>
+        <h1>Événements</h1>
+        <p>Les prochains événements s’affichent sur la page d’accueil, du plus proche au plus lointain.</p>
+    </div>
+    <a class="site-btn site-btn--primary" href="/admin/evenements/nouveau"><Icon Name="plus" Size="18" Stroke="2" /> Nouvel événement</a>
+</div>
+
+@if (_error is not null) { <div class="alert alert-danger" role="alert">@_error</div> }
+
+<div class="admin-card admin-card--flush">
+    <div class="admin-toolbar">
+        <div class="admin-tabs" role="group" aria-label="Filtrer par date">
+            <button type="button" class="@(_upcomingOnly ? "on" : "")" @onclick="() => _upcomingOnly = true">À venir</button>
+            <button type="button" class="@(!_upcomingOnly ? "on" : "")" @onclick="() => _upcomingOnly = false">Tous</button>
+        </div>
+        <span class="admin-muted">@Visible.Count() événement@(Visible.Count() > 1 ? "s" : "")</span>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="admin-empty"><span class="spinner-border spinner-border-sm text-brand-dark" role="status"></span> Chargement…</div>
+    }
+    else if (!Visible.Any())
+    {
+        <div class="admin-empty">
+            <Icon Name="calendar" Size="28" />
+            <p>@(_upcomingOnly ? "Aucun événement à venir." : "Aucun événement.")</p>
+            <a class="site-btn site-btn--ghost site-btn--sm" href="/admin/evenements/nouveau">Annoncer un événement</a>
+        </div>
+    }
+    else
+    {
+        <div class="admin-table-wrap">
+            <table class="admin-table">
+                <thead>
+                    <tr><th scope="col">Date</th><th scope="col">Événement</th><th scope="col">Type</th><th scope="col">Visibilité</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var ev in Visible)
+                    {
+                        var past = (ev.EndDate ?? ev.StartDate) < DateTime.UtcNow;
+                        <tr class="@(past ? "is-past" : "")">
+                            <td data-label="Date">
+                                <span class="admin-date"><strong>@ev.StartDate.ToLocalTime().ToString("dd")</strong><small>@ev.StartDate.ToLocalTime().ToString("MMM yyyy")</small></span>
+                            </td>
+                            <td data-label="Événement">
+                                <div class="admin-cell-main">
+                                    <span><a href="@($"/admin/evenements/{ev.Id}")"><strong>@ev.Title</strong></a><small>@(string.IsNullOrWhiteSpace(ev.Location) ? "Lieu à préciser" : ev.Location) · @ev.StartDate.ToLocalTime().ToString("HH:mm")</small></span>
+                                </div>
+                            </td>
+                            <td data-label="Type"><span class="admin-chip">@ev.Type</span></td>
+                            <td data-label="Visibilité">
+                                @if (past) { <span class="admin-badge is-muted">Passé</span> }
+                                else if (ev.IsPublic) { <span class="admin-badge is-ok">Public</span> }
+                                else { <span class="admin-badge is-draft">Interne</span> }
+                            </td>
+                            <td class="admin-actions">
+                                <a class="admin-icon-btn" href="@($"/events/details/{ev.Id}")" target="_blank" rel="noopener" title="Voir sur le site" aria-label="@($"Voir {ev.Title} sur le site")"><Icon Name="eye" Size="18" /></a>
+                                <a class="admin-icon-btn" href="@($"/admin/evenements/{ev.Id}")" title="Modifier" aria-label="@($"Modifier {ev.Title}")"><Icon Name="edit" Size="18" /></a>
+                                <button type="button" class="admin-icon-btn is-danger" title="Supprimer" aria-label="@($"Supprimer {ev.Title}")" @onclick="() => _toDelete = ev"><Icon Name="trash" Size="18" /></button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<ConfirmDialog Open="_toDelete is not null" Busy="_deleting" OnCancel="() => _toDelete = null" OnConfirm="Delete">
+    <p>L’événement <strong>@_toDelete?.Title</strong> sera définitivement supprimé du site.</p>
+</ConfirmDialog>
+
+@code {
+    private bool _loading = true, _deleting, _upcomingOnly = true;
+    private List<SchoolEvent> _items = new();
+    private SchoolEvent? _toDelete;
+    private string? _error;
+
+    private IEnumerable<SchoolEvent> Visible => _upcomingOnly
+        ? _items.Where(e => (e.EndDate ?? e.StartDate) >= DateTime.UtcNow)
+        : _items.OrderByDescending(e => e.StartDate);
+
+    protected override Task OnInitializedAsync() => Load();
+
+    private async Task Load()
+    {
+        _loading = true;
+        _items = await Api.GetAllEventsAsync();
+        _loading = false;
+    }
+
+    private async Task Delete()
+    {
+        if (_toDelete is null) return;
+        _deleting = true; _error = null;
+        if (!await Api.DeleteEventAsync(_toDelete.Id))
+            _error = "La suppression a échoué. Votre session administrateur a peut-être expiré : reconnectez-vous.";
+        _toDelete = null; _deleting = false;
+        await Load();
+    }
+}

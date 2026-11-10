@@ -14,6 +14,8 @@ public record CourseRef(Guid Id, string Title, string Subject, string? Descripti
         var text = Sections is { Count: > 0 }
             ? string.Join("\n\n", Sections.OrderBy(s => s.Order).Select(s => s.Content))
             : ExtractedText ?? "";
+        // Le tuteur n'a pas besoin de la description technique d'un laboratoire
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"```simulation[\s\S]*?```", "[Laboratoire interactif dans le cours]");
         if (string.IsNullOrWhiteSpace(text)) text = Description ?? "";
         return text.Length > max ? text[..max] + "\n[…]" : text;
     }
@@ -48,6 +50,38 @@ public class PlatformClients(IHttpClientFactory factory, IHttpContextAccessor co
             if (!response.IsSuccessStatusCode) return false;
             using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
             return doc.RootElement.TryGetProperty("isPremium", out var p) && p.ValueKind == JsonValueKind.True;
+        }
+        catch (HttpRequestException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Lecture JSON avec le JWT de l'appelant. Un service absent ne doit jamais empêcher l'agent de répondre : renvoie null.</summary>
+    public async Task<T?> GetJsonAsync<T>(string client, string path, CancellationToken ct) where T : class
+    {
+        try
+        {
+            using var response = await SendAsync(client, path, ct);
+            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<T>(Json, ct) : null;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException && !ct.IsCancellationRequested)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>La formule de l'utilisateur inclut-elle cette fonctionnalité ? (lu au service User, source des droits)</summary>
+    public async Task<bool> HasFeatureAsync(string code, CancellationToken ct)
+    {
+        try
+        {
+            using var response = await SendAsync("user", "/subscriptions/me", ct);
+            if (!response.IsSuccessStatusCode) return false;
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+            return doc.RootElement.GetProperty("entitlement").TryGetProperty("features", out var features)
+                && features.ValueKind == JsonValueKind.Array
+                && features.EnumerateArray().Any(f => f.GetProperty("code").GetString() == code);
         }
         catch (HttpRequestException)
         {

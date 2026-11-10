@@ -1,119 +1,160 @@
-@inject GPOE26.Web.Services.AuthService Auth
+@using GPOE26.UI.Components
+@using GPOE26.UI.Models
+@inject GPOE26.UI.Services.SessionState Session
 @inject NavigationManager Nav
 @implements IDisposable
-@rendermode InteractiveServer
 
-<nav class="navbar navbar-expand-lg navbar-light lt-header sticky-top">
-    <div class="container">
-        <a class="navbar-brand d-flex align-items-center gap-2 m-0" href="/" aria-label="Lycée Technique de Nanga-Eboko, accueil">
-            <div class="lt-logo-circle">LT</div>
-            <div class="d-flex flex-column lh-1">
-                <span class="fw-bold fs-5 text-brand-dark">LT Nanga-Eboko</span>
-                <span class="text-muted-chic lt-brand-caption">Excellence & Innovation</span>
-            </div>
+<header class="site-nav @(_menuOpen ? "is-open" : "")">
+    <div class="container site-nav__bar">
+        <a class="site-brand" href="/" aria-label="Lycée Technique de Nanga-Eboko, accueil">
+            <span class="site-brand__mark">LT</span>
+            <span class="site-brand__text">
+                <strong>LT Nanga-Eboko</strong>
+                <small>Excellence &amp; Innovation</small>
+            </span>
         </a>
 
-        <button class="navbar-toggler shadow-none" type="button" @onclick="ToggleNavMenu"
-                aria-label="@(collapseNavMenu ? "Ouvrir le menu" : "Fermer le menu")"
-                aria-expanded="@(!collapseNavMenu)" aria-controls="main-navigation">
-            <span class="navbar-toggler-icon"></span>
-        </button>
+        <nav class="site-nav__links" aria-label="Navigation principale">
+            @foreach (var link in Links)
+            {
+                <NavLink class="site-nav__link" href="@link.Href" Match="NavLinkMatch.Prefix">@link.Label</NavLink>
+            }
+        </nav>
 
-        <div id="main-navigation" class="collapse navbar-collapse @(collapseNavMenu ? "" : "show")">
-            <ul class="navbar-nav me-auto mb-2 mb-lg-0 gap-lg-1">
-                <li class="nav-item">
-                    <NavLink class="nav-link px-3" href="/" Match="NavLinkMatch.All">Accueil</NavLink>
-                </li>
-                <li class="nav-item">
-                    <NavLink class="nav-link px-3" href="/blog">Actualités</NavLink>
-                </li>
-                <li class="nav-item">
-                    <NavLink class="nav-link px-3" href="/events">Événements</NavLink>
-                </li>
-                <li class="nav-item">
-                    <NavLink class="nav-link px-3" href="/activities">Activités</NavLink>
-                </li>
-                <li class="nav-item">
-                    <NavLink class="nav-link px-3" href="/hierarchy">L'Établissement</NavLink>
-                </li>
-
-                @if (Auth.IsAuthenticated)
+        <div class="site-nav__actions">
+            @if (Session.Profile is { } me && Session.IsAuthenticated)
+            {
+                @if (IsAdmin)
                 {
-                    <li class="nav-item">
-                        <NavLink class="nav-link px-3" href="/app">Mon espace</NavLink>
-                    </li>
-                    <li class="nav-item">
-                        <NavLink class="nav-link px-3" href="/cours">Mes Cours</NavLink>
-                    </li>
-                    <li class="nav-item">
-                        <NavLink class="nav-link px-3" href="/learning">Apprentissage</NavLink>
-                    </li>
+                    <a class="site-nav__admin" href="/admin" title="Administration du site" aria-label="Administration du site">
+                        <Icon Name="shield" Size="18" Stroke="2" />
+                        <span>Admin</span>
+                    </a>
                 }
-            </ul>
+                <a class="site-btn site-btn--primary site-nav__cta" href="/app">Mon espace</a>
 
-            <ul class="navbar-nav ms-auto align-items-center lt-account-nav">
-                @if (Auth.IsAuthenticated)
-                {
-                    <li class="nav-item dropdown dropdown-menu-end">
-                        <a href="#" class="nav-link d-flex align-items-center gap-2" id="userMenu" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            <div class="bg-brand-dark text-white fw-bold rounded-circle d-flex align-items-center justify-content-center" style="width: 32px; height: 32px; font-size: 0.85rem;">
-                                @(Auth.Profile?.Username?.Substring(0, 1).ToUpper() ?? "U")
+                <div class="site-user">
+                    <button type="button" class="site-user__toggle" aria-haspopup="menu" aria-expanded="@(_userMenuOpen ? "true" : "false")"
+                            aria-label="Menu du compte" @onclick="() => _userMenuOpen = !_userMenuOpen">
+                        <span class="site-user__avatar">@Initial(me.Username)</span>
+                        <span class="site-user__name">@me.Username</span>
+                        <Icon Name="chevron-down" Size="16" Stroke="2" />
+                    </button>
+                    @if (_userMenuOpen)
+                    {
+                        <button type="button" class="site-user__backdrop" tabindex="-1" aria-label="Fermer le menu du compte" @onclick="() => _userMenuOpen = false"></button>
+                        <div class="site-user__menu" role="menu">
+                            <div class="site-user__head">
+                                <strong>@me.Username</strong>
+                                <small>@GPOE26.UI.Services.Labels.Of(me.Role)</small>
                             </div>
-                            <span class="d-none d-lg-block text-brand-dark fw-bold">@Auth.Profile?.Username</span>
-                        </a>
-                        <ul class="dropdown-menu dropdown-menu-end shadow border-0 mt-2" aria-labelledby="userMenu">
-                            <li><a class="dropdown-item py-2" href="/app"><i class="bi bi-grid me-2 text-brand-dark"></i> Mon espace</a></li>
-                            <li><a class="dropdown-item py-2" href="/cours"><i class="bi bi-book me-2 text-brand-dark"></i> Mes cours</a></li>
-                            <li><a class="dropdown-item py-2" href="/profil"><i class="bi bi-person me-2 text-brand-dark"></i> Profil</a></li>
-                            <li><hr class="dropdown-divider my-1" /></li>
-                            <li><button class="dropdown-item py-2 text-danger" @onclick="Logout"><i class="bi bi-box-arrow-right me-2"></i> Se déconnecter</button></li>
-                        </ul>
-                    </li>
-                    <li class="nav-item d-lg-none mt-2">
-                        <button class="btn btn-outline-light btn-sm w-100" @onclick="Logout">Déconnexion</button>
-                    </li>
+                            <a role="menuitem" href="/app"><Icon Name="grid" Size="18" /> Mon espace</a>
+                            <a role="menuitem" href="/app/profil"><Icon Name="user" Size="18" /> Mon profil</a>
+                            <a role="menuitem" href="/app/cours"><Icon Name="book" Size="18" /> Mes cours</a>
+                            <a role="menuitem" href="/app/abonnement"><Icon Name="card" Size="18" /> Mon abonnement</a>
+                            @if (IsAdmin)
+                            {
+                                <a role="menuitem" href="/admin" class="is-admin"><Icon Name="shield" Size="18" /> Gérer le site</a>
+                            }
+                            <hr />
+                            <button role="menuitem" type="button" class="is-danger" @onclick="Logout"><Icon Name="logout" Size="18" /> Se déconnecter</button>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <a class="site-btn site-btn--ghost site-nav__login" href="/login">Connexion</a>
+                <a class="site-btn site-btn--primary site-nav__cta" href="/register">Créer un compte</a>
+            }
+
+            <button type="button" class="site-nav__toggle" aria-controls="site-drawer"
+                    aria-expanded="@(_menuOpen ? "true" : "false")"
+                    aria-label="@(_menuOpen ? "Fermer le menu" : "Ouvrir le menu")"
+                    @onclick="() => _menuOpen = !_menuOpen">
+                <Icon Name="@(_menuOpen ? "x" : "menu")" Size="22" Stroke="2" />
+            </button>
+        </div>
+    </div>
+
+    @* Menu mobile : toujours présent dans le DOM, déplié sous la barre *@
+    <div id="site-drawer" class="site-drawer" hidden="@(!_menuOpen)">
+        <div class="container">
+            <nav class="site-drawer__links" aria-label="Navigation principale (mobile)">
+                <NavLink class="site-drawer__link" href="/" Match="NavLinkMatch.All">Accueil</NavLink>
+                @foreach (var link in Links)
+                {
+                    <NavLink class="site-drawer__link" href="@link.Href" Match="NavLinkMatch.Prefix">@link.Label</NavLink>
+                }
+            </nav>
+            <div class="site-drawer__account">
+                @if (Session.IsAuthenticated)
+                {
+                    <a class="site-btn site-btn--primary" href="/app">Mon espace</a>
+                    @if (IsAdmin)
+                    {
+                        <a class="site-btn site-btn--ghost" href="/admin"><Icon Name="shield" Size="18" /> Administration</a>
+                    }
+                    <button type="button" class="site-btn site-btn--quiet" @onclick="Logout">Se déconnecter</button>
                 }
                 else
                 {
-                    <li class="nav-item me-lg-2 mb-2 mb-lg-0">
-                        <a class="btn btn-login" href="/login">Connexion</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="btn btn-register" href="/register">S’inscrire</a>
-                    </li>
+                    <a class="site-btn site-btn--primary" href="/register">Créer un compte</a>
+                    <a class="site-btn site-btn--ghost" href="/login">Connexion</a>
                 }
-            </ul>
+            </div>
         </div>
     </div>
-</nav>
+</header>
 
 @code {
-    private bool collapseNavMenu = true;
+    private bool _menuOpen;
+    private bool _userMenuOpen;
+
+    private record NavItem(string Href, string Label);
+
+    private static readonly NavItem[] Links =
+    [
+        new("/plateforme", "La plateforme"),
+        new("/blog", "Actualités"),
+        new("/events", "Événements"),
+        new("/activities", "Activités"),
+        new("/hierarchy", "L’établissement"),
+        new("/tarifs", "Tarifs"),
+    ];
+
+    // Administrateur ou éditeur du site : accès à l'espace de gestion du contenu
+    private bool IsAdmin => Session.IsAuthenticated && Session.Profile?.CanEditSite == true;
 
     protected override void OnInitialized()
     {
-        // On s'abonne à l'événement pour rafraîchir l'UI lors de la connexion/déconnexion
-        Auth.OnAuthChanged += Refresh;
+        Session.Changed += Refresh;
+        Nav.LocationChanged += OnLocationChanged;
     }
 
     public void Dispose()
     {
-        // On se désabonne proprement pour éviter les fuites de mémoire
-        Auth.OnAuthChanged -= Refresh;
+        Session.Changed -= Refresh;
+        Nav.LocationChanged -= OnLocationChanged;
     }
 
     private void Refresh() => InvokeAsync(StateHasChanged);
 
-    private void ToggleNavMenu()
+    // Une navigation referme les menus ouverts
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
-        collapseNavMenu = !collapseNavMenu;
+        _menuOpen = false;
+        _userMenuOpen = false;
+        Refresh();
     }
+
+    private static string Initial(string? name) =>
+        string.IsNullOrWhiteSpace(name) ? "?" : name.Trim()[..1].ToUpperInvariant();
 
     private async Task Logout()
     {
         // Attendre l'effacement de la session dans le navigateur, sinon le rechargement la restaurerait
-        await Auth.LogoutAsync();
-        // Redirection vers l'accueil public avec un rechargement forcé pour nettoyer l'état de la page
-        Nav.NavigateTo("/", forceLoad: true); 
+        await Session.SignOutAsync();
+        Nav.NavigateTo("/", forceLoad: true);
     }
 }

@@ -1,4 +1,4 @@
-﻿namespace Quiz.Model;
+namespace Quiz.Model;
 
 // --- Entités principales ---
 
@@ -45,8 +45,18 @@ public class AnswerFeedback
 public record GenerateQuizRequest(
     string Title,
     string CourseText,
-    int NumberOfQuestions = 5
+    int NumberOfQuestions = 5,
+    string Difficulty = "standard"
 );
+
+public record GenerateProblemsRequest(
+    string Title,
+    string CourseText,
+    int Count = 3,
+    string Difficulty = "exigeant"
+);
+
+public record ProblemSetResponse(string Title, List<Quiz.Service.ProblemItem> Problems);
 
 public record SubmitAnswersRequest(
     List<StudentAnswer> Answers

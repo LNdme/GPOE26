@@ -17,7 +17,36 @@ export function renderMath(element) {
         });
     };
     run(20);
+    if (element.querySelector('code.language-simulation'))
+        import('./gpoe-labs.js').then(labs => labs.mountLabs(element));
     if (window.Prism) window.Prism.highlightAllUnder(element);
+}
+
+/** Entoure la sélection d'un champ de texte (barre d'outils Markdown) et renvoie le nouveau contenu. */
+export function insertAtCursor(id, before, after) {
+    const el = document.getElementById(id);
+    if (!el) return '';
+    const { selectionStart: start, selectionEnd: end, value } = el;
+    const selected = value.substring(start, end);
+    el.value = value.substring(0, start) + before + selected + after + value.substring(end);
+    el.focus();
+    el.selectionStart = start + before.length;
+    el.selectionEnd = start + before.length + selected.length;
+    return el.value;
+}
+
+/** Texte sélectionné dans un champ. */
+export function selectionText(id) {
+    const el = document.getElementById(id);
+    return el ? el.value.substring(el.selectionStart, el.selectionEnd) : '';
+}
+
+/** Remplace la sélection d'un champ et renvoie le nouveau contenu. */
+export function replaceSelection(id, text) {
+    const el = document.getElementById(id);
+    if (!el) return '';
+    el.value = el.value.substring(0, el.selectionStart) + text + el.value.substring(el.selectionEnd);
+    return el.value;
 }
 
 /** Fait défiler une zone jusqu'en bas (dernier message). */

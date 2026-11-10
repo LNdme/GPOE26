@@ -48,6 +48,9 @@ public static class SubmissionEndpoints
             if (attempts.FirstOrDefault(s => s.Status == SubmissionStatus.InProgress) is { } current)
                 return Results.Ok(ToAttempt(current, assessment, await PhotosAsync(db, current.Id)));
 
+            if (assessment.Kind == AssessmentKind.MockExam && await users.FeatureAsync("mock-exams") is null)
+                return EndpointHelpers.Error(403, "Les épreuves blanches sont réservées aux formules Premium.");
+
             var now = DateTime.UtcNow;
             if (assessment.Status == AssessmentStatus.Closed)
                 return EndpointHelpers.Error(409, "Cette évaluation est clôturée.");
@@ -204,8 +207,10 @@ public static class SubmissionEndpoints
         // Proposition de l'IA, enregistrée pour l'enseignant — jamais appliquée automatiquement.
         group.MapPost("/submissions/{submissionId:guid}/answers/{questionId:guid}/ai-suggestion", async (Guid id, Guid submissionId,
             Guid questionId, ClaimsPrincipal principal, EvaluationContext db, AiGradingService ai, ILogger<AiGradingService> logger,
-            CancellationToken ct) =>
+            UserDirectoryClient users, CancellationToken ct) =>
         {
+            if (await users.FeatureAsync("ai-grading") is null)
+                return EndpointHelpers.Error(403, "L'aide à la correction est réservée aux formules Enseignant et Établissement.");
             var assessment = await db.OwnedAssessmentAsync(id, principal.UserId());
             if (assessment is null) return Results.NotFound();
             if (!assessment.AiAssistedGrading)
@@ -324,8 +329,10 @@ public static class SubmissionEndpoints
         // L'élève demande à l'IA d'analyser sa démarche, une fois les résultats publiés (jamais pendant l'épreuve).
         group.MapPost("/submissions/{submissionId:guid}/answers/{questionId:guid}/ai-feedback", async (Guid id, Guid submissionId,
             Guid questionId, ClaimsPrincipal principal, EvaluationContext db, AiGradingService ai, ILogger<AiGradingService> logger,
-            CancellationToken ct) =>
+            UserDirectoryClient users, CancellationToken ct) =>
         {
+            if (await users.FeatureAsync("ai-feedback") is null)
+                return EndpointHelpers.Error(403, "L'analyse de ta copie par l'IA est réservée aux formules Premium.");
             var studentId = principal.UserId();
             var submission = await db.Submissions.Include(s => s.Assessment).ThenInclude(a => a.Questions)
                 .FirstOrDefaultAsync(s => s.Id == submissionId && s.AssessmentId == id && s.StudentId == studentId, ct);

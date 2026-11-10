@@ -1,0 +1,84 @@
+@page "/admin/equipe"
+@layout GPOE26.Web.Components.Layout.AdminLayout
+@using GPOE26.UI.Components
+@using GPOE26.Web.Components.UI
+
+<PageTitle>Équipe · Administration – GPOE26</PageTitle>
+
+<div class="admin-head">
+    <div>
+        <span class="admin-eyebrow">Établissement</span>
+        <h1>Équipe éducative</h1>
+        <p>Les membres apparaissent sur la page « L’établissement » et les quatre premiers sur l’accueil.</p>
+    </div>
+    <a class="site-btn site-btn--primary" href="/admin/equipe/nouveau"><Icon Name="plus" Size="18" Stroke="2" /> Ajouter un membre</a>
+</div>
+
+@if (_error is not null) { <div class="alert alert-danger" role="alert">@_error</div> }
+
+@if (_loading)
+{
+    <div class="admin-empty"><span class="spinner-border spinner-border-sm text-brand-dark" role="status"></span> Chargement…</div>
+}
+else if (_items.Count == 0)
+{
+    <div class="admin-card admin-empty">
+        <Icon Name="users" Size="28" />
+        <p>Aucun membre pour l’instant.</p>
+        <a class="site-btn site-btn--ghost site-btn--sm" href="/admin/equipe/nouveau">Ajouter le premier</a>
+    </div>
+}
+else
+{
+    <div class="admin-people">
+        @foreach (var m in _items)
+        {
+            <article class="admin-person">
+                <span class="admin-person__avatar">
+                    @if (!string.IsNullOrWhiteSpace(m.ImageUrl)) { <img src="@m.ImageUrl" alt="" loading="lazy" /> }
+                    else { <span>@(string.IsNullOrWhiteSpace(m.PreName) ? (m.Name?.FirstOrDefault().ToString() ?? "?") : m.PreName[..1])</span> }
+                </span>
+                <div class="admin-person__info">
+                    <strong>@m.PreName @m.Name</strong>
+                    <span class="admin-chip">@m.Role</span>
+                    @if (!string.IsNullOrWhiteSpace(m.Department)) { <small>@m.Department</small> }
+                    @if (!string.IsNullOrWhiteSpace(m.Email)) { <small>@m.Email</small> }
+                </div>
+                <div class="admin-person__actions">
+                    <a class="admin-icon-btn" href="@($"/admin/equipe/{m.Id}")" title="Modifier" aria-label="@($"Modifier {m.PreName} {m.Name}")"><Icon Name="edit" Size="18" /></a>
+                    <button type="button" class="admin-icon-btn is-danger" title="Retirer" aria-label="@($"Retirer {m.PreName} {m.Name}")" @onclick="() => _toDelete = m"><Icon Name="trash" Size="18" /></button>
+                </div>
+            </article>
+        }
+    </div>
+}
+
+<ConfirmDialog Open="_toDelete is not null" Busy="_deleting" ConfirmLabel="Retirer" Title="Retirer ce membre ?" OnCancel="() => _toDelete = null" OnConfirm="Delete">
+    <p><strong>@_toDelete?.PreName @_toDelete?.Name</strong> n’apparaîtra plus sur le site.</p>
+</ConfirmDialog>
+
+@code {
+    private bool _loading = true, _deleting;
+    private List<Hierarchy> _items = new();
+    private Hierarchy? _toDelete;
+    private string? _error;
+
+    protected override Task OnInitializedAsync() => Load();
+
+    private async Task Load()
+    {
+        _loading = true;
+        _items = await Api.GetHierarchyAsync();
+        _loading = false;
+    }
+
+    private async Task Delete()
+    {
+        if (_toDelete is null) return;
+        _deleting = true; _error = null;
+        if (!await Api.DeleteHierarchyAsync(_toDelete.Id))
+            _error = "La suppression a échoué. Votre session administrateur a peut-être expiré : reconnectez-vous.";
+        _toDelete = null; _deleting = false;
+        await Load();
+    }
+}

@@ -36,7 +36,7 @@ namespace GPOE26.Web.Services
 
         public async Task<Contact?> GetFooterContactAsync()
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 return await client.GetFromJsonAsync<Contact?>("/api/contact");
@@ -50,7 +50,7 @@ namespace GPOE26.Web.Services
 
         public async Task<List<Contact>> GetAllContactsAsync()
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 var contact = await client.GetFromJsonAsync<Contact?>("/api/contact");
@@ -71,7 +71,7 @@ namespace GPOE26.Web.Services
 
         public async Task<Contact?> GetContactByIdAsync(int id)
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 return await client.GetFromJsonAsync<Contact>($"/api/contact/{id}");
@@ -85,7 +85,7 @@ namespace GPOE26.Web.Services
 
         public async Task<bool> CreateContactAsync(Contact contact)
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 var response = await client.PostAsJsonAsync("/api/contact", contact);
@@ -103,7 +103,7 @@ namespace GPOE26.Web.Services
 
         public async Task<bool> UpdateContactAsync(int id, Contact contact)
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 // ✅ Avec l'ID dans l'URL
@@ -121,7 +121,7 @@ namespace GPOE26.Web.Services
 
         public async Task<bool> DeleteContactAsync(int id)
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 var response = await client.DeleteAsync($"/api/contact/{id}");
@@ -141,7 +141,7 @@ namespace GPOE26.Web.Services
 
         public async Task<(int total, List<NewArticle> items)> GetNewsAsync(string? category = null, bool? published = null, int page = 1, int pageSize = 10)
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 var url = "/api/news";
@@ -164,7 +164,7 @@ namespace GPOE26.Web.Services
 
         public async Task<NewArticle?> GetNewsByIdAsync(Guid id)
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 return await client.GetFromJsonAsync<NewArticle>($"/api/news/{id}");
@@ -178,7 +178,7 @@ namespace GPOE26.Web.Services
 
         public async Task<bool> CreateNewsAsync(NewArticle article)
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 var resp = await client.PostAsJsonAsync("/api/news", article);
@@ -193,7 +193,7 @@ namespace GPOE26.Web.Services
 
         public async Task<bool> UpdateNewsAsync(Guid id, NewArticle updated)
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 var resp = await client.PutAsJsonAsync($"/api/news/{id}", updated);
@@ -208,7 +208,7 @@ namespace GPOE26.Web.Services
 
         public async Task<bool> DeleteNewsAsync(Guid id)
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 var resp = await client.DeleteAsync($"/api/news/{id}");
@@ -230,7 +230,7 @@ namespace GPOE26.Web.Services
 
         public async Task<List<SchoolEvent>> GetUpcomingEventsAsync(int limit = 5)
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 var resp = await client.GetFromJsonAsync<List<SchoolEvent>>($"/api/events/upcoming?limit={limit}");
@@ -245,7 +245,7 @@ namespace GPOE26.Web.Services
 
         public async Task<List<SchoolEvent>> GetAllEventsAsync(string? type = null)
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 var url = "/api/events" + (string.IsNullOrEmpty(type) ? "" : $"?type={Uri.EscapeDataString(type)}");
@@ -261,7 +261,7 @@ namespace GPOE26.Web.Services
 
         public async Task<SchoolEvent?> GetEventByIdAsync(Guid id)
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 return await client.GetFromJsonAsync<SchoolEvent>($"/api/events/{id}");
@@ -275,7 +275,7 @@ namespace GPOE26.Web.Services
 
         public async Task<bool> CreateEventAsync(SchoolEvent ev)
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 var resp = await client.PostAsJsonAsync("/api/events", ev);
@@ -290,7 +290,7 @@ namespace GPOE26.Web.Services
 
         public async Task<bool> UpdateEventAsync(Guid id, SchoolEvent ev)
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 var resp = await client.PutAsJsonAsync($"/api/events/{id}", ev);
@@ -305,7 +305,7 @@ namespace GPOE26.Web.Services
 
         public async Task<bool> DeleteEventAsync(Guid id)
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 var resp = await client.DeleteAsync($"/api/events/{id}");
@@ -326,7 +326,7 @@ namespace GPOE26.Web.Services
 
         public async Task<List<Speech>> GetAllSpeechesAsync()
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 var resp = await client.GetFromJsonAsync<List<Speech>>("/api/speeches");
@@ -344,9 +344,24 @@ namespace GPOE26.Web.Services
 
         #region ACTIVITIES API (GPO26ApiService)
 
+        /// <summary>Toutes les activités, y compris suspendues (visibles seulement d'un administrateur).</summary>
+        public async Task<List<SchoolActivity>> GetAllActivitiesAsync()
+        {
+            var client = CreateAuthClient("apiservice");
+            try
+            {
+                return await client.GetFromJsonAsync<List<SchoolActivity>>("/api/activities?includeInactive=true") ?? new();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching all activities");
+                return new List<SchoolActivity>();
+            }
+        }
+
         public async Task<List<SchoolActivity>> GetActiveActivitiesAsync(string? category = null)
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 var url = "/api/activities" + (string.IsNullOrEmpty(category) ? "" : $"?category={Uri.EscapeDataString(category)}");
@@ -362,7 +377,7 @@ namespace GPOE26.Web.Services
 
         public async Task<SchoolActivity?> GetActivityByIdAsync(Guid id)
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 return await client.GetFromJsonAsync<SchoolActivity>($"/api/activities/{id}");
@@ -376,7 +391,7 @@ namespace GPOE26.Web.Services
 
         public async Task<bool> CreateActivityAsync(SchoolActivity activity)
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 var resp = await client.PostAsJsonAsync("/api/activities", activity);
@@ -391,7 +406,7 @@ namespace GPOE26.Web.Services
 
         public async Task<bool> UpdateActivityAsync(Guid id, SchoolActivity activity)
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 var resp = await client.PutAsJsonAsync($"/api/activities/{id}", activity);
@@ -406,7 +421,7 @@ namespace GPOE26.Web.Services
 
         public async Task<bool> DeleteActivityAsync(Guid id)
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 var resp = await client.DeleteAsync($"/api/activities/{id}");
@@ -425,7 +440,7 @@ namespace GPOE26.Web.Services
 
         public async Task<List<Hierarchy>> GetHierarchyAsync()
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 var resp = await client.GetFromJsonAsync<List<Hierarchy>>("/api/hierarchy");
@@ -440,7 +455,7 @@ namespace GPOE26.Web.Services
 
         public async Task<Hierarchy?> GetHierarchyByIdAsync(int id)
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 return await client.GetFromJsonAsync<Hierarchy>($"/api/hierarchy/{id}");
@@ -454,7 +469,7 @@ namespace GPOE26.Web.Services
 
         public async Task<bool> CreateHierarchyAsync(Hierarchy member)
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 var resp = await client.PostAsJsonAsync("/api/hierarchy", member);
@@ -469,7 +484,7 @@ namespace GPOE26.Web.Services
 
         public async Task<bool> UpdateHierarchyAsync(int id, Hierarchy member)
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 var resp = await client.PutAsJsonAsync($"/api/hierarchy/{id}", member);
@@ -484,7 +499,7 @@ namespace GPOE26.Web.Services
 
         public async Task<bool> DeleteHierarchyAsync(int id)
         {
-            var client = _factory.CreateClient("apiservice");
+            var client = CreateAuthClient("apiservice");
             try
             {
                 var resp = await client.DeleteAsync($"/api/hierarchy/{id}");
@@ -602,37 +617,114 @@ namespace GPOE26.Web.Services
             }
         }
 
-        // ── Upload Image (Hébergée sur ApiService) ──────────────────────────────────
-        public async Task<string?> UploadImageAsync(Stream fileStream, string fileName)
+        // ── Accès au site (service User, administrateurs) ─────────────────────────────
+        private static readonly System.Text.Json.JsonSerializerOptions UserJson = new(System.Text.Json.JsonSerializerDefaults.Web)
+        {
+            Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
+        };
+
+        public async Task<List<UserAccess>> GetUserAccessAsync(string? search, bool staffOnly)
         {
             try
             {
-                using var client = _factory.CreateClient("apiservice");
-                using var content = new MultipartFormDataContent();
-
-                var fileContent = new StreamContent(fileStream);
-                content.Add(fileContent, "file", fileName);
-
-                var resp = await client.PostAsync("/api/upload", content);
-                if (resp.IsSuccessStatusCode)
-                {
-                    var result = await resp.Content.ReadFromJsonAsync<UploadResponse>();
-                    if (result != null && !string.IsNullOrEmpty(result.Url))
-                    {
-                        // Return the relative path only — the Web frontend's proxy at
-                        // /uploads/images/{*path} will forward the request to the ApiService.
-                        // This makes the URL work in the browser regardless of the internal port.
-                        return result.Url;
-                    }
-                }
-                _logger.LogWarning($"Image upload failed: {resp.StatusCode}");
-                return null;
+                var url = $"/admin/users?staffOnly={staffOnly.ToString().ToLowerInvariant()}"
+                    + (string.IsNullOrWhiteSpace(search) ? "" : $"&search={Uri.EscapeDataString(search.Trim())}");
+                return await CreateAuthClient("user").GetFromJsonAsync<List<UserAccess>>(url, UserJson) ?? new();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Exception uploading image");
+                _logger.LogError(ex, "Error fetching user access list");
+                return new();
+            }
+        }
+
+        /// <summary>Change les accès d'un compte ; renvoie le message d'erreur du serveur en cas de refus.</summary>
+        public async Task<(UserAccess? user, string? error)> UpdateUserAccessAsync(Guid id, bool? admin, bool? siteEditor)
+        {
+            try
+            {
+                var resp = await CreateAuthClient("user").PutAsJsonAsync($"/admin/users/{id}/access", new { admin, siteEditor }, UserJson);
+                if (resp.IsSuccessStatusCode)
+                    return (await resp.Content.ReadFromJsonAsync<UserAccess>(UserJson), null);
+                var problem = await resp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement?>();
+                var message = problem?.ValueKind == System.Text.Json.JsonValueKind.Object && problem.Value.TryGetProperty("message", out var m) ? m.GetString() : null;
+                return (null, message ?? "La modification a été refusée. Votre session administrateur a peut-être expiré.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating access for {Id}", id);
+                return (null, "Le service des comptes ne répond pas.");
+            }
+        }
+
+        // ── Contenu de démonstration (administrateurs) ─────────────────────────────
+        public record DemoContentResult(int Team, int News, int Events, int Activities, int Total);
+
+        /// <summary>Ajoute l'équipe, les actualités, les événements et les activités fictifs absents. Null en cas d'échec.</summary>
+        public async Task<DemoContentResult?> AddDemoContentAsync()
+        {
+            try
+            {
+                var client = CreateAuthClient("apiservice");
+                var resp = await client.PostAsync("/api/admin/demo-content", null);
+                if (resp.IsSuccessStatusCode) return await resp.Content.ReadFromJsonAsync<DemoContentResult>();
+                _logger.LogWarning("Demo content failed: {Status}", resp.StatusCode);
                 return null;
             }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+            {
+                _logger.LogError(ex, "Error adding demo content");
+                return null;
+            }
+        }
+
+        // ── Upload Image (Hébergée sur ApiService) ──────────────────────────────────
+        /// <summary>
+        /// Envoie l'image et renvoie son adresse relative (servie par le proxy /uploads/images du site).
+        /// En cas de refus, lève une exception dont le message est celui de l'API (format, taille, droits) :
+        /// les formulaires l'affichent tel quel, au lieu d'un « Erreur upload. » sans explication.
+        /// </summary>
+        public async Task<string> UploadImageAsync(Stream fileStream, string fileName)
+        {
+            HttpResponseMessage resp;
+            try
+            {
+                using var client = CreateAuthClient("apiservice");
+                using var content = new MultipartFormDataContent();
+                content.Add(new StreamContent(fileStream), "file", fileName);
+                resp = await client.PostAsync("/api/upload", content);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+            {
+                _logger.LogError(ex, "Exception uploading image");
+                throw new InvalidOperationException("le serveur d'images ne répond pas, réessayez dans un instant.", ex);
+            }
+
+            using (resp)
+            {
+                if (resp.IsSuccessStatusCode &&
+                    await resp.Content.ReadFromJsonAsync<UploadResponse>() is { Url: { Length: > 0 } url })
+                    return url;
+
+                var body = await resp.Content.ReadAsStringAsync();
+                _logger.LogWarning("Image upload failed: {Status} {Body}", resp.StatusCode, body);
+                throw new InvalidOperationException(resp.StatusCode switch
+                {
+                    System.Net.HttpStatusCode.Unauthorized => "votre session a expiré, reconnectez-vous.",
+                    System.Net.HttpStatusCode.Forbidden => "votre compte n'a pas le droit de modifier le contenu du site.",
+                    System.Net.HttpStatusCode.RequestEntityTooLarge => "l'image dépasse 5 Mo.",
+                    System.Net.HttpStatusCode.BadRequest when UploadErrorText(body) is { } text => text,
+                    _ => $"échec de l'envoi ({(int)resp.StatusCode})."
+                });
+            }
+        }
+
+        /// <summary>Le refus de l'API est une chaîne JSON (« "Ce fichier…" ») : on en extrait le texte.</summary>
+        private static string? UploadErrorText(string body)
+        {
+            if (string.IsNullOrWhiteSpace(body)) return null;
+            try { return System.Text.Json.JsonSerializer.Deserialize<string>(body); }
+            catch (System.Text.Json.JsonException) { return body.Length <= 300 ? body : null; }
         }
 
         private class UploadResponse

@@ -18,7 +18,7 @@ public static class TutorEndpoints
     private static readonly string[] ImageTypes = ["image/jpeg", "image/png", "image/webp"];
 
     private const string SystemPrompt = """
-        Tu es le tuteur personnel d'un élève sur la plateforme GPOE26 (enseignement secondaire camerounais).
+        Tu es le tuteur personnel d'un apprenant sur la plateforme GPOE26 (Cameroun).
         Niveau de l'élève : {0}.
         Ton rôle : faire comprendre le cours, pas faire les devoirs à la place de l'élève.
         - Réponds en français (en anglais si l'élève écrit en anglais), clairement, en paragraphes courts.
@@ -36,6 +36,15 @@ public static class TutorEndpoints
         <cours>
         {3}
         </cours>
+        """;
+
+    private const string HigherEducation = """
+
+
+        Cet apprenant est dans l'enseignement supérieur : travaille à son niveau.
+        - Sois rigoureux : définitions exactes, hypothèses explicites, notations du domaine, démonstrations quand elles sont utiles.
+        - Ne simplifie pas à l'excès et distingue ce qui est exact de ce qui est une approximation, en précisant son domaine de validité.
+        - Propose des prolongements exigeants et, si le cours comporte un laboratoire, invite à prédire puis à vérifier avec ses curseurs.
         """;
 
     public static void MapTutorEndpoints(this IEndpointRouteBuilder app)
@@ -74,7 +83,8 @@ public static class TutorEndpoints
 
         // ── POST /tutor/courses/{courseId}/messages ───────────────────────────────
         group.MapPost("/courses/{courseId:guid}/messages", async (Guid courseId, AskTutorRequest req, ClaimsPrincipal principal,
-            TutorContext db, PlatformClients platform, LlmClient llm, ILogger<TutorContext> logger, CancellationToken ct) =>
+            TutorContext db, PlatformClients platform, LlmClient llm, AgentContextService agent, AgentReflectionQueue reflection,
+            ILogger<TutorContext> logger, CancellationToken ct) =>
         {
             var userId = UserId(principal);
             var text = req.Message?.Trim() ?? "";
@@ -82,7 +92,7 @@ public static class TutorEndpoints
                 return Error(400, "Écris ta question ou joins une photo.");
             if (text.Length > 4000)
                 return Error(400, "Ta question est trop longue (4 000 caractères au maximum).");
-            if (!await platform.IsPremiumAsync(ct))
+            if (!await platform.HasFeatureAsync("tutor-ai", ct))
                 return Error(403, "Le tuteur IA est réservé aux abonnés Premium.");
 
             var course = await platform.CourseAsync(courseId, ct);
@@ -113,7 +123,9 @@ public static class TutorEndpoints
             var messages = new List<LlmMessage>
             {
                 new("system", string.Format(SystemPrompt, string.IsNullOrWhiteSpace(level) ? "secondaire" : level,
-                    course.Title, course.Subject, course.Text()))
+                    course.Title, course.Subject, course.Text())
+                    + (principal.FindFirst("stage")?.Value == "Higher" ? HigherEducation : "")
+                    + await agent.StudentContextAsync(userId, courseId, text, ct))
             };
             messages.AddRange(conversation.Messages.TakeLast(HistoryForModel)
                 .Select(m => new LlmMessage(m.Role, m.ImageId is null ? m.Content : $"{m.Content}\n[photo de copie jointe]")));
@@ -127,7 +139,9 @@ public static class TutorEndpoints
             catch (LlmUnavailableException ex)
             {
                 logger.LogWarning(ex, "Tuteur indisponible");
-                return Error(502, "Le tuteur ne répond pas pour le moment. Ta question n'a pas été perdue : réessaie dans un instant.");
+                return ex is LlmNotConfiguredException
+                    ? Error(503, "Le tuteur n'est pas activé sur ce serveur : aucune clé d'IA n'est configurée.")
+                    : Error(502, "Le tuteur ne répond pas pour le moment. Ta question n'a pas été perdue : réessaie dans un instant.");
             }
 
             var now = DateTime.UtcNow;
@@ -137,6 +151,9 @@ public static class TutorEndpoints
             conversation.UpdatedAt = now;
             await db.SaveChangesAsync(ct);
 
+            await agent.TouchCourseAsync(userId, courseId, course.Title, course.Subject, ct);
+            reflection.Enqueue(new ReflectionJob(userId, AgentKinds.Student, courseId, course.Title, text, reply, answer.Id));
+
             return Results.Ok(new AskTutorResponse(new TutorMessageDto(question), new TutorMessageDto(answer)));
         })
         .WithSummary("Poser une question au tuteur (Premium) — la question et la réponse sont enregistrées");
@@ -144,7 +161,7 @@ public static class TutorEndpoints
         // ── POST /tutor/images ────────────────────────────────────────────────────
         group.MapPost("/images", async (IFormFile file, ClaimsPrincipal principal, TutorContext db, PlatformClients platform, CancellationToken ct) =>
         {
-            if (!await platform.IsPremiumAsync(ct))
+            if (!await platform.HasFeatureAsync("tutor-ai", ct))
                 return Error(403, "Le tuteur IA est réservé aux abonnés Premium.");
             if (file.Length == 0 || file.Length > MaxImageBytes)
                 return Error(400, "La photo doit faire moins de 6 Mo.");
@@ -214,6 +231,7 @@ public static class TutorEndpoints
                 .Select(m => m.ImageId!.Value).ToListAsync();
             await db.Images.Where(i => imageIds.Contains(i.Id)).ExecuteDeleteAsync();
             db.Conversations.Remove(conversation);
+            await db.AgentMemories.Where(m => m.UserId == userId && m.CourseId == courseId).ExecuteDeleteAsync();
             await db.SaveChangesAsync();
             return Results.NoContent();
         })

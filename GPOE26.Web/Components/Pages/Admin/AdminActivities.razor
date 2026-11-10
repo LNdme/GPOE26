@@ -1,0 +1,111 @@
+@page "/admin/activites"
+@layout GPOE26.Web.Components.Layout.AdminLayout
+@using GPOE26.UI.Components
+@using GPOE26.Web.Components.UI
+
+<PageTitle>Activités · Administration – GPOE26</PageTitle>
+
+<div class="admin-head">
+    <div>
+        <span class="admin-eyebrow">Contenu</span>
+        <h1>Clubs et activités</h1>
+        <p>Une activité suspendue disparaît du site sans être supprimée : vous pourrez la réactiver plus tard.</p>
+    </div>
+    <a class="site-btn site-btn--primary" href="/admin/activites/nouveau"><Icon Name="plus" Size="18" Stroke="2" /> Nouvelle activité</a>
+</div>
+
+@if (_error is not null) { <div class="alert alert-danger" role="alert">@_error</div> }
+
+<div class="admin-card admin-card--flush">
+    @if (_loading)
+    {
+        <div class="admin-empty"><span class="spinner-border spinner-border-sm text-brand-dark" role="status"></span> Chargement…</div>
+    }
+    else if (_items.Count == 0)
+    {
+        <div class="admin-empty">
+            <Icon Name="activity" Size="28" />
+            <p>Aucune activité. La page d’accueil affiche « Les activités seront bientôt présentées ici ».</p>
+            <a class="site-btn site-btn--ghost site-btn--sm" href="/admin/activites/nouveau">Ajouter la première</a>
+        </div>
+    }
+    else
+    {
+        <div class="admin-table-wrap">
+            <table class="admin-table">
+                <thead>
+                    <tr><th scope="col">Activité</th><th scope="col">Catégorie</th><th scope="col">Horaires</th><th scope="col">Responsable</th><th scope="col">Sur le site</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var a in _items)
+                    {
+                        <tr class="@(a.IsActive ? "" : "is-past")">
+                            <td data-label="Activité">
+                                <div class="admin-cell-main">
+                                    @if (!string.IsNullOrWhiteSpace(a.ImageUrl)) { <img src="@a.ImageUrl" alt="" loading="lazy" /> }
+                                    <span><a href="@($"/admin/activites/{a.Id}")"><strong>@a.Name</strong></a><small>@Truncate(a.Description, 80)</small></span>
+                                </div>
+                            </td>
+                            <td data-label="Catégorie"><span class="admin-chip">@a.Category</span></td>
+                            <td data-label="Horaires">@(a.Schedule ?? "—")</td>
+                            <td data-label="Responsable">@(a.ResponsibleTeacher ?? "—")</td>
+                            <td data-label="Sur le site">
+                                <button type="button" class="admin-switch @(a.IsActive ? "on" : "")" role="switch" aria-checked="@(a.IsActive ? "true" : "false")"
+                                        aria-label="@($"Afficher {a.Name} sur le site")" disabled="@(_busyId == a.Id)" @onclick="() => ToggleActive(a)">
+                                    <span></span>@(a.IsActive ? "Visible" : "Suspendue")
+                                </button>
+                            </td>
+                            <td class="admin-actions">
+                                <a class="admin-icon-btn" href="@($"/admin/activites/{a.Id}")" title="Modifier" aria-label="@($"Modifier {a.Name}")"><Icon Name="edit" Size="18" /></a>
+                                <button type="button" class="admin-icon-btn is-danger" title="Supprimer" aria-label="@($"Supprimer {a.Name}")" @onclick="() => _toDelete = a"><Icon Name="trash" Size="18" /></button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<ConfirmDialog Open="_toDelete is not null" Busy="_deleting" OnCancel="() => _toDelete = null" OnConfirm="Delete">
+    <p>L’activité <strong>@_toDelete?.Name</strong> sera définitivement supprimée. Pour la masquer temporairement, suspendez-la plutôt.</p>
+</ConfirmDialog>
+
+@code {
+    private bool _loading = true, _deleting;
+    private List<SchoolActivity> _items = new();
+    private SchoolActivity? _toDelete;
+    private Guid? _busyId;
+    private string? _error;
+
+    protected override Task OnInitializedAsync() => Load();
+
+    private async Task Load()
+    {
+        _loading = true;
+        _items = await Api.GetAllActivitiesAsync();
+        _loading = false;
+    }
+
+    private async Task ToggleActive(SchoolActivity a)
+    {
+        _busyId = a.Id; _error = null;
+        if (!await Api.UpdateActivityAsync(a.Id, a with { IsActive = !a.IsActive }))
+            _error = "La modification a échoué. Votre session administrateur a peut-être expiré : reconnectez-vous.";
+        _busyId = null;
+        await Load();
+    }
+
+    private async Task Delete()
+    {
+        if (_toDelete is null) return;
+        _deleting = true; _error = null;
+        if (!await Api.DeleteActivityAsync(_toDelete.Id))
+            _error = "La suppression a échoué. Votre session administrateur a peut-être expiré : reconnectez-vous.";
+        _toDelete = null; _deleting = false;
+        await Load();
+    }
+
+    private static string Truncate(string? text, int max) =>
+        string.IsNullOrEmpty(text) ? "" : text.Length <= max ? text : text[..max] + "…";
+}

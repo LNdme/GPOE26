@@ -59,6 +59,9 @@ builder.Services.AddSwaggerGen(c =>
 
 builder.Services.AddScoped<Jwtservice>();
 builder.Services.AddScoped<SubscriptionService>();
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient<PlanCatalogClient>(client =>
+    client.BaseAddress = new Uri(builder.Configuration["Services:ApiService"] ?? "http://localhost:5455"));
 builder.Services.AddScoped<ClassroomService>();
 
 // Applique les [Required], [MinLength]… des DTOs aux Minimal APIs (sinon ils sont ignorés)
@@ -115,6 +118,7 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<UserContext>();
     await UserSchema.EnsureAsync(db);
     await UserSeeder.SeedAsync(db, app.Environment.IsDevelopment());
+    await AdminBootstrap.PromoteConfiguredAdminsAsync(db, app.Configuration, app.Logger);
 }
 
 if (app.Environment.IsDevelopment())
@@ -131,7 +135,10 @@ if (app.Environment.IsDevelopment())
 
 
 
-app.UseHttpsRedirection();
+// En développement, les services s'appellent en HTTP avec un JWT : une redirection vers HTTPS
+// ferait retirer l'en-tête Authorization par HttpClient, et chaque appel finirait en 401.
+if (!app.Environment.IsDevelopment())
+    app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -199,6 +206,7 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
         // La spécialité (claim JWT lu par le LLM) reprend les matières enseignées
         Specialite = req.Specialite ?? (teachingSubjects.Count > 0 ? string.Join(", ", teachingSubjects) : null),
         Filiere = req.Filiere,
+        Stage = req.Role == UserRole.Student ? req.Stage ?? EducationStage.Secondary : null,
         Language = req.Language,
         SubSystem = req.SubSystem,
         ExamTarget = req.ExamTarget,
@@ -321,6 +329,7 @@ app.MapClassroomEndpoints();
 app.MapParentEndpoints();
 app.MapSubscriptionEndpoints();
 app.MapAdminEndpoints();
+app.MapProfileEndpoints();
 
 app.MapControllers();
 

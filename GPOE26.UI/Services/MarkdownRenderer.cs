@@ -36,16 +36,21 @@ public static class MarkdownRenderer
     /// échappées. On les convertit en $ … $ et $$ … $$, la syntaxe reconnue par le rendu des formules.
     /// </summary>
     public static string NormalizeMath(string markdown) =>
-        InlineDelimiters.Replace(DisplayDelimiters.Replace(markdown, "$$$$$1$$$$"), "$$$1$$");
+        DisplayLine.Replace(InlineDelimiters.Replace(DisplayDelimiters.Replace(markdown, "$$$$$1$$$$"), "$$$1$$"), "$$$$\n$1\n$$$$");
 
     /// <summary>Texte ligne à ligne (transcription d'une copie) : chaque retour à la ligne est conservé.</summary>
     public static string RenderLines(string text) =>
         Render(string.Join("  \n", (text ?? "").Replace("\r", "").Split('\n'))).Html;
 
+    // Une formule seule sur sa ligne s'affiche centrée : Markdig ne le fait que si les $$ sont sur leurs propres lignes
+    private static readonly System.Text.RegularExpressions.Regex DisplayLine =
+        new(@"^[ \t]*\$\$[ \t]*([^\n]+?)[ \t]*\$\$[ \t]*$", System.Text.RegularExpressions.RegexOptions.Multiline);
+
+    // Une formule ne traverse pas un paragraphe et ne contient pas de lien : \[ … \] est alors un crochet échappé
     private static readonly System.Text.RegularExpressions.Regex DisplayDelimiters =
-        new(@"\\\[(.+?)\\\]", System.Text.RegularExpressions.RegexOptions.Singleline);
+        new(@"\\\[((?:(?!\n[ \t]*\n|\]\().)+?)\\\](?!\()", System.Text.RegularExpressions.RegexOptions.Singleline);
     private static readonly System.Text.RegularExpressions.Regex InlineDelimiters =
-        new(@"\\\((.+?)\\\)", System.Text.RegularExpressions.RegexOptions.Singleline);
+        new(@"\\\(((?:(?!\n[ \t]*\n).)+?)\\\)", System.Text.RegularExpressions.RegexOptions.Singleline);
 
     private static string InlineText(ContainerInline? inline) =>
         inline is null ? "" : string.Concat(inline.Descendants<LiteralInline>().Select(l => l.Content.ToString()));

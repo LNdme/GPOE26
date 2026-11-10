@@ -19,17 +19,7 @@ builder.Services.AddOpenApi();
 builder.Services.AddSingleton<IQuizStore, InMemoryQuizStore>();
 
 // Service de génération via LLM
-builder.Services.AddHttpClient<IQuizGeneratorService, OpenAiQuizGeneratorService>(client =>
-{
-    client.Timeout = TimeSpan.FromMinutes(5);
-})
-    .AddStandardResilienceHandler(options =>
-    {
-        options.AttemptTimeout.Timeout = TimeSpan.FromMinutes(5);
-        options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(5);
-        options.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(10);
-        options.Retry.MaxRetryAttempts = 1;
-    });
+builder.Services.AddScoped<IQuizGeneratorService, OpenAiQuizGeneratorService>();
 
 // ─── Évaluations des enseignants (base PostgreSQL) ────────────────────────────
 var quizConnStr = builder.Configuration.GetConnectionString("QuizDB")
@@ -106,7 +96,10 @@ app.Use(async (context, next) =>
     }
 });
 
-app.UseHttpsRedirection();
+// En développement, les services s'appellent en HTTP avec un JWT : une redirection vers HTTPS
+// ferait retirer l'en-tête Authorization par HttpClient, et chaque appel finirait en 401.
+if (!app.Environment.IsDevelopment())
+    app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

@@ -100,7 +100,12 @@ public record SubscriptionDto(
     { }
 }
 
-public record MySubscriptionsDto(Entitlement Entitlement, List<SubscriptionDto> Owned);
+public record MySubscriptionsDto(Entitlement Entitlement, List<SubscriptionDto> Owned, bool PaymentSimulation);
+
+public record SimulatePaymentRequest(SubscriptionPlan Plan, BillingPeriod Period = BillingPeriod.Monthly, string? Provider = null);
+
+/// <summary>Reçu du paiement simulé : la clé à saisir pour activer la formule.</summary>
+public record SimulatedPaymentDto(string Code, SubscriptionPlan Plan, BillingPeriod Period, string Provider, int Seats, DateTime? EndsAt);
 
 // ─── Administration ───────────────────────────────────────────────────────────
 

@@ -1,0 +1,21 @@
+@using GPOE26.UI.Components
+@using GPOE26.UI.Models
+@inject GPOE26.UI.Services.SessionState Session
+
+@* Partie de l'administration réservée aux administrateurs (pas aux éditeurs du site) *@
+@if (Session.Role == UserRole.Admin)
+{
+    @ChildContent
+}
+else
+{
+    <div class="admin-card admin-empty">
+        <Icon Name="shield" Size="28" />
+        <p>Cette page est réservée aux administrateurs.</p>
+        <a class="site-btn site-btn--ghost site-btn--sm" href="/admin">Retour au tableau de bord</a>
+    </div>
+}
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

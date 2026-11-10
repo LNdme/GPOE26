@@ -1,5 +1,7 @@
+using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using User.Data;
+using User.Helper;
 using User.DTOs;
 using User.Model;
 using User.Service;
@@ -15,6 +17,61 @@ public static class AdminEndpoints
     public static void MapAdminEndpoints(this IEndpointRouteBuilder app)
     {
         var admin = app.MapGroup("/admin").WithTags("Administration").RequireAuthorization(Policies.Admin);
+
+        // ── GET /admin/users ──────────────────────────────────────────────────────
+        // Comptes à qui donner un accès d'administration ou d'édition du site.
+        admin.MapGet("/users", async (UserContext db, string? search, bool staffOnly = false) =>
+        {
+            var query = db.AppUsers.AsNoTracking();
+            if (staffOnly)
+                query = query.Where(u => u.Role == UserRole.Admin || u.SiteEditor);
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var s = $"%{search.Trim()}%";
+                query = query.Where(u => EF.Functions.ILike(u.Email, s) || EF.Functions.ILike(u.Username, s));
+            }
+            var users = await query
+                .OrderByDescending(u => u.Role == UserRole.Admin)
+                .ThenByDescending(u => u.SiteEditor)
+                .ThenBy(u => u.Username)
+                .Take(50)
+                .Select(u => new UserAccessDto(u.Id, u.Username, u.Email, u.Role, u.SiteEditor, u.CreatedAt, u.LastLoginAt))
+                .ToListAsync();
+            return Results.Ok(users);
+        })
+        .WithSummary("Comptes et accès au site (50 au plus, recherche par nom ou e-mail)")
+        .Produces<List<UserAccessDto>>();
+
+        // ── PUT /admin/users/{id}/access ──────────────────────────────────────────
+        // Nommer / retirer un administrateur, donner / retirer le droit d'éditer le site.
+        // Pris en compte à la prochaine connexion de l'utilisateur (nouveau jeton).
+        admin.MapPut("/users/{id:guid}/access", async (Guid id, UpdateAccessRequest req, ClaimsPrincipal me, UserContext db) =>
+        {
+            var user = await db.AppUsers.FindAsync(id);
+            if (user is null) return Results.NotFound();
+
+            if (req.Admin is { } makeAdmin && makeAdmin != (user.Role == UserRole.Admin))
+            {
+                if (!makeAdmin)
+                {
+                    if (user.Id == me.GetUserId())
+                        return Results.Conflict(new { message = "Vous ne pouvez pas retirer vos propres droits d'administrateur." });
+                    if (await db.AppUsers.CountAsync(u => u.Role == UserRole.Admin) <= 1)
+                        return Results.Conflict(new { message = "Il doit rester au moins un administrateur." });
+                }
+                // Un administrateur retiré redevient enseignant : le rôle d'origine n'est pas conservé
+                user.Role = makeAdmin ? UserRole.Admin : (req.FallbackRole ?? UserRole.Teacher);
+            }
+            if (req.SiteEditor is { } editor)
+                user.SiteEditor = editor;
+
+            await db.SaveChangesAsync();
+            return Results.Ok(new UserAccessDto(user.Id, user.Username, user.Email, user.Role, user.SiteEditor, user.CreatedAt, user.LastLoginAt));
+        })
+        .WithSummary("Nommer un administrateur ou un éditeur du site")
+        .Produces<UserAccessDto>()
+        .Produces(404)
+        .Produces(409);
 
         // ── POST /admin/organizations ─────────────────────────────────────────────
         admin.MapPost("/organizations", async (CreateOrganizationRequest req, UserContext db) =>
@@ -83,3 +140,9 @@ public static class AdminEndpoints
         .Produces(409);
     }
 }
+
+/// <summary>Compte et accès au site, pour la page Utilisateurs de l'administration.</summary>
+public record UserAccessDto(Guid Id, string Username, string Email, UserRole Role, bool SiteEditor, DateTime CreatedAt, DateTime? LastLoginAt);
+
+/// <summary>Champs absents = inchangés. FallbackRole : rôle donné à un administrateur retiré (Enseignant par défaut).</summary>
+public record UpdateAccessRequest(bool? Admin, bool? SiteEditor, UserRole? FallbackRole = null);

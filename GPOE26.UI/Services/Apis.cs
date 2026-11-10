@@ -12,10 +12,40 @@ public interface IAccountApi
     Task<ApiResult<AuthResponse>> LoginAsync(string email, string password);
     Task<ApiResult<AuthResponse>> RegisterAsync(RegisterRequest request);
     Task<ApiResult<UserProfile>> MeAsync();
+    Task<ApiResult<UserProfile>> UpdateProfileAsync(EditProfileRequest request);
+    Task<ApiResult<bool>> ChangePasswordAsync(string currentPassword, string newPassword);
     Task<ApiResult<MySubscriptions>> MySubscriptionsAsync();
     Task<ApiResult<Entitlement>> RedeemKeyAsync(string code);
     Task<ApiResult<SubscriptionInfo>> CheckoutAsync(SubscriptionPlan plan, BillingPeriod period);
     Task<ApiResult<SubscriptionInfo>> StartTrialAsync();
+    Task<ApiResult<SimulatedPayment>> SimulatePaymentAsync(SubscriptionPlan plan, BillingPeriod period, string provider);
+}
+
+/// <summary>Agents : emploi du temps, plan du jour, mémoire et assistant enseignant.</summary>
+public interface IAgentApi
+{
+    Task<ApiResult<List<StudySlot>>> ScheduleAsync();
+    Task<ApiResult<bool>> SaveScheduleAsync(List<StudySlot> slots);
+    Task<ApiResult<DayPlan>> TodayPlanAsync();
+    Task<ApiResult<bool>> RecordStudyAsync(Guid courseId, int minutes);
+    Task<ApiResult<List<AgentMemoryItem>>> MemoriesAsync();
+    Task<ApiResult<bool>> UpdateMemoryAsync(Guid id, string content);
+    Task<ApiResult<bool>> DeleteMemoryAsync(Guid id);
+    Task<ApiResult<bool>> ClearMemoriesAsync();
+    Task<ApiResult<MemorySettings>> MemorySettingsAsync();
+    Task<ApiResult<MemorySettings>> SetMemoryEnabledAsync(bool enabled);
+    Task<ApiResult<TeacherAgentProfile>> TeacherProfileAsync();
+    Task<ApiResult<TeacherAgentProfile>> SaveTeacherProfileAsync(TeacherAgentProfile profile);
+    Task<ApiResult<ComposeResult>> ComposeAsync(ComposeRequest request);
+    Task<ApiResult<bool>> LearnStyleAsync(string text);
+    Task<ApiResult<ClassInsightsResult>> ClassInsightsAsync(Guid classroomId);
+    Task<ApiResult<AssistantAnswer>> AskAssistantAsync(Guid? classroomId, string message);
+}
+
+/// <summary>Catalogue public des formules.</summary>
+public interface IPlanApi
+{
+    Task<ApiResult<List<PlanInfo>>> ListAsync();
 }
 
 public interface IClassroomApi
@@ -44,6 +74,31 @@ public interface ICourseApi
     Task<ApiResult<List<CourseSummary>>> SharedWithMeAsync();
     Task<ApiResult<CourseDetail>> GetAsync(Guid id);
     Task<ApiResult<CourseSummary>> ShareAsync(Guid id, bool publish, List<Guid> classroomIds);
+    Task<ApiResult<CourseDetail>> CreateAsync(CourseInput course);
+    Task<ApiResult<bool>> UpdateAsync(Guid id, CourseInput course);
+    Task<ApiResult<bool>> DeleteAsync(Guid id);
+    Task<ApiResult<CourseDetail>> UploadPdfAsync(Guid id, ImageUpload pdf);
+    Task<ApiResult<CourseDetail>> RestructureAsync(Guid id);
+    Task<ApiResult<CourseDetail>> ImportLinkAsync(string url);
+    Task<ApiResult<CourseDetail>> ImportPhotosAsync(IEnumerable<ImageUpload> photos);
+    Task<ApiResult<List<LabSuggestion>>> LabSuggestionsAsync(Guid id);
+    Task<ApiResult<CourseDetail>> AcceptLabAsync(Guid id, Guid suggestionId);
+    Task<ApiResult<CourseDetail>> AcceptAllLabsAsync(Guid id);
+    Task<ApiResult<bool>> RefuseLabAsync(Guid id, Guid suggestionId);
+}
+
+/// <summary>Images insérées dans un cours (hébergées par le service du site).</summary>
+public interface IMediaApi
+{
+    Task<ApiResult<UploadedFile>> UploadImageAsync(ImageUpload image);
+}
+
+/// <summary>Quiz d'entraînement créé par l'IA à partir du texte d'un cours.</summary>
+public interface IPracticeQuizApi
+{
+    Task<ApiResult<PracticeQuiz>> GenerateAsync(string title, string courseText, int questions, string difficulty);
+    Task<ApiResult<PracticeProblemSet>> GenerateProblemsAsync(string title, string courseText, int count, string difficulty);
+    Task<ApiResult<PracticeResult>> SubmitAsync(Guid quizId, List<PracticeAnswer> answers);
 }
 
 public interface IAssessmentApi
@@ -79,6 +134,7 @@ public interface ITutorApi
     Task<ApiResult<TutorMessage>> PinAsync(Guid messageId, bool pinned);
     Task<ApiResult<List<PinnedExplanation>>> PinnedAsync();
     Task<ApiResult<bool>> ClearAsync(Guid courseId);
+    Task<ApiResult<string>> DraftCourseAsync(string subject, string? instructions);
 }
 
 public interface IProgressApi
@@ -96,11 +152,41 @@ public class AccountApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, Ap
         PostAsync<AuthResponse>("/auth/login", new LoginRequest(email, password));
     public Task<ApiResult<AuthResponse>> RegisterAsync(RegisterRequest request) => PostAsync<AuthResponse>("/auth/register", request);
     public Task<ApiResult<UserProfile>> MeAsync() => GetAsync<UserProfile>("/auth/me");
+    public Task<ApiResult<UserProfile>> UpdateProfileAsync(EditProfileRequest request) => PutAsync<UserProfile>("/auth/me/profile", request);
+    public Task<ApiResult<bool>> ChangePasswordAsync(string currentPassword, string newPassword) =>
+        PostAsync<bool>("/auth/me/password", new { currentPassword, newPassword });
     public Task<ApiResult<MySubscriptions>> MySubscriptionsAsync() => GetAsync<MySubscriptions>("/subscriptions/me");
     public Task<ApiResult<Entitlement>> RedeemKeyAsync(string code) => PostAsync<Entitlement>("/subscriptions/redeem", new { code });
     public Task<ApiResult<SubscriptionInfo>> CheckoutAsync(SubscriptionPlan plan, BillingPeriod period) =>
         PostAsync<SubscriptionInfo>("/subscriptions/checkout", new CheckoutRequest(plan, period));
     public Task<ApiResult<SubscriptionInfo>> StartTrialAsync() => PostAsync<SubscriptionInfo>("/subscriptions/trial");
+    public Task<ApiResult<SimulatedPayment>> SimulatePaymentAsync(SubscriptionPlan plan, BillingPeriod period, string provider) =>
+        PostAsync<SimulatedPayment>("/subscriptions/simulate-payment", new SimulatePaymentRequest(plan, period, provider));
+}
+
+public class AgentApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.Chat), IAgentApi
+{
+    public Task<ApiResult<List<StudySlot>>> ScheduleAsync() => GetAsync<List<StudySlot>>("/agent/schedule");
+    public Task<ApiResult<bool>> SaveScheduleAsync(List<StudySlot> slots) => PutAsync<bool>("/agent/schedule", slots);
+    public Task<ApiResult<DayPlan>> TodayPlanAsync() => GetAsync<DayPlan>("/agent/plan/today");
+    public Task<ApiResult<bool>> RecordStudyAsync(Guid courseId, int minutes) => PostAsync<bool>("/agent/sessions", new { courseId, minutes });
+    public Task<ApiResult<List<AgentMemoryItem>>> MemoriesAsync() => GetAsync<List<AgentMemoryItem>>("/agent/memories");
+    public Task<ApiResult<bool>> UpdateMemoryAsync(Guid id, string content) => PutAsync<bool>($"/agent/memories/{id}", new { content });
+    public Task<ApiResult<bool>> DeleteMemoryAsync(Guid id) => DeleteAsync<bool>($"/agent/memories/{id}");
+    public Task<ApiResult<bool>> ClearMemoriesAsync() => DeleteAsync<bool>("/agent/memories");
+    public Task<ApiResult<MemorySettings>> MemorySettingsAsync() => GetAsync<MemorySettings>("/agent/memory-settings");
+    public Task<ApiResult<MemorySettings>> SetMemoryEnabledAsync(bool enabled) => PutAsync<MemorySettings>("/agent/memory-settings", new MemorySettings(enabled, null));
+    public Task<ApiResult<TeacherAgentProfile>> TeacherProfileAsync() => GetAsync<TeacherAgentProfile>("/teacher-agent/profile");
+    public Task<ApiResult<TeacherAgentProfile>> SaveTeacherProfileAsync(TeacherAgentProfile profile) => PutAsync<TeacherAgentProfile>("/teacher-agent/profile", profile);
+    public Task<ApiResult<ComposeResult>> ComposeAsync(ComposeRequest request) => PostAsync<ComposeResult>("/teacher-agent/compose", request);
+    public Task<ApiResult<bool>> LearnStyleAsync(string text) => PostAsync<bool>("/teacher-agent/learn-style", new { text });
+    public Task<ApiResult<ClassInsightsResult>> ClassInsightsAsync(Guid classroomId) => PostAsync<ClassInsightsResult>($"/teacher-agent/classes/{classroomId}/insights");
+    public Task<ApiResult<AssistantAnswer>> AskAssistantAsync(Guid? classroomId, string message) => PostAsync<AssistantAnswer>("/teacher-agent/ask", new { classroomId, message });
+}
+
+public class PlanApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.Site), IPlanApi
+{
+    public Task<ApiResult<List<PlanInfo>>> ListAsync() => GetAsync<List<PlanInfo>>("/api/plans");
 }
 
 public class ClassroomApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.User), IClassroomApi
@@ -132,6 +218,32 @@ public class CourseApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, Api
     public Task<ApiResult<CourseDetail>> GetAsync(Guid id) => GetAsync<CourseDetail>($"/cours/{id}");
     public Task<ApiResult<CourseSummary>> ShareAsync(Guid id, bool publish, List<Guid> classroomIds) =>
         PutAsync<CourseSummary>($"/cours/{id}/sharing", new ShareCourseRequest(publish, classroomIds));
+    public Task<ApiResult<CourseDetail>> CreateAsync(CourseInput course) => PostAsync<CourseDetail>("/cours", course);
+    public Task<ApiResult<bool>> UpdateAsync(Guid id, CourseInput course) => PutAsync<bool>($"/cours/{id}", course);
+    public Task<ApiResult<bool>> DeleteAsync(Guid id) => DeleteAsync<bool>($"/cours/{id}");
+    public Task<ApiResult<CourseDetail>> UploadPdfAsync(Guid id, ImageUpload pdf) => UploadAsync<CourseDetail>($"/cours/{id}/upload", pdf);
+    public Task<ApiResult<CourseDetail>> RestructureAsync(Guid id) => PostAsync<CourseDetail>($"/cours/{id}/restructure");
+    public Task<ApiResult<CourseDetail>> ImportLinkAsync(string url) => PostAsync<CourseDetail>("/cours/import-link", new { url });
+    public Task<ApiResult<CourseDetail>> ImportPhotosAsync(IEnumerable<ImageUpload> photos) => UploadManyAsync<CourseDetail>("/cours/import-photos", photos);
+    public Task<ApiResult<List<LabSuggestion>>> LabSuggestionsAsync(Guid id) => GetAsync<List<LabSuggestion>>($"/cours/{id}/lab-suggestions");
+    public Task<ApiResult<CourseDetail>> AcceptLabAsync(Guid id, Guid suggestionId) => PostAsync<CourseDetail>($"/cours/{id}/lab-suggestions/{suggestionId}/accept");
+    public Task<ApiResult<CourseDetail>> AcceptAllLabsAsync(Guid id) => PostAsync<CourseDetail>($"/cours/{id}/lab-suggestions/accept-all");
+    public Task<ApiResult<bool>> RefuseLabAsync(Guid id, Guid suggestionId) => PostAsync<bool>($"/cours/{id}/lab-suggestions/{suggestionId}/refuse");
+}
+
+public class MediaApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.Site), IMediaApi
+{
+    public Task<ApiResult<UploadedFile>> UploadImageAsync(ImageUpload image) => UploadAsync<UploadedFile>("/api/upload", image);
+}
+
+public class PracticeQuizApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.Quiz), IPracticeQuizApi
+{
+    public Task<ApiResult<PracticeQuiz>> GenerateAsync(string title, string courseText, int questions, string difficulty) =>
+        PostAsync<PracticeQuiz>("/api/quiz/generate", new GeneratePracticeQuizRequest(title, courseText, questions, difficulty));
+    public Task<ApiResult<PracticeProblemSet>> GenerateProblemsAsync(string title, string courseText, int count, string difficulty) =>
+        PostAsync<PracticeProblemSet>("/api/quiz/problems", new GeneratePracticeProblemsRequest(title, courseText, count, difficulty));
+    public Task<ApiResult<PracticeResult>> SubmitAsync(Guid quizId, List<PracticeAnswer> answers) =>
+        PostAsync<PracticeResult>($"/api/quiz/{quizId}/submit", new { answers });
 }
 
 public class AssessmentApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.Quiz), IAssessmentApi
@@ -206,4 +318,6 @@ public class TutorApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiC
         PutAsync<TutorMessage>($"/tutor/messages/{messageId}/pin", new { pinned });
     public Task<ApiResult<List<PinnedExplanation>>> PinnedAsync() => GetAsync<List<PinnedExplanation>>("/tutor/pinned");
     public Task<ApiResult<bool>> ClearAsync(Guid courseId) => DeleteAsync<bool>($"/tutor/courses/{courseId}");
+    public Task<ApiResult<string>> DraftCourseAsync(string subject, string? instructions) =>
+        PostAsync<string>("/chat/draft", new { subject, additionalInstructions = instructions });
 }

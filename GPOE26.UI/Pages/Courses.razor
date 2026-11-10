@@ -10,13 +10,12 @@
     <div class="ga-head">
         <div>
             <h1>@(IsTeacher ? "Mes cours" : "Cours de mes classes")</h1>
-            <p>@(IsTeacher ? "Publiez vos cours pour vos classes : vos élèves les lisent gratuitement." : "Les cours partagés par tes enseignants.")</p>
+            <p>@(IsTeacher ? "Publiez vos cours pour vos classes : vos élèves les lisent gratuitement." : "Les cours partagés par tes enseignants et les documents que tu as importés.")</p>
         </div>
-        @if (IsTeacher)
-        {
-            <a class="ga-btn" href="/cours/create"><Icon Name="plus" /> Nouveau cours</a>
-        }
+        <a class="ga-btn" href="/app/cours/nouveau"><Icon Name="plus" /> @(IsTeacher ? "Nouveau cours" : "Ajouter un document")</a>
     </div>
+
+    <CourseImportLink />
 
     @if (!Ready || _loading)
     {
@@ -35,7 +34,41 @@
         <div class="ga-grid">
             @foreach (var c in _courses)
             {
-                <article class="ga-card">
+                @CourseCard(c)
+            }
+        </div>
+
+        @if (!IsTeacher)
+        {
+            <h2 class="ga-h2">Mes documents</h2>
+            @if (_documents.Count == 0)
+            {
+                <div class="ga-empty"><span>Colle un lien, importe un PDF ou des photos : l'agent en fait un cours à lire, avec des labos quand le sujet s'y prête.</span></div>
+            }
+            <div class="ga-grid">
+                @foreach (var c in _documents)
+                {
+                    @DocumentCard(c)
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private RenderFragment DocumentCard(CourseSummary c) =>
+        @<article class="ga-card">
+            <span class="ga-small ga-muted" style="font-weight:700; letter-spacing:.06em">@c.Subject.ToUpperInvariant()</span>
+            <h3 class="ga-h3">@c.Title</h3>
+            @if (c.Description is { Length: > 0 }) { <p class="ga-muted" style="margin:0">@c.Description</p> }
+            <div class="ga-row" style="margin-top:auto">
+                <a class="ga-btn secondary small" href="/app/cours/@c.Id">Lire</a>
+                <a class="ga-btn ghost small" href="/app/cours/@c.Id/modifier">Modifier</a>
+            </div>
+        </article>;
+
+    private RenderFragment CourseCard(CourseSummary c) =>
+        @<article class="ga-card">
                     <div class="ga-row between" style="align-items:flex-start">
                         <span class="ga-small ga-muted" style="font-weight:700; letter-spacing:.06em">@c.Subject.ToUpperInvariant()</span>
                         @if (IsTeacher)
@@ -53,7 +86,7 @@
                         <a class="ga-btn secondary small" href="/app/cours/@c.Id">Lire</a>
                         @if (IsTeacher)
                         {
-                            <a class="ga-btn ghost small" href="/cours/edit/@c.Id">Modifier</a>
+                            <a class="ga-btn ghost small" href="/app/cours/@c.Id/modifier">Modifier</a>
                             <button class="ga-btn ghost small" @onclick="() => OpenShare(c)"><Icon Name="share" /> Partager</button>
                         }
                     </div>
@@ -80,17 +113,13 @@
                             </div>
                         </fieldset>
                     }
-                </article>
-            }
-        </div>
-    }
-</div>
+                </article>;
 
-@code {
     private bool IsTeacher => Session.Role == UserRole.Teacher;
     private bool _loading = true;
     private string? _error;
     private List<CourseSummary> _courses = new();
+    private List<CourseSummary> _documents = new();
     private List<Classroom> _classes = new();
     private CourseSummary? _sharing;
     private HashSet<Guid> _selected = new();
@@ -101,6 +130,7 @@
         _error = courses.Error;
         _courses = courses.Value ?? new();
         if (IsTeacher) _classes = (await Classrooms.MineAsync()).Value ?? new();
+        else _documents = (await CourseApi.MineAsync()).Value ?? new();
         _loading = false;
     }
 

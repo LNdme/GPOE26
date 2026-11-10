@@ -1,0 +1,40 @@
+@* Espace d'import par lien : on colle l'adresse, l'agent fait le reste. *@
+@inject ICourseApi Courses
+@inject NavigationManager Nav
+
+<form class="ga-card il-card" @onsubmit="ImportAsync" @onsubmit:preventDefault>
+    <div>
+        <h2 class="ga-h3"><Icon Name="link" /> Tu as le lien d'un cours ?</h2>
+        <p class="ga-small ga-muted" style="margin:4px 0 0">Colle-le ici : page web, PDF en ligne, Google Drive ou Dropbox. L'agent récupère le cours, le met en forme et te propose des labos si le sujet s'y prête.</p>
+    </div>
+    <div class="il-row">
+        <label for="il-url" class="ga-sr">Lien du cours</label>
+        <input id="il-url" class="ga-input" type="url" inputmode="url" autocomplete="off" placeholder="https://…" disabled="@_busy" @bind="_url" @bind:event="oninput" />
+        <button type="submit" class="ga-btn" disabled="@(_busy || string.IsNullOrWhiteSpace(_url))">@(_busy ? "Récupération…" : "Importer")</button>
+    </div>
+    @if (_busy)
+    {
+        <span class="ga-small ga-muted" role="status">Lecture du cours et copie de ses images : cela peut prendre une minute.</span>
+    }
+    <Alert Message="@_error" />
+</form>
+
+@code {
+    private string? _url, _error;
+    private bool _busy;
+
+    private async Task ImportAsync()
+    {
+        if (_busy || string.IsNullOrWhiteSpace(_url)) return;
+        _busy = true;
+        _error = null;
+        var result = await Courses.ImportLinkAsync(_url.Trim());
+        _busy = false;
+        if (result.Value is null)
+        {
+            _error = result.Error ?? "Ce lien n'a pas pu être importé.";
+            return;
+        }
+        Nav.NavigateTo($"/app/cours/{result.Value.Id}");
+    }
+}

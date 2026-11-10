@@ -5,10 +5,10 @@ using User.Model;
 namespace User.Service;
 
 /// <summary>Droit d'accès Premium d'un utilisateur, quelle qu'en soit l'origine.</summary>
-public record Entitlement(bool IsPremium, SubscriptionPlan? Plan, DateTime? Until, string? Source)
-{
-    public static readonly Entitlement Free = new(false, null, null, null);
-}
+public record Entitlement(bool IsPremium, SubscriptionPlan? Plan, DateTime? Until, string? Source, List<EntitledFeature>? Features = null);
+
+/// <summary>Fonctionnalité accessible. Limit : quota mensuel, vide si illimité.</summary>
+public record EntitledFeature(string Code, int? Limit);
 
 public enum RedeemError
 {
@@ -25,10 +25,52 @@ public enum RedeemError
 /// Un utilisateur est Premium s'il possède un abonnement individuel en cours
 /// (StudentPremium, Teacher, essai) ou s'il a activé une clé dont l'abonnement est en cours.
 /// </summary>
-public class SubscriptionService(UserContext db, IConfiguration config)
+public class SubscriptionService(UserContext db, IConfiguration config, PlanCatalogClient catalog)
 {
     public int TrialDays => config.GetValue("Subscriptions:TrialDays", 14);
     public int FamilySeats => config.GetValue("Subscriptions:FamilySeats", 3);
+
+    /// <summary>Paiement simulé : uniquement en développement, tant qu'aucun moyen de paiement réel n'est branché.</summary>
+    public bool SimulatePayments => config.GetValue("Subscriptions:SimulatePayments", false);
+
+    public static string PlanCode(SubscriptionPlan plan) => plan switch
+    {
+        SubscriptionPlan.StudentPremium => "student-premium",
+        SubscriptionPlan.Family => "family",
+        SubscriptionPlan.Teacher => "teacher",
+        _ => "organization-license"
+    };
+
+    /// <summary>Fonctionnalités cumulées : formule gratuite + abonnements en cours. Un accès illimité l'emporte sur un quota.</summary>
+    public static List<EntitledFeature> MergeFeatures(IEnumerable<PlanRef> catalog, IEnumerable<SubscriptionPlan> current)
+    {
+        var codes = current.Select(PlanCode).Append("free").ToHashSet();
+        return catalog.Where(p => codes.Contains(p.Code))
+            .SelectMany(p => p.Features)
+            .GroupBy(f => f.Code)
+            .Select(g => new EntitledFeature(g.Key, g.Any(f => f.Limit is null) ? null : g.Max(f => f.Limit)))
+            .ToList();
+    }
+
+    /// <summary>Quel rôle peut activer une clé de cette formule ?</summary>
+    public static bool CanRedeem(SubscriptionPlan plan, UserRole role) => plan switch
+    {
+        SubscriptionPlan.StudentPremium => role == UserRole.Student,
+        SubscriptionPlan.Teacher => role == UserRole.Teacher,
+        SubscriptionPlan.Family => role == UserRole.Student,
+        SubscriptionPlan.OrganizationLicense => role is UserRole.Teacher or UserRole.Student,
+        _ => false
+    };
+
+    /// <summary>Quel rôle peut souscrire cette formule (paiement simulé) ?</summary>
+    public static bool CanPurchase(SubscriptionPlan plan, UserRole role) => (plan, role) switch
+    {
+        (SubscriptionPlan.StudentPremium, UserRole.Student) => true,
+        (SubscriptionPlan.Family, UserRole.Parent) => true,
+        (SubscriptionPlan.Teacher, UserRole.Teacher) => true,
+        (SubscriptionPlan.OrganizationLicense, UserRole.Teacher) => true,
+        _ => false
+    };
 
     public async Task<Entitlement> GetEntitlementAsync(Guid userId)
     {
@@ -37,25 +79,24 @@ public class SubscriptionService(UserContext db, IConfiguration config)
 
         var own = await db.Subscriptions
             .Where(s => s.OwnerUserId == userId
-                        && (s.Plan == SubscriptionPlan.StudentPremium || s.Plan == SubscriptionPlan.Teacher)
+                        && (s.Plan == SubscriptionPlan.StudentPremium || s.Plan == SubscriptionPlan.Teacher || s.Plan == SubscriptionPlan.Family)
                         && active.Contains(s.Status) && s.EndsAt > now)
-            .OrderByDescending(s => s.EndsAt)
-            .FirstOrDefaultAsync();
+            .ToListAsync();
 
         var viaKey = await db.KeyRedemptions
             .Where(r => r.UserId == userId && !r.Key.IsRevoked)
             .Select(r => r.Key.Subscription)
             .Where(s => active.Contains(s.Status) && s.EndsAt > now)
-            .OrderByDescending(s => s.EndsAt)
-            .FirstOrDefaultAsync();
+            .ToListAsync();
 
-        var best = new[] { own, viaKey }.Where(s => s is not null).MaxBy(s => s!.EndsAt);
-        if (best is null) return Entitlement.Free;
+        var features = MergeFeatures(await catalog.GetAsync(), own.Concat(viaKey).Select(s => s.Plan));
+        var best = own.Concat(viaKey).MaxBy(s => s.EndsAt);
+        if (best is null) return new Entitlement(false, null, null, null, features);
 
-        var source = best == own
+        var source = own.Contains(best)
             ? (best.Status == SubscriptionStatus.Trial ? "trial" : "subscription")
             : "key";
-        return new Entitlement(true, best.Plan, best.EndsAt, source);
+        return new Entitlement(true, best.Plan, best.EndsAt, source, features);
     }
 
     /// <summary>
@@ -73,13 +114,7 @@ public class SubscriptionService(UserContext db, IConfiguration config)
         if (key.IsRevoked) return (RedeemError.Revoked, key);
         if (!key.Subscription.IsCurrent(DateTime.UtcNow)) return (RedeemError.Inactive, key);
 
-        var allowed = key.Subscription.Plan switch
-        {
-            SubscriptionPlan.Family => role == UserRole.Student,
-            SubscriptionPlan.OrganizationLicense => role is UserRole.Teacher or UserRole.Student,
-            _ => false
-        };
-        if (!allowed) return (RedeemError.WrongRole, key);
+        if (!CanRedeem(key.Subscription.Plan, role)) return (RedeemError.WrongRole, key);
         if (key.UsedCount >= key.MaxUses) return (RedeemError.Full, key);
 
         return (RedeemError.None, key);
@@ -157,7 +192,7 @@ public class SubscriptionService(UserContext db, IConfiguration config)
     /// Active un abonnement (paiement confirmé — en attendant la phase 5, par un administrateur)
     /// et génère la clé à partager pour les formules Family et OrganizationLicense.
     /// </summary>
-    public async Task<SubscriptionKey?> ActivateAsync(Subscription sub, int? months = null)
+    public async Task<SubscriptionKey?> ActivateAsync(Subscription sub, int? months = null, bool alwaysIssueKey = false)
     {
         var now = DateTime.UtcNow;
         sub.Status = SubscriptionStatus.Active;
@@ -165,10 +200,15 @@ public class SubscriptionService(UserContext db, IConfiguration config)
         sub.EndsAt = now.AddMonths(months ?? (sub.Period == BillingPeriod.Yearly ? 12 : 1));
 
         SubscriptionKey? key = null;
-        if (sub.Plan is SubscriptionPlan.Family or SubscriptionPlan.OrganizationLicense
+        if ((alwaysIssueKey || sub.Plan is SubscriptionPlan.Family or SubscriptionPlan.OrganizationLicense)
             && !await db.SubscriptionKeys.AnyAsync(k => k.SubscriptionId == sub.Id))
         {
-            var prefix = "FAM";
+            var prefix = sub.Plan switch
+            {
+                SubscriptionPlan.StudentPremium => "ELE",
+                SubscriptionPlan.Teacher => "ENS",
+                _ => "FAM"
+            };
             if (sub.Plan == SubscriptionPlan.OrganizationLicense)
             {
                 var org = await db.Organizations.FindAsync(sub.OrganizationId);

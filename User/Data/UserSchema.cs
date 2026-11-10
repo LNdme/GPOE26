@@ -29,6 +29,7 @@ public static class UserSchema
 
         // ── Phase 1 : profil d'apprentissage, profil enseignant, rattachements ──
         @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""SubSystem"" text",
+        @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""Stage"" text",
         @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""ExamTarget"" text",
         @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""ExamDate"" date",
         @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""FocusSubjects"" text[] NOT NULL DEFAULT ARRAY[]::text[]",
@@ -38,6 +39,8 @@ public static class UserSchema
         @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""TeachingContext"" text",
         @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""OrganizationId"" uuid",
         @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""OrganizationName"" text",
+        // Éditeurs du contenu du site de l'établissement
+        @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""SiteEditor"" boolean NOT NULL DEFAULT false",
         @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AppUsers_LinkCode"" ON ""AppUsers"" (""LinkCode"")",
 
         @"CREATE TABLE IF NOT EXISTS ""Organizations"" (

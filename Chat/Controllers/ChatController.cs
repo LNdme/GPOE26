@@ -52,7 +52,16 @@ public class ChatController(ILlmService claudeService) : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Subject))
             return BadRequest("Le sujet est requis pour générer le cours.");
 
-        var result = await claudeService.GenerateDraftAsync(request, cancellationToken);
-        return Ok(result);
+        try
+        {
+            var result = await claudeService.GenerateDraftAsync(request, cancellationToken);
+            return Ok(result);
+        }
+        catch (GPOE26.ServiceDefaults.Llm.LlmUnavailableException ex)
+        {
+            return ex is GPOE26.ServiceDefaults.Llm.LlmNotConfiguredException
+                ? StatusCode(503, new { message = "La rédaction par l'IA n'est pas activée sur ce serveur : aucune clé d'IA n'est configurée." })
+                : StatusCode(502, new { message = "L'IA ne répond pas pour le moment. Réessayez dans un instant." });
+        }
     }
 }

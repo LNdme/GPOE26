@@ -1,0 +1,92 @@
+@using GPOE26.UI.Components
+@using GPOE26.UI.Models
+@using GPOE26.UI.Services
+@inject IPlanApi PlanApi
+
+@* Aperçu des formules sur l'accueil : le comparatif complet est sur /tarifs *@
+<section class="pricing-preview" id="tarifs" aria-labelledby="pricing-title">
+    <div class="container">
+        <div class="home-section-heading">
+            <div>
+                <span class="home-eyebrow home-eyebrow--dark">Tarifs</span>
+                <h2 id="pricing-title">Une formule pour chacun</h2>
+                <p class="pricing-preview__lead">Commencez gratuitement, passez à Premium quand vous en avez besoin. Sans engagement.</p>
+            </div>
+            <a href="/tarifs" class="home-section-link">Comparer les formules <Icon Name="right" Size="16" Stroke="2" /></a>
+        </div>
+
+        @if (_plans is null)
+        {
+            <div class="home-loading"><span class="spinner-border spinner-border-sm text-brand-dark" role="status"></span> Chargement des formules…</div>
+        }
+        else if (_plans.Count == 0)
+        {
+            <p class="home-empty">Les formules seront bientôt présentées ici. <a href="/tarifs">Voir la page Tarifs</a></p>
+        }
+        else
+        {
+            <div class="pricing-grid">
+                @foreach (var plan in _plans.Where(p => p.PriceMonthly is not null).Take(4))
+                {
+                    var featured = plan.Features.Any(f => f.Code == "tutor-ai") && plan.Seats <= 1;
+                    <article class="price-card @(featured ? "is-featured" : "")">
+                        <div class="price-card__top">
+                            <span class="price-card__category">@plan.Category</span>
+                            @if (featured) { <span class="price-card__flag">Tuteur IA inclus</span> }
+                        </div>
+                        <h3>@plan.Name</h3>
+                        <div class="price-card__price">
+                            @if (plan.PriceMonthly == 0)
+                            {
+                                <strong>0</strong><span>@plan.Currency · pour toujours</span>
+                            }
+                            else
+                            {
+                                <strong>@Format(plan.PriceMonthly!.Value)</strong><span>@plan.Currency / mois</span>
+                            }
+                        </div>
+                        @if (plan.Description is { Length: > 0 }) { <p class="price-card__desc">@plan.Description</p> }
+                        <ul>
+                            @foreach (var feature in plan.Features.Take(5))
+                            {
+                                <li><Icon Name="tick" Size="16" Stroke="2.2" /> @feature.Label@(feature.Limit is { } l ? $" ({l}/mois)" : "")</li>
+                            }
+                            @if (plan.Features.Count > 5)
+                            {
+                                <li class="more">+ @(plan.Features.Count - 5) autres avantages</li>
+                            }
+                        </ul>
+                        <a class="site-btn @(featured ? "site-btn--primary" : "site-btn--ghost") price-card__cta" href="@(plan.PriceMonthly == 0 ? "/register" : "/tarifs")">
+                            @(plan.PriceMonthly == 0 ? "Commencer gratuitement" : "Choisir " + plan.Name)
+                        </a>
+                    </article>
+                }
+            </div>
+
+            @if (_plans.FirstOrDefault(p => p.PriceMonthly is null) is { } license)
+            {
+                <div class="pricing-license">
+                    <span class="pricing-license__icon"><Icon Name="building" Size="24" /></span>
+                    <div>
+                        <strong>@license.Name</strong>
+                        <p>@(license.Description ?? "Pour un établissement ou une institution.") Jusqu’à @license.Seats comptes, sur devis.</p>
+                    </div>
+                    <a class="site-btn site-btn--light" href="/tarifs">En savoir plus</a>
+                </div>
+            }
+        }
+    </div>
+</section>
+
+@code {
+    private List<PlanInfo>? _plans;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await PlanApi.ListAsync();
+        _plans = result.Value ?? new();
+    }
+
+    private static string Format(int amount) =>
+        amount.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"));
+}

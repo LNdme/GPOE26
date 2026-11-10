@@ -1,0 +1,121 @@
+@* Labos proposés par l'agent après l'import d'un cours : un clic pour les intégrer à l'explication. *@
+@inject ICourseApi Courses
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+@if (_items.Count > 0)
+{
+    <section class="ls-panel" aria-labelledby="ls-title" @ref="_root">
+        <div class="ls-head">
+            <div>
+                <span class="ls-kicker"><Icon Name="spark" Size="14" /> L'AGENT TE PROPOSE</span>
+                <h2 id="ls-title" class="ga-h3">@(_items.Count == 1 ? "Un labo pour mieux comprendre ce cours" : $"{_items.Count} labos pour mieux comprendre ce cours")</h2>
+            </div>
+            @if (_items.Count > 1)
+            {
+                <button type="button" class="ga-btn small" disabled="@_busy" @onclick="AcceptAllAsync">Tout ajouter</button>
+            }
+        </div>
+
+        <Alert Message="@_error" />
+
+        @foreach (var item in _items)
+        {
+            <article class="ls-item">
+                <strong>@item.Title</strong>
+                @if (item.Anchor.Length > 0) { <span class="ga-small ga-muted">Dans la partie « @item.Anchor »</span> }
+                <p>@item.Reason</p>
+                @if (_previewed.Contains(item.Id))
+                {
+                    <div class="rd-content">@((MarkupString)MarkdownRenderer.Render(item.Block).Html)</div>
+                }
+                <div class="ga-actions">
+                    <button type="button" class="ga-btn small" disabled="@_busy" @onclick="() => AcceptAsync(item)"><Icon Name="plus" /> Ajouter au cours</button>
+                    <button type="button" class="ga-btn secondary small" aria-expanded="@Aria.State(_previewed.Contains(item.Id))" @onclick="() => TogglePreview(item)">@(_previewed.Contains(item.Id) ? "Masquer l'essai" : "Essayer")</button>
+                    <button type="button" class="ga-btn ghost small" disabled="@_busy" @onclick="() => RefuseAsync(item)">Non merci</button>
+                </div>
+            </article>
+        }
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired] public Guid CourseId { get; set; }
+
+    /// <summary>Change quand l'analyse du cours vient de se terminer.</summary>
+    [Parameter] public int Version { get; set; }
+
+    [Parameter] public EventCallback<(CourseDetail Course, string Message)> OnChanged { get; set; }
+
+    private List<LabSuggestion> _items = new();
+    private readonly HashSet<Guid> _previewed = new();
+    private (Guid, int)? _loaded;
+    private bool _busy, _mountPending;
+    private string? _error;
+    private ElementReference _root;
+    private IJSObjectReference? _module;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loaded == (CourseId, Version)) return;
+        _loaded = (CourseId, Version);
+        _items = (await Courses.LabSuggestionsAsync(CourseId)).Value ?? new();
+    }
+
+    private void TogglePreview(LabSuggestion item)
+    {
+        if (!_previewed.Remove(item.Id))
+        {
+            _previewed.Add(item.Id);
+            _mountPending = true;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_mountPending) return;
+        _mountPending = false;
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./_content/GPOE26.UI/gpoe-app.js");
+            await _module.InvokeVoidAsync("renderMath", _root);
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task AcceptAsync(LabSuggestion item)
+    {
+        _busy = true;
+        _error = null;
+        var result = await Courses.AcceptLabAsync(CourseId, item.Id);
+        _busy = false;
+        if (result.Value is null) { _error = result.Error; return; }
+        _items.Remove(item);
+        await OnChanged.InvokeAsync((result.Value, item.Anchor.Length > 0 ? $"« {item.Title} » est ajouté à la partie « {item.Anchor} »." : $"« {item.Title} » est ajouté au cours."));
+    }
+
+    private async Task AcceptAllAsync()
+    {
+        _busy = true;
+        _error = null;
+        var count = _items.Count;
+        var result = await Courses.AcceptAllLabsAsync(CourseId);
+        _busy = false;
+        if (result.Value is null) { _error = result.Error; return; }
+        _items.Clear();
+        await OnChanged.InvokeAsync((result.Value, $"{count} labos ajoutés au cours, à côté des explications concernées."));
+    }
+
+    private async Task RefuseAsync(LabSuggestion item)
+    {
+        var result = await Courses.RefuseLabAsync(CourseId, item.Id);
+        if (!result.Ok) { _error = result.Error; return; }
+        _items.Remove(item);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { if (_module is not null) await _module.DisposeAsync(); }
+        catch (JSDisconnectedException) { }
+    }
+}

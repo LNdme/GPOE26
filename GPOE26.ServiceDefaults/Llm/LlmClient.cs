@@ -21,6 +21,9 @@ public record LlmMessage(string Role, string Content, IReadOnlyList<LlmImage>? I
 
 public class LlmUnavailableException(string message, Exception? inner = null) : Exception(message, inner);
 
+/// <summary>Aucun fournisseur d'IA n'est configuré : réessayer ne servira à rien.</summary>
+public class LlmNotConfiguredException() : LlmUnavailableException("Aucune clé LLM n'est configurée (LLM__ApiKey).");
+
 /// <summary>
 /// Client d'un LLM compatible OpenAI (OpenRouter, DeepSeek, OpenAI, Ollama…).
 /// Configuration (section "LLM") :
@@ -39,16 +42,25 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
     public IReadOnlyList<string> VisionModels => config["LLM:VisionModels"] is { Length: > 0 } v ? Split(v) : TextModels;
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(ApiKey) || BaseUrl.Contains("localhost");
+    private bool IsOpenRouter => BaseUrl.Contains("openrouter.ai", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Envoie la conversation et renvoie la réponse du premier modèle qui répond.
     /// Les modèles de vision sont utilisés dès qu'un message contient une image.
     /// </summary>
+    /// <param name="requireComplete">
+    /// Une réponse coupée par la limite de longueur compte comme un échec : le modèle suivant est essayé.
+    /// Pour les retranscriptions, où une fin manquante serait du contenu perdu.
+    /// </param>
+    /// <param name="reasoning">
+    /// False pour une tâche de recopie (retranscription d'une page) : un modèle « raisonnant » y dépense des milliers
+    /// de jetons de réflexion, dépasse le délai ou la limite de longueur, et la page n'est jamais lue.
+    /// </param>
     public async Task<string> CompleteAsync(IReadOnlyList<LlmMessage> messages, int maxTokens = 4000,
-        double temperature = 0.4, CancellationToken ct = default)
+        double temperature = 0.4, CancellationToken ct = default, bool requireComplete = false, bool reasoning = true)
     {
         if (!IsConfigured)
-            throw new LlmUnavailableException("Aucune clé LLM n'est configurée (LLM__ApiKey).");
+            throw new LlmNotConfiguredException();
 
         var vision = messages.Any(m => m.Images is { Count: > 0 });
         var models = vision ? VisionModels : TextModels;
@@ -61,7 +73,7 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
                 // Délai par modèle : un fournisseur gratuit saturé ne doit pas bloquer les suivants
                 using var attempt = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 attempt.CancelAfter(TimeSpan.FromSeconds(int.TryParse(config["LLM:AttemptTimeoutSeconds"], out var s) ? s : 90));
-                var reply = await CallAsync(model, messages, maxTokens, temperature, attempt.Token);
+                var reply = await CallAsync(model, messages, maxTokens, temperature, requireComplete, reasoning, attempt.Token);
                 if (!string.IsNullOrWhiteSpace(reply)) return reply.Trim();
                 logger.LogWarning("Réponse vide du modèle {Model}, essai du suivant", model);
                 last = new LlmUnavailableException($"Réponse vide de {model}");
@@ -80,8 +92,32 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
         throw new LlmUnavailableException("Aucun modèle n'a pu répondre. Réessayez dans un instant.", last);
     }
 
+    /// <summary>Vecteur de sens d'un texte (réglage LLM:EmbeddingModel). Null si aucun modèle n'est configuré ou en cas d'échec.</summary>
+    public async Task<float[]?> EmbedAsync(string text, CancellationToken ct = default)
+    {
+        if (!IsConfigured || config["LLM:EmbeddingModel"] is not { Length: > 0 } model) return null;
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/embeddings")
+            {
+                Content = new StringContent(new JsonObject { ["model"] = model, ["input"] = text }.ToJsonString(), Encoding.UTF8, "application/json")
+            };
+            if (!string.IsNullOrWhiteSpace(ApiKey))
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ApiKey);
+            using var response = await http.SendAsync(request, ct);
+            if (!response.IsSuccessStatusCode) return null;
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+            return doc.RootElement.GetProperty("data")[0].GetProperty("embedding").EnumerateArray().Select(v => v.GetSingle()).ToArray();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            logger.LogWarning("Embedding indisponible : {Error}", ex.Message);
+            return null;
+        }
+    }
+
     private async Task<string?> CallAsync(string model, IReadOnlyList<LlmMessage> messages, int maxTokens,
-        double temperature, CancellationToken ct)
+        double temperature, bool requireComplete, bool reasoning, CancellationToken ct)
     {
         var body = new JsonObject
         {
@@ -90,6 +126,9 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
             ["temperature"] = temperature,
             ["messages"] = new JsonArray(messages.Select(ToJson).ToArray())
         };
+        // Paramètre propre à OpenRouter : d'autres fournisseurs compatibles OpenAI refuseraient un champ inconnu
+        if (!reasoning && IsOpenRouter)
+            body["reasoning"] = new JsonObject { ["enabled"] = false };
 
         using var request = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/chat/completions")
         {
@@ -110,7 +149,11 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
         if (doc.RootElement.TryGetProperty("error", out var error))
             throw new HttpRequestException(Truncate(error.ToString()), null, HttpStatusCode.BadGateway);
 
-        var message = doc.RootElement.GetProperty("choices")[0].GetProperty("message");
+        var choice = doc.RootElement.GetProperty("choices")[0];
+        if (requireComplete && choice.TryGetProperty("finish_reason", out var finish) && finish.ValueKind == JsonValueKind.String && finish.GetString() == "length")
+            throw new InvalidOperationException("Réponse coupée par la limite de longueur");
+
+        var message = choice.GetProperty("message");
         var content = message.TryGetProperty("content", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString() : null;
         return StripThinking(content);
     }

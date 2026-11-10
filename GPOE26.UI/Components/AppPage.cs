@@ -19,7 +19,9 @@ public abstract class AppPage : ComponentBase
 
     protected bool Ready { get; private set; }
 
-    protected UserProfile Me => Session.Profile!;
+    // Garde le dernier profil connu : un 401 peut fermer la session juste avant la redirection vers /login
+    private UserProfile? _me;
+    protected UserProfile Me => _me = Session.Profile ?? _me!;
 
     protected override async Task OnInitializedAsync()
     {
@@ -32,7 +34,7 @@ public abstract class AppPage : ComponentBase
         }
         if (AllowedRoles is { } roles && !roles.Contains(Session.Role!.Value))
         {
-            Nav.NavigateTo("/app");
+            Nav.NavigateTo(HomeFor(Session.Role));
             return;
         }
         Ready = true;
@@ -41,7 +43,13 @@ public abstract class AppPage : ComponentBase
 
     protected virtual Task LoadAsync() => Task.CompletedTask;
 
-    /// <summary>Adresse de retour sûre (chemin local uniquement, jamais un autre site).</summary>
-    public static string SafeReturnUrl(string? url) =>
-        !string.IsNullOrEmpty(url) && url.StartsWith('/') && !url.StartsWith("//") && !url.StartsWith("/\\") ? url : "/app";
+    /// <summary>
+    /// Accueil d'un rôle. L'administrateur n'a ni classe ni plan d'études : son espace est la gestion du site.
+    /// L'envoyer sur /app lui affichait l'accueil élève, dont l'API refuse les données (403).
+    /// </summary>
+    public static string HomeFor(UserRole? role) => role == UserRole.Admin ? "/admin" : "/app";
+
+    /// <summary>Adresse de retour sûre (chemin local uniquement, jamais un autre site), sinon l'accueil du rôle.</summary>
+    public static string SafeReturnUrl(string? url, UserRole? role = null) =>
+        !string.IsNullOrEmpty(url) && url.StartsWith('/') && !url.StartsWith("//") && !url.StartsWith("/\\") ? url : HomeFor(role);
 }

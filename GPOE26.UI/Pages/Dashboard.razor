@@ -14,6 +14,17 @@ else
     {
         case UserRole.Teacher: <TeacherHome /> break;
         case UserRole.Parent: <ParentHome /> break;
+        @* Redirigé vers la gestion du site : surtout pas l'accueil élève, dont l'API lui refuse les données *@
+        case UserRole.Admin: <div class="ga-page"><Loading /></div> break;
         default: <StudentHome /> break;
+    }
+}
+
+@code {
+    protected override Task LoadAsync()
+    {
+        if (Session.Role == UserRole.Admin)
+            Nav.NavigateTo(HomeFor(UserRole.Admin), replace: true);
+        return Task.CompletedTask;
     }
 }

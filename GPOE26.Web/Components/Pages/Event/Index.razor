@@ -1,4 +1,5 @@
 @page "/events"
+@inject GPOE26.UI.Services.SessionState Session
 
 <PageTitle>Événements – GPOE26</PageTitle>
 
@@ -10,9 +11,12 @@
                 <h1 class="listing-title">Événements</h1>
                 <p class="listing-description">Retrouvez les rendez-vous et les moments importants du lycée.</p>
             </div>
-            <a href="/events/create" class="listing-create-button">
-                <i class="bi bi-plus-lg" aria-hidden="true"></i> Nouvel événement
-            </a>
+            @if (IsAdmin)
+            {
+                <a href="/admin/evenements" class="listing-create-button">
+                    <i class="bi bi-pencil" aria-hidden="true"></i> Gérer les événements
+                </a>
+            }
         </header>
 
         <div class="listing-filters" aria-label="Filtrer les événements">
@@ -67,15 +71,6 @@
                                     <a href="@($"/events/details/{ev.Id}")" class="content-card__primary-link">
                                         Voir l’événement <i class="bi bi-arrow-right" aria-hidden="true"></i>
                                     </a>
-                                    <a href="@($"/events/edit/{ev.Id}")" class="content-card__icon-action"
-                                       title="Modifier l’événement" aria-label="@($"Modifier {ev.Title}")">
-                                        <i class="bi bi-pencil" aria-hidden="true"></i>
-                                    </a>
-                                    <button class="content-card__icon-action content-card__icon-action--danger"
-                                            title="Supprimer l’événement" aria-label="@($"Supprimer {ev.Title}")"
-                                            @onclick="() => ConfirmDelete(ev)">
-                                        <i class="bi bi-trash" aria-hidden="true"></i>
-                                    </button>
                                 </div>
                             </div>
                         </article>
@@ -86,33 +81,20 @@
     </div>
 </div>
 
-@if (_toDelete is not null)
-{
-    <div class="modal d-block" tabindex="-1" style="background: rgba(0,0,0,0.4);">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header"><h5 class="modal-title">Confirmer la suppression</h5><button type="button" class="btn-close" @onclick="CancelDelete"></button></div>
-                <div class="modal-body"><p>Supprimer <strong>@_toDelete.Title</strong> ?</p></div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary" @onclick="CancelDelete">Annuler</button>
-                    <button class="btn btn-danger" @onclick="Delete" disabled="@_deleting">
-                        @if (_deleting) { <span class="spinner-border spinner-border-sm me-1"></span> } Supprimer
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-}
 
 @code {
+    private bool IsAdmin => Session.IsAuthenticated && Session.Profile?.CanEditSite == true;
+
     private bool _loading = true;
-    private bool _deleting = false;
     private List<SchoolEvent> _events = new();
-    private SchoolEvent? _toDelete;
     private string? _selectedType;
     private readonly string[] _types = { "Général", "JPOE", "Sportif", "Culturel", "Administratif", "Voyage" };
 
-    protected override async Task OnInitializedAsync() => await Load();
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.RestoreAsync();
+        await Load();
+    }
 
     private async Task Load()
     {
@@ -122,17 +104,6 @@
     }
 
     private async Task FilterByType(string? type) { _selectedType = type; await Load(); }
-    private void ConfirmDelete(SchoolEvent ev) => _toDelete = ev;
-    private void CancelDelete() => _toDelete = null;
-
-    private async Task Delete()
-    {
-        if (_toDelete is null) return;
-        _deleting = true;
-        await Api.DeleteEventAsync(_toDelete.Id);
-        _toDelete = null; _deleting = false;
-        await Load();
-    }
 
     private static string Truncate(string t, int m) => t.Length <= m ? t : t[..m] + "…";
 }

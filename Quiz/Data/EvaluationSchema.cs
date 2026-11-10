@@ -111,6 +111,13 @@ public static class EvaluationSchema
             CONSTRAINT ""PK_AnswerPhotos"" PRIMARY KEY (""Id"")
         )",
         @"CREATE INDEX IF NOT EXISTS ""IX_AnswerPhotos_SubmissionId_QuestionId"" ON ""AnswerPhotos"" (""SubmissionId"", ""QuestionId"")",
+        // Quiz générés par l'IA, comptés par mois pour les formules à quota
+        @"CREATE TABLE IF NOT EXISTS ""QuizGenerationUsage"" (
+            ""UserId"" uuid NOT NULL,
+            ""Month"" text NOT NULL,
+            ""Count"" integer NOT NULL,
+            CONSTRAINT ""PK_QuizGenerationUsage"" PRIMARY KEY (""UserId"", ""Month"")
+        )",
     };
 
     public static async Task EnsureAsync(EvaluationContext db)

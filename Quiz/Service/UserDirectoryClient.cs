@@ -6,6 +6,9 @@ namespace Quiz.Service;
 public record ClassroomRef(Guid Id, string Name, string? InviteCode, Guid TeacherId);
 public record MemberRef(Guid Id, string Username, string? Level, DateTime? LastLoginAt);
 public record ChildRef(Guid ChildId, string Username, string Status);
+public record EntitledFeatureRef(string Code, int? Limit);
+public record EntitlementRef(List<EntitledFeatureRef>? Features);
+public record MySubscriptionsRef(EntitlementRef Entitlement);
 
 /// <summary>Le service User ne répond pas : l'appelant renvoie 503.</summary>
 public class UserServiceUnavailableException(Exception inner)
@@ -31,6 +34,13 @@ public class UserDirectoryClient(HttpClient http, IHttpContextAccessor context)
     {
         var children = await GetAsync<List<ChildRef>>("/parents/children") ?? new();
         return children.FirstOrDefault(c => c.ChildId == childId && c.Status == "Active");
+    }
+
+    /// <summary>La fonctionnalité si la formule de l'utilisateur l'inclut (avec son quota), sinon null.</summary>
+    public async Task<EntitledFeatureRef?> FeatureAsync(string code)
+    {
+        var mine = await GetAsync<MySubscriptionsRef>("/subscriptions/me");
+        return mine?.Entitlement.Features?.FirstOrDefault(f => f.Code == code);
     }
 
     private async Task<T?> GetAsync<T>(string path)

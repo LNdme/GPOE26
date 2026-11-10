@@ -20,6 +20,7 @@ public static class ApiClients
     public const string Cours = "cours";
     public const string Quiz = "quiz";
     public const string Chat = "chat";
+    public const string Site = "apiservice";
 }
 
 /// <summary>
@@ -54,6 +55,19 @@ public abstract class ApiBase(IHttpClientFactory factory, SessionState session, 
         var file = new ByteArrayContent(image.Data);
         file.Headers.ContentType = new MediaTypeHeaderValue(image.ContentType);
         form.Add(file, "file", image.FileName);
+        return SendAsync<T>(HttpMethod.Post, path, form);
+    }
+
+    /// <summary>Envoi de plusieurs images dans une même requête (champ "files").</summary>
+    protected Task<ApiResult<T>> UploadManyAsync<T>(string path, IEnumerable<ImageUpload> images)
+    {
+        var form = new MultipartFormDataContent();
+        foreach (var image in images)
+        {
+            var file = new ByteArrayContent(image.Data);
+            file.Headers.ContentType = new MediaTypeHeaderValue(image.ContentType);
+            form.Add(file, "files", image.FileName);
+        }
         return SendAsync<T>(HttpMethod.Post, path, form);
     }
 
@@ -97,6 +111,9 @@ public abstract class ApiBase(IHttpClientFactory factory, SessionState session, 
                     return new ApiResult<T>((T)(object)true, null, response.StatusCode);
                 if (response.StatusCode == HttpStatusCode.NoContent)
                     return new ApiResult<T>(default, null, response.StatusCode);
+                // Réponse en texte brut (brouillon de cours rédigé par l'IA, par exemple)
+                if (typeof(T) == typeof(string))
+                    return new ApiResult<T>((T)(object)await response.Content.ReadAsStringAsync(), null, response.StatusCode);
                 var value = await response.Content.ReadFromJsonAsync<T>(Json);
                 return new ApiResult<T>(value, null, response.StatusCode);
             }

@@ -33,12 +33,15 @@ namespace User.Service
             new Claim("username", user.Username),
             new Claim("role", user.Role.ToString()),
             new Claim("level", user.Level ?? ""),
+            new Claim("stage", user.Stage?.ToString() ?? ""),
             new Claim("specialite", user.Specialite ?? ""),
             new Claim("filiere", user.Filiere ?? ""),
             new Claim("lang", user.Language),
             // "premium" → les services Chat/Quiz réservent le tuteur IA et les quiz illimités aux abonnés
             new Claim("premium", entitlement.IsPremium ? "true" : "false"),
             new Claim("plan", entitlement.Plan?.ToString() ?? ""),
+            // "site_editor" → le service du site autorise la gestion du contenu (en plus du rôle Admin)
+            new Claim("site_editor", user.SiteEditor ? "true" : "false"),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
 

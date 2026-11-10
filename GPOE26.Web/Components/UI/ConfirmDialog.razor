@@ -1,0 +1,28 @@
+@* Boîte de confirmation (suppression…) de l'administration *@
+@if (Open)
+{
+    <div class="admin-dialog" role="dialog" aria-modal="true" aria-labelledby="admin-dialog-title">
+        <button type="button" class="admin-dialog__scrim" tabindex="-1" aria-label="Annuler" @onclick="OnCancel"></button>
+        <div class="admin-dialog__card">
+            <h2 id="admin-dialog-title">@Title</h2>
+            <div class="admin-dialog__body">@ChildContent</div>
+            <div class="admin-dialog__actions">
+                <button type="button" class="site-btn site-btn--quiet" @onclick="OnCancel" disabled="@Busy">Annuler</button>
+                <button type="button" class="site-btn site-btn--danger" @onclick="OnConfirm" disabled="@Busy">
+                    @if (Busy) { <span class="spinner-border spinner-border-sm" role="status"></span> }
+                    @ConfirmLabel
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public string Title { get; set; } = "Confirmer la suppression";
+    [Parameter] public string ConfirmLabel { get; set; } = "Supprimer";
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public EventCallback OnConfirm { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+}
