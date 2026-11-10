@@ -1,4 +1,5 @@
 @page "/hierarchy"
+@inject GPOE26.UI.Services.SessionState Session
 
 <PageTitle>Personnel – GPOE26</PageTitle>
 
@@ -10,9 +11,12 @@
                 <h1 class="listing-title">Notre équipe</h1>
                 <p class="listing-description">Découvrez les personnes qui accompagnent les élèves au quotidien.</p>
             </div>
-            <a href="/hierarchy/create" class="listing-create-button">
-                <i class="bi bi-plus-lg" aria-hidden="true"></i> Ajouter un membre
-            </a>
+            @if (IsAdmin)
+            {
+                <a href="/admin/equipe" class="listing-create-button">
+                    <i class="bi bi-pencil" aria-hidden="true"></i> Gérer l’équipe
+                </a>
+            }
         </header>
 
         @if (_loading)
@@ -53,17 +57,6 @@
                             {
                                 <p class="team-directory-card__department">@m.Department</p>
                             }
-                            <div class="team-directory-card__actions">
-                                <a href="@($"/hierarchy/edit/{m.Id}")" class="content-card__icon-action"
-                                   title="Modifier le membre" aria-label="@($"Modifier {m.PreName} {m.Name}")">
-                                    <i class="bi bi-pencil" aria-hidden="true"></i>
-                                </a>
-                                <button class="content-card__icon-action content-card__icon-action--danger"
-                                        title="Supprimer le membre" aria-label="@($"Supprimer {m.PreName} {m.Name}")"
-                                        @onclick="() => ConfirmDel(m)">
-                                    <i class="bi bi-trash" aria-hidden="true"></i>
-                                </button>
-                            </div>
                         </article>
                     </div>
                 }
@@ -72,39 +65,17 @@
     </div>
 </div>
 
-@if (_toDel is not null)
-{
-    <div class="modal d-block" tabindex="-1" style="background: rgba(0,0,0,0.4);">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header"><h5 class="modal-title">Confirmer la suppression</h5><button type="button" class="btn-close" @onclick="CancelDel"></button></div>
-                <div class="modal-body"><p>Supprimer <strong>@_toDel.PreName @_toDel.Name</strong> ?</p></div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary" @onclick="CancelDel">Annuler</button>
-                    <button class="btn btn-danger" @onclick="Del" disabled="@_deleting">
-                        @if (_deleting) { <span class="spinner-border spinner-border-sm me-1"></span> } Supprimer
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-}
 
 @code {
-    private bool _loading = true, _deleting;
-    private List<Hierarchy> _items = new();
-    private Hierarchy? _toDel;
+    private bool IsAdmin => Session.Role == GPOE26.UI.Models.UserRole.Admin;
 
-    protected override async Task OnInitializedAsync() => await Load();
-    private async Task Load() { _loading = true; _items = await Api.GetHierarchyAsync(); _loading = false; }
-    private void ConfirmDel(Hierarchy m) => _toDel = m;
-    private void CancelDel() => _toDel = null;
-    private async Task Del()
+    private bool _loading = true;
+    private List<Hierarchy> _items = new();
+
+    protected override async Task OnInitializedAsync()
     {
-        if (_toDel is null) return;
-        _deleting = true;
-        await Api.DeleteHierarchyAsync(_toDel.Id);
-        _toDel = null; _deleting = false;
+        await Session.RestoreAsync();
         await Load();
     }
+    private async Task Load() { _loading = true; _items = await Api.GetHierarchyAsync(); _loading = false; }
 }

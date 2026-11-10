@@ -1,4 +1,5 @@
-@page "/activities/create"
+@page "/admin/activites/nouveau"
+@layout GPOE26.Web.Components.Layout.AdminLayout
 
 <PageTitle>Créer une activité – GPOE26</PageTitle>
 
@@ -6,7 +7,7 @@
     <div class="form-section management-shell">
         <nav aria-label="breadcrumb" class="mb-3">
             <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="/activities" class="text-navy text-decoration-none">Activités</a></li>
+                <li class="breadcrumb-item"><a href="/admin/activites" class="text-navy text-decoration-none">Activités</a></li>
                 <li class="breadcrumb-item active">Nouvelle</li>
             </ol>
         </nav>
@@ -66,7 +67,7 @@
                 <button type="submit" class="btn btn-navy" disabled="@_saving">
                     @if (_saving) { <span class="spinner-border spinner-border-sm me-1"></span> } Créer
                 </button>
-                <a href="/activities" class="btn btn-outline-secondary">Annuler</a>
+                <a href="/admin/activites" class="btn btn-outline-secondary">Annuler</a>
             </div>
         </EditForm>
     </div>
@@ -114,7 +115,7 @@
         _saving = true; _errorMessage = null;
         var ok = await Api.CreateActivityAsync(_item);
         _saving = false;
-        if (ok) Nav.NavigateTo("/activities");
+        if (ok) Nav.NavigateTo("/admin/activites");
         else _errorMessage = "Erreur lors de la création.";
     }
 }

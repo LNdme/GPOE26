@@ -1,4 +1,5 @@
 @page "/blog"
+@inject GPOE26.UI.Services.SessionState Session
 
 <PageTitle>Actualités – GPOE26</PageTitle>
 
@@ -10,9 +11,12 @@
                 <h1 class="listing-title">Actualités</h1>
                 <p class="listing-description">Les nouvelles, les projets et les temps forts du lycée.</p>
             </div>
-            <a href="/blog/create" class="listing-create-button">
-                <i class="bi bi-plus-lg" aria-hidden="true"></i> Nouvel article
-            </a>
+            @if (IsAdmin)
+            {
+                <a href="/admin/actualites" class="listing-create-button">
+                    <i class="bi bi-pencil" aria-hidden="true"></i> Gérer les actualités
+                </a>
+            }
         </header>
 
         <div class="listing-filters" aria-label="Filtrer les actualités">
@@ -60,15 +64,6 @@
                                     <a href="@($"/blog/details/{article.Id}")" class="content-card__primary-link">
                                         Lire l’article <i class="bi bi-arrow-right" aria-hidden="true"></i>
                                     </a>
-                                    <a href="@($"/blog/edit/{article.Id}")" class="content-card__icon-action"
-                                       title="Modifier l’article" aria-label="@($"Modifier {article.Title}")">
-                                        <i class="bi bi-pencil" aria-hidden="true"></i>
-                                    </a>
-                                    <button class="content-card__icon-action content-card__icon-action--danger"
-                                            title="Supprimer l’article" aria-label="@($"Supprimer {article.Title}")"
-                                            @onclick="() => ConfirmDelete(article)">
-                                        <i class="bi bi-trash" aria-hidden="true"></i>
-                                    </button>
                                 </div>
                             </div>
                         </article>
@@ -100,36 +95,12 @@
     </div>
 </div>
 
-@* Modal de confirmation de suppression *@
-@if (_articleToDelete is not null)
-{
-    <div class="modal d-block" tabindex="-1" style="background: rgba(0,0,0,0.4);">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Confirmer la suppression</h5>
-                    <button type="button" class="btn-close" @onclick="CancelDelete"></button>
-                </div>
-                <div class="modal-body">
-                    <p>Voulez-vous vraiment supprimer l'article <strong>@_articleToDelete.Title</strong> ?</p>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary" @onclick="CancelDelete">Annuler</button>
-                    <button class="btn btn-danger" @onclick="DeleteArticle" disabled="@_deleting">
-                        @if (_deleting) { <span class="spinner-border spinner-border-sm me-1"></span> }
-                        Supprimer
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-}
 
 @code {
+    private bool IsAdmin => Session.Role == GPOE26.UI.Models.UserRole.Admin;
+
     private bool _loading = true;
-    private bool _deleting = false;
     private List<NewArticle> _articles = new();
-    private NewArticle? _articleToDelete;
     private int _total;
     private int _currentPage = 1;
     private int _pageSize = 9;
@@ -139,13 +110,14 @@
 
     protected override async Task OnInitializedAsync()
     {
+        await Session.RestoreAsync();
         await LoadArticles();
     }
 
     private async Task LoadArticles()
     {
         _loading = true;
-        var result = await Api.GetNewsAsync(category: _selectedCategory, page: _currentPage, pageSize: _pageSize);
+        var result = await Api.GetNewsAsync(category: _selectedCategory, published: true, page: _currentPage, pageSize: _pageSize);
         _total = result.total;
         _articles = result.items;
         _loading = false;
@@ -162,19 +134,6 @@
     {
         if (page < 1 || page > _totalPages) return;
         _currentPage = page;
-        await LoadArticles();
-    }
-
-    private void ConfirmDelete(NewArticle article) => _articleToDelete = article;
-    private void CancelDelete() => _articleToDelete = null;
-
-    private async Task DeleteArticle()
-    {
-        if (_articleToDelete is null) return;
-        _deleting = true;
-        await Api.DeleteNewsAsync(_articleToDelete.Id);
-        _articleToDelete = null;
-        _deleting = false;
         await LoadArticles();
     }
 

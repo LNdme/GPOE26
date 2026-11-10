@@ -1,4 +1,5 @@
 @page "/activities/details/{Id:guid}"
+@inject GPOE26.UI.Services.SessionState Session
 
 <PageTitle>Activité – GPOE26</PageTitle>
 
@@ -46,7 +47,10 @@
 
             <hr />
             <div class="management-actions">
-                <a href="@($"/activities/edit/{_item.Id}")" class="btn btn-navy">Modifier</a>
+                @if (Session.Role == GPOE26.UI.Models.UserRole.Admin)
+                {
+                    <a href="@($"/admin/activites/{_item.Id}")" class="btn btn-navy">Modifier</a>
+                }
                 <a href="/activities" class="btn btn-outline-secondary">Retour</a>
             </div>
         </article>
@@ -58,5 +62,5 @@
     private SchoolActivity? _item;
     private bool _loading = true;
 
-    protected override async Task OnInitializedAsync() { _item = await Api.GetActivityByIdAsync(Id); _loading = false; }
+    protected override async Task OnInitializedAsync() { await Session.RestoreAsync(); _item = await Api.GetActivityByIdAsync(Id); _loading = false; }
 }

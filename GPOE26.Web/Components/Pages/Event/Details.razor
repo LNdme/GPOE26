@@ -1,4 +1,5 @@
 @page "/events/details/{Id:guid}"
+@inject GPOE26.UI.Services.SessionState Session
 
 <PageTitle>Événement – GPOE26</PageTitle>
 
@@ -41,7 +42,10 @@
 
             <hr />
             <div class="management-actions">
-                <a href="@($"/events/edit/{_ev.Id}")" class="btn btn-navy">Modifier</a>
+                @if (Session.Role == GPOE26.UI.Models.UserRole.Admin)
+                {
+                    <a href="@($"/admin/evenements/{_ev.Id}")" class="btn btn-navy">Modifier</a>
+                }
                 <a href="/events" class="btn btn-outline-secondary">Retour</a>
             </div>
         </article>
@@ -55,6 +59,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        await Session.RestoreAsync();
         _ev = await Api.GetEventByIdAsync(Id);
         _loading = false;
     }

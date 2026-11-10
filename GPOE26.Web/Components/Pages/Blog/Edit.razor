@@ -1,4 +1,5 @@
-@page "/blog/edit/{Id:guid}"
+@page "/admin/actualites/{Id:guid}"
+@layout GPOE26.Web.Components.Layout.AdminLayout
 
 <PageTitle>Modifier l'article – GPOE26</PageTitle>
 
@@ -6,7 +7,7 @@
     <div class="form-section management-shell">
         <nav aria-label="breadcrumb" class="mb-3">
             <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="/blog" class="text-navy text-decoration-none">Actualités</a></li>
+                <li class="breadcrumb-item"><a href="/admin/actualites" class="text-navy text-decoration-none">Actualités</a></li>
                 <li class="breadcrumb-item active">Modifier</li>
             </ol>
         </nav>
@@ -21,7 +22,7 @@
         else if (_article is null)
         {
             <div class="alert alert-warning">Article introuvable.</div>
-            <a href="/blog" class="btn btn-outline-secondary">Retour</a>
+            <a href="/admin/actualites" class="btn btn-outline-secondary">Retour</a>
         }
         else
         {
@@ -91,7 +92,7 @@
                         @if (_saving) { <span class="spinner-border spinner-border-sm me-1"></span> }
                         Enregistrer
                     </button>
-                    <a href="/blog" class="btn btn-outline-secondary">Annuler</a>
+                    <a href="/admin/actualites" class="btn btn-outline-secondary">Annuler</a>
                 </div>
             </EditForm>
         }
@@ -156,7 +157,7 @@
 
         if (ok)
         {
-            Nav.NavigateTo("/blog");
+            Nav.NavigateTo("/admin/actualites");
         }
         else
         {

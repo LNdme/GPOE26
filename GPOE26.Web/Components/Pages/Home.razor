@@ -1,6 +1,8 @@
 @page "/"
 @inject GPOE26.Web.Services.ApiClient Api
+@inject GPOE26.UI.Services.SessionState Session
 @using GPOE26.Web.Models
+@using GPOE26.Web.Components.UI
 
 <PageTitle>Accueil – GPOE26</PageTitle>
 
@@ -13,8 +15,15 @@
                 Des cours, des projets et une communauté pour faire grandir vos idées et préparer votre avenir.
             </p>
             <div class="home-hero__actions">
-                <a href="/register" class="btn btn-home-primary">Rejoindre la plateforme <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
-                <a href="/hierarchy" class="home-text-link">Découvrir l’établissement</a>
+                @if (Session.IsAuthenticated)
+                {
+                    <a href="/app" class="btn btn-home-primary">Ouvrir mon espace <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+                }
+                else
+                {
+                    <a href="/register" class="btn btn-home-primary">Rejoindre la plateforme <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+                }
+                <a href="#plateforme" class="home-text-link">Découvrir la plateforme</a>
             </div>
             <div class="home-hero__note"><i class="bi bi-lightbulb" aria-hidden="true"></i> Apprendre avec curiosité et confiance</div>
         </div>
@@ -27,6 +36,8 @@
         </div>
     </div>
 </section>
+
+<PlatformShowcase />
 
 @if (_contact is not null)
 {
@@ -174,6 +185,8 @@
         </div>
     </div>
 </section>
+
+<PricingPreview />
 
 @if (_hierarchy.Any())
 {

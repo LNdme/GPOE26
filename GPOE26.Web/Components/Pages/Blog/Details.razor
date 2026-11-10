@@ -1,4 +1,5 @@
 @page "/blog/details/{Id:guid}"
+@inject GPOE26.UI.Services.SessionState Session
 
 <PageTitle>Article – GPOE26</PageTitle>
 
@@ -57,7 +58,10 @@
 
             <hr />
             <div class="management-actions">
-                <a href="@($"/blog/edit/{_article.Id}")" class="btn btn-navy">Modifier</a>
+                @if (Session.Role == GPOE26.UI.Models.UserRole.Admin)
+                {
+                    <a href="@($"/admin/actualites/{_article.Id}")" class="btn btn-navy">Modifier</a>
+                }
                 <a href="/blog" class="btn btn-outline-secondary">Retour</a>
             </div>
         </article>
@@ -73,6 +77,7 @@
     protected override async Task OnInitializedAsync()
     {
         _loading = true;
+        await Session.RestoreAsync();
         _article = await Api.GetNewsByIdAsync(Id);
         _loading = false;
     }

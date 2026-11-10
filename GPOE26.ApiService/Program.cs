@@ -1,6 +1,10 @@
+using System.Security.Claims;
+using System.Text;
 using GPOE26.ApiService.Data;
 using GPOE26.ApiService.Model;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -44,6 +48,33 @@ builder.AddServiceDefaults();
 
 
 
+
+// ─── JWT (émis par le service User) ───────────────────────────────────────────
+// Le contenu du site se lit librement, mais seul un administrateur peut le créer, le modifier ou le supprimer.
+var jwtKey = builder.Configuration["Jwt:Key"]
+    ?? throw new InvalidOperationException("La configuration Jwt:Key est manquante.");
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+            ValidateIssuer = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidateAudience = true,
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.Zero,
+            // Les claims gardent leur nom court du JWT ("sub", "role"…)
+            RoleClaimType = "role",
+            NameClaimType = "username"
+        };
+        options.MapInboundClaims = false;
+    });
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy(ContentPolicy.Admin, p => p.RequireRole("Admin"));
 
 // Add services to the container.
 builder.Services.AddProblemDetails();
@@ -108,7 +139,12 @@ if (app.Environment.IsDevelopment())
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "GPOE26 School API V1"));
 }
 
-app.UseHttpsRedirection();
+// En développement, les services s'appellent en HTTP avec un JWT : une redirection vers HTTPS
+// ferait retirer l'en-tête Authorization par HttpClient, et chaque écriture finirait en 401.
+if (!app.Environment.IsDevelopment())
+    app.UseHttpsRedirection();
+app.UseAuthentication();
+app.UseAuthorization();
 
 // ── Image Upload Endpoint ─────────────────────────────────────────────────────
 app.MapPost("/api/upload", async (IFormFile file, IWebHostEnvironment env) =>
@@ -145,6 +181,7 @@ app.MapPost("/api/upload", async (IFormFile file, IWebHostEnvironment env) =>
     return Results.Ok(new { url = relativeUrl });
 })
 .DisableAntiforgery()
+.RequireAuthorization(ContentPolicy.Admin)
 .WithSummary("Uploader une image");
 
 // ── Routes ────────────────────────────────────────────────────────────────────
@@ -171,41 +208,41 @@ plans.MapGet("/{code}", async Task<IResult> (string code, ApiServiceContext db) 
 news.MapGet("", NewsGetAll);
 news.MapGet("/{id:guid}", NewsGetById);
 news.MapGet("/slug/{slug}", NewsGetBySlug);
-news.MapPost("", NewsCreate);
-news.MapPut("/{id:guid}", NewsUpdate);
-news.MapDelete("/{id:guid}", NewsDelete);
-news.MapPatch("/{id:guid}/publish", NewsPublish);
+news.MapPost("", NewsCreate).RequireAuthorization(ContentPolicy.Admin);
+news.MapPut("/{id:guid}", NewsUpdate).RequireAuthorization(ContentPolicy.Admin);
+news.MapDelete("/{id:guid}", NewsDelete).RequireAuthorization(ContentPolicy.Admin);
+news.MapPatch("/{id:guid}/publish", NewsPublish).RequireAuthorization(ContentPolicy.Admin);
 
 // EVENTS
 events.MapGet("", EventsGetAll);
 events.MapGet("/upcoming", EventsGetUpcoming);
 events.MapGet("/{id:guid}", EventsGetById);
-events.MapPost("", EventsCreate);
-events.MapPut("/{id:guid}", EventsUpdate);
-events.MapDelete("/{id:guid}", EventsDelete);
+events.MapPost("", EventsCreate).RequireAuthorization(ContentPolicy.Admin);
+events.MapPut("/{id:guid}", EventsUpdate).RequireAuthorization(ContentPolicy.Admin);
+events.MapDelete("/{id:guid}", EventsDelete).RequireAuthorization(ContentPolicy.Admin);
 
 // SPEECHES
 speeches.MapGet("", SpeechesGetAll);
 speeches.MapGet("/latest", SpeechesGetLatest);
 speeches.MapGet("/{id:guid}", SpeechesGetById);
-speeches.MapPost("", SpeechesCreate);
-speeches.MapPut("/{id:guid}", SpeechesUpdate);
-speeches.MapDelete("/{id:guid}", SpeechesDelete);
+speeches.MapPost("", SpeechesCreate).RequireAuthorization(ContentPolicy.Admin);
+speeches.MapPut("/{id:guid}", SpeechesUpdate).RequireAuthorization(ContentPolicy.Admin);
+speeches.MapDelete("/{id:guid}", SpeechesDelete).RequireAuthorization(ContentPolicy.Admin);
 
 // ACTIVITIES
 activities.MapGet("", ActivitiesGetAll);
 activities.MapGet("/{id:guid}", ActivitiesGetById);
-activities.MapPost("", ActivitiesCreate);
-activities.MapPut("/{id:guid}", ActivitiesUpdate);
-activities.MapDelete("/{id:guid}", ActivitiesDelete);
+activities.MapPost("", ActivitiesCreate).RequireAuthorization(ContentPolicy.Admin);
+activities.MapPut("/{id:guid}", ActivitiesUpdate).RequireAuthorization(ContentPolicy.Admin);
+activities.MapDelete("/{id:guid}", ActivitiesDelete).RequireAuthorization(ContentPolicy.Admin);
 
 // HIERARCHY
 hierarchy.MapGet("", HierarchyGetAll);
 hierarchy.MapGet("/{id:int}", HierarchyGetById);
 hierarchy.MapGet("/role/{role}", HierarchyGetByRole);
-hierarchy.MapPost("", HierarchyCreate);
-hierarchy.MapPut("/{id:int}", HierarchyUpdate);
-hierarchy.MapDelete("/{id:int}", HierarchyDelete);
+hierarchy.MapPost("", HierarchyCreate).RequireAuthorization(ContentPolicy.Admin);
+hierarchy.MapPut("/{id:int}", HierarchyUpdate).RequireAuthorization(ContentPolicy.Admin);
+hierarchy.MapDelete("/{id:int}", HierarchyDelete).RequireAuthorization(ContentPolicy.Admin);
 
 // CONTACTS
 contacts.MapGet("", async (ApiServiceContext db) =>
@@ -227,10 +264,10 @@ contacts.MapPost("", async (Contact contact, ApiServiceContext db) =>
     }
     await db.SaveChangesAsync();
     return TypedResults.Ok(contact);
-});
-contacts.MapPut("/{id:int}", UpdateContact);
+}).RequireAuthorization(ContentPolicy.Admin);
+contacts.MapPut("/{id:int}", UpdateContact).RequireAuthorization(ContentPolicy.Admin);
 
-contacts.MapDelete("/{id:int}", DeleteContact);
+contacts.MapDelete("/{id:int}", DeleteContact).RequireAuthorization(ContentPolicy.Admin);
 
 app.Run();
 
@@ -262,6 +299,7 @@ static async Task<IResult> DeleteContact(int id, ApiServiceContext db)
 
 static async Task<IResult> NewsGetAll(
     ApiServiceContext db,
+    ClaimsPrincipal user,
     string? category = null,
     bool? published = null,
     int page = 1,
@@ -272,6 +310,9 @@ static async Task<IResult> NewsGetAll(
     if (!string.IsNullOrEmpty(category))
         query = query.Where(n => n.Category == category);
 
+    // Les brouillons ne sont visibles que des administrateurs
+    if (!user.IsInRole("Admin"))
+        published = true;
     if (published.HasValue)
         query = query.Where(n => n.IsPublished == published.Value);
 
@@ -285,16 +326,20 @@ static async Task<IResult> NewsGetAll(
     return TypedResults.Ok(new { total, page, pageSize, items });
 }
 
-static async Task<IResult> NewsGetById(Guid id, ApiServiceContext db)
+static async Task<IResult> NewsGetById(Guid id, ApiServiceContext db, ClaimsPrincipal user)
 {
     var article = await db.NewsArticles.FindAsync(id);
-    return article is null ? TypedResults.NotFound() : TypedResults.Ok(article);
+    return article is null || (!article.IsPublished && !user.IsInRole("Admin"))
+        ? TypedResults.NotFound()
+        : TypedResults.Ok(article);
 }
 
-static async Task<IResult> NewsGetBySlug(string slug, ApiServiceContext db)
+static async Task<IResult> NewsGetBySlug(string slug, ApiServiceContext db, ClaimsPrincipal user)
 {
     var article = await db.NewsArticles.FirstOrDefaultAsync(n => n.Slug == slug);
-    return article is null ? TypedResults.NotFound() : TypedResults.Ok(article);
+    return article is null || (!article.IsPublished && !user.IsInRole("Admin"))
+        ? TypedResults.NotFound()
+        : TypedResults.Ok(article);
 }
 
 static async Task<IResult> NewsCreate(NewArticle article, ApiServiceContext db)
@@ -483,13 +528,17 @@ static async Task<IResult> SpeechesDelete(Guid id, ApiServiceContext db)
 // ACTIVITIES HANDLERS
 // ══════════════════════════════════════════════════════════════════════════════
 
-static async Task<IResult> ActivitiesGetAll(ApiServiceContext db, string? category = null)
+static async Task<IResult> ActivitiesGetAll(ApiServiceContext db, ClaimsPrincipal user, string? category = null, bool includeInactive = false)
 {
     var query = db.Activities.AsQueryable();
     if (!string.IsNullOrEmpty(category))
         query = query.Where(a => a.Category == category);
 
-    return TypedResults.Ok(await query.Where(a => a.IsActive).ToListAsync());
+    // Les activités suspendues restent visibles dans l'administration
+    if (!(includeInactive && user.IsInRole("Admin")))
+        query = query.Where(a => a.IsActive);
+
+    return TypedResults.Ok(await query.OrderBy(a => a.Name).ToListAsync());
 }
 
 static async Task<IResult> ActivitiesGetById(Guid id, ApiServiceContext db)
@@ -604,4 +653,8 @@ static string GenerateSlug(string title) =>
          .Replace("ô", "o").Replace("î", "i")
          .Replace("ç", "c");
 
-
+/// <summary>Politique d'écriture du contenu du site.</summary>
+static class ContentPolicy
+{
+    public const string Admin = "ContentAdmin";
+}

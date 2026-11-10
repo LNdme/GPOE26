@@ -1,6 +1,6 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-// ── JWT partagé : même clé / issuer / audience pour User (émetteur) et Cours (validateur)
+// ── JWT partagé : même clé / issuer / audience pour User (émetteur) et les services qui le valident
 var jwtKeyValue = "votre_cle_secrete_tres_longue_et_aleatoire_ici_changez_moi_en_production_cle_256_bits";
 var jwtIssuer   = "GPOE2026";
 var jwtAudience = "GPOE2026Users";
@@ -35,6 +35,9 @@ var chatDb = postgres.AddDatabase("chatdb");     // Chat : discussions avec le t
 
 var apiService = builder.AddProject<Projects.GPOE26_ApiService>("apiservice")
     .WithHttpHealthCheck("/health")
+    .WithEnvironment("Jwt__Key", jwtKeyValue)          // écriture du contenu réservée aux administrateurs
+    .WithEnvironment("Jwt__Issuer", jwtIssuer)
+    .WithEnvironment("Jwt__Audience", jwtAudience)
     .WithReference(schoolDb)
     .WaitFor(schoolDb);
 

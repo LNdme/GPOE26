@@ -1,4 +1,5 @@
-@page "/events/create"
+@page "/admin/evenements/nouveau"
+@layout GPOE26.Web.Components.Layout.AdminLayout
 
 <PageTitle>Créer un événement – GPOE26</PageTitle>
 
@@ -6,7 +7,7 @@
     <div class="form-section management-shell">
         <nav aria-label="breadcrumb" class="mb-3">
             <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="/events" class="text-navy text-decoration-none">Événements</a></li>
+                <li class="breadcrumb-item"><a href="/admin/evenements" class="text-navy text-decoration-none">Événements</a></li>
                 <li class="breadcrumb-item active">Nouveau</li>
             </ol>
         </nav>
@@ -81,7 +82,7 @@
                 <button type="submit" class="btn btn-navy" disabled="@_saving">
                     @if (_saving) { <span class="spinner-border spinner-border-sm me-1"></span> } Créer
                 </button>
-                <a href="/events" class="btn btn-outline-secondary">Annuler</a>
+                <a href="/admin/evenements" class="btn btn-outline-secondary">Annuler</a>
             </div>
         </EditForm>
     </div>
@@ -127,7 +128,7 @@
         _saving = true; _errorMessage = null;
         var ok = await Api.CreateEventAsync(_ev);
         _saving = false;
-        if (ok) Nav.NavigateTo("/events");
+        if (ok) Nav.NavigateTo("/admin/evenements");
         else _errorMessage = "Erreur lors de la création.";
     }
 }

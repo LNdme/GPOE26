@@ -118,87 +118,7 @@ a:hover {
     flex: 1;
 }
 
-.lt-header {
-    background: rgba(255, 255, 255, 0.96);
-    border-bottom: 1px solid #E4E2DA;
-    box-shadow: 0 8px 24px rgba(14, 35, 80, 0.045);
-    padding: 0.72rem 0;
-    backdrop-filter: blur(12px);
-}
-
-.lt-header .navbar-brand {
-    padding: 0.2rem 1.4rem 0.2rem 0;
-}
-
-.lt-logo-circle {
-    width: 44px;
-    height: 44px;
-    flex: 0 0 44px;
-    border-radius: 14px;
-    background: var(--brand-navy);
-    color: #fff;
-    display: grid;
-    place-items: center;
-    font-weight: 800;
-    font-size: 1rem;
-    letter-spacing: -0.5px;
-}
-
-.lt-brand-caption {
-    font-size: 0.72rem;
-    margin-top: 0.32rem;
-}
-
-.lt-header .navbar-nav .nav-link {
-    color: #607084;
-    border-radius: 999px;
-    font-size: 0.91rem;
-    font-weight: 500;
-    padding: 0.55rem 0.85rem !important;
-    transition: color 0.18s ease, background-color 0.18s ease;
-}
-
-.lt-header .navbar-nav .nav-link:hover,
-.lt-header .navbar-nav .nav-link.active {
-    background-color: #edf2f1;
-    color: var(--brand-navy);
-}
-
-.lt-account-nav .nav-link {
-    background: transparent !important;
-}
-
-.btn-login,
-.btn-register {
-    border-radius: 999px;
-    font-size: 0.88rem;
-    font-weight: 600;
-    padding: 0.56rem 1.08rem;
-    transition: background-color 0.18s ease, transform 0.18s ease;
-}
-
-.btn-login {
-    border: 1px solid #0E2350;
-    color: var(--brand-navy);
-    background: #fff;
-}
-
-.btn-login:hover {
-    background: #f5f7f4;
-    color: var(--brand-navy);
-}
-
-.btn-register {
-    border: 1px solid var(--brand-navy);
-    background: var(--brand-navy);
-    color: #fff;
-}
-
-.btn-register:hover {
-    background: #1a466e;
-    color: #fff;
-    transform: translateY(-1px);
-}
+/* La barre de navigation du site est dans css/site.css */
 
 .home-hero {
     overflow: hidden;
@@ -1401,26 +1321,6 @@ a:hover {
 }
 
 @media (max-width: 991.98px) {
-    .lt-header .navbar-collapse {
-        padding: 0.75rem 0 0.4rem;
-    }
-
-    .lt-header .navbar-nav .nav-link {
-        padding: 0.65rem 0.8rem !important;
-    }
-
-    .lt-account-nav {
-        align-items: stretch !important;
-        border-top: 1px solid #EFEDE6;
-        margin-top: 0.65rem;
-        padding-top: 0.75rem;
-    }
-
-    .lt-account-nav .nav-item {
-        width: 100%;
-        text-align: center;
-    }
-
     .home-hero__grid {
         min-height: 0;
         grid-template-columns: minmax(0, 1fr) minmax(280px, 0.85fr);
