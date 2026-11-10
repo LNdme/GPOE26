@@ -42,6 +42,8 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
     public IReadOnlyList<string> VisionModels => config["LLM:VisionModels"] is { Length: > 0 } v ? Split(v) : TextModels;
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(ApiKey) || BaseUrl.Contains("localhost");
+    private bool IsOpenRouter => BaseUrl.Contains("openrouter.ai", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
     /// Envoie la conversation et renvoie la réponse du premier modèle qui répond.
     /// Les modèles de vision sont utilisés dès qu'un message contient une image.
@@ -50,8 +52,12 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
     /// Une réponse coupée par la limite de longueur compte comme un échec : le modèle suivant est essayé.
     /// Pour les retranscriptions, où une fin manquante serait du contenu perdu.
     /// </param>
+    /// <param name="reasoning">
+    /// False pour une tâche de recopie (retranscription d'une page) : un modèle « raisonnant » y dépense des milliers
+    /// de jetons de réflexion, dépasse le délai ou la limite de longueur, et la page n'est jamais lue.
+    /// </param>
     public async Task<string> CompleteAsync(IReadOnlyList<LlmMessage> messages, int maxTokens = 4000,
-        double temperature = 0.4, CancellationToken ct = default, bool requireComplete = false)
+        double temperature = 0.4, CancellationToken ct = default, bool requireComplete = false, bool reasoning = true)
     {
         if (!IsConfigured)
             throw new LlmNotConfiguredException();
@@ -67,7 +73,7 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
                 // Délai par modèle : un fournisseur gratuit saturé ne doit pas bloquer les suivants
                 using var attempt = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 attempt.CancelAfter(TimeSpan.FromSeconds(int.TryParse(config["LLM:AttemptTimeoutSeconds"], out var s) ? s : 90));
-                var reply = await CallAsync(model, messages, maxTokens, temperature, requireComplete, attempt.Token);
+                var reply = await CallAsync(model, messages, maxTokens, temperature, requireComplete, reasoning, attempt.Token);
                 if (!string.IsNullOrWhiteSpace(reply)) return reply.Trim();
                 logger.LogWarning("Réponse vide du modèle {Model}, essai du suivant", model);
                 last = new LlmUnavailableException($"Réponse vide de {model}");
@@ -111,7 +117,7 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
     }
 
     private async Task<string?> CallAsync(string model, IReadOnlyList<LlmMessage> messages, int maxTokens,
-        double temperature, bool requireComplete, CancellationToken ct)
+        double temperature, bool requireComplete, bool reasoning, CancellationToken ct)
     {
         var body = new JsonObject
         {
@@ -120,6 +126,9 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
             ["temperature"] = temperature,
             ["messages"] = new JsonArray(messages.Select(ToJson).ToArray())
         };
+        // Paramètre propre à OpenRouter : d'autres fournisseurs compatibles OpenAI refuseraient un champ inconnu
+        if (!reasoning && IsOpenRouter)
+            body["reasoning"] = new JsonObject { ["enabled"] = false };
 
         using var request = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/chat/completions")
         {

@@ -73,7 +73,7 @@ public partial class PdfStructuringWorker(PdfStructuringQueue queue, IServiceSco
         if (course is null || course.StructuringStatus != PdfStructuringService.StatusPending || course.Sections.Count != 1) return;
 
         var section = course.Sections[0];
-        var markedAt = course.UpdatedAt;
+        var original = section.Content;
 
         if (llm.IsConfigured)
         {
@@ -82,15 +82,29 @@ public partial class PdfStructuringWorker(PdfStructuringQueue queue, IServiceSco
             var content = course.PdfPath is not null
                 ? await StructureAsync(section.Content, courseId, llm, ct)
                 : course.SourceUrl is not null ? section.Content : await TranscribeScansAsync(section.Content, courseId, llm, ct);
+            content = PdfMarkdownBuilder.RemoveControlChars(content);
             var analysis = await AnalyzeAsync(content, llm, ct);
 
-            // Le propriétaire a pu modifier le cours entre-temps : son travail n'est jamais écrasé
+            // Le propriétaire a pu modifier le cours entre-temps. Un titre ou une matière changés n'empêchent rien ;
+            // un texte réécrit à la main n'est jamais écrasé, et le cours ne reste pas « en cours » pour autant.
             await db.Entry(course).ReloadAsync(ct);
-            if (course.UpdatedAt != markedAt || course.StructuringStatus != PdfStructuringService.StatusPending) return;
+            if (course.StructuringStatus != PdfStructuringService.StatusPending) return;
 
-            section.Content = content;
-            course.RebuildExtractedText();
-            await ApplyAnalysisAsync(db, course, analysis, ct);
+            var textUntouched = await db.CourseSections.AsNoTracking()
+                .Where(s => s.CourseId == courseId)
+                .Select(s => s.Id == section.Id && s.Content == original)
+                .ToListAsync(ct) is [true];
+
+            if (textUntouched)
+            {
+                section.Content = content;
+                course.RebuildExtractedText();
+                await ApplyAnalysisAsync(db, course, analysis, ct);
+            }
+            else
+            {
+                logger.LogInformation("Cours {CourseId} réécrit pendant la mise en forme : le texte de l'enseignant est conservé", courseId);
+            }
         }
 
         course.StructuringStatus = PdfStructuringService.StatusDone;
@@ -226,7 +240,7 @@ public partial class PdfStructuringWorker(PdfStructuringQueue queue, IServiceSco
             try
             {
                 return await llm.CompleteAsync([new LlmMessage("user", TranscriptionPrompt, [new LlmImage(contentType, bytes)])],
-                    maxTokens: 12000, temperature: 0.1, ct: ct, requireComplete: true);
+                    maxTokens: 12000, temperature: 0.1, ct: ct, requireComplete: true, reasoning: false);
             }
             catch (LlmUnavailableException ex) when (ex is not LlmNotConfiguredException)
             {

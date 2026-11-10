@@ -1,6 +1,7 @@
 using Chat.Model;
 using Chat.Service;
 using Cours.Service;
+using Microsoft.Extensions.Configuration;
 using User.Model;
 using User.Service;
 
@@ -96,6 +97,18 @@ public class PdfMarkdownBuilderTests
 
     [Fact]
     public void Protege_les_caracteres_speciaux() => Assert.Equal(@"2\*3 \$", PdfMarkdownBuilder.Escape("2*3 $"));
+
+    [Fact]
+    public void Retire_les_caracteres_nuls_refuses_par_postgresql() =>
+        Assert.Equal("## Titre\n\nLa loi\td'Ohm\r\n", PdfMarkdownBuilder.RemoveControlChars("## Ti\0tre\n\nLa\u0001 loi\td'Ohm\0\r\n"));
+
+    [Fact]
+    public void Garde_un_texte_propre_tel_quel()
+    {
+        const string text = "Énergie $E = mc^2$ — schéma ci-dessous\n";
+        Assert.Same(text, PdfMarkdownBuilder.RemoveControlChars(text));
+    }
+
     [Fact]
     public void Refuse_une_reponse_ia_qui_perd_une_figure() =>
         Assert.False(PdfMarkdownBuilder.AcceptRewrite("un texte [[FIG:1]] suivi de mots", "un texte suivi de mots ici"));
@@ -783,4 +796,56 @@ public class AriaTests
             .ToList();
         Assert.Empty(offenders);
     }
+}
+
+/// <summary>
+/// Retranscription des pages photographiées : un modèle « raisonnant » y passait plus de 7 000 jetons de réflexion par page,
+/// dépassait le délai et la page restait en photo. La réflexion est coupée pour ces appels, sur OpenRouter seulement.
+/// </summary>
+public class LlmReasoningTests
+{
+    private sealed class CaptureHandler : HttpMessageHandler
+    {
+        public System.Text.Json.Nodes.JsonObject? Body { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            Body = System.Text.Json.Nodes.JsonNode.Parse(await request.Content!.ReadAsStringAsync(ct))!.AsObject();
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"choices":[{"finish_reason":"stop","message":{"content":"## Titre"}}]}""")
+            };
+        }
+    }
+
+    private static async Task<System.Text.Json.Nodes.JsonObject> SendAsync(string baseUrl, bool reasoning)
+    {
+        var handler = new CaptureHandler();
+        var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["LLM:BaseUrl"] = baseUrl, ["LLM:ApiKey"] = "test", ["LLM:VisionModels"] = "vision-model" })
+            .Build();
+        var client = new GPOE26.ServiceDefaults.Llm.LlmClient(new HttpClient(handler), config,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<GPOE26.ServiceDefaults.Llm.LlmClient>.Instance);
+
+        var reply = await client.CompleteAsync(
+            [new GPOE26.ServiceDefaults.Llm.LlmMessage("user", "Retranscris", [new GPOE26.ServiceDefaults.Llm.LlmImage("image/jpeg", [1, 2, 3])])],
+            requireComplete: true, reasoning: reasoning, ct: TestContext.Current.CancellationToken);
+        Assert.Equal("## Titre", reply);
+        return handler.Body!;
+    }
+
+    [Fact]
+    public async Task Coupe_la_reflexion_pour_une_retranscription_sur_openrouter()
+    {
+        var body = await SendAsync("https://openrouter.ai/api/v1", reasoning: false);
+        Assert.False(body["reasoning"]!["enabled"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public async Task Laisse_la_reflexion_par_defaut() =>
+        Assert.Null((await SendAsync("https://openrouter.ai/api/v1", reasoning: true))["reasoning"]);
+
+    [Fact]
+    public async Task N_envoie_pas_le_champ_aux_autres_fournisseurs() =>
+        Assert.Null((await SendAsync("http://localhost:11434/v1", reasoning: false))["reasoning"]);
 }

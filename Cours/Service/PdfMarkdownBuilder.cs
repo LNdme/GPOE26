@@ -167,6 +167,21 @@ public static partial class PdfMarkdownBuilder
     public static string Escape(string text) =>
         EscapedChars().Replace(text, m => m.Value switch { "[" => "&#91;", "]" => "&#93;", _ => "\\" + m.Value });
 
+    /// <summary>
+    /// Retire les caractères de contrôle (hors tabulation et retours à la ligne).
+    /// Une police sans table Unicode donne des « \0 », que PostgreSQL refuse dans une colonne texte.
+    /// </summary>
+    public static string RemoveControlChars(string text)
+    {
+        if (!text.Any(IsForbidden)) return text;
+        var sb = new StringBuilder(text.Length);
+        foreach (var c in text)
+            if (!IsForbidden(c)) sb.Append(c);
+        return sb.ToString();
+
+        static bool IsForbidden(char c) => char.IsControl(c) && c is not ('\t' or '\n' or '\r');
+    }
+
     /// <summary>Assemble des lignes de mots ; les mots coupés en fin de ligne sont recollés.</summary>
     public static string JoinLines(IEnumerable<string> lines)
     {

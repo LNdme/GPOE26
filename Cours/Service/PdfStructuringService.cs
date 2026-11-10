@@ -159,7 +159,10 @@ public class PdfStructuringService(ILogger<PdfStructuringService> logger)
         }
 
         var saved = SaveFigures(candidates, courseId, webRoot);
-        return new PdfStructure(PdfMarkdownBuilder.Build(blocks, saved, pageCount), raw.ToString().Trim(), saved.Count, formulas);
+        return new PdfStructure(
+            PdfMarkdownBuilder.RemoveControlChars(PdfMarkdownBuilder.Build(blocks, saved, pageCount)),
+            PdfMarkdownBuilder.RemoveControlChars(raw.ToString().Trim()),
+            saved.Count, formulas);
     }
 
     /// <summary>
