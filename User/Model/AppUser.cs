@@ -46,13 +46,61 @@
         public DateTime? LastLoginAt { get; set; }
     }
 
+    /// <summary>
+    /// Les rôles d'un compte.
+    ///
+    /// ⚠️ **Les nouvelles valeurs s'ajoutent à la fin.** Le rôle est persisté en texte
+    /// (<c>UserContext</c>, <c>HasConversion&lt;string&gt;()</c>), donc l'ordre n'a pas
+    /// d'incidence sur les données existantes — mais il en aurait si quelqu'un retirait
+    /// un jour cette conversion, et une insertion au milieu transformerait alors
+    /// silencieusement des élèves en administrateurs.
+    ///
+    /// ⚠️ **<see cref="Admin"/> et <see cref="Editor"/> ne s'obtiennent pas en
+    /// s'inscrivant.** <c>POST /auth/register</c> les refuse explicitement : sans ce
+    /// refus, n'importe qui se déclarerait administrateur du site. Ils se donnent par
+    /// promotion, depuis un compte qui les détient déjà.
+    /// </summary>
     public enum UserRole
     {
         Student,
         Teacher,
 
         /// <summary>Parent qui suit la progression de ses enfants.</summary>
-        Parent
+        Parent,
+
+        /// <summary>
+        /// Administrateur du site : tout le contenu, l'équipe de direction, les tarifs
+        /// et les comptes. C'est lui qui promeut les autres.
+        /// </summary>
+        Admin,
+
+        /// <summary>
+        /// Rédacteur : publie actualités, événements et activités. Il ne touche ni à
+        /// l'équipe de direction, ni aux tarifs, ni aux comptes — un rédacteur alimente
+        /// le site, il ne le gouverne pas.
+        /// </summary>
+        Editor
+    }
+
+    /// <summary>Ce que chaque rôle a le droit de faire sur le contenu du site.</summary>
+    public static class RolePermissions
+    {
+        /// <summary>
+        /// Rôles qu'un visiteur peut se donner lui-même en s'inscrivant.
+        ///
+        /// La liste est blanche, et non noire, à dessein : un rôle ajouté à
+        /// <see cref="UserRole"/> dans six mois sera refusé par défaut plutôt
+        /// qu'autorisé par oubli.
+        /// </summary>
+        public static readonly IReadOnlySet<UserRole> SelfAssignable =
+            new HashSet<UserRole> { UserRole.Student, UserRole.Teacher, UserRole.Parent };
+
+        /// <summary>Peut publier du contenu éditorial.</summary>
+        public static bool CanPublish(UserRole role) =>
+            role is UserRole.Admin or UserRole.Editor;
+
+        /// <summary>Peut gouverner le site : équipe, tarifs, comptes.</summary>
+        public static bool CanAdminister(UserRole role) => role is UserRole.Admin;
     }
 
     /// <summary>

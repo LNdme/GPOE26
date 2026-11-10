@@ -60,6 +60,14 @@
                         <NavLink class="nav-link px-3" href="/classe">Mes classes</NavLink>
                     </li>
                 }
+                else if (Auth.IsAuthenticated && Auth.CanPublish)
+                {
+                    @* Un administrateur ou un rédacteur n'a ni cours ni enfants à suivre :
+                       il vient ici pour alimenter le site. *@
+                    <li class="nav-item">
+                        <NavLink class="nav-link px-3" href="/admin">Administration</NavLink>
+                    </li>
+                }
                 else if (Auth.IsAuthenticated)
                 {
                     <li class="nav-item">
@@ -89,6 +97,10 @@
                             else if (Auth.IsTeacher)
                             {
                                 <li><a class="dropdown-item py-2" href="/classe"><i class="bi bi-mortarboard me-2 text-brand-dark"></i> Mes classes</a></li>
+                            }
+                            else if (Auth.CanPublish)
+                            {
+                                <li><a class="dropdown-item py-2" href="/admin"><i class="bi bi-sliders me-2 text-brand-dark"></i> Administration</a></li>
                             }
                             else
                             {

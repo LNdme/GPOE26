@@ -1,0 +1,157 @@
+/* Comptes et rôles. Reprend la grammaire visuelle du tableau de bord ; le CSS scopé
+   n'étant pas partagé entre composants, les quelques règles communes sont redites. */
+
+.admin {
+    max-width: 60rem;
+    margin: 0 auto;
+    padding: 2.5rem 1.25rem 4rem;
+    color: var(--rd-text, #1f2430);
+}
+
+.admin-head { margin-bottom: 1.75rem; }
+
+.admin-retour {
+    display: inline-block;
+    margin-bottom: .5rem;
+    font-size: .85rem;
+    color: var(--rd-text-soft, #6b7280);
+    text-decoration: none;
+}
+
+.admin-retour:hover { color: var(--rd-text, #1f2430); }
+
+.admin-titre { margin: 0; font-size: 1.6rem; font-weight: 700; }
+
+.admin-sous-titre {
+    margin: .3rem 0 0;
+    font-size: .92rem;
+    line-height: 1.6;
+    color: var(--rd-text-soft, #6b7280);
+}
+
+.admin-note {
+    margin: 0;
+    font-size: .85rem;
+    line-height: 1.6;
+    color: var(--rd-text-soft, #6b7280);
+}
+
+.admin-erreur {
+    margin: .75rem 0;
+    font-size: .87rem;
+    padding: .6rem .9rem;
+    border-radius: 8px;
+    background: #fef3f2;
+    color: #b42318;
+}
+
+/* ── Filtres ──────────────────────────────────────────────────────────────── */
+
+.admin-filtres {
+    display: flex;
+    gap: .4rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.1rem;
+}
+
+.admin-filtre {
+    padding: .32rem .75rem;
+    font-size: .83rem;
+    border: 1px solid var(--rd-border, #e3e6ec);
+    border-radius: 999px;
+    background: #fff;
+    color: var(--rd-text-soft, #6b7280);
+    cursor: pointer;
+}
+
+.admin-filtre:hover { border-color: #b54708; }
+
+.admin-filtre.is-active {
+    background: #b54708;
+    border-color: #b54708;
+    color: #fff;
+    font-weight: 600;
+}
+
+/* ── Le tableau ───────────────────────────────────────────────────────────── */
+
+.admin-table-cadre {
+    overflow-x: auto;
+    border: 1px solid var(--rd-border, #e3e6ec);
+    border-radius: 12px;
+    background: #fff;
+}
+
+.admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .89rem;
+}
+
+.admin-table th {
+    padding: .7rem .9rem;
+    text-align: left;
+    font-size: .75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--rd-text-soft, #6b7280);
+    border-bottom: 1px solid var(--rd-border, #e3e6ec);
+    white-space: nowrap;
+}
+
+.admin-table td {
+    padding: .65rem .9rem;
+    border-bottom: 1px solid #f1f3f7;
+    vertical-align: middle;
+}
+
+.admin-table tbody tr:last-child td { border-bottom: none; }
+
+/* Les comptes qui ont prise sur le site se repèrent d'un coup d'œil : c'est la
+   question qu'on vient se poser en ouvrant cette page. */
+.admin-table tr.a-du-pouvoir td:first-child { box-shadow: inset 3px 0 0 #b54708; }
+
+.admin-compte-nom { display: block; font-weight: 600; }
+
+.admin-compte-mail {
+    display: block;
+    font-size: .8rem;
+    color: var(--rd-text-soft, #6b7280);
+}
+
+.admin-badge {
+    display: inline-block;
+    padding: .15rem .55rem;
+    font-size: .78rem;
+    border-radius: 999px;
+    background: var(--rd-surface, #f4f6fa);
+    color: var(--rd-text-soft, #4b5563);
+}
+
+tr.a-du-pouvoir .admin-badge {
+    background: #fef0c7;
+    color: #b54708;
+    font-weight: 600;
+}
+
+.admin-select {
+    padding: .32rem .55rem;
+    font-size: .85rem;
+    border: 1px solid var(--rd-border, #e3e6ec);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--rd-text, #1f2430);
+}
+
+.admin-select:focus {
+    outline: none;
+    border-color: #b54708;
+    box-shadow: 0 0 0 3px rgba(181, 71, 8, .12);
+}
+
+.admin-sans-action {
+    font-size: .82rem;
+    font-style: italic;
+    color: var(--rd-text-soft, #9aa1ad);
+}

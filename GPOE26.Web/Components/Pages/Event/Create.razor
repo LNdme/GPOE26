@@ -1,4 +1,4 @@
-@page "/events/create"
+@page "/admin/evenements/nouveau"
 @rendermode InteractiveServer
 
 <PageTitle>Créer un événement – GPOE26</PageTitle>
@@ -9,6 +9,9 @@
     .btn-navy:hover { background-color: #123d82; color: white; }
     .form-section { max-width: 720px; margin: 0 auto; }
 </style>
+
+@* Garde de rédaction. Le serveur refuse de toute façon — ceci rend le refus lisible. *@
+<AdminGuard>
 
 <div class="container py-5">
     <div class="form-section">
@@ -91,6 +94,8 @@
         </EditForm>
     </div>
 </div>
+
+</AdminGuard>
 
 @code {
     private SchoolEvent _ev = new() { StartDate = DateTime.Today, EndDate = DateTime.Today };

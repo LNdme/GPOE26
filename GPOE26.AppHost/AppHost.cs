@@ -36,7 +36,16 @@ var harnessDb = postgres.AddDatabase("harnessdb");
 var schoolDb = postgres.AddDatabase("LyceeDB");  // ApiService
 // Quiz reste InMemory pour l'instant.
 
+// ApiService porte le contenu du site public : actualités, événements, activités,
+// équipe de direction, coordonnées.
+//
+// ⚠️ Les variables Jwt lui sont indispensables depuis qu'il authentifie ses écritures.
+// Sans elles, il ne peut valider aucun jeton : toute action d'administration répond 401,
+// et l'on cherche un problème de droits là où il y a un problème de configuration.
 var apiService = builder.AddProject<Projects.GPOE26_ApiService>("apiservice")
+    .WithEnvironment("Jwt__Key", jwtKeyValue)
+    .WithEnvironment("Jwt__Issuer", jwtIssuer)
+    .WithEnvironment("Jwt__Audience", jwtAudience)
     .WithHttpHealthCheck("/health")
     .WithReference(schoolDb)
     .WaitFor(schoolDb);

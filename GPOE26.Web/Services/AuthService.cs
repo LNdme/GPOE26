@@ -24,6 +24,30 @@ public class AuthService(ApiClient api, AuthTokenProvider tokenProvider)
     public bool IsStudent => string.Equals(_profile?.Role, "Student", StringComparison.OrdinalIgnoreCase);
     public bool IsTeacher => string.Equals(_profile?.Role, "Teacher", StringComparison.OrdinalIgnoreCase);
 
+    // ── Administration du site ────────────────────────────────────────────────
+    //
+    // ⚠️ Ces trois propriétés servent à CACHER des boutons, pas à protéger quoi que ce
+    // soit. Elles vivent dans le navigateur, sur un profil que le serveur a émis mais
+    // que rien n'empêche d'inspecter. Ce qui protège réellement le contenu du site, ce
+    // sont les politiques Redaction et Administration de GPOE26.ApiService.
+    //
+    // Leur seule raison d'être : éviter qu'un utilisateur légitime se heurte à un 403
+    // incompréhensible après avoir cliqué sur un bouton qu'on n'aurait pas dû lui
+    // montrer.
+
+    public bool IsAdmin => string.Equals(_profile?.Role, "Admin", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsEditor => string.Equals(_profile?.Role, "Editor", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Peut publier actualités, événements et activités.</summary>
+    public bool CanPublish => IsAdmin || IsEditor;
+
+    /// <summary>
+    /// Peut gouverner le site : équipe de direction, coordonnées, tarifs, comptes.
+    /// Un rédacteur alimente le site, il ne le gouverne pas.
+    /// </summary>
+    public bool CanAdminister => IsAdmin;
+
     // ── Login ─────────────────────────────────────────────────────
     public async Task<(bool ok, string? error)> LoginAsync(string email, string password)
     {

@@ -1,5 +1,6 @@
 @page "/blog/details/{Id:guid}"
 @rendermode InteractiveServer
+@inject GPOE26.Web.Services.AuthService Auth
 
 <PageTitle>Article – GPOE26</PageTitle>
 
@@ -66,7 +67,10 @@
 
             <hr />
             <div class="d-flex gap-2 mt-3">
-                <a href="@($"/blog/edit/{_article.Id}")" class="btn btn-navy">Modifier</a>
+                @if (Auth.CanPublish)
+                {
+                    <a href="@($"/admin/actualites/{_article.Id}")" class="btn btn-navy">Modifier</a>
+                }
                 <a href="/blog" class="btn btn-outline-secondary">Retour</a>
             </div>
         </div>

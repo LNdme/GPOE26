@@ -107,6 +107,49 @@ using (var scope = app.Services.CreateScope())
     await db.Database.MigrateAsync();
     // ⚠️ AJOUT : injection des données de test
     await UserSeeder.SeedAsync(db);
+
+    // ── Le premier administrateur ────────────────────────────────────────────
+    //
+    // L'inscription refuse le rôle Admin, et seul un administrateur peut en promouvoir
+    // un autre : il faut donc bien que le premier vienne d'ailleurs. Il vient d'ici.
+    //
+    // La règle est volontairement étroite : on ne promeut QUE s'il n'existe aucun
+    // administrateur. Une fois le site gouverné, cette variable d'environnement ne peut
+    // plus rien — autrement, quiconque pourrait la positionner reprendrait la main à
+    // chaque redémarrage.
+    //
+    //   Admin__BootstrapEmail=directeur@lycee.cm   (l'adresse d'un compte DÉJÀ inscrit)
+    var bootstrap = app.Configuration["Admin:BootstrapEmail"];
+    var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Amorçage");
+
+    if (!string.IsNullOrWhiteSpace(bootstrap))
+    {
+        if (await db.AppUsers.AnyAsync(u => u.Role == UserRole.Admin))
+        {
+            logger.LogInformation(
+                "Admin:BootstrapEmail ignoré : le site a déjà un administrateur.");
+        }
+        else
+        {
+            var candidat = await db.AppUsers
+                .FirstOrDefaultAsync(u => u.Email == bootstrap.Trim().ToLower());
+
+            if (candidat is null)
+            {
+                logger.LogWarning(
+                    "Admin:BootstrapEmail désigne un compte inexistant : "
+                    + "inscrivez-le normalement, puis redémarrez.");
+            }
+            else
+            {
+                candidat.Role = UserRole.Admin;
+                await db.SaveChangesAsync();
+                logger.LogWarning(
+                    "{Username} est désormais administrateur du site (amorçage).",
+                    candidat.Username);
+            }
+        }
+    }
 }
 
 if (app.Environment.IsDevelopment())
@@ -146,6 +189,20 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
 
     if (await db.AppUsers.AnyAsync(u => u.Username == req.Username))
         return Results.Conflict(new { message = "Ce nom d'utilisateur est déjà pris." });
+
+    // ⚠️ On ne se décerne pas un rôle de pouvoir en remplissant un formulaire.
+    //
+    // Le rôle arrive du client : sans ce refus, « role: "Admin" » dans le corps de la
+    // requête suffirait à prendre la main sur le contenu du site, l'équipe de direction
+    // et les comptes. C'est le contrôle le plus important de cet endpoint.
+    //
+    // La liste autorisée est blanche (RolePermissions.SelfAssignable) : un rôle ajouté
+    // plus tard sera refusé par défaut plutôt qu'autorisé par oubli.
+    //
+    // Administrateurs et rédacteurs naissent autrement : le premier par amorçage, les
+    // suivants par promotion depuis un compte qui détient déjà le droit.
+    if (!RolePermissions.SelfAssignable.Contains(req.Role))
+        return Results.BadRequest(new { message = "Ce rôle ne peut pas être choisi à l'inscription." });
 
     // Cohérence métier : un élève ne doit pas avoir de spécialité, un enseignant pas de filière
     if (req.Role == UserRole.Student && req.Specialite is not null)
@@ -771,6 +828,81 @@ auth.MapDelete("/me/classes/{id:guid}", async (Guid id, ClaimsPrincipal principa
 .WithSummary("Quitter une classe")
 .Produces(204)
 .Produces(404);
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  Comptes — qui gouverne le site
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── GET /auth/comptes ─────────────────────────────────────────────────────────
+//
+// La liste des comptes, pour l'écran d'administration. Réservée aux administrateurs :
+// elle expose les adresses de tout l'établissement, ce qui en fait un annuaire.
+auth.MapGet("/comptes", async (ClaimsPrincipal principal, UserContext db, string? role) =>
+{
+    var caller = await CurrentUserAsync(principal, db);
+    if (caller is null) return Results.Unauthorized();
+    if (!RolePermissions.CanAdminister(caller.Role)) return Results.Forbid();
+
+    var query = db.AppUsers.AsQueryable();
+
+    if (!string.IsNullOrWhiteSpace(role) && Enum.TryParse<UserRole>(role, true, out var wanted))
+        query = query.Where(u => u.Role == wanted);
+
+    var comptes = await query
+        .OrderBy(u => u.Role).ThenBy(u => u.Username)
+        .Select(u => new AccountDto(u.Id, u.Username, u.Email, u.Role, u.CreatedAt, u.LastLoginAt))
+        .ToListAsync();
+
+    return Results.Ok(comptes);
+})
+.RequireAuthorization()
+.WithSummary("Les comptes de l'établissement")
+.Produces<List<AccountDto>>()
+.Produces(403);
+
+// ── PUT /auth/comptes/{id}/role ───────────────────────────────────────────────
+//
+// La promotion, et le seul chemin par lequel un compte devient administrateur ou
+// rédacteur — l'inscription les refuse.
+//
+// ⚠️ Deux garde-fous qui ne sont pas de la prudence excessive :
+//
+//  · **On ne modifie pas son propre rôle.** Un administrateur qui se rétrograde par
+//    mégarde ne peut plus se repromouvoir, et s'il était le dernier, plus personne ne
+//    le peut. Passer par quelqu'un d'autre rend l'erreur réparable.
+//  · **Le dernier administrateur ne peut pas être rétrogradé.** Sans cette règle, le
+//    site se retrouve sans personne pour le gouverner, et la seule issue est une
+//    intervention en base.
+auth.MapPut("/comptes/{id:guid}/role", async (
+    Guid id, ChangeRoleRequest req, ClaimsPrincipal principal, UserContext db) =>
+{
+    var caller = await CurrentUserAsync(principal, db);
+    if (caller is null) return Results.Unauthorized();
+    if (!RolePermissions.CanAdminister(caller.Role)) return Results.Forbid();
+
+    if (caller.Id == id)
+        return Results.BadRequest(new { message = "Demandez à un autre administrateur de modifier votre rôle." });
+
+    var cible = await db.AppUsers.FindAsync(id);
+    if (cible is null) return Results.NotFound(new { message = "Compte introuvable." });
+
+    if (cible.Role == UserRole.Admin && req.Role != UserRole.Admin)
+    {
+        var autresAdmins = await db.AppUsers.CountAsync(u => u.Role == UserRole.Admin && u.Id != id);
+        if (autresAdmins == 0)
+            return Results.Conflict(new { message = "C'est le dernier administrateur : promouvez-en un autre d'abord." });
+    }
+
+    cible.Role = req.Role;
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new AccountDto(
+        cible.Id, cible.Username, cible.Email, cible.Role, cible.CreatedAt, cible.LastLoginAt));
+})
+.RequireAuthorization()
+.WithSummary("Changer le rôle d'un compte")
+.Produces<AccountDto>()
+.Produces(400).Produces(403).Produces(404).Produces(409);
 
 
 

@@ -1,6 +1,10 @@
+using System.Text;
+using GPOE26.ApiService;
 using GPOE26.ApiService.Data;
 using GPOE26.ApiService.Model;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -70,6 +74,51 @@ builder.Services.AddSwaggerGen(c =>
 
 
 
+// ══════════════════════════════════════════════════════════════════════════════
+//  Qui a le droit de modifier le site
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Ce service n'avait AUCUNE authentification : dix-huit endpoints d'écriture et un
+// dépôt de fichiers, ouverts à tout ce qui pouvait l'atteindre. Les lectures restent
+// anonymes — c'est un site public — mais plus une seule écriture.
+//
+// Même clé, même émetteur, même audience que User et Cours : c'est le service User qui
+// émet les jetons, celui-ci ne fait que les valider.
+var jwtKey = builder.Configuration["Jwt:Key"]
+    ?? "votre_cle_secrete_tres_longue_et_aleatoire_ici_changez_moi_en_production_cle_256_bits";
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+            ValidateIssuer = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidateAudience = true,
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.Zero
+        };
+    });
+
+// Deux niveaux, et la différence a un sens : un rédacteur alimente le site, un
+// administrateur le gouverne.
+//
+// ⚠️ Le claim est lu sous le nom « role », celui qu'émet le service User — et non par
+// la table de correspondance implicite du gestionnaire JWT, qui dépend d'une option de
+// configuration qu'aucun de ces fichiers ne mentionne. Même raisonnement que
+// StudyIdentity.GetRole dans GPOE26.ServiceDefaults.
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(ContentPolicies.Redaction, policy =>
+        policy.RequireAssertion(ctx => ContentPolicies.IsIn(ctx.User, ContentPolicies.Redacteurs)));
+
+    options.AddPolicy(ContentPolicies.Administration, policy =>
+        policy.RequireAssertion(ctx => ContentPolicies.IsIn(ctx.User, ContentPolicies.Administrateurs)));
+});
+
 var app = builder.Build();
 
 // Création automatique des tables au démarrage (pas de migrations EF pour ce projet)
@@ -84,6 +133,12 @@ using (var scope = app.Services.CreateScope())
 
 app.UseCors("AllowAll");
 app.UseStaticFiles(); // Added to serve uploaded images (e.g. from /uploads)
+
+// L'ordre n'est pas négociable : sans UseAuthentication avant UseAuthorization,
+// l'identité n'est pas encore établie quand les politiques sont évaluées, et tout
+// appel authentifié est refusé.
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapDefaultEndpoints();
 
 if (app.Environment.IsDevelopment())
@@ -131,6 +186,10 @@ app.MapPost("/api/upload", async (IFormFile file, IWebHostEnvironment env) =>
     return Results.Ok(new { url = relativeUrl });
 })
 .DisableAntiforgery()
+// ⚠️ Le plus sensible de tous : un dépôt de fichiers anonyme écrit sur le disque du
+// serveur. Les extensions sont déjà filtrées, mais un filtre d'extension n'a jamais
+// remplacé une autorisation.
+.RequireAuthorization(ContentPolicies.Redaction)
 .WithSummary("Uploader une image");
 
 // ── Routes ────────────────────────────────────────────────────────────────────
@@ -146,41 +205,49 @@ var contacts = app.MapGroup("/api/contact");
 news.MapGet("", NewsGetAll);
 news.MapGet("/{id:guid}", NewsGetById);
 news.MapGet("/slug/{slug}", NewsGetBySlug);
-news.MapPost("", NewsCreate);
-news.MapPut("/{id:guid}", NewsUpdate);
-news.MapDelete("/{id:guid}", NewsDelete);
-news.MapPatch("/{id:guid}/publish", NewsPublish);
+news.MapPost("", NewsCreate).RequireAuthorization(ContentPolicies.Redaction);
+news.MapPut("/{id:guid}", NewsUpdate).RequireAuthorization(ContentPolicies.Redaction);
+news.MapDelete("/{id:guid}", NewsDelete).RequireAuthorization(ContentPolicies.Redaction);
+news.MapPatch("/{id:guid}/publish", NewsPublish).RequireAuthorization(ContentPolicies.Redaction);
 
 // EVENTS
 events.MapGet("", EventsGetAll);
 events.MapGet("/upcoming", EventsGetUpcoming);
 events.MapGet("/{id:guid}", EventsGetById);
-events.MapPost("", EventsCreate);
-events.MapPut("/{id:guid}", EventsUpdate);
-events.MapDelete("/{id:guid}", EventsDelete);
+events.MapPost("", EventsCreate).RequireAuthorization(ContentPolicies.Redaction);
+events.MapPut("/{id:guid}", EventsUpdate).RequireAuthorization(ContentPolicies.Redaction);
+events.MapDelete("/{id:guid}", EventsDelete).RequireAuthorization(ContentPolicies.Redaction);
 
-// SPEECHES
+// SPEECHES — administration, et non rédaction.
+//
+// Un « mot du proviseur » est une parole attribuée à une personne nommée. Permettre à
+// un rédacteur de l'écrire reviendrait à le laisser faire parler le chef
+// d'établissement : c'est la seule raison pour laquelle ce groupe n'est pas avec les
+// actualités.
 speeches.MapGet("", SpeechesGetAll);
 speeches.MapGet("/latest", SpeechesGetLatest);
 speeches.MapGet("/{id:guid}", SpeechesGetById);
-speeches.MapPost("", SpeechesCreate);
-speeches.MapPut("/{id:guid}", SpeechesUpdate);
-speeches.MapDelete("/{id:guid}", SpeechesDelete);
+speeches.MapPost("", SpeechesCreate).RequireAuthorization(ContentPolicies.Administration);
+speeches.MapPut("/{id:guid}", SpeechesUpdate).RequireAuthorization(ContentPolicies.Administration);
+speeches.MapDelete("/{id:guid}", SpeechesDelete).RequireAuthorization(ContentPolicies.Administration);
 
 // ACTIVITIES
 activities.MapGet("", ActivitiesGetAll);
 activities.MapGet("/{id:guid}", ActivitiesGetById);
-activities.MapPost("", ActivitiesCreate);
-activities.MapPut("/{id:guid}", ActivitiesUpdate);
-activities.MapDelete("/{id:guid}", ActivitiesDelete);
+activities.MapPost("", ActivitiesCreate).RequireAuthorization(ContentPolicies.Redaction);
+activities.MapPut("/{id:guid}", ActivitiesUpdate).RequireAuthorization(ContentPolicies.Redaction);
+activities.MapDelete("/{id:guid}", ActivitiesDelete).RequireAuthorization(ContentPolicies.Redaction);
 
-// HIERARCHY
+// HIERARCHY et CONTACTS — administration.
+//
+// L'équipe de direction et les coordonnées officielles engagent l'établissement ; on ne
+// les confie pas à qui alimente la page d'actualités.
 hierarchy.MapGet("", HierarchyGetAll);
 hierarchy.MapGet("/{id:int}", HierarchyGetById);
 hierarchy.MapGet("/role/{role}", HierarchyGetByRole);
-hierarchy.MapPost("", HierarchyCreate);
-hierarchy.MapPut("/{id:int}", HierarchyUpdate);
-hierarchy.MapDelete("/{id:int}", HierarchyDelete);
+hierarchy.MapPost("", HierarchyCreate).RequireAuthorization(ContentPolicies.Administration);
+hierarchy.MapPut("/{id:int}", HierarchyUpdate).RequireAuthorization(ContentPolicies.Administration);
+hierarchy.MapDelete("/{id:int}", HierarchyDelete).RequireAuthorization(ContentPolicies.Administration);
 
 // CONTACTS
 contacts.MapGet("", async (ApiServiceContext db) =>
@@ -202,10 +269,10 @@ contacts.MapPost("", async (Contact contact, ApiServiceContext db) =>
     }
     await db.SaveChangesAsync();
     return TypedResults.Ok(contact);
-});
-contacts.MapPut("/{id:int}", UpdateContact);
+}).RequireAuthorization(ContentPolicies.Administration);
+contacts.MapPut("/{id:int}", UpdateContact).RequireAuthorization(ContentPolicies.Administration);
 
-contacts.MapDelete("/{id:int}", DeleteContact);
+contacts.MapDelete("/{id:int}", DeleteContact).RequireAuthorization(ContentPolicies.Administration);
 
 app.Run();
 

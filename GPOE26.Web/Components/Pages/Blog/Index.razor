@@ -1,5 +1,6 @@
 @page "/blog"
 @rendermode InteractiveServer
+@inject GPOE26.Web.Services.AuthService Auth
 
 <PageTitle>Actualités – GPOE26</PageTitle>
 
@@ -17,9 +18,14 @@
 <div class="container py-5">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="section-title mb-0">Actualités</h1>
-        <a href="/blog/create" class="btn btn-navy">
-            <i class="bi bi-plus-lg me-1"></i> Nouvel Article
-        </a>
+        @* Montré à qui peut publier. Le serveur refuserait de toute façon ; afficher
+           ce bouton à un visiteur ne ferait que promettre une action impossible. *@
+        @if (Auth.CanPublish)
+        {
+            <a href="/admin/actualites/nouvelle" class="btn btn-navy">
+                <i class="bi bi-plus-lg me-1"></i> Nouvel Article
+            </a>
+        }
     </div>
 
     @* Filtres par catégorie *@
@@ -63,10 +69,13 @@
 
                             <div class="d-flex gap-2 mt-auto">
                                 <a href="@($"/blog/details/{article.Id}")" class="btn btn-outline-secondary btn-sm flex-fill">Détails</a>
-                                <a href="@($"/blog/edit/{article.Id}")" class="btn btn-outline-primary btn-sm flex-fill">Modifier</a>
-                                <button class="btn btn-outline-danger btn-sm" @onclick="() => ConfirmDelete(article)">
-                                    <i class="bi bi-trash"></i>
-                                </button>
+                                @if (Auth.CanPublish)
+                                {
+                                    <a href="@($"/admin/actualites/{article.Id}")" class="btn btn-outline-primary btn-sm flex-fill">Modifier</a>
+                                    <button class="btn btn-outline-danger btn-sm" @onclick="() => ConfirmDelete(article)">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                }
                             </div>
                         </div>
                     </div>

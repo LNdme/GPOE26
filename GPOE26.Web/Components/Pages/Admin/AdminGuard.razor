@@ -1,0 +1,58 @@
+@inject GPOE26.Web.Services.AuthService Auth
+
+@*
+    La garde commune à tout l'espace d'administration.
+
+    ⚠️ Ce composant ne protège rien. Il décide de ce qui s'affiche, dans un navigateur
+    où l'utilisateur voit tout. La protection réelle est côté serveur, dans les
+    politiques Redaction et Administration de GPOE26.ApiService — sans elles, masquer
+    un formulaire ne ferait que déplacer le problème hors de vue.
+
+    Ce qu'il apporte vraiment : un refus lisible. Sans lui, une personne sans droit
+    verrait le formulaire, remplirait les champs, cliquerait, et recevrait un 403
+    silencieux après avoir perdu son travail.
+*@
+
+@if (!Auth.IsAuthenticated)
+{
+    <div class="admin-refus">
+        <div class="admin-refus-icone">🔒</div>
+        <h2>Vous n'êtes pas connecté</h2>
+        <p>Cet espace est réservé à l'équipe qui alimente le site.</p>
+        <a class="btn btn-brand mt-2" href="/login">Se connecter</a>
+    </div>
+}
+else if (!Autorise)
+{
+    <div class="admin-refus">
+        <div class="admin-refus-icone">✋</div>
+        <h2>@RefusTitre</h2>
+        <p>@RefusTexte</p>
+        <a class="btn btn-brand mt-2" href="/">Retour à l'accueil</a>
+    </div>
+}
+else
+{
+    @ChildContent
+}
+
+@code {
+    /// <summary>Le contenu réservé.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>
+    /// Vrai pour exiger le niveau administration (équipe, tarifs, comptes) plutôt que
+    /// le niveau rédaction (actualités, événements, activités).
+    /// </summary>
+    [Parameter] public bool Administration { get; set; }
+
+    private bool Autorise => Administration ? Auth.CanAdminister : Auth.CanPublish;
+
+    private string RefusTitre => Administration
+        ? "Réservé aux administrateurs"
+        : "Réservé à l'équipe de rédaction";
+
+    private string RefusTexte => Administration
+        ? "Cette page touche à ce qui engage l'établissement : l'équipe de direction, les coordonnées, les tarifs et les comptes. Un administrateur peut vous y donner accès."
+        : "Seules les personnes chargées d'alimenter le site peuvent publier ici.";
+}

@@ -1,0 +1,169 @@
+@page "/admin/comptes"
+@rendermode InteractiveServer
+@inject GPOE26.Web.Services.AuthService Auth
+
+<PageTitle>Comptes et rôles – GPOE26</PageTitle>
+
+@*
+    Qui gouverne le site.
+
+    C'est le seul endroit d'où naissent les rôles Admin et Rédacteur : l'inscription les
+    refuse explicitement, sinon n'importe qui se déclarerait administrateur en remplissant
+    un formulaire.
+
+    Deux refus viennent du serveur et sont ici expliqués plutôt que cachés : on ne modifie
+    pas son propre rôle, et le dernier administrateur ne peut pas être rétrogradé.
+*@
+
+<AdminGuard Administration="true">
+    <div class="admin">
+        <header class="admin-head">
+            <a class="admin-retour" href="/admin">← Administration</a>
+            <h1 class="admin-titre">Comptes et rôles</h1>
+            <p class="admin-sous-titre">
+                Un rédacteur publie ; un administrateur gouverne. L'inscription ne donne
+                ni l'un ni l'autre — ces rôles se donnent ici.
+            </p>
+        </header>
+
+        <div class="admin-filtres">
+            @foreach (var f in Filtres)
+            {
+                <button class="@FiltreClasse(f.Value)" @onclick="() => Filtrer(f.Value)">@f.Label</button>
+            }
+        </div>
+
+        @if (_erreur is not null)
+        {
+            <p class="admin-erreur">@_erreur</p>
+        }
+
+        @if (_chargement)
+        {
+            <p class="admin-note">Chargement des comptes…</p>
+        }
+        else if (_comptes.Count == 0)
+        {
+            <p class="admin-note">Aucun compte ne correspond.</p>
+        }
+        else
+        {
+            <div class="admin-table-cadre">
+                <table class="admin-table">
+                    <thead>
+                        <tr>
+                            <th>Compte</th>
+                            <th>Rôle</th>
+                            <th>Dernière connexion</th>
+                            <th>Changer le rôle</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var c in _comptes)
+                        {
+                            <tr class="@(c.HasPower ? "a-du-pouvoir" : "")">
+                                <td>
+                                    <span class="admin-compte-nom">@c.Username</span>
+                                    <span class="admin-compte-mail">@c.Email</span>
+                                </td>
+                                <td><span class="admin-badge">@c.RoleLabel</span></td>
+                                <td>@DerniereConnexion(c)</td>
+                                <td>
+                                    @if (c.Id == Auth.Profile?.Id)
+                                    {
+                                        @* Le serveur refuse l'auto-modification : un administrateur
+                                           qui se rétrograderait par mégarde ne pourrait plus se
+                                           repromouvoir. Autant le dire ici. *@
+                                        <span class="admin-sans-action">votre compte</span>
+                                    }
+                                    else
+                                    {
+                                        <select class="admin-select"
+                                                disabled="@(_occupe == c.Id)"
+                                                value="@c.Role"
+                                                @onchange="e => ChangerAsync(c, e.Value?.ToString())">
+                                            @foreach (var r in Roles)
+                                            {
+                                                <option value="@r.Value">@r.Label</option>
+                                            }
+                                        </select>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <p class="admin-note mt-3">
+                Le dernier administrateur ne peut pas être rétrogradé : sans lui, plus
+                personne ne pourrait nommer qui que ce soit, et seule une intervention en
+                base rendrait la main.
+            </p>
+        }
+    </div>
+</AdminGuard>
+
+@code {
+    private List<AccountDto> _comptes = [];
+    private bool _chargement = true;
+    private Guid? _occupe;
+    private string? _erreur;
+    private string? _filtre;
+
+    private static readonly (string Label, string? Value)[] Filtres =
+    [
+        ("Tous", null), ("Administrateurs", "Admin"), ("Rédacteurs", "Editor"),
+        ("Enseignants", "Teacher"), ("Élèves", "Student"), ("Parents", "Parent"),
+    ];
+
+    private static readonly (string Label, string Value)[] Roles =
+    [
+        ("Élève", "Student"), ("Enseignant", "Teacher"), ("Parent", "Parent"),
+        ("Rédacteur", "Editor"), ("Administrateur", "Admin"),
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Auth.CanAdminister) await RechargerAsync();
+        else _chargement = false;
+    }
+
+    private async Task RechargerAsync()
+    {
+        _chargement = true;
+        _comptes = await Api.GetAccountsAsync(_filtre);
+        _chargement = false;
+    }
+
+    private async Task Filtrer(string? role)
+    {
+        _filtre = role;
+        await RechargerAsync();
+    }
+
+    private async Task ChangerAsync(AccountDto compte, string? role)
+    {
+        if (string.IsNullOrWhiteSpace(role) || role == compte.Role) return;
+
+        _occupe = compte.Id;
+        _erreur = null;
+
+        var (maj, erreur) = await Api.ChangeRoleAsync(compte.Id, role);
+
+        if (maj is null) _erreur = erreur;
+        else
+        {
+            var i = _comptes.FindIndex(c => c.Id == maj.Id);
+            if (i >= 0) _comptes[i] = maj;
+        }
+
+        _occupe = null;
+    }
+
+    private string FiltreClasse(string? value) =>
+        _filtre == value ? "admin-filtre is-active" : "admin-filtre";
+
+    private static string DerniereConnexion(AccountDto c) =>
+        c.LastLoginAt is { } d ? d.ToLocalTime().ToString("d MMM yyyy") : "jamais";
+}

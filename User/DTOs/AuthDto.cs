@@ -187,3 +187,29 @@ public class UpdateProfileRequest
         Language = language;
     }
 }
+// ── Comptes et rôles ──────────────────────────────────────────────────────────
+
+/// <summary>
+/// Un compte vu depuis l'écran d'administration.
+///
+/// Aucun secret : ni empreinte de mot de passe, ni jeton. Cet écran sert à savoir qui
+/// gouverne le site, pas à inspecter des comptes.
+/// </summary>
+public record AccountDto(
+    Guid Id,
+    string Username,
+    string Email,
+    UserRole Role,
+    DateTime CreatedAt,
+    DateTime? LastLoginAt
+);
+
+/// <summary>
+/// Demande de promotion ou de rétrogradation.
+///
+/// Contrairement à <see cref="RegisterRequest"/>, ce rôle-ci n'est pas filtré par
+/// <c>RolePermissions.SelfAssignable</c> : c'est justement le chemin par lequel
+/// <c>Admin</c> et <c>Editor</c> se donnent. Ce qui le protège est que l'appelant doit
+/// déjà être administrateur, et qu'il ne peut pas se l'appliquer à lui-même.
+/// </summary>
+public record ChangeRoleRequest(UserRole Role);

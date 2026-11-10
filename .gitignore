@@ -361,3 +361,7 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# Images déposées via /api/upload : du contenu d'exécution, pas du code. Les versionner
+# ferait entrer dans le dépôt tout ce que la rédaction téléverse — et, pendant les
+# vérifications, les fichiers de test.
+GPOE26.ApiService/wwwroot/uploads/

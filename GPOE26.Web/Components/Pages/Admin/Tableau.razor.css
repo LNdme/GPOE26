@@ -1,0 +1,87 @@
+/* L'espace d'administration. Mêmes tokens --rd-* que le reste du site, mais une teinte
+   d'accent différente : on doit voir au premier coup d'œil qu'on est en train de
+   modifier le site public, et non de le consulter. */
+
+.admin {
+    max-width: 60rem;
+    margin: 0 auto;
+    padding: 2.5rem 1.25rem 4rem;
+    color: var(--rd-text, #1f2430);
+}
+
+.admin-head { margin-bottom: 2rem; }
+
+.admin-surtitre {
+    margin: 0;
+    font-size: .74rem;
+    font-weight: 700;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: #b54708;
+}
+
+.admin-titre {
+    margin: .3rem 0 0;
+    font-size: 1.6rem;
+    font-weight: 700;
+}
+
+.admin-sous-titre {
+    margin: .3rem 0 0;
+    font-size: .92rem;
+    color: var(--rd-text-soft, #6b7280);
+}
+
+.admin-section {
+    margin: 0 0 .9rem;
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.admin-note {
+    margin: 0 0 1rem;
+    font-size: .86rem;
+    line-height: 1.6;
+    color: var(--rd-text-soft, #6b7280);
+}
+
+.admin-grille {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: .85rem;
+}
+
+.admin-carte {
+    display: flex;
+    flex-direction: column;
+    gap: .3rem;
+    padding: 1.2rem 1.35rem;
+    border: 1px solid var(--rd-border, #e3e6ec);
+    border-radius: 12px;
+    background: #fff;
+    text-decoration: none;
+    color: inherit;
+    transition: border-color .15s ease, transform .15s ease;
+}
+
+.admin-carte:hover {
+    border-color: #b54708;
+    transform: translateY(-1px);
+}
+
+/* Les cartes réservées aux administrateurs portent un liseré : la différence de
+   pouvoir doit se voir, pas seulement se lire. */
+.admin-carte.is-admin { box-shadow: inset 3px 0 0 #b54708; }
+
+.admin-carte-icone { font-size: 1.4rem; }
+
+.admin-carte-titre {
+    font-size: .98rem;
+    font-weight: 700;
+}
+
+.admin-carte-texte {
+    font-size: .84rem;
+    line-height: 1.5;
+    color: var(--rd-text-soft, #6b7280);
+}

@@ -1,4 +1,4 @@
-@page "/blog/create"
+@page "/admin/actualites/nouvelle"
 @rendermode InteractiveServer
 
 <PageTitle>Créer un article – GPOE26</PageTitle>
@@ -9,6 +9,9 @@
     .btn-navy:hover { background-color: #123d82; color: white; }
     .form-section { max-width: 720px; margin: 0 auto; }
 </style>
+
+@* Garde de rédaction. Le serveur refuse de toute façon — ceci rend le refus lisible. *@
+<AdminGuard>
 
 <div class="container py-5">
     <div class="form-section">
@@ -91,6 +94,8 @@
         </EditForm>
     </div>
 </div>
+
+</AdminGuard>
 
 @code {
     private NewArticle _article = new();

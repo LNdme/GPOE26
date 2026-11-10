@@ -1,0 +1,79 @@
+@page "/admin"
+@rendermode InteractiveServer
+@inject GPOE26.Web.Services.AuthService Auth
+
+<PageTitle>Administration – GPOE26</PageTitle>
+
+@*
+    Le point d'entrée de l'espace d'administration.
+
+    Il montre à chacun ce qu'il peut faire, et rien d'autre : un rédacteur ne voit pas
+    les cartes « Équipe », « Coordonnées » et « Comptes ». Lui afficher des portes
+    fermées ne lui apprendrait que la liste de ce qu'on lui refuse.
+*@
+
+<AdminGuard>
+    <div class="admin">
+        <header class="admin-head">
+            <p class="admin-surtitre">Administration du site</p>
+            <h1 class="admin-titre">Bonjour @Auth.Profile?.Username</h1>
+            <p class="admin-sous-titre">@Role</p>
+        </header>
+
+        <section>
+            <h2 class="admin-section">Publier</h2>
+            <div class="admin-grille">
+                <a class="admin-carte" href="/blog">
+                    <span class="admin-carte-icone">📰</span>
+                    <span class="admin-carte-titre">Actualités</span>
+                    <span class="admin-carte-texte">Écrire, modifier et retirer les articles du site.</span>
+                </a>
+                <a class="admin-carte" href="/events">
+                    <span class="admin-carte-icone">📅</span>
+                    <span class="admin-carte-titre">Événements</span>
+                    <span class="admin-carte-texte">Annoncer les rendez-vous de l'établissement.</span>
+                </a>
+                <a class="admin-carte" href="/activities">
+                    <span class="admin-carte-icone">🎭</span>
+                    <span class="admin-carte-titre">Activités</span>
+                    <span class="admin-carte-texte">Les clubs et ce qui se passe hors des cours.</span>
+                </a>
+            </div>
+        </section>
+
+        @if (Auth.CanAdminister)
+        {
+            <section class="mt-4">
+                <h2 class="admin-section">Gouverner</h2>
+                <p class="admin-note">
+                    Ce qui engage l'établissement. Un rédacteur n'y a pas accès.
+                </p>
+                <div class="admin-grille">
+                    <a class="admin-carte is-admin" href="/hierarchy">
+                        <span class="admin-carte-icone">👤</span>
+                        <span class="admin-carte-titre">Équipe de direction</span>
+                        <span class="admin-carte-texte">Les personnes présentées sur le site.</span>
+                    </a>
+                    <a class="admin-carte is-admin" href="/admin/comptes">
+                        <span class="admin-carte-icone">🔑</span>
+                        <span class="admin-carte-titre">Comptes et rôles</span>
+                        <span class="admin-carte-texte">Nommer les rédacteurs et les administrateurs.</span>
+                    </a>
+                </div>
+            </section>
+        }
+        else
+        {
+            <p class="admin-note mt-4">
+                Vous êtes rédacteur : vous alimentez le site. L'équipe de direction, les
+                coordonnées et les comptes relèvent d'un administrateur.
+            </p>
+        }
+    </div>
+</AdminGuard>
+
+@code {
+    private string Role => Auth.CanAdminister
+        ? "Administrateur — vous pouvez tout modifier, y compris les comptes."
+        : "Rédacteur — vous publiez actualités, événements et activités.";
+}

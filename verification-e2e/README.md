@@ -25,6 +25,12 @@ su - postgres -c "psql -c \"ALTER USER postgres PASSWORD 'postgres';\" \
 
 Les migrations s'appliquent seules au démarrage de chaque service.
 
+`admin.py` a besoin d'un troisième service, `GPOE26.ApiService`, et d'une base de plus :
+
+```bash
+echo 'CREATE DATABASE "LyceeDB";' | su - postgres -c psql
+```
+
 ```bash
 source verification-e2e/env.sh
 
@@ -40,6 +46,12 @@ ConnectionStrings__coursdb="$PG;Database=coursdb" \
 ASPNETCORE_URLS=http://localhost:5188 \
 Services__user__http__0=http://localhost:5197 \
   dotnet run --project ./Cours --no-launch-profile &
+
+# ApiService — le contenu du site public. Les variables Jwt lui sont indispensables
+# depuis qu'il authentifie ses écritures : sans elles il refuse tout, en 401.
+ConnectionStrings__LyceeDB="$PG;Database=LyceeDB" \
+ASPNETCORE_URLS=http://localhost:5200 \
+  dotnet run --project ./GPOE26.ApiService --no-launch-profile &
 ```
 
 ⚠️ **Le schéma dans `Services__user__http__0` n'est pas facultatif.** L'annuaire vise
@@ -55,6 +67,7 @@ d'autorisation. C'est l'erreur la plus coûteuse à diagnostiquer de tout ce mon
 | `echelle.py` | 30 élèves ne produisent **qu'un seul** appel à User — à recouper avec les traces |
 | `fragiles.py` | Les trois décisions de l'agrégation des notions fragiles |
 | `fuite.py` | Aucun contenu d'échange dans le JSON de `/suivi/classe` |
+| `admin.py` | Qui peut modifier le site : anonyme, élève, rédacteur, administrateur |
 
 Chacun s'exécute seul (`python3 verification-e2e/scenario.py`), sans dépendance autre que
 la bibliothèque standard, et inscrit des comptes neufs à chaque exécution — on peut donc
@@ -75,6 +88,24 @@ trente. Le reste est servi par le cache de cinq minutes.
 mémoire, et sans redémarrage on mesurerait le cache plutôt que la panne. Un enseignant
 demandant alors un élève de sa propre classe doit recevoir **403**. Une autorisation qui
 s'ouvre quand elle ne peut pas vérifier n'est pas une autorisation.
+
+## Le premier administrateur
+
+L'inscription refuse les rôles `Admin` et `Editor`, et seul un administrateur peut en
+promouvoir un autre : le premier vient donc d'ailleurs. Inscrivez le compte normalement,
+puis nommez-le au démarrage de User :
+
+```bash
+Admin__BootstrapEmail=directeur@lycee.cm dotnet run --project ./User
+```
+
+La promotion n'a lieu que s'il n'existe **aucun** administrateur. Une fois le site
+gouverné, cette variable ne peut plus rien — sinon quiconque pourrait la positionner
+reprendrait la main à chaque redémarrage.
+
+`admin.py` n'utilise pas ce chemin : il promeut directement en SQL, et le dit, parce
+qu'un script de vérification qui dépend d'une variable d'environnement de l'hôte ne se
+rejoue pas de façon fiable.
 
 ## Ce que ces scripts ne couvrent pas
 

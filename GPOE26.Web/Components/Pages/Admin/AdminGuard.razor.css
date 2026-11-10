@@ -1,0 +1,26 @@
+/* Le refus d'accès.
+
+   Ces styles vivent ici, et non dans Tableau.razor.css, parce qu'AdminGuard enveloppe
+   plusieurs pages : du CSS scopé sur le tableau de bord ne s'appliquerait pas au refus
+   affiché sur /admin/actualites/nouvelle. */
+
+.admin-refus {
+    max-width: 32rem;
+    margin: 4rem auto;
+    text-align: center;
+    color: var(--rd-text, #1f2430);
+}
+
+.admin-refus-icone { font-size: 2.5rem; }
+
+.admin-refus h2 {
+    margin: .6rem 0 .4rem;
+    font-size: 1.25rem;
+    font-weight: 700;
+}
+
+.admin-refus p {
+    font-size: .92rem;
+    line-height: 1.65;
+    color: var(--rd-text-soft, #6b7280);
+}

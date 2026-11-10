@@ -1,4 +1,4 @@
-@page "/blog/edit/{Id:guid}"
+@page "/admin/actualites/{Id:guid}"
 @rendermode InteractiveServer
 
 <PageTitle>Modifier l'article – GPOE26</PageTitle>
@@ -9,6 +9,9 @@
     .btn-navy:hover { background-color: #123d82; color: white; }
     .form-section { max-width: 720px; margin: 0 auto; }
 </style>
+
+@* Garde de rédaction. Le serveur refuse de toute façon — ceci rend le refus lisible. *@
+<AdminGuard>
 
 <div class="container py-5">
     <div class="form-section">
@@ -102,6 +105,8 @@
         }
     </div>
 </div>
+
+</AdminGuard>
 
 @code {
     [Parameter] public Guid Id { get; set; }

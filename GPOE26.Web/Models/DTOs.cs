@@ -169,6 +169,31 @@ public record RefreshedTokenResponse(string Token, DateTime ExpiresAt);
 /// <summary>Un parent vu depuis le profil de l'élève, pour qu'il sache qui le suit.</summary>
 public record LinkedParentDto(Guid Id, string Username, string Email, DateTime LinkedAt);
 
+// ── Comptes et rôles ──────────────────────────────────────────────────────────
+
+/// <summary>Un compte vu depuis l'écran d'administration. Aucun secret n'y transite.</summary>
+public record AccountDto(
+    Guid Id,
+    string Username,
+    string Email,
+    string Role,
+    DateTime CreatedAt,
+    DateTime? LastLoginAt
+)
+{
+    public string RoleLabel => Role switch
+    {
+        "Admin"   => "Administrateur",
+        "Editor"  => "Rédacteur",
+        "Teacher" => "Enseignant",
+        "Parent"  => "Parent",
+        _         => "Élève",
+    };
+
+    /// <summary>Les deux rôles qui donnent prise sur le site public.</summary>
+    public bool HasPower => Role is "Admin" or "Editor";
+}
+
 // ── Classes ───────────────────────────────────────────────────────────────────
 
 public record CreateClassRequest(string Name, string Subject, string? Level, string SchoolYear);

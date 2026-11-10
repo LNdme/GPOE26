@@ -1,5 +1,6 @@
 @page "/events"
 @rendermode InteractiveServer
+@inject GPOE26.Web.Services.AuthService Auth
 
 <PageTitle>Événements – GPOE26</PageTitle>
 
@@ -16,7 +17,10 @@
 <div class="container py-5">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="section-title mb-0">Événements</h1>
-        <a href="/events/create" class="btn btn-navy"><i class="bi bi-plus-lg me-1"></i> Nouvel Événement</a>
+        @if (Auth.CanPublish)
+        {
+            <a href="/admin/evenements/nouveau" class="btn btn-navy"><i class="bi bi-plus-lg me-1"></i> Nouvel Événement</a>
+        }
     </div>
 
     <div class="d-flex gap-2 mb-4 flex-wrap">
