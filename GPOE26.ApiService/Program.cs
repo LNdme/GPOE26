@@ -158,11 +158,14 @@ app.MapPost("/api/upload", async (IFormFile file, IWebHostEnvironment env) =>
     if (file.Length > 5 * 1024 * 1024)
         return Results.BadRequest("Le fichier est trop volumineux (max 5MB).");
 
-    // Validate extension
-    var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp" };
-    var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-    if (!allowedExtensions.Contains(ext))
-        return Results.BadRequest("Type de fichier non autorisé. Seules les images sont acceptées.");
+    // Format reconnu au contenu, pas à l'extension : un « .jfif » est un JPEG, une photo iPhone est en HEIC
+    var header = new byte[GPOE26.ApiService.Services.ImageFormat.HeaderLength];
+    int read;
+    await using (var probe = file.OpenReadStream())
+        read = await probe.ReadAtLeastAsync(header, header.Length, throwOnEndOfStream: false);
+    var ext = GPOE26.ApiService.Services.ImageFormat.ExtensionOf(header.AsSpan(0, read));
+    if (ext is null)
+        return Results.BadRequest(GPOE26.ApiService.Services.ImageFormat.RejectionMessage(header.AsSpan(0, read)));
 
     // Ensure directory exists
     var uploadFolder = Path.Combine(env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), "uploads", "images");
@@ -493,6 +496,8 @@ static async Task<IResult> SpeechesCreate(Speech speech, ApiServiceContext db)
 {
     speech.Id = Guid.NewGuid();
     speech.CreatedAt = DateTime.UtcNow;
+    // Une date sans fuseau est refusée par PostgreSQL (timestamptz) : même traitement qu'à la modification
+    speech.DeliveredAt = DateTime.SpecifyKind(speech.DeliveredAt, DateTimeKind.Utc);
     db.Speeches.Add(speech);
     await db.SaveChangesAsync();
     return TypedResults.Created($"/api/speeches/{speech.Id}", speech);

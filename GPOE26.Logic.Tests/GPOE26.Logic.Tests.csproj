@@ -23,6 +23,7 @@
     <ProjectReference Include="..\Cours\Cours.csproj" />
     <ProjectReference Include="..\Chat\Chat.csproj" />
     <ProjectReference Include="..\GPOE26.UI\GPOE26.UI.csproj" />
+    <ProjectReference Include="..\GPOE26.ApiService\GPOE26.ApiService.csproj" />
   </ItemGroup>
 
   <ItemGroup>

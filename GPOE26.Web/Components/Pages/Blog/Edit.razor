@@ -64,7 +64,7 @@
                 <label class="form-label fw-semibold">Image (URL ou Upload)</label>
                 <div class="input-group">
                     <InputText @bind-Value="_article.ImageUrl" class="form-control" />
-                    <InputFile OnChange="HandleImageUpload" class="form-control" accept="image/*" />
+                    <InputFile OnChange="HandleImageUpload" class="form-control" accept="image/jpeg,image/png,image/gif,image/webp,image/avif,.jfif" />
                 </div>
                 @if (_isUploading)
                 {
@@ -123,7 +123,7 @@
             var url = await Api.UploadImageAsync(stream, file.Name);
             if (url != null && _article != null)
             {
-                _article.ImageUrl = url;
+                _article.ImageUrl = url; _errorMessage = null;
             }
             else _errorMessage = "Erreur upload.";
         }

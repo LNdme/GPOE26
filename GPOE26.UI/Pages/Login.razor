@@ -46,7 +46,7 @@
     protected override async Task OnInitializedAsync()
     {
         await Session.RestoreAsync();
-        if (Session.IsAuthenticated) Nav.NavigateTo(AppPage.SafeReturnUrl(ReturnUrl));
+        if (Session.IsAuthenticated) Nav.NavigateTo(AppPage.SafeReturnUrl(ReturnUrl, Session.Role));
     }
 
     private async Task SubmitAsync()
@@ -62,6 +62,6 @@
             return;
         }
         await Session.SignInAsync(result.Value);
-        Nav.NavigateTo(AppPage.SafeReturnUrl(ReturnUrl));
+        Nav.NavigateTo(AppPage.SafeReturnUrl(ReturnUrl, Session.Role));
     }
 }

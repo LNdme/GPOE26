@@ -658,36 +658,52 @@ namespace GPOE26.Web.Services
         }
 
         // ── Upload Image (Hébergée sur ApiService) ──────────────────────────────────
-        public async Task<string?> UploadImageAsync(Stream fileStream, string fileName)
+        /// <summary>
+        /// Envoie l'image et renvoie son adresse relative (servie par le proxy /uploads/images du site).
+        /// En cas de refus, lève une exception dont le message est celui de l'API (format, taille, droits) :
+        /// les formulaires l'affichent tel quel, au lieu d'un « Erreur upload. » sans explication.
+        /// </summary>
+        public async Task<string> UploadImageAsync(Stream fileStream, string fileName)
         {
+            HttpResponseMessage resp;
             try
             {
                 using var client = CreateAuthClient("apiservice");
                 using var content = new MultipartFormDataContent();
-
-                var fileContent = new StreamContent(fileStream);
-                content.Add(fileContent, "file", fileName);
-
-                var resp = await client.PostAsync("/api/upload", content);
-                if (resp.IsSuccessStatusCode)
-                {
-                    var result = await resp.Content.ReadFromJsonAsync<UploadResponse>();
-                    if (result != null && !string.IsNullOrEmpty(result.Url))
-                    {
-                        // Return the relative path only — the Web frontend's proxy at
-                        // /uploads/images/{*path} will forward the request to the ApiService.
-                        // This makes the URL work in the browser regardless of the internal port.
-                        return result.Url;
-                    }
-                }
-                _logger.LogWarning($"Image upload failed: {resp.StatusCode}");
-                return null;
+                content.Add(new StreamContent(fileStream), "file", fileName);
+                resp = await client.PostAsync("/api/upload", content);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
             {
                 _logger.LogError(ex, "Exception uploading image");
-                return null;
+                throw new InvalidOperationException("le serveur d'images ne répond pas, réessayez dans un instant.", ex);
             }
+
+            using (resp)
+            {
+                if (resp.IsSuccessStatusCode &&
+                    await resp.Content.ReadFromJsonAsync<UploadResponse>() is { Url: { Length: > 0 } url })
+                    return url;
+
+                var body = await resp.Content.ReadAsStringAsync();
+                _logger.LogWarning("Image upload failed: {Status} {Body}", resp.StatusCode, body);
+                throw new InvalidOperationException(resp.StatusCode switch
+                {
+                    System.Net.HttpStatusCode.Unauthorized => "votre session a expiré, reconnectez-vous.",
+                    System.Net.HttpStatusCode.Forbidden => "votre compte n'a pas le droit de modifier le contenu du site.",
+                    System.Net.HttpStatusCode.RequestEntityTooLarge => "l'image dépasse 5 Mo.",
+                    System.Net.HttpStatusCode.BadRequest when UploadErrorText(body) is { } text => text,
+                    _ => $"échec de l'envoi ({(int)resp.StatusCode})."
+                });
+            }
+        }
+
+        /// <summary>Le refus de l'API est une chaîne JSON (« "Ce fichier…" ») : on en extrait le texte.</summary>
+        private static string? UploadErrorText(string body)
+        {
+            if (string.IsNullOrWhiteSpace(body)) return null;
+            try { return System.Text.Json.JsonSerializer.Deserialize<string>(body); }
+            catch (System.Text.Json.JsonException) { return body.Length <= 300 ? body : null; }
         }
 
         private class UploadResponse

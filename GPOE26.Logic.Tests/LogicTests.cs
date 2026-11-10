@@ -849,3 +849,70 @@ public class LlmReasoningTests
     public async Task N_envoie_pas_le_champ_aux_autres_fournisseurs() =>
         Assert.Null((await SendAsync("http://localhost:11434/v1", reasoning: false))["reasoning"]);
 }
+
+public class HomeRedirectTests
+{
+    // L'administrateur envoyé sur /app voyait l'accueil élève, et l'API lui refusait ces données (403)
+    [Fact]
+    public void L_administrateur_arrive_sur_la_gestion_du_site_apres_connexion() =>
+        Assert.Equal("/admin", GPOE26.UI.Components.AppPage.SafeReturnUrl(null, GPOE26.UI.Models.UserRole.Admin));
+
+    [Theory]
+    [InlineData(GPOE26.UI.Models.UserRole.Student)]
+    [InlineData(GPOE26.UI.Models.UserRole.Teacher)]
+    [InlineData(GPOE26.UI.Models.UserRole.Parent)]
+    public void Les_autres_roles_arrivent_dans_leur_espace(GPOE26.UI.Models.UserRole role) =>
+        Assert.Equal("/app", GPOE26.UI.Components.AppPage.SafeReturnUrl(null, role));
+
+    [Fact]
+    public void La_page_demandee_reste_prioritaire() =>
+        Assert.Equal("/app/assistant", GPOE26.UI.Components.AppPage.SafeReturnUrl("/app/assistant", GPOE26.UI.Models.UserRole.Admin));
+
+    [Fact]
+    public void Une_adresse_externe_renvoie_a_l_accueil_du_role() =>
+        Assert.Equal("/admin", GPOE26.UI.Components.AppPage.SafeReturnUrl("//evil.example", GPOE26.UI.Models.UserRole.Admin));
+}
+
+public class ImageFormatTests
+{
+    private static byte[] Header(params object[] parts) =>
+        parts.SelectMany(p => p is string s ? System.Text.Encoding.ASCII.GetBytes(s) : [(byte)(int)p]).ToArray();
+
+    [Fact]
+    public void Un_jpeg_est_reconnu_quelle_que_soit_son_extension() =>
+        // Les « .jfif » de Windows étaient refusés sur leur extension alors que ce sont des JPEG
+        Assert.Equal(".jpg", GPOE26.ApiService.Services.ImageFormat.ExtensionOf(Header(0xFF, 0xD8, 0xFF, 0xE0, 0, 0x10, "JFIF")));
+
+    [Theory]
+    [InlineData(".png")]
+    [InlineData(".gif")]
+    [InlineData(".webp")]
+    [InlineData(".avif")]
+    public void Les_formats_du_web_sont_acceptes(string expected)
+    {
+        var header = expected switch
+        {
+            ".png" => Header(0x89, "PNG", 0x0D, 0x0A, 0x1A, 0x0A),
+            ".gif" => Header("GIF89a"),
+            ".webp" => Header("RIFF", 0, 0, 0, 0, "WEBP"),
+            _ => Header(0, 0, 0, 0x20, "ftypavif"),
+        };
+        Assert.Equal(expected, GPOE26.ApiService.Services.ImageFormat.ExtensionOf(header));
+    }
+
+    [Fact]
+    public void Une_photo_iphone_est_refusee_avec_une_consigne()
+    {
+        var heic = Header(0, 0, 0, 0x18, "ftypheic");
+        Assert.Null(GPOE26.ApiService.Services.ImageFormat.ExtensionOf(heic));
+        Assert.Contains("HEIC", GPOE26.ApiService.Services.ImageFormat.RejectionMessage(heic));
+    }
+
+    [Fact]
+    public void Un_document_renomme_en_image_est_refuse() =>
+        Assert.Null(GPOE26.ApiService.Services.ImageFormat.ExtensionOf(Header("%PDF-1.7 abcd")));
+
+    [Fact]
+    public void Un_fichier_vide_est_refuse() =>
+        Assert.Null(GPOE26.ApiService.Services.ImageFormat.ExtensionOf([]));
+}
