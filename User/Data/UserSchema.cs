@@ -39,6 +39,8 @@ public static class UserSchema
         @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""TeachingContext"" text",
         @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""OrganizationId"" uuid",
         @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""OrganizationName"" text",
+        // Éditeurs du contenu du site de l'établissement
+        @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""SiteEditor"" boolean NOT NULL DEFAULT false",
         @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AppUsers_LinkCode"" ON ""AppUsers"" (""LinkCode"")",
 
         @"CREATE TABLE IF NOT EXISTS ""Organizations"" (

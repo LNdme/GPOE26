@@ -97,7 +97,7 @@
 
 
 @code {
-    private bool IsAdmin => Session.Role == GPOE26.UI.Models.UserRole.Admin;
+    private bool IsAdmin => Session.IsAuthenticated && Session.Profile?.CanEditSite == true;
 
     private bool _loading = true;
     private List<NewArticle> _articles = new();

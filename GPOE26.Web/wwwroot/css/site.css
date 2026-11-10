@@ -650,3 +650,7 @@
     .admin-head .site-btn { width: 100%; }
     .admin-topbar .site-btn { display: none; }
 }
+
+.admin-search { display: flex; gap: 0.4rem; }
+.admin-search input { min-width: 220px; border-radius: 999px; }
+@media (max-width: 575.98px) { .admin-search, .admin-search input { width: 100%; min-width: 0; } }

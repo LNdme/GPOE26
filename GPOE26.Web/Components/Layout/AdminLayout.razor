@@ -27,13 +27,13 @@
             </div>
         </div>
     }
-    else if (Session.Role != UserRole.Admin)
+    else if (Session.Profile?.CanEditSite != true)
     {
         <div class="admin-gate">
             <div class="admin-gate__card">
                 <span class="admin-gate__icon is-warn"><Icon Name="shield" Size="28" /></span>
                 <h1>Accès refusé</h1>
-                <p>Seuls les administrateurs de l’établissement peuvent modifier le contenu du site.</p>
+                <p>Seuls les administrateurs et les éditeurs du site peuvent modifier son contenu. Demandez l’accès à un administrateur.</p>
                 <a class="site-btn site-btn--primary" href="/app">Aller à mon espace</a>
                 <a class="site-btn site-btn--quiet" href="/">Retour au site</a>
             </div>
@@ -55,8 +55,12 @@
                     <NavLink href="/admin/evenements"><Icon Name="calendar" Size="18" /> Événements</NavLink>
                     <NavLink href="/admin/activites"><Icon Name="activity" Size="18" /> Activités</NavLink>
                     <NavLink href="/admin/equipe"><Icon Name="users" Size="18" /> Équipe</NavLink>
-                    <span class="admin-nav__title">Établissement</span>
-                    <NavLink href="/admin/etablissement"><Icon Name="building" Size="18" /> Coordonnées</NavLink>
+                    @if (IsAdmin)
+                    {
+                        <span class="admin-nav__title">Établissement</span>
+                        <NavLink href="/admin/etablissement"><Icon Name="building" Size="18" /> Coordonnées</NavLink>
+                        <NavLink href="/admin/utilisateurs"><Icon Name="key" Size="18" /> Accès et rôles</NavLink>
+                    }
                 </nav>
 
                 <div class="admin-side__foot">
@@ -64,7 +68,7 @@
                     <a href="/app"><Icon Name="left" Size="16" /> Mon espace</a>
                     <div class="admin-me">
                         <span class="site-user__avatar">@(Session.Profile?.Username is { Length: > 0 } u ? u[..1].ToUpperInvariant() : "A")</span>
-                        <span><strong>@Session.Profile?.Username</strong><small>Administrateur</small></span>
+                        <span><strong>@Session.Profile?.Username</strong><small>@(IsAdmin ? "Administrateur" : "Éditeur du site")</small></span>
                     </div>
                 </div>
             </aside>
@@ -106,6 +110,8 @@
     }
 
     private void Refresh() => InvokeAsync(StateHasChanged);
+
+    private bool IsAdmin => Session.Role == UserRole.Admin;
 
     // Retour sur la page d'administration demandée après la connexion
     private string LoginUrl => "/login?retour=" + Uri.EscapeDataString("/" + Nav.ToBaseRelativePath(Nav.Uri));

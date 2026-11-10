@@ -118,6 +118,7 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<UserContext>();
     await UserSchema.EnsureAsync(db);
     await UserSeeder.SeedAsync(db, app.Environment.IsDevelopment());
+    await AdminBootstrap.PromoteConfiguredAdminsAsync(db, app.Configuration, app.Logger);
 }
 
 if (app.Environment.IsDevelopment())

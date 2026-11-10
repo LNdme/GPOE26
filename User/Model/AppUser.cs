@@ -82,6 +82,12 @@
         /// <summary>Nom déclaré à l'inscription (non vérifié) quand il n'y a pas de clé</summary>
         public string? OrganizationName { get; set; }
 
+        /// <summary>
+        /// Éditeur du site de l'établissement : peut publier actualités, événements, activités et équipe,
+        /// sans être administrateur. Indépendant du rôle (un enseignant peut être éditeur).
+        /// </summary>
+        public bool SiteEditor { get; set; }
+
         // ─── Métadonnées ──────────────────────────────────────────────────────────
         public DateTime? LastLoginAt { get; set; }
     }

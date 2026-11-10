@@ -46,6 +46,9 @@ var userService = builder.AddProject<Projects.User>("user")
     .WithEnvironment("Jwt__Issuer", jwtIssuer)
     .WithEnvironment("Jwt__Audience", jwtAudience)
     .WithEnvironment("Services__ApiService", apiService.GetEndpoint("http"))   // catalogue des formules
+    // Premiers administrateurs du site (comptes déjà inscrits) :
+    //   dotnet user-secrets set "Parameters:admin-emails" "a@exemple.cm;b@exemple.cm" --project GPOE26.AppHost
+    .WithEnvironment("Admin__Emails", builder.Configuration["Parameters:admin-emails"] ?? "")
     .WithReference(userDb)   // ← ajoute
     .WaitFor(userDb)         // ← ajoute
     .WaitFor(apiService);

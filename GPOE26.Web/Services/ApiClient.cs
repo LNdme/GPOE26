@@ -617,6 +617,46 @@ namespace GPOE26.Web.Services
             }
         }
 
+        // ── Accès au site (service User, administrateurs) ─────────────────────────────
+        private static readonly System.Text.Json.JsonSerializerOptions UserJson = new(System.Text.Json.JsonSerializerDefaults.Web)
+        {
+            Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
+        };
+
+        public async Task<List<UserAccess>> GetUserAccessAsync(string? search, bool staffOnly)
+        {
+            try
+            {
+                var url = $"/admin/users?staffOnly={staffOnly.ToString().ToLowerInvariant()}"
+                    + (string.IsNullOrWhiteSpace(search) ? "" : $"&search={Uri.EscapeDataString(search.Trim())}");
+                return await CreateAuthClient("user").GetFromJsonAsync<List<UserAccess>>(url, UserJson) ?? new();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching user access list");
+                return new();
+            }
+        }
+
+        /// <summary>Change les accès d'un compte ; renvoie le message d'erreur du serveur en cas de refus.</summary>
+        public async Task<(UserAccess? user, string? error)> UpdateUserAccessAsync(Guid id, bool? admin, bool? siteEditor)
+        {
+            try
+            {
+                var resp = await CreateAuthClient("user").PutAsJsonAsync($"/admin/users/{id}/access", new { admin, siteEditor }, UserJson);
+                if (resp.IsSuccessStatusCode)
+                    return (await resp.Content.ReadFromJsonAsync<UserAccess>(UserJson), null);
+                var problem = await resp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement?>();
+                var message = problem?.ValueKind == System.Text.Json.JsonValueKind.Object && problem.Value.TryGetProperty("message", out var m) ? m.GetString() : null;
+                return (null, message ?? "La modification a été refusée. Votre session administrateur a peut-être expiré.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating access for {Id}", id);
+                return (null, "Le service des comptes ne répond pas.");
+            }
+        }
+
         // ── Upload Image (Hébergée sur ApiService) ──────────────────────────────────
         public async Task<string?> UploadImageAsync(Stream fileStream, string fileName)
         {

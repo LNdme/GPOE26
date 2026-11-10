@@ -74,7 +74,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         options.MapInboundClaims = false;
     });
 builder.Services.AddAuthorizationBuilder()
-    .AddPolicy(ContentPolicy.Admin, p => p.RequireRole("Admin"));
+    .AddPolicy(ContentPolicy.Admin, p => p.RequireRole("Admin"))
+    // Contenu éditorial : administrateurs et éditeurs du site (claim "site_editor")
+    .AddPolicy(ContentPolicy.Editor, p => p.RequireAssertion(ctx => ContentPolicy.CanEdit(ctx.User)));
 
 // Add services to the container.
 builder.Services.AddProblemDetails();
@@ -181,7 +183,7 @@ app.MapPost("/api/upload", async (IFormFile file, IWebHostEnvironment env) =>
     return Results.Ok(new { url = relativeUrl });
 })
 .DisableAntiforgery()
-.RequireAuthorization(ContentPolicy.Admin)
+.RequireAuthorization(ContentPolicy.Editor)
 .WithSummary("Uploader une image");
 
 // ── Routes ────────────────────────────────────────────────────────────────────
@@ -208,41 +210,41 @@ plans.MapGet("/{code}", async Task<IResult> (string code, ApiServiceContext db) 
 news.MapGet("", NewsGetAll);
 news.MapGet("/{id:guid}", NewsGetById);
 news.MapGet("/slug/{slug}", NewsGetBySlug);
-news.MapPost("", NewsCreate).RequireAuthorization(ContentPolicy.Admin);
-news.MapPut("/{id:guid}", NewsUpdate).RequireAuthorization(ContentPolicy.Admin);
-news.MapDelete("/{id:guid}", NewsDelete).RequireAuthorization(ContentPolicy.Admin);
-news.MapPatch("/{id:guid}/publish", NewsPublish).RequireAuthorization(ContentPolicy.Admin);
+news.MapPost("", NewsCreate).RequireAuthorization(ContentPolicy.Editor);
+news.MapPut("/{id:guid}", NewsUpdate).RequireAuthorization(ContentPolicy.Editor);
+news.MapDelete("/{id:guid}", NewsDelete).RequireAuthorization(ContentPolicy.Editor);
+news.MapPatch("/{id:guid}/publish", NewsPublish).RequireAuthorization(ContentPolicy.Editor);
 
 // EVENTS
 events.MapGet("", EventsGetAll);
 events.MapGet("/upcoming", EventsGetUpcoming);
 events.MapGet("/{id:guid}", EventsGetById);
-events.MapPost("", EventsCreate).RequireAuthorization(ContentPolicy.Admin);
-events.MapPut("/{id:guid}", EventsUpdate).RequireAuthorization(ContentPolicy.Admin);
-events.MapDelete("/{id:guid}", EventsDelete).RequireAuthorization(ContentPolicy.Admin);
+events.MapPost("", EventsCreate).RequireAuthorization(ContentPolicy.Editor);
+events.MapPut("/{id:guid}", EventsUpdate).RequireAuthorization(ContentPolicy.Editor);
+events.MapDelete("/{id:guid}", EventsDelete).RequireAuthorization(ContentPolicy.Editor);
 
 // SPEECHES
 speeches.MapGet("", SpeechesGetAll);
 speeches.MapGet("/latest", SpeechesGetLatest);
 speeches.MapGet("/{id:guid}", SpeechesGetById);
-speeches.MapPost("", SpeechesCreate).RequireAuthorization(ContentPolicy.Admin);
-speeches.MapPut("/{id:guid}", SpeechesUpdate).RequireAuthorization(ContentPolicy.Admin);
-speeches.MapDelete("/{id:guid}", SpeechesDelete).RequireAuthorization(ContentPolicy.Admin);
+speeches.MapPost("", SpeechesCreate).RequireAuthorization(ContentPolicy.Editor);
+speeches.MapPut("/{id:guid}", SpeechesUpdate).RequireAuthorization(ContentPolicy.Editor);
+speeches.MapDelete("/{id:guid}", SpeechesDelete).RequireAuthorization(ContentPolicy.Editor);
 
 // ACTIVITIES
 activities.MapGet("", ActivitiesGetAll);
 activities.MapGet("/{id:guid}", ActivitiesGetById);
-activities.MapPost("", ActivitiesCreate).RequireAuthorization(ContentPolicy.Admin);
-activities.MapPut("/{id:guid}", ActivitiesUpdate).RequireAuthorization(ContentPolicy.Admin);
-activities.MapDelete("/{id:guid}", ActivitiesDelete).RequireAuthorization(ContentPolicy.Admin);
+activities.MapPost("", ActivitiesCreate).RequireAuthorization(ContentPolicy.Editor);
+activities.MapPut("/{id:guid}", ActivitiesUpdate).RequireAuthorization(ContentPolicy.Editor);
+activities.MapDelete("/{id:guid}", ActivitiesDelete).RequireAuthorization(ContentPolicy.Editor);
 
 // HIERARCHY
 hierarchy.MapGet("", HierarchyGetAll);
 hierarchy.MapGet("/{id:int}", HierarchyGetById);
 hierarchy.MapGet("/role/{role}", HierarchyGetByRole);
-hierarchy.MapPost("", HierarchyCreate).RequireAuthorization(ContentPolicy.Admin);
-hierarchy.MapPut("/{id:int}", HierarchyUpdate).RequireAuthorization(ContentPolicy.Admin);
-hierarchy.MapDelete("/{id:int}", HierarchyDelete).RequireAuthorization(ContentPolicy.Admin);
+hierarchy.MapPost("", HierarchyCreate).RequireAuthorization(ContentPolicy.Editor);
+hierarchy.MapPut("/{id:int}", HierarchyUpdate).RequireAuthorization(ContentPolicy.Editor);
+hierarchy.MapDelete("/{id:int}", HierarchyDelete).RequireAuthorization(ContentPolicy.Editor);
 
 // CONTACTS
 contacts.MapGet("", async (ApiServiceContext db) =>
@@ -310,8 +312,8 @@ static async Task<IResult> NewsGetAll(
     if (!string.IsNullOrEmpty(category))
         query = query.Where(n => n.Category == category);
 
-    // Les brouillons ne sont visibles que des administrateurs
-    if (!user.IsInRole("Admin"))
+    // Les brouillons ne sont visibles que des administrateurs et éditeurs
+    if (!ContentPolicy.CanEdit(user))
         published = true;
     if (published.HasValue)
         query = query.Where(n => n.IsPublished == published.Value);
@@ -329,7 +331,7 @@ static async Task<IResult> NewsGetAll(
 static async Task<IResult> NewsGetById(Guid id, ApiServiceContext db, ClaimsPrincipal user)
 {
     var article = await db.NewsArticles.FindAsync(id);
-    return article is null || (!article.IsPublished && !user.IsInRole("Admin"))
+    return article is null || (!article.IsPublished && !ContentPolicy.CanEdit(user))
         ? TypedResults.NotFound()
         : TypedResults.Ok(article);
 }
@@ -337,7 +339,7 @@ static async Task<IResult> NewsGetById(Guid id, ApiServiceContext db, ClaimsPrin
 static async Task<IResult> NewsGetBySlug(string slug, ApiServiceContext db, ClaimsPrincipal user)
 {
     var article = await db.NewsArticles.FirstOrDefaultAsync(n => n.Slug == slug);
-    return article is null || (!article.IsPublished && !user.IsInRole("Admin"))
+    return article is null || (!article.IsPublished && !ContentPolicy.CanEdit(user))
         ? TypedResults.NotFound()
         : TypedResults.Ok(article);
 }
@@ -535,7 +537,7 @@ static async Task<IResult> ActivitiesGetAll(ApiServiceContext db, ClaimsPrincipa
         query = query.Where(a => a.Category == category);
 
     // Les activités suspendues restent visibles dans l'administration
-    if (!(includeInactive && user.IsInRole("Admin")))
+    if (!(includeInactive && ContentPolicy.CanEdit(user)))
         query = query.Where(a => a.IsActive);
 
     return TypedResults.Ok(await query.OrderBy(a => a.Name).ToListAsync());
@@ -653,8 +655,15 @@ static string GenerateSlug(string title) =>
          .Replace("ô", "o").Replace("î", "i")
          .Replace("ç", "c");
 
-/// <summary>Politique d'écriture du contenu du site.</summary>
+/// <summary>Politiques d'écriture du contenu du site.</summary>
 static class ContentPolicy
 {
+    /// <summary>Coordonnées de l'établissement : administrateurs seulement.</summary>
     public const string Admin = "ContentAdmin";
+
+    /// <summary>Actualités, événements, activités, équipe, images : administrateurs et éditeurs.</summary>
+    public const string Editor = "ContentEditor";
+
+    public static bool CanEdit(ClaimsPrincipal user) =>
+        user.IsInRole("Admin") || user.HasClaim("site_editor", "true");
 }

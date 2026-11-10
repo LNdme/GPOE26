@@ -87,7 +87,8 @@ public record UserProfileDto(
     SubscriptionPlan? Plan,
     DateTime? PremiumUntil,
     List<EntitledFeature>? Features = null,
-    EducationStage? Stage = null
+    EducationStage? Stage = null,
+    bool SiteEditor = false
 )
 {
     public UserProfileDto(AppUser user, Entitlement? entitlement = null) : this(
@@ -114,7 +115,8 @@ public record UserProfileDto(
         entitlement?.Plan,
         entitlement?.Until,
         entitlement?.Features,
-        user.Stage
+        user.Stage,
+        user.SiteEditor
     )
     { }
 }

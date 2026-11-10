@@ -62,8 +62,13 @@ public record UserProfile(
     SubscriptionPlan? Plan,
     DateTime? PremiumUntil,
     List<EntitledFeature>? Features = null,
-    EducationStage? Stage = null
-);
+    EducationStage? Stage = null,
+    bool SiteEditor = false
+)
+{
+    /// <summary>Peut gérer le contenu du site de l'établissement (administrateur ou éditeur).</summary>
+    public bool CanEditSite => Role == UserRole.Admin || SiteEditor;
+}
 
 public record AuthResponse(string Token, DateTime ExpiresAt, UserProfile Profile);
 

@@ -53,7 +53,7 @@
                             <a role="menuitem" href="/app/abonnement"><Icon Name="card" Size="18" /> Mon abonnement</a>
                             @if (IsAdmin)
                             {
-                                <a role="menuitem" href="/admin" class="is-admin"><Icon Name="shield" Size="18" /> Administration du site</a>
+                                <a role="menuitem" href="/admin" class="is-admin"><Icon Name="shield" Size="18" /> Gérer le site</a>
                             }
                             <hr />
                             <button role="menuitem" type="button" class="is-danger" @onclick="Logout"><Icon Name="logout" Size="18" /> Se déconnecter</button>
@@ -122,7 +122,8 @@
         new("/tarifs", "Tarifs"),
     ];
 
-    private bool IsAdmin => Session.Role == UserRole.Admin;
+    // Administrateur ou éditeur du site : accès à l'espace de gestion du contenu
+    private bool IsAdmin => Session.IsAuthenticated && Session.Profile?.CanEditSite == true;
 
     protected override void OnInitialized()
     {

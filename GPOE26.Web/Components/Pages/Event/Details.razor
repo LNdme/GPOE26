@@ -42,7 +42,7 @@
 
             <hr />
             <div class="management-actions">
-                @if (Session.Role == GPOE26.UI.Models.UserRole.Admin)
+                @if (Session.IsAuthenticated && Session.Profile?.CanEditSite == true)
                 {
                     <a href="@($"/admin/evenements/{_ev.Id}")" class="btn btn-navy">Modifier</a>
                 }

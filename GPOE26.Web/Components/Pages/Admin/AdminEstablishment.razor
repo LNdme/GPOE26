@@ -1,9 +1,12 @@
 @page "/admin/etablissement"
 @layout GPOE26.Web.Components.Layout.AdminLayout
+@inject GPOE26.UI.Services.SessionState Session
 @using GPOE26.UI.Components
+@using GPOE26.Web.Components.UI
 
 <PageTitle>Coordonnées · Administration – GPOE26</PageTitle>
 
+<AdminOnly>
 <div class="admin-head">
     <div>
         <span class="admin-eyebrow">Établissement</span>
@@ -67,6 +70,7 @@ else
         </aside>
     </div>
 }
+</AdminOnly>
 
 @code {
     private bool _loading = true, _saving, _saved;
@@ -76,6 +80,7 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        if (Session.Role != GPOE26.UI.Models.UserRole.Admin) return;
         _contact = await Api.GetPrimaryContactAsync() ?? new Contact();
         _loading = false;
     }
