@@ -18,13 +18,14 @@ public static class UserSeeder
 
     public static async Task SeedAsync(UserContext db, bool isDevelopment)
     {
-        if (!await db.AppUsers.AnyAsync())
+        // Comptes, classe et licence de démonstration : jamais en production,
+        // car leurs mots de passe et la clé de licence sont publics (dans ce fichier).
+        // En production, le premier administrateur s'inscrit puis est promu par Admin:Emails (AdminBootstrap).
+        if (isDevelopment && !await db.AppUsers.AnyAsync())
             await SeedUsersAsync(db);
 
         await EnsureLinkCodesAsync(db);
 
-        // Comptes Admin/Parent, classe et licence de démonstration : jamais en production,
-        // car leurs mots de passe et la clé de licence sont publics (dans ce fichier).
         if (isDevelopment)
             await SeedDemoAsync(db);
     }

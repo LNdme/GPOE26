@@ -76,8 +76,7 @@ builder.Services.AddControllers().AddNewtonsoftJson();
 
 
 // ─── JWT ──────────────────────────────────────────────────────────────────────
-var jwtKey = builder.Configuration["Jwt:Key"]
-    ?? throw new InvalidOperationException("La configuration Jwt:Key est manquante. Définissez-la dans appsettings ou les variables d'environnement.");
+var jwtKey = GPOE26.ServiceDefaults.JwtSigningKey.Require(builder.Configuration, builder.Environment);
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -272,6 +271,29 @@ auth.MapPost("/login", async (LoginRequest req, UserContext db, Jwtservice jwt, 
     return Results.Ok(new AuthResponse(token, expiresAt, new UserProfileDto(user, entitlement)));
 })
 .WithSummary("Se connecter")
+.Produces<AuthResponse>()
+.Produces(401);
+
+// ── POST /auth/refresh ────────────────────────────────────────────────────────
+// Prolonge la session : un jeton encore valide est échangé contre un neuf, sans ressaisir le mot de passe.
+// Sans cela, la session tombait 60 minutes après la connexion, même en pleine épreuve.
+// Le rôle, les droits et la formule sont relus en base : un changement s'applique au renouvellement suivant.
+// La session reste bornée (Jwt:MaxSessionHours) : au-delà, il faut se reconnecter.
+auth.MapPost("/refresh", async (ClaimsPrincipal principal, UserContext db, Jwtservice jwt, SubscriptionService subs) =>
+{
+    var user = await db.CurrentUserAsync(principal);
+    if (user is null) return Results.Unauthorized();
+
+    var signedInAt = Jwtservice.SignedInAt(principal) ?? DateTime.UtcNow;
+    if (!Jwtservice.CanRenew(signedInAt, DateTime.UtcNow, jwt.MaxSession))
+        return Results.Unauthorized();
+
+    var entitlement = await subs.GetEntitlementAsync(user.Id);
+    var (token, expiresAt) = jwt.GenerateToken(user, entitlement, signedInAt);
+    return Results.Ok(new AuthResponse(token, expiresAt, new UserProfileDto(user, entitlement)));
+})
+.RequireAuthorization()
+.WithSummary("Prolonger la session (jeton neuf, profil à jour)")
 .Produces<AuthResponse>()
 .Produces(401);
 

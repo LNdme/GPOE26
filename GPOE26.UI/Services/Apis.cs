@@ -19,6 +19,12 @@ public interface IAccountApi
     Task<ApiResult<SubscriptionInfo>> CheckoutAsync(SubscriptionPlan plan, BillingPeriod period);
     Task<ApiResult<SubscriptionInfo>> StartTrialAsync();
     Task<ApiResult<SimulatedPayment>> SimulatePaymentAsync(SubscriptionPlan plan, BillingPeriod period, string provider);
+
+    /// <summary>
+    /// Prolonge la session si elle approche de son terme, sans autre effet. À appeler régulièrement
+    /// par un écran où l'on reste longtemps sans rien envoyer (composition d'une épreuve).
+    /// </summary>
+    Task KeepSessionAliveAsync();
 }
 
 /// <summary>Agents : emploi du temps, plan du jour, mémoire et assistant enseignant.</summary>
@@ -112,6 +118,8 @@ public interface IAssessmentApi
     Task<ApiResult<Assessment>> CloseAsync(Guid id);
     Task<ApiResult<bool>> DeleteAsync(Guid id);
     Task<ApiResult<Attempt>> StartAttemptAsync(Guid id);
+    /// <summary>Enregistre les réponses en cours de saisie : retrouvées si la page est rechargée ou la connexion coupée.</summary>
+    Task<ApiResult<bool>> SaveDraftAsync(Guid id, Guid submissionId, List<AnswerDraft> answers);
     Task<ApiResult<SubmissionReview>> SubmitAsync(Guid id, Guid submissionId, List<AnswerDraft> answers);
     Task<ApiResult<SubmissionReview>> GetSubmissionAsync(Guid id, Guid submissionId);
     Task<ApiResult<List<SubmissionRow>>> SubmissionsAsync(Guid id);
@@ -162,6 +170,7 @@ public class AccountApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, Ap
     public Task<ApiResult<SubscriptionInfo>> StartTrialAsync() => PostAsync<SubscriptionInfo>("/subscriptions/trial");
     public Task<ApiResult<SimulatedPayment>> SimulatePaymentAsync(SubscriptionPlan plan, BillingPeriod period, string provider) =>
         PostAsync<SimulatedPayment>("/subscriptions/simulate-payment", new SimulatePaymentRequest(plan, period, provider));
+    public Task KeepSessionAliveAsync() => RenewSessionIfDueAsync();
 }
 
 public class AgentApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.Chat), IAgentApi
@@ -257,6 +266,8 @@ public class AssessmentApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s,
     public Task<ApiResult<Assessment>> CloseAsync(Guid id) => PostAsync<Assessment>($"/assessments/{id}/close");
     public Task<ApiResult<bool>> DeleteAsync(Guid id) => DeleteAsync<bool>($"/assessments/{id}");
     public Task<ApiResult<Attempt>> StartAttemptAsync(Guid id) => PostAsync<Attempt>($"/assessments/{id}/attempts");
+    public Task<ApiResult<bool>> SaveDraftAsync(Guid id, Guid submissionId, List<AnswerDraft> answers) =>
+        PutAsync<bool>($"/assessments/{id}/attempts/{submissionId}/draft", new SubmitAttemptRequest(answers));
     public Task<ApiResult<SubmissionReview>> SubmitAsync(Guid id, Guid submissionId, List<AnswerDraft> answers) =>
         PostAsync<SubmissionReview>($"/assessments/{id}/attempts/{submissionId}/submit", new SubmitAttemptRequest(answers));
     public Task<ApiResult<SubmissionReview>> GetSubmissionAsync(Guid id, Guid submissionId) =>

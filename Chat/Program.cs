@@ -62,8 +62,7 @@ builder.Services.AddScoped<AgentContextService>();
 builder.Services.AddSingleton<AgentReflectionQueue>();
 builder.Services.AddHostedService<AgentReflectionWorker>();
 
-var jwtKey = builder.Configuration["Jwt:Key"]
-    ?? throw new InvalidOperationException("La configuration Jwt:Key est manquante.");
+var jwtKey = GPOE26.ServiceDefaults.JwtSigningKey.Require(builder.Configuration, builder.Environment);
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {

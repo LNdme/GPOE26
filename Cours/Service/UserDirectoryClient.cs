@@ -2,6 +2,9 @@ using System.Net.Http.Headers;
 
 namespace Cours.Service;
 
+/// <summary>Classe renvoyée par le service User. TeacherId : l'enseignant qui l'anime.</summary>
+public record ClassroomRef(Guid Id, Guid TeacherId);
+
 /// <summary>
 /// Accès au service User pour le partage des cours : on transmet le JWT de l'utilisateur
 /// courant, et le service User ne renvoie que ses classes (enseignant : celles qu'il anime,
@@ -9,9 +12,21 @@ namespace Cours.Service;
 /// </summary>
 public class UserDirectoryClient(HttpClient http, IHttpContextAccessor context)
 {
-    private record ClassroomRef(Guid Id);
+    /// <summary>Classes de l'utilisateur, animées ou rejointes : sert à savoir quels cours il peut LIRE.</summary>
+    public async Task<HashSet<Guid>> MyClassroomIdsAsync() =>
+        (await MyClassroomsAsync()).Select(c => c.Id).ToHashSet();
 
-    public async Task<HashSet<Guid>> MyClassroomIdsAsync()
+    /// <summary>
+    /// Classes que l'utilisateur anime : les seules avec lesquelles il peut PARTAGER un cours.
+    /// Un élève est membre de sa classe, pas son enseignant : il ne peut rien y publier.
+    /// </summary>
+    public async Task<HashSet<Guid>> OwnedClassroomIdsAsync(Guid userId) =>
+        OwnedBy(await MyClassroomsAsync(), userId);
+
+    public static HashSet<Guid> OwnedBy(IEnumerable<ClassroomRef> classrooms, Guid userId) =>
+        classrooms.Where(c => c.TeacherId == userId).Select(c => c.Id).ToHashSet();
+
+    private async Task<List<ClassroomRef>> MyClassroomsAsync()
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/classrooms/mine");
         var auth = context.HttpContext?.Request.Headers.Authorization.ToString();
@@ -20,7 +35,6 @@ public class UserDirectoryClient(HttpClient http, IHttpContextAccessor context)
 
         using var response = await http.SendAsync(request);
         response.EnsureSuccessStatusCode();
-        var classrooms = await response.Content.ReadFromJsonAsync<List<ClassroomRef>>() ?? new();
-        return classrooms.Select(c => c.Id).ToHashSet();
+        return await response.Content.ReadFromJsonAsync<List<ClassroomRef>>() ?? new();
     }
 }

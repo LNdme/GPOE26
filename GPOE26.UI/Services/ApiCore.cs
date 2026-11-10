@@ -76,6 +76,7 @@ public abstract class ApiBase(IHttpClientFactory factory, SessionState session, 
     {
         try
         {
+            await RenewSessionIfDueAsync();
             using var request = new HttpRequestMessage(HttpMethod.Get, path);
             if (session.Token is { } token)
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -90,10 +91,26 @@ public abstract class ApiBase(IHttpClientFactory factory, SessionState session, 
         }
     }
 
+    /// <summary>
+    /// Avant chaque appel : si le jeton est entamé, on en demande un neuf au service des comptes.
+    /// La session suit ainsi l'activité de l'utilisateur au lieu de tomber 60 minutes après la connexion.
+    /// </summary>
+    protected Task RenewSessionIfDueAsync() =>
+        session.ShouldRenew ? session.RenewAsync(RequestRenewalAsync) : Task.CompletedTask;
+
+    private async Task<AuthResponse?> RequestRenewalAsync(string token)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/auth/refresh");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await factory.CreateClient(ApiClients.User).SendAsync(request);
+        return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<AuthResponse>(StringEnums) : null;
+    }
+
     protected async Task<ApiResult<T>> SendAsync<T>(HttpMethod method, string path, object? body)
     {
         try
         {
+            await RenewSessionIfDueAsync();
             var client = factory.CreateClient(clientName);
             using var request = new HttpRequestMessage(method, path);
             if (session.Token is { } token)

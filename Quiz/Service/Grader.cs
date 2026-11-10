@@ -13,6 +13,46 @@ public record AnswerInput(
     string? AttachmentUrl = null
 );
 
+/// <summary>Brouillon d'une copie : ce que l'élève a saisi avant de la rendre, conservé tel quel.</summary>
+public static class AnswerDrafts
+{
+    public const int MaxAnswers = 300;
+    public const int MaxTextLength = 20_000;
+    private const int MaxOptions = 50;
+
+    /// <summary>Une seule réponse par question (la dernière reçue), texte et listes bornés.</summary>
+    public static List<AnswerInput> Normalize(IEnumerable<AnswerInput>? answers) =>
+        (answers ?? [])
+            .Where(a => a is not null && a.QuestionId != Guid.Empty)
+            .GroupBy(a => a.QuestionId)
+            .Select(g => g.Last())
+            .Take(MaxAnswers)
+            .Select(a => a with
+            {
+                SelectedOptions = a.SelectedOptions?.Distinct().Take(MaxOptions).ToList(),
+                Text = a.Text is { Length: > MaxTextLength } text ? text[..MaxTextLength] : a.Text,
+                AttachmentUrl = null
+            })
+            .ToList();
+
+    public static string Serialize(IEnumerable<AnswerInput>? answers) =>
+        System.Text.Json.JsonSerializer.Serialize(Normalize(answers), JsonDefaults.Options);
+
+    /// <summary>Brouillon relu ; un contenu illisible donne une copie vide plutôt qu'une erreur.</summary>
+    public static List<AnswerInput> Parse(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        try
+        {
+            return Normalize(System.Text.Json.JsonSerializer.Deserialize<List<AnswerInput>>(json, JsonDefaults.Options));
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return [];
+        }
+    }
+}
+
 /// <summary>Résultat de la correction automatique d'une réponse.</summary>
 public record GradeResult(bool? IsCorrect, decimal? Points, bool NeedsManualGrading);
 

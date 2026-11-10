@@ -738,40 +738,6 @@ namespace GPOE26.Web.Services
 
         #region CHAT API (chat)
 
-        public async Task<ChatMessageResponse?> SendChatMessageAsync(string message, List<ConversationMessage> history, string? courseContent = null, string? courseId = null)
-        {
-            var client = CreateAuthClient("chat");
-            try
-            {
-                var req = new ChatMessageRequest(message, history, courseContent, courseId);
-                var resp = await client.PostAsJsonAsync("/chat/message", req);
-                resp.EnsureSuccessStatusCode();
-                return await resp.Content.ReadFromJsonAsync<ChatMessageResponse>();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error sending chat message");
-                return null;
-            }
-        }
-
-        public async Task<CourseSummaryResponse?> GetCourseSummaryAsync(string? courseContent = null, string? courseId = null)
-        {
-            var client = CreateAuthClient("chat");
-            try
-            {
-                var req = new CourseSummaryRequest(courseContent, courseId);
-                var resp = await client.PostAsJsonAsync("/chat/summary", req);
-                resp.EnsureSuccessStatusCode();
-                return await resp.Content.ReadFromJsonAsync<CourseSummaryResponse>();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error getting course summary");
-                return null;
-            }
-        }
-
         public async Task<string?> GenerateCourseDraftAsync(string subject, string? additionalInstructions = null)
         {
             var client = CreateAuthClient("chat");

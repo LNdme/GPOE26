@@ -380,6 +380,119 @@ public class MarkdownRendererTests
         Assert.DoesNotContain(@"<div class=""math"">", GPOE26.UI.Services.MarkdownRenderer.Render("on a $x$ et $$ y $$ ici").Html);
 }
 
+public class MarkdownSafetyTests
+{
+    private static string Html(string markdown) => GPOE26.UI.Services.MarkdownRenderer.Render(markdown).Html;
+
+    [Theory]
+    [InlineData("[clique](javascript:alert(1))")]
+    [InlineData("[clique](JaVaScRiPt:alert(1))")]
+    [InlineData("[clique](<java&#9;script:alert(1)>)")]
+    [InlineData("[clique](&#106;avascript:alert(1))")]
+    [InlineData("<javascript:alert(1)>")]
+    [InlineData("![image](javascript:alert(1))")]
+    [InlineData("[clique](data:text/html;base64,PHNjcmlwdD4=)")]
+    [InlineData("[clique](vbscript:msgbox(1))")]
+    [InlineData("[ref]\n\n[ref]: javascript:alert(1)")]
+    public void Un_lien_ne_peut_pas_executer_de_script(string markdown)
+    {
+        var html = Html(markdown);
+        // Aucune adresse rendue (href ou src) ne porte un schéma dangereux, même coupé par une tabulation
+        var addresses = System.Text.RegularExpressions.Regex.Matches(html, "(?:href|src)=\"([^\"]*)\"")
+            .Select(m => System.Net.WebUtility.HtmlDecode(m.Groups[1].Value))
+            .Select(a => new string(a.Where(c => !char.IsControl(c) && !char.IsWhiteSpace(c)).ToArray()));
+        Assert.All(addresses, a =>
+        {
+            Assert.DoesNotContain("script:", a, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("data:", a, StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
+    [Theory]
+    [InlineData("# Titre {onmouseover=alert(1)}")]
+    [InlineData("[lien](https://exemple.cm){onclick=alert(1)}")]
+    [InlineData("![image](/uploads/a.png){onerror=alert(1)}")]
+    [InlineData("Un paragraphe\n{onclick=alert(1)}")]
+    public void Un_attribut_libre_n_est_jamais_rendu(string markdown) =>
+        Assert.DoesNotMatch(@"<[^>]*\son\w+\s*=", Html(markdown));
+
+    [Fact]
+    public void Le_html_brut_reste_du_texte() =>
+        Assert.DoesNotContain("<script", Html("<script>alert(1)</script>\n\n<img src=x onerror=alert(1)>"));
+
+    [Theory]
+    [InlineData("[site](https://exemple.cm/page?a=1#b)", "href=\"https://exemple.cm/page?a=1#b\"")]
+    [InlineData("[ecrire](mailto:prof@exemple.cm)", "href=\"mailto:prof@exemple.cm\"")]
+    [InlineData("[appeler](tel:+237600000000)", "href=\"tel:+237600000000\"")]
+    [InlineData("[partie](#chute-libre)", "href=\"#chute-libre\"")]
+    [InlineData("![figure](/uploads/cours/abc/fig-1.png)", "src=\"/uploads/cours/abc/fig-1.png\"")]
+    [InlineData("[heure](notes/a:b)", "href=\"notes/a:b\"")]
+    [InlineData("<https://exemple.cm>", "href=\"https://exemple.cm\"")]
+    public void Les_liens_ordinaires_sont_conserves(string markdown, string expected) =>
+        Assert.Contains(expected, Html(markdown));
+
+    [Fact]
+    public void Les_titres_gardent_leur_ancre_et_le_sommaire()
+    {
+        var (html, toc) = GPOE26.UI.Services.MarkdownRenderer.Render("## Chute libre\n\ntexte\n\n### Exemple");
+        Assert.Contains("id=\"chute-libre\"", html);
+        Assert.Equal(new[] { "Chute libre", "Exemple" }, toc.Select(t => t.Title));
+    }
+
+    [Fact]
+    public void Les_notes_de_bas_de_page_fonctionnent_encore() =>
+        Assert.Contains("href=\"#fn:1\"", Html("Voir la note[^1].\n\n[^1]: Le detail."));
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("", true)]
+    [InlineData("page.html", true)]
+    [InlineData("//exemple.cm/x", true)]
+    [InlineData("HTTPS://exemple.cm", true)]
+    [InlineData(" java\nscript:alert(1)", false)]
+    [InlineData("file:///etc/passwd", false)]
+    public void IsSafeUrl_distingue_les_adresses(string? url, bool expected) =>
+        Assert.Equal(expected, GPOE26.UI.Services.MarkdownRenderer.IsSafeUrl(url));
+}
+
+public class CourseSharingTests
+{
+    [Fact]
+    public void Un_eleve_membre_d_une_classe_n_en_est_pas_le_proprietaire()
+    {
+        var teacher = Guid.NewGuid();
+        var student = Guid.NewGuid();
+        var classroom = new ClassroomRef(Guid.NewGuid(), teacher);
+
+        Assert.Empty(UserDirectoryClient.OwnedBy(new[] { classroom }, student));
+        Assert.Equal(new[] { classroom.Id }, UserDirectoryClient.OwnedBy(new[] { classroom }, teacher));
+    }
+}
+
+public class JwtSigningKeyTests
+{
+    private const string Good = "une-cle-secrete-de-plus-de-trente-deux-caracteres";
+
+    [Fact]
+    public void La_cle_d_exemple_est_refusee_hors_developpement()
+    {
+        var example = GPOE26.ServiceDefaults.JwtSigningKey.DevelopmentKey;
+        Assert.Throws<InvalidOperationException>(() => GPOE26.ServiceDefaults.JwtSigningKey.Validate(example, isDevelopment: false));
+        Assert.Equal(example, GPOE26.ServiceDefaults.JwtSigningKey.Validate(example, isDevelopment: true));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("trop-courte")]
+    public void Une_cle_absente_ou_trop_courte_est_refusee(string? key) =>
+        Assert.Throws<InvalidOperationException>(() => GPOE26.ServiceDefaults.JwtSigningKey.Validate(key, isDevelopment: true));
+
+    [Fact]
+    public void Une_vraie_cle_est_acceptee_partout() =>
+        Assert.Equal(Good, GPOE26.ServiceDefaults.JwtSigningKey.Validate(Good, isDevelopment: false));
+}
+
 public class SimulationCatalogTests
 {
     [Fact]

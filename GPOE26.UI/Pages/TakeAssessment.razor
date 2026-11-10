@@ -3,6 +3,7 @@
 @inherits AppPage
 @implements IDisposable
 @inject IAssessmentApi Api
+@inject IAccountApi Account
 
 <PageTitle>@(_attempt?.Title ?? "Évaluation") — GPOE26</PageTitle>
 
@@ -52,6 +53,10 @@ else
         <div class="grow">
             <strong>@_attempt.Title</strong><br />
             <span class="ga-small ga-muted">Tentative @_attempt.AttemptNumber · @Answered / @_attempt.Questions.Count réponses</span>
+            @if (_draftStatus is not null)
+            {
+                <br /><span class="ga-small @(_draftFailed ? "" : "ga-muted")" role="status" style="@(_draftFailed ? "color:var(--ga-amber-ink)" : null)">@_draftStatus</span>
+            }
         </div>
         <div class="ex-progress" role="progressbar" aria-label="Questions répondues" aria-valuenow="@Answered" aria-valuemin="0" aria-valuemax="@_attempt.Questions.Count">
             <span style="width:@(Answered * 100 / Math.Max(1, _attempt.Questions.Count))%"></span>
@@ -186,6 +191,14 @@ else
     private bool _uploading;
     private Timer? _timer;
 
+    // Brouillon : les réponses sont enregistrées côté serveur pendant la composition.
+    // Une coupure de réseau, un rechargement ou une fermeture d'onglet ne fait plus perdre la copie.
+    private static readonly TimeSpan DraftInterval = TimeSpan.FromSeconds(5);
+    private CancellationTokenSource? _draftLoop;
+    private string _savedDraft = "";
+    private string? _draftStatus;
+    private bool _draftFailed;
+
     private int Answered => _attempt?.Questions.Count(IsAnswered) ?? 0;
     private int Unanswered => (_attempt?.Questions.Count ?? 0) - Answered;
 
@@ -215,6 +228,19 @@ else
         if (_attempt is not null)
         {
             foreach (var q in _attempt.Questions) _answers[q.Id] = new AnswerDraft { QuestionId = q.Id };
+            // Tentative reprise : les réponses déjà saisies sont retrouvées
+            var restored = 0;
+            foreach (var saved in _attempt.Draft ?? [])
+            {
+                if (!_answers.TryGetValue(saved.QuestionId, out var answer)) continue;
+                answer.SelectedOptions = saved.SelectedOptions ?? [];
+                answer.TrueFalse = saved.TrueFalse;
+                answer.Text = saved.Text;
+                restored++;
+            }
+            _savedDraft = Snapshot();
+            if (restored > 0 && Answered > 0) _draftStatus = "Tes réponses ont été retrouvées.";
+            StartDraftLoop();
             // Tentative reprise : les photos déjà envoyées sont conservées
             foreach (var group in (_attempt.Photos ?? []).GroupBy(p => p.QuestionId))
                 _photos[group.Key] = group.OrderBy(p => p.Page).ToList();
@@ -222,6 +248,58 @@ else
                 _timer = new Timer(_ => InvokeAsync(TickAsync), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
         }
         _loading = false;
+    }
+
+    private string Snapshot() => System.Text.Json.JsonSerializer.Serialize(_answers.Values);
+
+    /// <summary>
+    /// Toutes les quelques secondes : enregistre le brouillon s'il a changé, et prolonge la session
+    /// (on peut réfléchir longtemps sans rien envoyer). Un échec est signalé puis retenté au tour suivant.
+    /// </summary>
+    private void StartDraftLoop()
+    {
+        _draftLoop = new CancellationTokenSource();
+        var token = _draftLoop.Token;
+        _ = InvokeAsync(async () =>
+        {
+            using var timer = new PeriodicTimer(DraftInterval);
+            try
+            {
+                while (await timer.WaitForNextTickAsync(token))
+                {
+                    if (_result is not null) return;
+                    await Account.KeepSessionAliveAsync();
+                    if (!_busy) await SaveDraftAsync();
+                }
+            }
+            catch (OperationCanceledException) { }
+        });
+    }
+
+    private async Task SaveDraftAsync()
+    {
+        var snapshot = Snapshot();
+        if (snapshot == _savedDraft || _attempt is null) return;
+
+        var result = await Api.SaveDraftAsync(Id, _attempt.SubmissionId, _answers.Values.ToList());
+        if (_result is not null) return;   // la copie a été rendue entre-temps
+        _draftFailed = !result.Ok;
+        if (result.Ok)
+        {
+            _savedDraft = snapshot;
+            _draftStatus = $"Brouillon enregistré à {AppTime.Now:HH:mm}";
+        }
+        else if (result.Status == System.Net.HttpStatusCode.Conflict)
+        {
+            // La copie a déjà été rendue (depuis un autre onglet, par exemple) : inutile d'insister
+            _draftStatus = result.Error;
+            _draftLoop?.Cancel();
+        }
+        else
+        {
+            _draftStatus = "Brouillon non enregistré : vérifie ta connexion. Nouvel essai dans quelques secondes.";
+        }
+        StateHasChanged();
     }
 
     private async Task TickAsync()
@@ -272,6 +350,7 @@ else
         _confirm = false;
         if (!result.Ok) { _error = result.Error; return; }
         _timer?.Dispose();
+        _draftLoop?.Cancel();
         _result = result.Value;
     }
 
@@ -285,5 +364,10 @@ else
             ? "Consulte ta copie pour voir la correction de chaque question."
             : "Ta note et la correction seront visibles après la date limite.";
 
-    public void Dispose() => _timer?.Dispose();
+    public void Dispose()
+    {
+        _timer?.Dispose();
+        _draftLoop?.Cancel();
+        _draftLoop?.Dispose();
+    }
 }

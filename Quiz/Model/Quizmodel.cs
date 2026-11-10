@@ -5,6 +5,9 @@ namespace Quiz.Model;
 public class QuizSession
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+
+    /// <summary>Utilisateur qui a demandé ce quiz : lui seul peut le lire, y répondre et le retrouver dans ses statistiques</summary>
+    public Guid OwnerId { get; set; }
     public string Title { get; set; } = string.Empty;
     public string SourceText { get; set; } = string.Empty;
     public List<Question> Questions { get; set; } = [];

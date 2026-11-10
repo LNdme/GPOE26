@@ -132,6 +132,12 @@ public class Submission
 
     public DateTime? GradedAt { get; set; }
 
+    /// <summary>
+    /// Réponses en cours de saisie (JSON), enregistrées au fil de la composition et effacées quand la copie est rendue.
+    /// Sans ce brouillon, une coupure de réseau ou un rechargement de la page faisait perdre toute la copie.
+    /// </summary>
+    public string? DraftAnswers { get; set; }
+
     public List<SubmissionAnswer> Answers { get; set; } = new();
 }
 

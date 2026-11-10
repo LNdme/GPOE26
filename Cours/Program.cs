@@ -57,8 +57,7 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 // ─── JWT ──────────────────────────────────────────────────────────────────────
-var jwtKey = builder.Configuration["Jwt:Key"]
-    ?? "votre_cle_secrete_tres_longue_et_aleatoire_ici_changez_moi_en_production_cle_256_bits";
+var jwtKey = GPOE26.ServiceDefaults.JwtSigningKey.Require(builder.Configuration, builder.Environment);
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -598,13 +597,15 @@ cours.MapPut("/{id:guid}/sharing", async (Guid id, ShareCourseRequest req, Claim
     if (course is null) return Results.NotFound(new { message = "Cours introuvable." });
 
     var classroomIds = req.ClassroomIds?.Distinct().ToList() ?? new();
-    if (req.Publish)
+    if (req.Publish && classroomIds.Count == 0)
+        return Results.BadRequest(new { message = "Choisissez au moins une classe." });
+
+    // Seul l'enseignant d'une classe peut y publier : un élève en est membre, pas propriétaire
+    if (classroomIds.Count > 0)
     {
-        if (classroomIds.Count == 0)
-            return Results.BadRequest(new { message = "Choisissez au moins une classe." });
-        var owned = await users.MyClassroomIdsAsync();
+        var owned = await users.OwnedClassroomIdsAsync(ownerId.Value);
         if (classroomIds.Any(c => !owned.Contains(c)))
-            return Results.BadRequest(new { message = "Vous ne pouvez partager un cours qu'avec vos propres classes." });
+            return Results.BadRequest(new { message = "Vous ne pouvez partager un cours qu'avec les classes dont vous êtes l'enseignant." });
     }
 
     course.ClassroomIds = classroomIds;

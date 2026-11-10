@@ -1,7 +1,11 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
 // ── JWT partagé : même clé / issuer / audience pour User (émetteur) et les services qui le valident
-var jwtKeyValue = "votre_cle_secrete_tres_longue_et_aleatoire_ici_changez_moi_en_production_cle_256_bits";
+// Pour une vraie clé : dotnet user-secrets set "Parameters:jwt-key" "<32 caractères au moins>" --project GPOE26.AppHost
+// À défaut, la clé d'exemple : les services ne l'acceptent qu'en développement (JwtSigningKey).
+var jwtKeyValue = builder.Configuration["Parameters:jwt-key"] is { Length: > 0 } configuredJwtKey
+    ? configuredJwtKey
+    : "votre_cle_secrete_tres_longue_et_aleatoire_ici_changez_moi_en_production_cle_256_bits";
 var jwtIssuer   = "GPOE2026";
 var jwtAudience = "GPOE2026Users";
 

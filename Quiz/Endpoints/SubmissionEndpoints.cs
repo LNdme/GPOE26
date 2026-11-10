@@ -77,6 +77,26 @@ public static class SubmissionEndpoints
         .Produces<AttemptDto>(201)
         .Produces(409);
 
+        // ── PUT /assessments/{id}/attempts/{submissionId}/draft ───────────────────
+        // Enregistre les réponses en cours de saisie. Appelé toutes les quelques secondes par la page de composition :
+        // une seule requête SQL, et seulement tant que la copie n'est pas rendue.
+        group.MapPut("/attempts/{submissionId:guid}/draft", async (Guid id, Guid submissionId, SubmitAttemptRequest req,
+            ClaimsPrincipal principal, EvaluationContext db) =>
+        {
+            var studentId = principal.UserId();
+            var draft = AnswerDrafts.Serialize(req.Answers);
+            var saved = await db.Submissions
+                .Where(s => s.Id == submissionId && s.AssessmentId == id && s.StudentId == studentId && s.Status == SubmissionStatus.InProgress)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.DraftAnswers, draft));
+            return saved == 0
+                ? EndpointHelpers.Error(409, "Cette copie n'est plus en cours de composition.")
+                : Results.NoContent();
+        })
+        .RequireAuthorization(Roles.Student)
+        .WithSummary("Enregistrer le brouillon de sa copie")
+        .Produces(204)
+        .Produces(409);
+
         // ── POST /assessments/{id}/attempts/{submissionId}/submit ─────────────────
         group.MapPost("/attempts/{submissionId:guid}/submit", async (Guid id, Guid submissionId, SubmitAttemptRequest req,
             ClaimsPrincipal principal, EvaluationContext db) =>
@@ -115,6 +135,7 @@ public static class SubmissionEndpoints
             }
 
             submission.SubmittedAt = now;
+            submission.DraftAnswers = null;
             submission.MaxScore = assessment.MaxScore;
             submission.IsLate = assessment.DueAt < now - Grace
                 || (assessment.DurationMinutes is { } minutes && now > submission.StartedAt.AddMinutes(minutes) + Grace);
@@ -404,7 +425,8 @@ public static class SubmissionEndpoints
                 if (a.Shuffle) options = Grader.StableShuffle(options, s.Id, q.Order + 1);
                 return new StudentQuestionDto(q.Id, q.Type, q.Text, q.Points, options, q.Unit);
             }).ToList(),
-            photos.Select(p => new AnswerPhotoDto(p)).ToList());
+            photos.Select(p => new AnswerPhotoDto(p)).ToList(),
+            AnswerDrafts.Parse(s.DraftAnswers));
     }
 
     private static SubmissionDto ToDto(Submission s, Assessment a, bool teacherView, List<AnswerPhoto> photos)

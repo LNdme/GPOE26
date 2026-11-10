@@ -68,6 +68,8 @@ bash start.sh
 
 Le script lance les 5 services backend, attend 30 s, puis démarre le frontend sur le port 5000. Voir `replit.md` pour les détails propres à Replit.
 
+Il démarre en **Production** : aucun compte de démonstration n'est créé. Inscrivez votre compte sur le site, puis relancez avec `ADMIN_EMAILS="vous@exemple.cm"` pour en faire le premier administrateur. Pour une démonstration privée avec les comptes de test : `APP_ENV=Development bash start.sh`.
+
 ---
 
 ## Configuration
@@ -80,7 +82,9 @@ Aucun secret ne doit être commité. Copiez `.env.example` en `.env` (ignoré pa
 | `LLM__BaseUrl`, `LLM__Models`, `LLM__VisionModels` | Chat, Quiz | Fournisseur compatible OpenAI (OpenRouter par défaut) et listes de modèles **essayés dans l'ordre** : si un modèle gratuit est saturé (429) ou muet, le suivant prend le relais. Les modèles de vision servent dès qu'une photo est jointe. `LLM__AttemptTimeoutSeconds` (90 par défaut) borne chaque essai |
 | `LlmProvider` | Chat | Anciens écrans `/learning` : `OpenRouter` (défaut, même client que le tuteur), `DeepSeek`, `Claude`, `Gpt`, `Foundry` |
 | `ConnectionStrings__ChatDB` | Chat | Base des discussions du tuteur (fournie par Aspire) |
-| `Jwt__Key` / `Jwt__Issuer` / `Jwt__Audience` | User, Cours | Clé de signature JWT (≥ 256 bits). **La valeur par défaut est un exemple : à changer en production.** |
+| `Jwt__Key` / `Jwt__Issuer` / `Jwt__Audience` | tous les services | Clé de signature JWT (32 caractères au moins). Aucune valeur par défaut hors développement : les services **refusent de démarrer** sans clé, ou avec la clé d'exemple des fichiers `appsettings.Development.json`. Avec Aspire : `dotnet user-secrets set "Parameters:jwt-key" "<clé>" --project GPOE26.AppHost` |
+| `Jwt__MaxSessionHours` | User | Durée maximale d'une session prolongée sans ressaisir le mot de passe (12 h par défaut). Le jeton dure 60 min et se renouvelle seul tant que l'utilisateur est actif (`POST /auth/refresh`) |
+| `JWT_KEY`, `APP_ENV`, `ADMIN_EMAILS` | `start.sh` | `JWT_KEY` : clé de signature (à défaut, une clé aléatoire est créée dans `.secrets/jwt-key`, hors du dépôt). `APP_ENV` : `Production` par défaut ; `Development` active les comptes de démonstration, le paiement simulé et Swagger — **jamais sur un site public**. `ADMIN_EMAILS` : comptes déjà inscrits à promouvoir administrateurs |
 | `ConnectionStrings__UserDB` / `__CoursDB` / `__LyceeDB` | User, Cours, ApiService | Chaînes de connexion PostgreSQL (fournies automatiquement par Aspire) |
 | `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` | `start.sh` | Utilisées pour construire les chaînes de connexion |
 
@@ -143,7 +147,7 @@ L'interface des élèves, enseignants et parents est une **bibliothèque Razor**
 
 | Domaine | Endpoints |
 |---|---|
-| Authentification | `POST /auth/register` (inscription guidée : profil, classes initiales, clé d'abonnement, code de classe, essai), `POST /auth/login`, `GET/PUT/PATCH /auth/me` |
+| Authentification | `POST /auth/register` (inscription guidée : profil, classes initiales, clé d'abonnement, code de classe, essai), `POST /auth/login`, `POST /auth/refresh` (prolonger la session), `GET/PUT/PATCH /auth/me` |
 | Classes et groupes | `POST /classrooms`, `GET /classrooms/mine`, `GET /classrooms/{id}`, `GET /classrooms/{id}/members`, `POST /classrooms/join`, `POST /classrooms/{id}/invite-code`, `DELETE /classrooms/{id}`, `DELETE /classrooms/{id}/members/{studentId}` |
 | Parents | `POST /parents/children/link` (code de l'élève), `POST /parents/children` (créer le compte de l'enfant), `GET /parents/children`, `DELETE /parents/children/{linkId}` ; côté élève `GET /me/parents`, `POST /me/parents/{linkId}/approve` ou `/reject` |
 | Abonnements | `GET /subscriptions/me`, `POST /subscriptions/redeem`, `POST /subscriptions/checkout`, `POST /subscriptions/trial` |
@@ -167,7 +171,7 @@ Premium est lu dans le JWT, puis vérifié auprès du service User s'il dit non 
 | Qui | Endpoints |
 |---|---|
 | Enseignant | `POST /assessments`, `PUT /assessments/{id}` (tant qu'aucun élève n'a composé), `POST /assessments/{id}/publish`, `POST /assessments/{id}/close`, `DELETE /assessments/{id}`, `GET /assessments/{id}/submissions`, `PUT /assessments/{id}/submissions/{sid}/answers/{qid}/grade`, `POST …/ai-suggestion`, `GET /progress/classrooms/{classroomId}` ; Cours : `PUT /cours/{id}/sharing` |
-| Élève | `GET /assessments/mine`, `POST /assessments/{id}/attempts` (démarrer ou reprendre), `POST /assessments/{id}/attempts/{sid}/questions/{qid}/photos` (photo de copie, transcrite par l'IA), `DELETE …/attempts/{sid}/photos/{pid}`, `POST /assessments/{id}/submissions/{sid}/answers/{qid}/ai-feedback` (analyse après publication), `POST /assessments/{id}/attempts/{sid}/submit`, `GET /assessments/{id}/submissions/{sid}`, `GET /progress/me` ; Cours : `GET /cours/shared`, `GET /cours/{id}` |
+| Élève | `GET /assessments/mine`, `POST /assessments/{id}/attempts` (démarrer ou reprendre, avec le brouillon des réponses déjà saisies), `PUT /assessments/{id}/attempts/{sid}/draft` (enregistrer le brouillon pendant la composition), `POST /assessments/{id}/attempts/{sid}/questions/{qid}/photos` (photo de copie, transcrite par l'IA), `DELETE …/attempts/{sid}/photos/{pid}`, `POST /assessments/{id}/submissions/{sid}/answers/{qid}/ai-feedback` (analyse après publication), `POST /assessments/{id}/attempts/{sid}/submit`, `GET /assessments/{id}/submissions/{sid}`, `GET /progress/me` ; Cours : `GET /cours/shared`, `GET /cours/{id}` |
 | Parent | `GET /progress/students/{studentId}` (enfant rattaché) |
 
 - **Types de questions** : QCM, choix multiples (tout ou rien), vrai/faux, réponse courte (casse, accents et ponctuation ignorés), numérique (virgule, espaces, unité et tolérance acceptés), réponse ouverte (texte ou photo de copie, corrigée par l'enseignant).

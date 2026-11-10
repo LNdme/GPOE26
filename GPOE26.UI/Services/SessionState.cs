@@ -21,9 +21,17 @@ public record StoredSession(string Token, DateTime ExpiresAt, UserProfile Profil
 /// </summary>
 public class SessionState(ISessionStore store)
 {
+    /// <summary>Après un renouvellement refusé ou impossible, on ne réessaie pas à chaque requête.</summary>
+    private static readonly TimeSpan RenewalRetryDelay = TimeSpan.FromMinutes(1);
+
     // Tâche partagée : la mise en page et la page appellent RestoreAsync en même temps ;
     // chacune doit attendre la même restauration (sinon la seconde croit l'utilisateur déconnecté)
     private Task? _restore;
+
+    // Renouvellement du jeton : un seul à la fois, même si plusieurs appels d'API partent ensemble
+    private Task? _renewal;
+    private DateTime _receivedAt;
+    private DateTime _renewalRetryAt;
 
     public string? Token { get; private set; }
     public DateTime ExpiresAt { get; private set; }
@@ -38,6 +46,19 @@ public class SessionState(ISessionStore store)
 
     /// <summary>Déclenché à chaque connexion, déconnexion ou mise à jour du profil.</summary>
     public event Action? Changed;
+
+    /// <summary>
+    /// Le jeton est encore valide mais entamé : il est temps d'en demander un neuf.
+    /// Tant que l'utilisateur est actif, la session ne tombe donc plus au milieu d'une épreuve.
+    /// </summary>
+    public bool ShouldRenew => IsAuthenticated && DueForRenewal(_receivedAt, ExpiresAt, DateTime.UtcNow) && DateTime.UtcNow >= _renewalRetryAt;
+
+    /// <summary>Vrai une fois le premier tiers de la durée de vie du jeton écoulé (20 min pour un jeton d'une heure).</summary>
+    public static bool DueForRenewal(DateTime receivedAt, DateTime expiresAt, DateTime now)
+    {
+        var lifetime = expiresAt - receivedAt;
+        return lifetime > TimeSpan.Zero && now < expiresAt && now - receivedAt >= lifetime / 3;
+    }
 
     public Task RestoreAsync() => _restore ??= RestoreCoreAsync();
 
@@ -64,6 +85,41 @@ public class SessionState(ISessionStore store)
         await store.SaveAsync(new StoredSession(auth.Token, auth.ExpiresAt, auth.Profile));
     }
 
+    /// <summary>
+    /// Échange le jeton courant contre un neuf. <paramref name="request"/> appelle le service des comptes
+    /// et renvoie null s'il refuse. Un échec ne déconnecte pas : le jeton courant reste valable jusqu'à son terme.
+    /// </summary>
+    public Task RenewAsync(Func<string, Task<AuthResponse?>> request) => _renewal ??= RenewCoreAsync(request);
+
+    private async Task RenewCoreAsync(Func<string, Task<AuthResponse?>> request)
+    {
+        try
+        {
+            var token = Token;
+            if (token is null) return;
+
+            var auth = await request(token);
+            // Déconnexion ou autre connexion pendant l'appel : on ne ressuscite pas l'ancienne session
+            if (auth is null || Token != token)
+            {
+                _renewalRetryAt = DateTime.UtcNow + RenewalRetryDelay;
+                return;
+            }
+
+            Apply(auth.Token, auth.ExpiresAt, auth.Profile, notify: true);
+            try { await store.SaveAsync(new StoredSession(auth.Token, auth.ExpiresAt, auth.Profile)); }
+            catch { /* navigateur injoignable : le jeton neuf sert déjà en mémoire, il sera enregistré au prochain renouvellement */ }
+        }
+        catch
+        {
+            _renewalRetryAt = DateTime.UtcNow + RenewalRetryDelay;
+        }
+        finally
+        {
+            _renewal = null;
+        }
+    }
+
     /// <summary>Met à jour le profil (après activation d'une clé, par exemple) sans changer de jeton.</summary>
     public async Task UpdateProfileAsync(UserProfile profile)
     {
@@ -86,6 +142,11 @@ public class SessionState(ISessionStore store)
 
     private void Apply(string token, DateTime expiresAt, UserProfile profile, bool notify)
     {
+        if (token != Token)
+        {
+            _receivedAt = DateTime.UtcNow;
+            _renewalRetryAt = DateTime.MinValue;
+        }
         Token = token;
         ExpiresAt = expiresAt;
         Profile = profile;

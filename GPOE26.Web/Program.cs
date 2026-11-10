@@ -20,9 +20,11 @@ var coursServiceUrl = builder.Configuration["Services:Cours"] ?? "http://localho
 var chatServiceUrl = builder.Configuration["Services:Chat"] ?? "http://localhost:5212";
 var quizServiceUrl = builder.Configuration["Services:Quiz"] ?? "http://localhost:5163";
 
+// Seules les lectures (GET) sont rejouées en cas d'erreur passagère. Un envoi rejoué arrivait deux fois :
+// copie « déjà rendue », inscription « e-mail déjà utilisé », photo en double, IA sollicitée quatre fois de suite.
 builder.Services.AddHttpClient("user", client =>
     client.BaseAddress = new Uri(userServiceUrl))
-    .AddStandardResilienceHandler();
+    .AddStandardResilienceHandler(options => options.Retry.DisableForUnsafeHttpMethods());
 
 // Lire un PDF ou récupérer un cours en ligne prend du temps, et un import ne doit jamais être rejoué
 builder.Services.AddHttpClient("cours", client =>
@@ -48,6 +50,7 @@ builder.Services.AddHttpClient("chat", client =>
         options.AttemptTimeout.Timeout = TimeSpan.FromMinutes(3);
         options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(3);
         options.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(10);
+        options.Retry.DisableForUnsafeHttpMethods();
     });
 
 builder.Services.AddHttpClient("quiz", client =>
@@ -60,11 +63,12 @@ builder.Services.AddHttpClient("quiz", client =>
         options.AttemptTimeout.Timeout = TimeSpan.FromMinutes(5);
         options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(5);
         options.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(10);
+        options.Retry.DisableForUnsafeHttpMethods();
     });
 
 builder.Services.AddHttpClient("apiservice", client =>
     client.BaseAddress = new Uri(apiServiceUrl))
-    .AddStandardResilienceHandler();
+    .AddStandardResilienceHandler(options => options.Retry.DisableForUnsafeHttpMethods());
 
 builder.Services.AddScoped<ApiClient>();
 builder.Services.AddScoped<AuthService>();

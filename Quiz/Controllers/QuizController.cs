@@ -9,6 +9,7 @@ using Quiz.Service;
 namespace Quiz.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/[controller]")]
 public class QuizController : ControllerBase
 {
@@ -27,6 +28,10 @@ public class QuizController : ControllerBase
         _store = store;
         _logger = logger;
     }
+
+    /// <summary>Le quiz demandé, s'il appartient à l'utilisateur connecté (sinon null : même réponse qu'un quiz inexistant).</summary>
+    private QuizSession? OwnSession(Guid id) =>
+        _store.Get(id) is { } session && session.OwnerId == User.UserId() ? session : null;
 
     private static string Difficulty(string? value) => value is "exigeant" or "approfondi" ? value : "standard";
 
@@ -65,7 +70,6 @@ public class QuizController : ControllerBase
     }
 
     /// <summary>Série d'exercices corrigés : énoncés, indices et solutions détaillées.</summary>
-    [Authorize]
     [HttpPost("problems")]
     public async Task<IActionResult> Problems([FromBody] GenerateProblemsRequest request, CancellationToken ct)
     {
@@ -97,7 +101,6 @@ public class QuizController : ControllerBase
     /// <summary>
     /// Génère un quiz à partir d'un texte de cours via l'IA.
     /// </summary>
-    [Authorize]
     [HttpPost("generate")]
     [ProducesResponseType<GenerateQuizResponse>(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -130,6 +133,7 @@ public class QuizController : ControllerBase
 
         var session = new QuizSession
         {
+            OwnerId = User.UserId(),
             Title = request.Title,
             SourceText = request.CourseText,
             Questions = questions
@@ -155,7 +159,7 @@ public class QuizController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public IActionResult GetQuiz(Guid id)
     {
-        var session = _store.Get(id);
+        var session = OwnSession(id);
         if (session is null) return NotFound();
 
         var response = new GenerateQuizResponse(
@@ -176,10 +180,13 @@ public class QuizController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public IActionResult Submit(Guid id, [FromBody] SubmitAnswersRequest request)
     {
-        var session = _store.Get(id);
+        var session = OwnSession(id);
         if (session is null) return NotFound();
 
-        var answerMap = request.Answers.ToDictionary(a => a.QuestionId, a => a.SelectedOptionIndex);
+        // Une question répétée dans l'envoi ne doit pas faire échouer la correction : la première réponse compte
+        var answerMap = (request.Answers ?? [])
+            .GroupBy(a => a.QuestionId)
+            .ToDictionary(g => g.Key, g => g.First().SelectedOptionIndex);
         var feedbacks = new List<AnswerFeedback>();
         int score = 0;
 
@@ -222,14 +229,15 @@ public class QuizController : ControllerBase
     }
 
     /// <summary>
-    /// Retourne l'historique et les statistiques globales.
+    /// Retourne l'historique et les statistiques de l'utilisateur connecté.
     /// </summary>
     [HttpGet("stats")]
     [ProducesResponseType<StatsResponse>(StatusCodes.Status200OK)]
     public IActionResult GetStats()
     {
+        var userId = User.UserId();
         var completed = _store.GetAll()
-            .Where(s => s.Result is not null)
+            .Where(s => s.OwnerId == userId && s.Result is not null)
             .ToList();
 
         var history = completed.Select(s => new QuizSummary(

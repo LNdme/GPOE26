@@ -102,9 +102,10 @@ public record StudentAssessmentDto(
     bool HasAttemptInProgress, int QuestionCount, decimal MaxScore, bool AllowOffline,
     decimal? BestScoreScaled, int ScaleTo, Guid? LastSubmissionId);
 
+/// <summary>Draft : réponses déjà saisies lors d'une tentative reprise (vide pour une tentative neuve).</summary>
 public record AttemptDto(
     Guid SubmissionId, Guid AssessmentId, string Title, int AttemptNumber, DateTime StartedAt,
-    DateTime? Deadline, List<StudentQuestionDto> Questions, List<AnswerPhotoDto> Photos);
+    DateTime? Deadline, List<StudentQuestionDto> Questions, List<AnswerPhotoDto> Photos, List<AnswerInput> Draft);
 
 /// <summary>Photo d'une copie (l'image se télécharge à part : GET …/submissions/{sid}/photos/{id})</summary>
 public record AnswerPhotoDto(Guid Id, Guid QuestionId, int Page, string? Transcription)

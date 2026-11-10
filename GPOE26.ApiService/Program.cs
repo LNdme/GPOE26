@@ -51,8 +51,7 @@ builder.AddServiceDefaults();
 
 // ─── JWT (émis par le service User) ───────────────────────────────────────────
 // Le contenu du site se lit librement, mais seul un administrateur peut le créer, le modifier ou le supprimer.
-var jwtKey = builder.Configuration["Jwt:Key"]
-    ?? throw new InvalidOperationException("La configuration Jwt:Key est manquante.");
+var jwtKey = GPOE26.ServiceDefaults.JwtSigningKey.Require(builder.Configuration, builder.Environment);
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>

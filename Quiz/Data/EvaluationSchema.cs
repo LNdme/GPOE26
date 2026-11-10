@@ -76,6 +76,8 @@ public static class EvaluationSchema
         )",
         @"CREATE INDEX IF NOT EXISTS ""IX_Submissions_AssessmentId_StudentId"" ON ""Submissions"" (""AssessmentId"", ""StudentId"")",
         @"CREATE INDEX IF NOT EXISTS ""IX_Submissions_StudentId"" ON ""Submissions"" (""StudentId"")",
+        // Brouillon des réponses pendant la composition
+        @"ALTER TABLE ""Submissions"" ADD COLUMN IF NOT EXISTS ""DraftAnswers"" text",
 
         @"CREATE TABLE IF NOT EXISTS ""SubmissionAnswers"" (
             ""Id"" uuid NOT NULL,

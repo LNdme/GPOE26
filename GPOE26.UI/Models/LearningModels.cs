@@ -162,7 +162,7 @@ public record StudentAssessment(
 public record AttemptOption(int Index, string Text);
 public record AttemptQuestion(Guid Id, QuestionType Type, string Text, decimal Points, List<AttemptOption> Options, string? Unit);
 public record Attempt(Guid SubmissionId, Guid AssessmentId, string Title, int AttemptNumber, DateTime StartedAt,
-    DateTime? Deadline, List<AttemptQuestion> Questions, List<AnswerPhoto>? Photos = null);
+    DateTime? Deadline, List<AttemptQuestion> Questions, List<AnswerPhoto>? Photos = null, List<AnswerDraft>? Draft = null);
 
 /// <summary>Photo d'une copie traitée sur papier ; Transcription = lecture par l'IA (null si elle n'a pas pu la lire).</summary>
 public record AnswerPhoto(Guid Id, Guid QuestionId, int Page, string? Transcription);
