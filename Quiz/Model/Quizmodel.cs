@@ -45,18 +45,21 @@ public class AnswerFeedback
 
 // --- DTOs Requêtes ---
 
+/// <summary>CourseId : le texte est lu au service Cours (accès vérifié). CourseText n'est plus accepté que sans CourseId, borné.</summary>
 public record GenerateQuizRequest(
     string Title,
-    string CourseText,
+    string? CourseText = null,
     int NumberOfQuestions = 5,
-    string Difficulty = "standard"
+    string Difficulty = "standard",
+    Guid? CourseId = null
 );
 
 public record GenerateProblemsRequest(
     string Title,
-    string CourseText,
+    string? CourseText = null,
     int Count = 3,
-    string Difficulty = "exigeant"
+    string Difficulty = "exigeant",
+    Guid? CourseId = null
 );
 
 public record ProblemSetResponse(string Title, List<Quiz.Service.ProblemItem> Problems);

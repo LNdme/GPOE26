@@ -895,8 +895,7 @@ public class AriaTests
     [Fact]
     public void Aucun_etat_aria_n_est_lie_a_un_booleen_brut()
     {
-        var root = new DirectoryInfo(AppContext.BaseDirectory);
-        while (root is not null && !File.Exists(Path.Combine(root.FullName, "GPOE26.slnx"))) root = root.Parent;
+        var root = RepoRoot(AppContext.BaseDirectory) ?? RepoRoot(SourceDirectory());
         Assert.NotNull(root);
 
         var pattern = new System.Text.RegularExpressions.Regex(@"aria-(?:selected|expanded|pressed|checked|current)=""@(?!Aria\.)(?!\([^""]*\?\s*""[^""]*""\s*:)");
@@ -909,6 +908,18 @@ public class AriaTests
             .ToList();
         Assert.Empty(offenders);
     }
+
+    /// <summary>Dossier contenant GPOE26.slnx au-dessus de <paramref name="start"/>, ou null.</summary>
+    private static DirectoryInfo? RepoRoot(string start)
+    {
+        var dir = new DirectoryInfo(start);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "GPOE26.slnx"))) dir = dir.Parent;
+        return dir;
+    }
+
+    /// <summary>Dossier de ce fichier source : sert quand les binaires sont compilés hors du dépôt (--artifacts-path).</summary>
+    private static string SourceDirectory([System.Runtime.CompilerServices.CallerFilePath] string path = "") =>
+        Path.GetDirectoryName(path) ?? AppContext.BaseDirectory;
 }
 
 /// <summary>

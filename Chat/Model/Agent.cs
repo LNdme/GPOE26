@@ -79,6 +79,15 @@ public class StudySession
     public DateTime LastAt { get; set; } = DateTime.UtcNow;
 }
 
+/// <summary>Demandes d'IA servies, par utilisateur, fonction et jour (UTC) : quotas mensuels et plafond quotidien.</summary>
+public class AiUsage
+{
+    public Guid UserId { get; set; }
+    public string Feature { get; set; } = "";
+    public DateOnly Day { get; set; }
+    public int Count { get; set; }
+}
+
 public class AgentMemory
 {
     public Guid Id { get; set; } = Guid.NewGuid();

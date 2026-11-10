@@ -60,8 +60,9 @@ public record LabSuggestion(Guid Id, string Anchor, string Title, string Reason,
 
 // ─── Quiz d'entraînement généré à partir d'un cours ───────────────────────────
 
-public record GeneratePracticeQuizRequest(string Title, string CourseText, int NumberOfQuestions, string Difficulty);
-public record GeneratePracticeProblemsRequest(string Title, string CourseText, int Count, string Difficulty);
+/// <summary>Le service Quiz lit lui-même le texte du cours (CourseId) : le navigateur n'envoie plus le texte.</summary>
+public record GeneratePracticeQuizRequest(string Title, Guid CourseId, int NumberOfQuestions, string Difficulty);
+public record GeneratePracticeProblemsRequest(string Title, Guid CourseId, int Count, string Difficulty);
 public record PracticeProblem(string Statement, List<string> Hints, string Solution);
 public record PracticeProblemSet(string Title, List<PracticeProblem> Problems);
 public record PracticeQuestion(Guid Id, string Text, List<string> Options);
@@ -165,7 +166,7 @@ public record Attempt(Guid SubmissionId, Guid AssessmentId, string Title, int At
     DateTime? Deadline, List<AttemptQuestion> Questions, List<AnswerPhoto>? Photos = null, List<AnswerDraft>? Draft = null);
 
 /// <summary>Photo d'une copie traitée sur papier ; Transcription = lecture par l'IA (null si elle n'a pas pu la lire).</summary>
-public record AnswerPhoto(Guid Id, Guid QuestionId, int Page, string? Transcription);
+public record AnswerPhoto(Guid Id, Guid QuestionId, int Page, string? Transcription, bool Pending = false);
 
 public record AiFeedback(Guid QuestionId, string Feedback);
 

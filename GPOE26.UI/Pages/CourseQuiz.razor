@@ -212,7 +212,7 @@
 
         if (_problemMode)
         {
-            var problems = await Quizzes.GenerateProblemsAsync(_course!.Title, _course.ExtractedText!, Math.Min(_count, 5), _difficulty);
+            var problems = await Quizzes.GenerateProblemsAsync(_course!.Title, _course.Id, Math.Min(_count, 5), _difficulty);
             _generating = false;
             if (problems.Value is not { Problems.Count: > 0 })
             {
@@ -223,7 +223,7 @@
             return;
         }
 
-        var result = await Quizzes.GenerateAsync(_course!.Title, _course.ExtractedText!, _count, _difficulty);
+        var result = await Quizzes.GenerateAsync(_course!.Title, _course.Id, _count, _difficulty);
         _generating = false;
         if (result.Value is not { Questions.Count: > 0 })
         {

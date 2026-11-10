@@ -43,17 +43,28 @@ public class AgentMemoryStore(TutorContext db, LlmClient llm)
         var embedding = await llm.EmbedAsync(query, ct);
         if (embedding is null) return lexical;
 
+        // Seuls les vecteurs de même dimension se comparent : après un changement de modèle d'embeddings,
+        // les anciens souvenirs sont ignorés ici (PostgreSQL refuserait la comparaison) et restent trouvés par le texte.
         var vector = Literal(embedding);
-        var semantic = await db.AgentMemories
-            .FromSqlInterpolated($@"
-                SELECT * FROM ""AgentMemories""
-                WHERE ""UserId"" = {userId} AND ""Kind"" = {kind} AND ""Embedding"" IS NOT NULL
-                ORDER BY ""Embedding"" <=> CAST({vector} AS vector)
-                LIMIT {count}")
-            .AsNoTracking()
-            .ToListAsync(ct);
-
-        return lexical.Concat(semantic).DistinctBy(m => m.Id).Take(count + 4).ToList();
+        var dimensions = embedding.Length;
+        try
+        {
+            var semantic = await db.AgentMemories
+                .FromSqlInterpolated($@"
+                    SELECT * FROM ""AgentMemories""
+                    WHERE ""UserId"" = {userId} AND ""Kind"" = {kind} AND ""Embedding"" IS NOT NULL
+                      AND vector_dims(""Embedding"") = {dimensions}
+                    ORDER BY ""Embedding"" <=> CAST({vector} AS vector)
+                    LIMIT {count}")
+                .AsNoTracking()
+                .ToListAsync(ct);
+            return lexical.Concat(semantic).DistinctBy(m => m.Id).Take(count + 4).ToList();
+        }
+        catch (Npgsql.PostgresException)
+        {
+            // La recherche par le sens est un plus : en cas d'échec, le plein texte suffit
+            return lexical;
+        }
     }
 
     public async Task StoreEmbeddingAsync(AgentMemory memory, CancellationToken ct = default)
@@ -156,7 +167,10 @@ public class AgentReflectionWorker(AgentReflectionQueue queue, IServiceScopeFact
             </echange>
             """;
 
-        var reply = await llm.CompleteAsync([new LlmMessage("system", Prompt), new LlmMessage("user", user)], maxTokens: 900, temperature: 0.1, ct: ct);
+        // Sans réflexion : un modèle « raisonnant » (Nemotron 3.5…) épuisait les 900 jetons à réfléchir et ne répondait rien,
+        // si bien que la mémoire n'était jamais mise à jour. Extraire quelques faits en JSON n'en demande pas.
+        var reply = await llm.CompleteAsync([new LlmMessage("system", Prompt), new LlmMessage("user", user)], maxTokens: 900, temperature: 0.1,
+            ct: ct, reasoning: false);
         var reflection = MemoryRules.Parse(reply, existing.Select(m => m.Id).ToHashSet());
         if (reflection is null) return;
 

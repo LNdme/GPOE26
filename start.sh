@@ -20,8 +20,8 @@ JWT_AUDIENCE="GPOE2026Users"
 # Build Npgsql-compatible connection string from Replit PG env vars
 NPGSQL_CONN="Host=${PGHOST};Port=${PGPORT:-5432};Database=${PGDATABASE};Username=${PGUSER};Password=${PGPASSWORD};SSL Mode=Disable"
 
-# Clé du LLM : OpenRouter (LLM_API_KEY), ou l'ancienne variable DeepSeek
-LLM_KEY="${LLM_API_KEY:-$DEEPSEEK_API_KEY}"
+# Clé du LLM : OpenRouter (LLM_API_KEY ou OPENROUTER_API_KEY), ou l'ancienne variable DeepSeek
+LLM_KEY="${LLM_API_KEY:-${OPENROUTER_API_KEY:-$DEEPSEEK_API_KEY}}"
 
 echo "Using connection: Host=${PGHOST};Port=${PGPORT:-5432};Database=${PGDATABASE};Username=${PGUSER}"
 
@@ -81,6 +81,7 @@ ASPNETCORE_URLS="http://localhost:5163" \
   Jwt__Issuer="$JWT_ISSUER" \
   Jwt__Audience="$JWT_AUDIENCE" \
   Services__User="http://localhost:5197" \
+  Services__Cours="http://localhost:5188" \
   dotnet run --project Quiz/Quiz.csproj --no-launch-profile &
 QUIZPID=$!
 

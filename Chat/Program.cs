@@ -33,8 +33,8 @@ builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo
     {
-        Title = "Cours API",
-        Description = "Gestion des cours — texte et PDF",
+        Title = "Chat API",
+        Description = "Tuteur IA, assistant enseignant et mémoire des agents",
         Version = "v1"
     });
     // Indiquer à Swagger que les endpoints nécessitent un Bearer token
@@ -49,12 +49,17 @@ builder.Services.AddDbContext<TutorContext>(options => options.UseNpgsql(chatCon
 // LLM compatible OpenAI (OpenRouter par défaut, modèles gratuits avec repli) : section "LLM"
 builder.AddLlmClient();
 
-// Services Cours (contenu du cours) et User (abonnement), appelés avec le JWT de l'élève
+// Services Cours (contenu du cours), User (abonnement) et Quiz (progression), appelés avec le JWT de l'élève.
+// Délai court : un service lent ne doit pas bloquer le tuteur (le délai par défaut de HttpClient est de 100 s).
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddHttpClient("cours", c => c.BaseAddress = new Uri(builder.Configuration["Services:Cours"] ?? "http://localhost:5188"));
-builder.Services.AddHttpClient("user", c => c.BaseAddress = new Uri(builder.Configuration["Services:User"] ?? "http://localhost:5197"));
-builder.Services.AddHttpClient("quiz", c => c.BaseAddress = new Uri(builder.Configuration["Services:Quiz"] ?? "http://localhost:5163"));
+builder.Services.AddMemoryCache();
+var platformTimeout = TimeSpan.FromSeconds(builder.Configuration.GetValue("Services:TimeoutSeconds", 10));
+builder.Services.AddHttpClient("cours", c => { c.BaseAddress = new Uri(builder.Configuration["Services:Cours"] ?? "http://localhost:5188"); c.Timeout = platformTimeout; });
+builder.Services.AddHttpClient("user", c => { c.BaseAddress = new Uri(builder.Configuration["Services:User"] ?? "http://localhost:5197"); c.Timeout = platformTimeout; });
+builder.Services.AddHttpClient("quiz", c => { c.BaseAddress = new Uri(builder.Configuration["Services:Quiz"] ?? "http://localhost:5163"); c.Timeout = platformTimeout; });
 builder.Services.AddScoped<PlatformClients>();
+builder.Services.AddScoped<AiQuota>();
+builder.Services.AddHostedService<TutorImageCleanup>();
 
 // Mémoire des agents : relue à chaque question, consolidée en arrière-plan après chaque échange
 builder.Services.AddScoped<AgentMemoryStore>();
@@ -123,8 +128,23 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
     app.UseSwagger();
-    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Cours API V1"));
+    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Chat API V1"));
 }
+
+// Un service dont dépend la réponse ne répond pas : 503 et un message honnête (pas « réservé aux abonnés »)
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next();
+    }
+    catch (PlatformUnavailableException ex) when (!context.Response.HasStarted)
+    {
+        app.Logger.LogWarning(ex.InnerException, "Service indisponible : {Message}", ex.Message);
+        context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+        await context.Response.WriteAsJsonAsync(new { message = ex.Message });
+    }
+});
 // En développement, les services s'appellent en HTTP avec un JWT : une redirection vers HTTPS
 // ferait retirer l'en-tête Authorization par HttpClient, et chaque appel finirait en 401.
 if (!app.Environment.IsDevelopment())

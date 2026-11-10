@@ -84,7 +84,7 @@ public static class TutorEndpoints
         // ── POST /tutor/courses/{courseId}/messages ───────────────────────────────
         group.MapPost("/courses/{courseId:guid}/messages", async (Guid courseId, AskTutorRequest req, ClaimsPrincipal principal,
             TutorContext db, PlatformClients platform, LlmClient llm, AgentContextService agent, AgentReflectionQueue reflection,
-            ILogger<TutorContext> logger, CancellationToken ct) =>
+            AiQuota quota, ILogger<TutorContext> logger, CancellationToken ct) =>
         {
             var userId = UserId(principal);
             var text = req.Message?.Trim() ?? "";
@@ -92,8 +92,8 @@ public static class TutorEndpoints
                 return Error(400, "Écris ta question ou joins une photo.");
             if (text.Length > 4000)
                 return Error(400, "Ta question est trop longue (4 000 caractères au maximum).");
-            if (!await platform.HasFeatureAsync("tutor-ai", ct))
-                return Error(403, "Le tuteur IA est réservé aux abonnés Premium.");
+            if ((await quota.CheckAsync(userId, AiFeatures.Tutor, ct)).Refusal is { } refusal)
+                return Error(403, refusal);
 
             var course = await platform.CourseAsync(courseId, ct);
             if (course is null) return Error(404, "Cours introuvable.");
@@ -149,6 +149,7 @@ public static class TutorEndpoints
             db.Messages.AddRange(question, answer);
             conversation.UpdatedAt = now;
             await db.SaveChangesAsync(ct);
+            await quota.RecordAsync(userId, AiFeatures.Tutor, ct);
 
             await agent.TouchCourseAsync(userId, courseId, course.Title, course.Subject, ct);
             reflection.Enqueue(new ReflectionJob(userId, AgentKinds.Student, courseId, course.Title, text, reply, answer.Id));
@@ -160,8 +161,8 @@ public static class TutorEndpoints
         // ── POST /tutor/images ────────────────────────────────────────────────────
         group.MapPost("/images", async (IFormFile file, ClaimsPrincipal principal, TutorContext db, PlatformClients platform, CancellationToken ct) =>
         {
-            if (!await platform.HasFeatureAsync("tutor-ai", ct))
-                return Error(403, "Le tuteur IA est réservé aux abonnés Premium.");
+            if (!await platform.HasFeatureAsync(AiFeatures.Tutor, ct))
+                return Error(403, "Le tuteur IA n'est pas inclus dans votre formule.");
             if (file.Length == 0 || file.Length > MaxImageBytes)
                 return Error(400, "La photo doit faire moins de 6 Mo.");
             if (!ImageTypes.Contains(file.ContentType))

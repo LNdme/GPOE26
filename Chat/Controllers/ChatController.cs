@@ -13,7 +13,7 @@ namespace Chat.Controllers;
 [ApiController]
 [Authorize]
 [Route("[controller]")]
-public class ChatController(ILlmService claudeService) : ControllerBase
+public class ChatController(ILlmService claudeService, AiQuota quota) : ControllerBase
 {
     /// <summary>
     /// Génère un brouillon de cours Markdown via l'IA.
@@ -24,11 +24,16 @@ public class ChatController(ILlmService claudeService) : ControllerBase
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Subject))
-            return BadRequest("Le sujet est requis pour générer le cours.");
+            return BadRequest(new { message = "Le sujet est requis pour générer le cours." });
+
+        var userId = Guid.TryParse(User.FindFirst("sub")?.Value, out var id) ? id : Guid.Empty;
+        if ((await quota.CheckAsync(userId, AiFeatures.CourseDraft, cancellationToken, requireFeature: false)).Refusal is { } refusal)
+            return StatusCode(403, new { message = refusal });
 
         try
         {
             var result = await claudeService.GenerateDraftAsync(request, cancellationToken);
+            await quota.RecordAsync(userId, AiFeatures.CourseDraft, cancellationToken);
             return Ok(result);
         }
         catch (GPOE26.ServiceDefaults.Llm.LlmUnavailableException ex)

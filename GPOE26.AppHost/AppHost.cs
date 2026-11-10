@@ -10,10 +10,11 @@ var jwtIssuer   = "GPOE2026";
 var jwtAudience = "GPOE2026Users";
 
 // La clé LLM est facultative pour le démarrage local ; les fonctions IA l'exigent.
-// Pour l'activer : dotnet user-secrets set "Parameters:llm-apikey" "<clé>"
+// Pour l'activer : dotnet user-secrets set "Parameters:llm-apikey" "<clé>", ou la variable d'environnement
+// OPENROUTER_API_KEY (ou LLM_API_KEY) de la machine, déjà lue par start.sh.
 var llmApiKey = builder.AddParameter(
     "llm-apikey",
-    builder.Configuration["Parameters:llm-apikey"] ?? string.Empty,
+    FirstNonEmpty(builder.Configuration["Parameters:llm-apikey"], builder.Configuration["OPENROUTER_API_KEY"], builder.Configuration["LLM_API_KEY"]),
     secret: true);
 
 
@@ -88,6 +89,7 @@ var quizService = builder.AddProject<Projects.Quiz>("quiz")
 
 
 chatService.WithEnvironment("Services__Quiz", quizService.GetEndpoint("http"));   // progression de l'élève
+quizService.WithEnvironment("Services__Cours", coursService.GetEndpoint("http"));  // texte du cours des exercices générés
 
 // Fournisseur d'IA : OpenRouter par défaut, ou tout service compatible (Ollama local…) via Parameters:llm-baseurl et llm-models
 foreach (var service in new[] { coursService, chatService, quizService })
@@ -100,9 +102,15 @@ foreach (var service in new[] { coursService, chatService, quizService })
         service.WithEnvironment("LLM__VisionModels", visionModels);
 }
 
+// Le site lit Services:* : sans ces adresses il retombait sur localhost et des ports fixes
 builder.AddProject<Projects.GPOE26_Web>("webfrontend")
     .WithExternalHttpEndpoints()
     .WithHttpHealthCheck("/health")
+    .WithEnvironment("Services__ApiService", apiService.GetEndpoint("http"))
+    .WithEnvironment("Services__User", userService.GetEndpoint("http"))
+    .WithEnvironment("Services__Cours", coursService.GetEndpoint("http"))
+    .WithEnvironment("Services__Chat", chatService.GetEndpoint("http"))
+    .WithEnvironment("Services__Quiz", quizService.GetEndpoint("http"))
     .WithReference(apiService)
     .WaitFor(apiService)
     .WithReference(userService)
@@ -115,3 +123,5 @@ builder.AddProject<Projects.GPOE26_Web>("webfrontend")
     .WaitFor(quizService);
 
 builder.Build().Run();
+
+static string FirstNonEmpty(params string?[] values) => values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)) ?? string.Empty;

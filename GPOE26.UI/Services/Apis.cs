@@ -102,8 +102,8 @@ public interface IMediaApi
 /// <summary>Quiz d'entraînement créé par l'IA à partir du texte d'un cours.</summary>
 public interface IPracticeQuizApi
 {
-    Task<ApiResult<PracticeQuiz>> GenerateAsync(string title, string courseText, int questions, string difficulty);
-    Task<ApiResult<PracticeProblemSet>> GenerateProblemsAsync(string title, string courseText, int count, string difficulty);
+    Task<ApiResult<PracticeQuiz>> GenerateAsync(string title, Guid courseId, int questions, string difficulty);
+    Task<ApiResult<PracticeProblemSet>> GenerateProblemsAsync(string title, Guid courseId, int count, string difficulty);
     Task<ApiResult<PracticeResult>> SubmitAsync(Guid quizId, List<PracticeAnswer> answers);
 }
 
@@ -127,6 +127,8 @@ public interface IAssessmentApi
     Task<ApiResult<AiSuggestion>> AiSuggestionAsync(Guid id, Guid submissionId, Guid questionId);
     Task<ApiResult<AnswerPhoto>> UploadPhotoAsync(Guid id, Guid submissionId, Guid questionId, ImageUpload photo);
     Task<ApiResult<bool>> DeletePhotoAsync(Guid id, Guid submissionId, Guid photoId);
+    /// <summary>Photos de la tentative et leur lecture par l'IA (qui se fait en arrière-plan).</summary>
+    Task<ApiResult<List<AnswerPhoto>>> AttemptPhotosAsync(Guid id, Guid submissionId);
     Task<string?> PhotoAsync(Guid id, Guid submissionId, Guid photoId);
     Task<ApiResult<AiFeedback>> AiFeedbackAsync(Guid id, Guid submissionId, Guid questionId);
 }
@@ -247,10 +249,10 @@ public class MediaApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiC
 
 public class PracticeQuizApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.Quiz), IPracticeQuizApi
 {
-    public Task<ApiResult<PracticeQuiz>> GenerateAsync(string title, string courseText, int questions, string difficulty) =>
-        PostAsync<PracticeQuiz>("/api/quiz/generate", new GeneratePracticeQuizRequest(title, courseText, questions, difficulty));
-    public Task<ApiResult<PracticeProblemSet>> GenerateProblemsAsync(string title, string courseText, int count, string difficulty) =>
-        PostAsync<PracticeProblemSet>("/api/quiz/problems", new GeneratePracticeProblemsRequest(title, courseText, count, difficulty));
+    public Task<ApiResult<PracticeQuiz>> GenerateAsync(string title, Guid courseId, int questions, string difficulty) =>
+        PostAsync<PracticeQuiz>("/api/quiz/generate", new GeneratePracticeQuizRequest(title, courseId, questions, difficulty));
+    public Task<ApiResult<PracticeProblemSet>> GenerateProblemsAsync(string title, Guid courseId, int count, string difficulty) =>
+        PostAsync<PracticeProblemSet>("/api/quiz/problems", new GeneratePracticeProblemsRequest(title, courseId, count, difficulty));
     public Task<ApiResult<PracticeResult>> SubmitAsync(Guid quizId, List<PracticeAnswer> answers) =>
         PostAsync<PracticeResult>($"/api/quiz/{quizId}/submit", new { answers });
 }
@@ -282,6 +284,8 @@ public class AssessmentApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s,
         UploadAsync<AnswerPhoto>($"/assessments/{id}/attempts/{submissionId}/questions/{questionId}/photos", photo);
     public Task<ApiResult<bool>> DeletePhotoAsync(Guid id, Guid submissionId, Guid photoId) =>
         DeleteAsync<bool>($"/assessments/{id}/attempts/{submissionId}/photos/{photoId}");
+    public Task<ApiResult<List<AnswerPhoto>>> AttemptPhotosAsync(Guid id, Guid submissionId) =>
+        GetAsync<List<AnswerPhoto>>($"/assessments/{id}/attempts/{submissionId}/photos");
     public Task<string?> PhotoAsync(Guid id, Guid submissionId, Guid photoId) =>
         DataUrlAsync($"/assessments/{id}/submissions/{submissionId}/photos/{photoId}");
     public Task<ApiResult<AiFeedback>> AiFeedbackAsync(Guid id, Guid submissionId, Guid questionId) =>

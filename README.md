@@ -78,8 +78,12 @@ Aucun secret ne doit être commité. Copiez `.env.example` en `.env` (ignoré pa
 
 | Variable | Service(s) | Description |
 |---|---|---|
-| `LLM_API_KEY` | Chat, Quiz | Clé OpenRouter (transmise en `LLM__ApiKey`) ; `DEEPSEEK_API_KEY` reste accepté par `start.sh` |
+| `LLM_API_KEY` ou `OPENROUTER_API_KEY` | Chat, Quiz, Cours | Clé OpenRouter (transmise en `LLM__ApiKey`), lue par `start.sh` et par l'AppHost Aspire (à défaut du secret `Parameters:llm-apikey`) ; `DEEPSEEK_API_KEY` reste accepté par `start.sh` |
 | `LLM__BaseUrl`, `LLM__Models`, `LLM__VisionModels` | Chat, Quiz | Fournisseur compatible OpenAI (OpenRouter par défaut) et listes de modèles **essayés dans l'ordre** : si un modèle gratuit est saturé (429) ou muet, le suivant prend le relais. Les modèles de vision servent dès qu'une photo est jointe. `LLM__AttemptTimeoutSeconds` (90 par défaut) borne chaque essai |
+| Modèles par défaut | Chat, Quiz, Cours | Gratuits sur OpenRouter (aucun coût) : **Nemotron 3.5 Super VL** en premier, texte et photos — le seul juste et rapide sur toutes les tâches à l'essai du 10 nov. 2026 (tuteur, copie photographiée, correction, quiz, mémoire) ; Nemotron 3 Ultra, Gemma 4 et `openrouter/free` en secours. Inkling 2 Small gratuit n'est pas utilisable : OpenRouter le réserve aux agents de programmation (refus 403). Les modèles gratuits peuvent être saturés aux heures de pointe : le suivant de la liste prend alors le relais |
+| `LLM__EmbeddingModel` | Chat | Modèle d'embeddings de la mémoire des agents (recherche par le sens, avec pgvector) : `liquid/lfm-2.5-embedding-350m:free` par défaut. Vide : recherche par le texte seulement. Changer de modèle est sans risque : les souvenirs déjà enregistrés avec l'ancien restent trouvés par le texte |
+| `LLM__DailyLimitPerUser` | Chat, Quiz | Plafond quotidien de demandes à l'IA par utilisateur et par service (150 par défaut, `0` le désactive), en plus du quota mensuel de la formule. Les demandes servies sont comptées dans la table `AiUsage` ; la lecture d'une copie photographiée pendant une épreuve n'est jamais bloquée |
+| `Services__TimeoutSeconds` | Chat | Délai des appels du tuteur vers Cours, User et Quiz (10 s par défaut) ; un service qui ne répond pas donne 503 et un message, pas un refus d'abonnement |
 | `LlmProvider` | Chat | Anciens écrans `/learning` : `OpenRouter` (défaut, même client que le tuteur), `DeepSeek`, `Claude`, `Gpt`, `Foundry` |
 | `ConnectionStrings__ChatDB` | Chat | Base des discussions du tuteur (fournie par Aspire) |
 | `Jwt__Key` / `Jwt__Issuer` / `Jwt__Audience` | tous les services | Clé de signature JWT (32 caractères au moins). Aucune valeur par défaut hors développement : les services **refusent de démarrer** sans clé, ou avec la clé d'exemple des fichiers `appsettings.Development.json`. Avec Aspire : `dotnet user-secrets set "Parameters:jwt-key" "<clé>" --project GPOE26.AppHost` |
@@ -173,7 +177,7 @@ Premium est lu dans le JWT, puis vérifié auprès du service User s'il dit non 
 | Qui | Endpoints |
 |---|---|
 | Enseignant | `POST /assessments`, `PUT /assessments/{id}` (tant qu'aucun élève n'a composé), `POST /assessments/{id}/publish`, `POST /assessments/{id}/close`, `DELETE /assessments/{id}`, `GET /assessments/{id}/submissions`, `PUT /assessments/{id}/submissions/{sid}/answers/{qid}/grade`, `POST …/ai-suggestion`, `GET /progress/classrooms/{classroomId}` ; Cours : `PUT /cours/{id}/sharing` |
-| Élève | `GET /assessments/mine`, `POST /assessments/{id}/attempts` (démarrer ou reprendre, avec le brouillon des réponses déjà saisies), `PUT /assessments/{id}/attempts/{sid}/draft` (enregistrer le brouillon pendant la composition), `POST /assessments/{id}/attempts/{sid}/questions/{qid}/photos` (photo de copie, transcrite par l'IA), `DELETE …/attempts/{sid}/photos/{pid}`, `POST /assessments/{id}/submissions/{sid}/answers/{qid}/ai-feedback` (analyse après publication), `POST /assessments/{id}/attempts/{sid}/submit`, `GET /assessments/{id}/submissions/{sid}`, `GET /progress/me` ; Cours : `GET /cours/shared`, `GET /cours/{id}` |
+| Élève | `GET /assessments/mine`, `POST /assessments/{id}/attempts` (démarrer ou reprendre, avec le brouillon des réponses déjà saisies), `PUT /assessments/{id}/attempts/{sid}/draft` (enregistrer le brouillon pendant la composition), `POST /assessments/{id}/attempts/{sid}/questions/{qid}/photos` (photo de copie, enregistrée tout de suite puis lue par l'IA en arrière-plan), `GET /assessments/{id}/attempts/{sid}/photos` (photos et leur lecture), `DELETE …/attempts/{sid}/photos/{pid}`, `POST /assessments/{id}/submissions/{sid}/answers/{qid}/ai-feedback` (analyse après publication), `POST /assessments/{id}/attempts/{sid}/submit`, `GET /assessments/{id}/submissions/{sid}`, `GET /progress/me` ; Cours : `GET /cours/shared`, `GET /cours/{id}` |
 | Parent | `GET /progress/students/{studentId}` (enfant rattaché) |
 
 - **Types de questions** : QCM, choix multiples (tout ou rien), vrai/faux, réponse courte (casse, accents et ponctuation ignorés), numérique (virgule, espaces, unité et tolérance acceptés), réponse ouverte (texte ou photo de copie, corrigée par l'enseignant).
@@ -197,12 +201,14 @@ Les anciens comptes de rôle « Admin » sont convertis au démarrage : ils gard
 ## Tests
 
 ```bash
-dotnet test GPOE26.slnx
+dotnet test --project Quiz.Tests/Quiz.Tests.csproj
+dotnet test --project GPOE26.Logic.Tests/GPOE26.Logic.Tests.csproj
+dotnet test --solution GPOE26.slnx   # tout, y compris le test d'intégration (Docker requis)
 ```
 
-Le test existant démarre l'AppHost complet (Docker requis) et vérifie que la page d'accueil répond.
+Le `global.json` choisit le lanceur Microsoft.Testing.Platform, le seul accepté par le SDK .NET 10 et suivants (sans lui, `dotnet test` échoue). Si l'AppHost tourne déjà (Visual Studio, Aspire), ses binaires sont verrouillés : ajoutez `--artifacts-path <dossier>` pour compiler les tests ailleurs.
 
-`Quiz.Tests` contient les tests unitaires de la correction automatique (`dotnet test Quiz.Tests`). Le script `scripts/test-evaluations.sh` rejoue les parcours de la phase 1 bis (63 vérifications : partage des cours, création et publication, droits d'accès, tentatives, correction manuelle et assistée, publication des résultats, suivi enseignant/élève/parent).
+`GPOE26.Tests` démarre l'AppHost complet (Docker requis) et vérifie que la page d'accueil répond. `Quiz.Tests` contient les tests unitaires de la correction automatique et des brouillons de copie ; `GPOE26.Logic.Tests` ceux des règles des autres services (rôles, droits, quotas d'IA, rendu Markdown, mémoire des agents…). Le script `scripts/test-evaluations.sh` rejoue les parcours de la phase 1 bis (63 vérifications : partage des cours, création et publication, droits d'accès, tentatives, correction manuelle et assistée, publication des résultats, suivi enseignant/élève/parent).
 
 Le script `scripts/ui-e2e.js` (Playwright) rejoue dans un navigateur le parcours complet : inscription d'un enseignant, partage d'un cours, création et publication d'un devoir, inscription d'un élève sur mobile, lecture, composition, correction assistée, clôture, rattachement d'un parent et suivi — `node scripts/ui-e2e.js <dossier-captures>` sur une pile démarrée avec des bases neuves.
 

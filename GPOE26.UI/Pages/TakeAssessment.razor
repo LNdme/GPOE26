@@ -149,13 +149,13 @@ else
                                     OnDelete="p => DeletePhotoAsync(q, p)" OpenTranscription="true" />
                         @if (_uploading)
                         {
-                            <Loading Text="Envoi et lecture de ta copie par l'IA…" />
+                            <Loading Text="Envoi de ta photo…" />
                         }
                         else if (photos.Count < 4)
                         {
                             <PhotoPicker Label="@(photos.Count == 0 ? "Photographier ma copie" : "Ajouter une page")" Css="secondary small"
                                          OnPicked="p => UploadPhotoAsync(q, p)" OnError="e => _error = e" />
-                            <span class="ga-small ga-muted">Pose ta feuille à plat, bien éclairée. Vérifie ensuite ce que l'IA a lu : reprends la photo si c'est flou.</span>
+                            <span class="ga-small ga-muted">Pose ta feuille à plat, bien éclairée. L'IA la lit pendant que tu continues : vérifie ensuite ce qu'elle a lu, et reprends la photo si c'est flou.</span>
                         }
                     </div>
                     break;
@@ -270,10 +270,24 @@ else
                     if (_result is not null) return;
                     await Account.KeepSessionAliveAsync();
                     if (!_busy) await SaveDraftAsync();
+                    if (!_busy) await RefreshPendingPhotosAsync();
                 }
             }
             catch (OperationCanceledException) { }
         });
+    }
+
+    /// <summary>Lecture des photos par l'IA, faite en arrière-plan : la page la récupère dès qu'elle est prête.</summary>
+    private async Task RefreshPendingPhotosAsync()
+    {
+        if (_attempt is null || !_photos.Values.Any(list => list.Any(p => p.Pending))) return;
+        var result = await Api.AttemptPhotosAsync(Id, _attempt.SubmissionId);
+        if (result.Value is not { } photos || _result is not null) return;
+
+        _photos.Clear();
+        foreach (var group in photos.GroupBy(p => p.QuestionId))
+            _photos[group.Key] = group.OrderBy(p => p.Page).ToList();
+        StateHasChanged();
     }
 
     private async Task SaveDraftAsync()

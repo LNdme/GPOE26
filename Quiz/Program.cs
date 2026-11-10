@@ -31,6 +31,16 @@ builder.Services.AddScoped<ProgressService>();
 // Correction assistée et lecture des copies photographiées (LLM compatible OpenAI, section "LLM")
 builder.AddLlmClient();
 builder.Services.AddScoped<AiGradingService>();
+builder.Services.AddScoped<AiQuota>();
+builder.Services.AddSingleton<TranscriptionQueue>();
+builder.Services.AddHostedService<TranscriptionWorker>();
+
+// Service Cours : texte du cours dont on génère les exercices (JWT de l'utilisateur transmis)
+builder.Services.AddHttpClient<CourseTextClient>(client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Services:Cours"] ?? "http://localhost:5188");
+    client.Timeout = TimeSpan.FromSeconds(15);
+});
 
 // Service User : classes, élèves et rattachements (le JWT de l'appelant est transmis)
 var userServiceUrl = builder.Configuration["Services:User"] ?? "http://localhost:5197";
@@ -87,11 +97,11 @@ app.Use(async (context, next) =>
     {
         await next();
     }
-    catch (UserServiceUnavailableException ex)
+    catch (Exception ex) when (ex is UserServiceUnavailableException or CoursServiceUnavailableException && !context.Response.HasStarted)
     {
-        app.Logger.LogError(ex.InnerException, "Service User indisponible");
+        app.Logger.LogError(ex.InnerException, "{Message}", ex.Message);
         context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-        await context.Response.WriteAsJsonAsync(new { message = ex.Message });
+        await context.Response.WriteAsJsonAsync(new { message = ex.Message + " Réessayez dans un instant." });
     }
 });
 

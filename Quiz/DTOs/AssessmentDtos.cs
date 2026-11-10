@@ -107,10 +107,13 @@ public record AttemptDto(
     Guid SubmissionId, Guid AssessmentId, string Title, int AttemptNumber, DateTime StartedAt,
     DateTime? Deadline, List<StudentQuestionDto> Questions, List<AnswerPhotoDto> Photos, List<AnswerInput> Draft);
 
-/// <summary>Photo d'une copie (l'image se télécharge à part : GET …/submissions/{sid}/photos/{id})</summary>
-public record AnswerPhotoDto(Guid Id, Guid QuestionId, int Page, string? Transcription)
+/// <summary>
+/// Photo d'une copie (l'image se télécharge à part : GET …/submissions/{sid}/photos/{id}).
+/// Pending : l'IA ne l'a pas encore lue ; Transcription null et Pending faux : elle n'a pas pu la lire.
+/// </summary>
+public record AnswerPhotoDto(Guid Id, Guid QuestionId, int Page, string? Transcription, bool Pending = false)
 {
-    public AnswerPhotoDto(AnswerPhoto p) : this(p.Id, p.QuestionId, p.Page, p.Transcription) { }
+    public AnswerPhotoDto(AnswerPhoto p) : this(p.Id, p.QuestionId, p.Page, p.Transcription, p.TranscriptionPending) { }
 }
 
 /// <summary>Analyse de la démarche par l'IA, demandée par l'élève une fois les résultats publiés</summary>

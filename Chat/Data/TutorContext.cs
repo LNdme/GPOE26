@@ -13,6 +13,7 @@ public class TutorContext(DbContextOptions<TutorContext> options) : DbContext(op
     public DbSet<CourseMasteryState> CourseMastery => Set<CourseMasteryState>();
     public DbSet<StudySlot> StudySlots => Set<StudySlot>();
     public DbSet<StudySession> StudySessions => Set<StudySession>();
+    public DbSet<AiUsage> AiUsage => Set<AiUsage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -58,6 +59,11 @@ public class TutorContext(DbContextOptions<TutorContext> options) : DbContext(op
         {
             e.ToTable("StudySessions");
             e.Property(s => s.Id).ValueGeneratedNever();
+        });
+        modelBuilder.Entity<AiUsage>(e =>
+        {
+            e.ToTable("AiUsage");
+            e.HasKey(u => new { u.UserId, u.Feature, u.Day });
         });
     }
 }
@@ -158,6 +164,15 @@ public static partial class AgentSchema
             CONSTRAINT ""PK_StudySessions"" PRIMARY KEY (""Id"")
         )",
         @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_StudySessions_UserId_CourseId_Day"" ON ""StudySessions"" (""UserId"", ""CourseId"", ""Day"")",
+        // Usage de l'IA : quotas mensuels des formules et plafond quotidien
+        @"CREATE TABLE IF NOT EXISTS ""AiUsage"" (
+            ""UserId"" uuid NOT NULL,
+            ""Feature"" text NOT NULL,
+            ""Day"" date NOT NULL,
+            ""Count"" integer NOT NULL,
+            CONSTRAINT ""PK_AiUsage"" PRIMARY KEY (""UserId"", ""Feature"", ""Day"")
+        )",
+        @"CREATE INDEX IF NOT EXISTS ""IX_TutorMessages_ImageId"" ON ""TutorMessages"" (""ImageId"") WHERE ""ImageId"" IS NOT NULL",
     };
 
     /// <summary>La recherche vectorielle est un plus : sans l'extension pgvector, le plein texte suffit.</summary>

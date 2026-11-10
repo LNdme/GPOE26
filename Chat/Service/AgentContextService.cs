@@ -59,21 +59,30 @@ public class AgentContextService(TutorContext db, PlatformClients platform, Agen
     public async Task<TodayPlan> TodayPlanAsync(Guid userId, CancellationToken ct)
     {
         var now = LocalNow;
+
+        // Les quatre services sont interrogés en même temps (ils l'étaient l'un après l'autre)
+        var assessmentsTask = platform.GetJsonAsync<List<AssessmentRef>>("quiz", "/assessments/mine", ct);
+        var progressTask = platform.GetJsonAsync<ProgressRef>("quiz", "/progress/me", ct);
+        var sharedTask = platform.GetJsonAsync<List<SharedCourseRef>>("cours", "/cours/shared", ct);
+        var mineTask = platform.GetJsonAsync<List<SharedCourseRef>>("cours", "/cours", ct);
+
+        // Pendant ce temps, la base (un DbContext ne s'utilise que d'un appel à la fois)
         var slots = await db.StudySlots.AsNoTracking().Where(s => s.UserId == userId).ToListAsync(ct);
+        var states = await db.CourseMastery.AsNoTracking().Where(m => m.UserId == userId).ToListAsync(ct);
         var today = slots.Where(s => s.Day == IsoDay(now.DayOfWeek)).ToList();
         var windows = StudyPlanner.FreeWindows(today, now.Hour * 60 + now.Minute);
 
-        var assessments = await platform.GetJsonAsync<List<AssessmentRef>>("quiz", "/assessments/mine", ct) ?? [];
+        await Task.WhenAll(assessmentsTask, progressTask, sharedTask, mineTask);
+        var assessments = assessmentsTask.Result ?? [];
         var soon = DateTime.UtcNow.AddDays(7);
         var due = assessments
             .Where(a => a.Status == "Published" && a.DueAt is { } d && d > DateTime.UtcNow && d <= soon && (a.AttemptsUsed == 0 || a.HasAttemptInProgress))
             .Select(a => new DueItem(a.Id, a.Title, a.DueAt!.Value))
             .ToList();
 
-        var progress = await platform.GetJsonAsync<ProgressRef>("quiz", "/progress/me", ct);
-        var shared = await platform.GetJsonAsync<List<SharedCourseRef>>("cours", "/cours/shared", ct) ?? [];
-        var mine = await platform.GetJsonAsync<List<SharedCourseRef>>("cours", "/cours", ct) ?? [];
-        var states = await db.CourseMastery.AsNoTracking().Where(m => m.UserId == userId).ToListAsync(ct);
+        var progress = progressTask.Result;
+        var shared = sharedTask.Result ?? [];
+        var mine = mineTask.Result ?? [];
 
         var courses = shared.Concat(mine).DistinctBy(c => c.Id).Select(c => new CourseFocus(
             c.Id, c.Title,
@@ -92,20 +101,33 @@ public class AgentContextService(TutorContext db, PlatformClients platform, Agen
         var lines = new List<string>();
         if (profile.Summary is { Length: > 0 }) lines.Add($"Portrait : {profile.Summary}");
 
-        var classes = await platform.GetJsonAsync<List<ClassroomRef>>("user", "/classrooms/mine", ct);
-        if (classes is { Count: > 0 }) lines.Add($"Classe : {string.Join(", ", classes.Select(c => c.Name))}");
+        // Classes et progression demandées en même temps ; le plan du jour réutilise la progression (cache d'une minute)
+        var classesTask = platform.GetJsonAsync<List<ClassroomRef>>("user", "/classrooms/mine", ct);
+        var progressTask = platform.GetJsonAsync<ProgressRef>("quiz", "/progress/me", ct);
 
         var states = await db.CourseMastery.AsNoTracking().Where(m => m.UserId == userId).OrderByDescending(m => m.LastStudiedAt).Take(12).ToListAsync(ct);
         var current = states.FirstOrDefault(s => s.CourseId == courseId);
+
+        var classes = await classesTask;
+        if (classes is { Count: > 0 }) lines.Add($"Classe : {string.Join(", ", classes.Select(c => c.Name))}");
         if (current?.WeakPoints is { Length: > 0 } weak) lines.Add($"Notions fragiles dans ce cours : {weak}");
 
-        var progress = await platform.GetJsonAsync<ProgressRef>("quiz", "/progress/me", ct);
+        var progress = await progressTask;
         if (progress?.Mastery is { Count: > 0 } mastery)
         {
-            string Title(Guid id) => states.FirstOrDefault(s => s.CourseId == id)?.CourseTitle ?? "un autre cours";
-            var best = mastery.OrderByDescending(m => m.Percent).First();
-            var worst = mastery.OrderBy(m => m.Percent).First();
-            lines.Add($"Comprend le mieux : {Title(best.CourseId)} ({best.Percent:0} %) ; le plus difficile : {Title(worst.CourseId)} ({worst.Percent:0} %)");
+            // Un cours dont on ignore le titre n'est pas cité : « un autre cours (85 %) » n'aidait pas le tuteur
+            var named = mastery.Where(m => states.Any(s => s.CourseId == m.CourseId)).ToList();
+            string Title(Guid id) => states.First(s => s.CourseId == id).CourseTitle;
+            if (named.Count > 1)
+            {
+                var best = named.OrderByDescending(m => m.Percent).First();
+                var worst = named.OrderBy(m => m.Percent).First();
+                lines.Add($"Comprend le mieux : {Title(best.CourseId)} ({best.Percent:0} %) ; le plus difficile : {Title(worst.CourseId)} ({worst.Percent:0} %)");
+            }
+            else if (named.Count == 1)
+            {
+                lines.Add($"Maîtrise de {Title(named[0].CourseId)} : {named[0].Percent:0} %");
+            }
         }
 
         var plan = await TodayPlanAsync(userId, ct);
@@ -125,4 +147,10 @@ public class AgentContextService(TutorContext db, PlatformClients platform, Agen
 
     public Task<ClassProgressRef?> ClassProgressAsync(Guid classroomId, CancellationToken ct) =>
         platform.GetJsonAsync<ClassProgressRef>("quiz", $"/progress/classrooms/{classroomId}", ct);
+
+    /// <summary>Titres des cours de l'enseignant, pour nommer les notions à revoir (et non le titre d'un devoir).</summary>
+    public async Task<IReadOnlyDictionary<Guid, string>> CourseTitlesAsync(CancellationToken ct) =>
+        (await platform.GetJsonAsync<List<SharedCourseRef>>("cours", "/cours", ct) ?? [])
+            .DistinctBy(c => c.Id)
+            .ToDictionary(c => c.Id, c => c.Title);
 }

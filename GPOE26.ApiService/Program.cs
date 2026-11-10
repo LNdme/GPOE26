@@ -317,6 +317,10 @@ static async Task<IResult> NewsGetAll(
     int page = 1,
     int pageSize = 10)
 {
+    // Pagination bornée : page=0 donnait un décalage négatif (erreur), pageSize=100000 vidait la table d'un coup
+    page = Math.Max(1, page);
+    pageSize = Math.Clamp(pageSize, 1, 50);
+
     var query = db.NewsArticles.AsQueryable();
 
     if (!string.IsNullOrEmpty(category))
@@ -359,6 +363,8 @@ static async Task<IResult> NewsCreate(NewArticle article, ApiServiceContext db)
     article.Id = Guid.NewGuid();
     article.CreatedAt = DateTime.UtcNow;
     article.UpdatedAt = DateTime.UtcNow;
+    // Une date sans fuseau est refusée par PostgreSQL (timestamptz) : même traitement qu'à la modification
+    article.PublishedAt = DateTime.SpecifyKind(article.PublishedAt, DateTimeKind.Utc);
 
     if (string.IsNullOrEmpty(article.Slug))
         article.Slug = GenerateSlug(article.Title);
@@ -413,31 +419,38 @@ static async Task<IResult> NewsPublish(Guid id, ApiServiceContext db)
 // EVENTS HANDLERS
 // ══════════════════════════════════════════════════════════════════════════════
 
-static async Task<IResult> EventsGetAll(ApiServiceContext db, string? type = null)
+// Un événement non public (réunion interne, conseil de classe…) n'est visible que des administrateurs et éditeurs :
+// IsPublic n'était jamais filtré, et ces événements s'affichaient sur le site public.
+static async Task<IResult> EventsGetAll(ApiServiceContext db, ClaimsPrincipal user, string? type = null)
 {
     var query = db.Events.AsQueryable();
+    if (!ContentPolicy.CanEdit(user))
+        query = query.Where(e => e.IsPublic);
     if (!string.IsNullOrEmpty(type))
         query = query.Where(e => e.Type == type);
 
     return TypedResults.Ok(await query.OrderBy(e => e.StartDate).ToListAsync());
 }
 
-static async Task<IResult> EventsGetUpcoming(ApiServiceContext db, int limit = 5)
+static async Task<IResult> EventsGetUpcoming(ApiServiceContext db, ClaimsPrincipal user, int limit = 5)
 {
     var now = DateTime.UtcNow;
-    var events = await db.Events
-        .Where(e => e.StartDate >= now)
+    var query = db.Events.Where(e => e.StartDate >= now);
+    if (!ContentPolicy.CanEdit(user))
+        query = query.Where(e => e.IsPublic);
+
+    var events = await query
         .OrderBy(e => e.StartDate)
-        .Take(limit)
+        .Take(Math.Clamp(limit, 1, 50))
         .ToListAsync();
 
     return TypedResults.Ok(events);
 }
 
-static async Task<IResult> EventsGetById(Guid id, ApiServiceContext db)
+static async Task<IResult> EventsGetById(Guid id, ApiServiceContext db, ClaimsPrincipal user)
 {
     var ev = await db.Events.FindAsync(id);
-    return ev is null ? TypedResults.NotFound() : TypedResults.Ok(ev);
+    return ev is null || (!ev.IsPublic && !ContentPolicy.CanEdit(user)) ? TypedResults.NotFound() : TypedResults.Ok(ev);
 }
 
 static async Task<IResult> EventsCreate(SchoolEvent ev, ApiServiceContext db)

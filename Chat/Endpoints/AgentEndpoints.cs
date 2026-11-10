@@ -161,7 +161,7 @@ public static class AgentEndpoints
                 var http = context.HttpContext;
                 if (http.User.FindFirstValue("role") != "Teacher")
                     return Error(403, "L'assistant est réservé aux enseignants.");
-                if (!await http.RequestServices.GetRequiredService<PlatformClients>().HasFeatureAsync("teacher-agent", http.RequestAborted))
+                if (!await http.RequestServices.GetRequiredService<PlatformClients>().HasFeatureAsync(AiFeatures.TeacherAgent, http.RequestAborted))
                     return Error(403, "L'assistant est inclus dans les formules Enseignant et Établissement.");
                 return await next(context);
             });
@@ -186,7 +186,7 @@ public static class AgentEndpoints
         .WithSummary("Enregistrer mes réglages d'écriture");
 
         teacher.MapPost("/compose", async (ComposeRequest req, ClaimsPrincipal principal, AgentMemoryStore store, AgentReflectionQueue reflection,
-            LlmClient llm, CancellationToken ct) =>
+            LlmClient llm, AiQuota quota, CancellationToken ct) =>
         {
             var task = req.Mode switch
             {
@@ -198,11 +198,13 @@ public static class AgentEndpoints
             if (task is null) return Error(400, "Demande incomplète.");
 
             var userId = UserId(principal);
+            if ((await quota.CheckAsync(userId, AiFeatures.TeacherAgent, ct)).Refusal is { } refusal) return Error(403, refusal);
             var system = await TeacherSystemAsync(userId, $"{req.Subject} {req.Title} {req.Instructions}", store, ct);
             var message = string.IsNullOrWhiteSpace(req.Instructions) ? task : $"{task}\nConsignes de l'enseignant : {Limit(req.Instructions, 1500)}";
             try
             {
                 var reply = await llm.CompleteAsync([new LlmMessage("system", system), new LlmMessage("user", message)], maxTokens: 4000, ct: ct);
+                await quota.RecordAsync(userId, AiFeatures.TeacherAgent, ct);
                 reflection.Enqueue(new ReflectionJob(userId, AgentKinds.Teacher, null, req.Title, message, reply, null));
                 return Results.Ok(new ComposeResponse(reply));
             }
@@ -222,34 +224,47 @@ public static class AgentEndpoints
         })
         .WithSummary("Affiner le profil à partir d'un cours écrit par l'enseignant");
 
-        teacher.MapPost("/classes/{classroomId:guid}/insights", async (Guid classroomId, AgentContextService context, LlmClient llm, CancellationToken ct) =>
+        teacher.MapPost("/classes/{classroomId:guid}/insights", async (Guid classroomId, ClaimsPrincipal principal, AgentContextService context,
+            LlmClient llm, AiQuota quota, CancellationToken ct) =>
         {
             var progress = await context.ClassProgressAsync(classroomId, ct);
             if (progress is null) return Results.NotFound(new { message = "Classe introuvable." });
 
-            var insights = ClassInsightsCalculator.Compute(progress, DateTime.UtcNow);
-            return Results.Ok(new ClassInsightsDto(insights, await NarrativeAsync(insights, llm, ct)));
+            // Titres des cours (et non des devoirs) pour nommer les notions à revoir
+            var insights = ClassInsightsCalculator.Compute(progress, DateTime.UtcNow, await context.CourseTitlesAsync(ct));
+
+            // Les chiffres restent disponibles quand le quota d'IA est atteint : seul le commentaire est omis
+            var userId = UserId(principal);
+            string? narrative = null;
+            if ((await quota.CheckAsync(userId, AiFeatures.TeacherAgent, ct)).Refusal is null)
+            {
+                narrative = await NarrativeAsync(insights, llm, ct);
+                if (narrative is not null) await quota.RecordAsync(userId, AiFeatures.TeacherAgent, ct);
+            }
+            return Results.Ok(new ClassInsightsDto(insights, narrative));
         })
         .WithSummary("Suivi d'une classe : qui décroche, quelles notions revoir (limité aux classes de l'enseignant)");
 
         teacher.MapPost("/ask", async (AssistantAskRequest req, ClaimsPrincipal principal, AgentMemoryStore store, AgentContextService context,
-            AgentReflectionQueue reflection, LlmClient llm, CancellationToken ct) =>
+            AgentReflectionQueue reflection, LlmClient llm, AiQuota quota, CancellationToken ct) =>
         {
             var message = req.Message?.Trim() ?? "";
             if (message.Length is 0 or > 3000) return Error(400, "Écrivez votre question (3 000 caractères au maximum).");
 
             var userId = UserId(principal);
+            if ((await quota.CheckAsync(userId, AiFeatures.TeacherAgent, ct)).Refusal is { } refusal) return Error(403, refusal);
             var system = await TeacherSystemAsync(userId, message, store, ct);
             if (req.ClassroomId is { } classroomId)
             {
                 var progress = await context.ClassProgressAsync(classroomId, ct);
                 if (progress is null) return Results.NotFound(new { message = "Classe introuvable." });
-                system += Anonymized(ClassInsightsCalculator.Compute(progress, DateTime.UtcNow));
+                system += Anonymized(ClassInsightsCalculator.Compute(progress, DateTime.UtcNow, await context.CourseTitlesAsync(ct)));
             }
 
             try
             {
                 var reply = await llm.CompleteAsync([new LlmMessage("system", system), new LlmMessage("user", message)], ct: ct);
+                await quota.RecordAsync(userId, AiFeatures.TeacherAgent, ct);
                 reflection.Enqueue(new ReflectionJob(userId, AgentKinds.Teacher, null, null, message, reply, null));
                 return Results.Ok(new AssistantAnswerDto(reply));
             }

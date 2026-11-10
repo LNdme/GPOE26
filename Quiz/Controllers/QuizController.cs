@@ -16,14 +16,14 @@ public class QuizController : ControllerBase
     private readonly IQuizGeneratorService _generator;
     private readonly IQuizStore _store;
     private readonly ILogger<QuizController> _logger;
-    private readonly UserDirectoryClient _users;
-    private readonly EvaluationContext _db;
+    private readonly AiQuota _quota;
+    private readonly CourseTextClient _courses;
 
     public QuizController(IQuizGeneratorService generator, IQuizStore store, ILogger<QuizController> logger,
-        UserDirectoryClient users, EvaluationContext db)
+        AiQuota quota, CourseTextClient courses)
     {
-        _users = users;
-        _db = db;
+        _quota = quota;
+        _courses = courses;
         _generator = generator;
         _store = store;
         _logger = logger;
@@ -41,47 +41,47 @@ public class QuizController : ControllerBase
         return string.Join(", ", parts);
     }
 
-    /// <summary>Quota mensuel de la formule (aucun quota : illimité), partagé entre quiz et séries d'exercices.</summary>
-    private async Task<IActionResult?> QuotaExceededAsync(CancellationToken ct)
-    {
-        var userId = User.UserId();
-        var month = DateTime.UtcNow.ToString("yyyy-MM");
-        var feature = await _users.FeatureAsync("quiz-ai");
-        if (feature is null)
-            return StatusCode(403, new { message = "Les exercices générés par l'IA ne sont pas inclus dans votre formule." });
-        if (feature.Limit is { } limit)
-        {
-            var used = await _db.Database
-                .SqlQuery<int>($@"SELECT ""Count"" AS ""Value"" FROM ""QuizGenerationUsage"" WHERE ""UserId"" = {userId} AND ""Month"" = {month}")
-                .FirstOrDefaultAsync(ct);
-            if (used >= limit)
-                return StatusCode(403, new { message = $"Vous avez utilisé vos {limit} générations gratuites de ce mois. Passez à Premium pour un accès illimité." });
-        }
-        return null;
-    }
+    /// <summary>Quota mensuel de la formule et plafond quotidien, partagés entre quiz et séries d'exercices.</summary>
+    private async Task<IActionResult?> QuotaExceededAsync(CancellationToken ct) =>
+        await _quota.RefusalAsync(User.UserId(), AiFeatures.QuizGeneration, ct) is { } refusal
+            ? StatusCode(403, new { message = refusal })
+            : null;
 
-    private async Task CountGenerationAsync(CancellationToken ct)
+    private Task CountGenerationAsync(CancellationToken ct) => _quota.RecordAsync(User.UserId(), AiFeatures.QuizGeneration, ct);
+
+    /// <summary>
+    /// Texte à partir duquel générer : celui du cours, lu au service Cours (l'utilisateur doit y avoir accès),
+    /// sinon le texte envoyé, borné. Renvoie un refus (400 / 404) ou le texte.
+    /// </summary>
+    private async Task<(IActionResult? Refused, string Text)> SourceTextAsync(Guid? courseId, string? courseText, CancellationToken ct)
     {
-        var userId = User.UserId();
-        var month = DateTime.UtcNow.ToString("yyyy-MM");
-        await _db.Database.ExecuteSqlInterpolatedAsync(
-            $@"INSERT INTO ""QuizGenerationUsage"" (""UserId"", ""Month"", ""Count"") VALUES ({userId}, {month}, 1)
-               ON CONFLICT (""UserId"", ""Month"") DO UPDATE SET ""Count"" = ""QuizGenerationUsage"".""Count"" + 1", ct);
+        if (courseId is { } id)
+        {
+            var course = await _courses.GetAsync(id, ct);
+            if (course is null) return (NotFound(new { message = "Cours introuvable." }), "");
+            if (string.IsNullOrWhiteSpace(course.Text))
+                return (BadRequest(new { message = "Ce cours n'a pas encore de texte : impossible d'en tirer des exercices." }), "");
+            return (null, course.Text);
+        }
+
+        if (string.IsNullOrWhiteSpace(courseText))
+            return (BadRequest(new { message = "Indiquez le cours dont tirer les exercices." }), "");
+        return (null, CourseTextClient.Limit(courseText));
     }
 
     /// <summary>Série d'exercices corrigés : énoncés, indices et solutions détaillées.</summary>
     [HttpPost("problems")]
     public async Task<IActionResult> Problems([FromBody] GenerateProblemsRequest request, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(request.CourseText))
-            return BadRequest(new { message = "Le texte du cours est requis." });
         if (request.Count is < 1 or > 5)
             return BadRequest(new { message = "Le nombre d'exercices doit être entre 1 et 5." });
+        var (invalid, text) = await SourceTextAsync(request.CourseId, request.CourseText, ct);
+        if (invalid is not null) return invalid;
         if (await QuotaExceededAsync(ct) is { } refused) return refused;
 
         try
         {
-            var problems = await _generator.GenerateProblemsAsync(request.CourseText, request.Count, Difficulty(request.Difficulty), Learner(), ct);
+            var problems = await _generator.GenerateProblemsAsync(text, request.Count, Difficulty(request.Difficulty), Learner(), ct);
             if (problems.Count == 0)
                 return StatusCode(502, new { message = "L'IA n'a pas pu préparer ces exercices. Réessayez dans un instant." });
             await CountGenerationAsync(ct);
@@ -106,12 +106,11 @@ public class QuizController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Generate([FromBody] GenerateQuizRequest request, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(request.CourseText))
-            return BadRequest("Le texte du cours est requis.");
-
         if (request.NumberOfQuestions is < 1 or > 20)
-            return BadRequest("Le nombre de questions doit être entre 1 et 20.");
+            return BadRequest(new { message = "Le nombre de questions doit être entre 1 et 20." });
 
+        var (invalid, text) = await SourceTextAsync(request.CourseId, request.CourseText, ct);
+        if (invalid is not null) return invalid;
         if (await QuotaExceededAsync(ct) is { } refused) return refused;
 
         _logger.LogInformation("Generating quiz '{Title}' with {N} questions.", request.Title, request.NumberOfQuestions);
@@ -119,7 +118,7 @@ public class QuizController : ControllerBase
         List<Question> questions;
         try
         {
-            questions = await _generator.GenerateQuestionsAsync(request.CourseText, request.NumberOfQuestions, Difficulty(request.Difficulty), Learner(), ct);
+            questions = await _generator.GenerateQuestionsAsync(text, request.NumberOfQuestions, Difficulty(request.Difficulty), Learner(), ct);
         }
         catch (GPOE26.ServiceDefaults.Llm.LlmNotConfiguredException)
         {
@@ -135,7 +134,7 @@ public class QuizController : ControllerBase
         {
             OwnerId = User.UserId(),
             Title = request.Title,
-            SourceText = request.CourseText,
+            SourceText = text,
             Questions = questions
         };
 

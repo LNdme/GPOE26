@@ -21,7 +21,7 @@ public static class SubmissionEndpoints
     private static Task<List<AnswerPhoto>> PhotosAsync(EvaluationContext db, Guid submissionId) =>
         db.AnswerPhotos.AsNoTracking().Where(p => p.SubmissionId == submissionId)
             .OrderBy(p => p.QuestionId).ThenBy(p => p.Page)
-            .Select(p => new AnswerPhoto { Id = p.Id, QuestionId = p.QuestionId, Page = p.Page, Transcription = p.Transcription })
+            .Select(p => new AnswerPhoto { Id = p.Id, QuestionId = p.QuestionId, Page = p.Page, Transcription = p.Transcription, TranscriptionPending = p.TranscriptionPending })
             .ToListAsync();
 
     private static async Task<List<LlmImage>> LlmPhotosAsync(EvaluationContext db, Guid submissionId, Guid questionId, CancellationToken ct) =>
@@ -228,10 +228,10 @@ public static class SubmissionEndpoints
         // Proposition de l'IA, enregistrée pour l'enseignant — jamais appliquée automatiquement.
         group.MapPost("/submissions/{submissionId:guid}/answers/{questionId:guid}/ai-suggestion", async (Guid id, Guid submissionId,
             Guid questionId, ClaimsPrincipal principal, EvaluationContext db, AiGradingService ai, ILogger<AiGradingService> logger,
-            UserDirectoryClient users, CancellationToken ct) =>
+            AiQuota quota, CancellationToken ct) =>
         {
-            if (await users.FeatureAsync("ai-grading") is null)
-                return EndpointHelpers.Error(403, "L'aide à la correction est réservée aux formules Enseignant et Établissement.");
+            if (await quota.RefusalAsync(principal.UserId(), AiFeatures.Grading, ct) is { } refusal)
+                return EndpointHelpers.Error(403, refusal);
             var assessment = await db.OwnedAssessmentAsync(id, principal.UserId());
             if (assessment is null) return Results.NotFound();
             if (!assessment.AiAssistedGrading)
@@ -253,6 +253,7 @@ public static class SubmissionEndpoints
                 answer.AiSuggestedPoints = suggestion.Points;
                 answer.AiFeedback = suggestion.Feedback;
                 await db.SaveChangesAsync(ct);
+                await quota.RecordAsync(principal.UserId(), AiFeatures.Grading, ct);
                 return Results.Ok(new AiSuggestionDto(questionId, suggestion.Points, question.Points, suggestion.Feedback));
             }
             catch (Exception ex) when (ex is LlmUnavailableException or FormatException or System.Text.Json.JsonException)
@@ -271,7 +272,7 @@ public static class SubmissionEndpoints
         // ── POST /assessments/{id}/attempts/{submissionId}/questions/{questionId}/photos ──
         // L'élève photographie sa copie ; l'IA la lit pour qu'il vérifie la transcription avant de rendre.
         group.MapPost("/attempts/{submissionId:guid}/questions/{questionId:guid}/photos", async (Guid id, Guid submissionId,
-            Guid questionId, IFormFile file, ClaimsPrincipal principal, EvaluationContext db, AiGradingService ai, CancellationToken ct) =>
+            Guid questionId, IFormFile file, ClaimsPrincipal principal, EvaluationContext db, TranscriptionQueue transcriptions, CancellationToken ct) =>
         {
             var studentId = principal.UserId();
             var submission = await db.Submissions.Include(s => s.Assessment).ThenInclude(a => a.Questions)
@@ -294,20 +295,34 @@ public static class SubmissionEndpoints
 
             using var stream = new MemoryStream();
             await file.CopyToAsync(stream, ct);
+            // Enregistrée tout de suite : l'IA la lit en arrière-plan (l'élève continue de composer pendant ce temps)
             var photo = new AnswerPhoto
             {
                 SubmissionId = submissionId, QuestionId = questionId, StudentId = studentId,
-                Page = pages + 1, ContentType = file.ContentType, Data = stream.ToArray()
+                Page = pages + 1, ContentType = file.ContentType, Data = stream.ToArray(), TranscriptionPending = true
             };
-            photo.Transcription = await ai.TranscribeAsync(question.Text, new LlmImage(photo.ContentType, photo.Data), ct);
             db.AnswerPhotos.Add(photo);
             await db.SaveChangesAsync(ct);
+            transcriptions.Enqueue(photo.Id);
             return Results.Ok(new AnswerPhotoDto(photo));
         })
         .DisableAntiforgery()
         .RequireAuthorization(Roles.Student)
-        .WithSummary("Joindre la photo d'une copie à une réponse ouverte (lue par l'IA)")
+        .WithSummary("Joindre la photo d'une copie à une réponse ouverte (lue ensuite par l'IA, en arrière-plan)")
         .Produces<AnswerPhotoDto>();
+
+        // ── GET /assessments/{id}/attempts/{submissionId}/photos ──────────────────
+        // Photos de la tentative et leur lecture : la page de composition l'interroge tant qu'une lecture est en cours.
+        group.MapGet("/attempts/{submissionId:guid}/photos", async (Guid id, Guid submissionId, ClaimsPrincipal principal, EvaluationContext db) =>
+        {
+            var studentId = principal.UserId();
+            if (!await db.Submissions.AnyAsync(s => s.Id == submissionId && s.AssessmentId == id && s.StudentId == studentId))
+                return Results.NotFound();
+            return Results.Ok((await PhotosAsync(db, submissionId)).Select(p => new AnswerPhotoDto(p)));
+        })
+        .RequireAuthorization(Roles.Student)
+        .WithSummary("Photos de ma tentative et leur lecture par l'IA")
+        .Produces<List<AnswerPhotoDto>>();
 
         // ── DELETE /assessments/{id}/attempts/{submissionId}/photos/{photoId} ─────
         group.MapDelete("/attempts/{submissionId:guid}/photos/{photoId:guid}", async (Guid id, Guid submissionId, Guid photoId,
@@ -350,11 +365,11 @@ public static class SubmissionEndpoints
         // L'élève demande à l'IA d'analyser sa démarche, une fois les résultats publiés (jamais pendant l'épreuve).
         group.MapPost("/submissions/{submissionId:guid}/answers/{questionId:guid}/ai-feedback", async (Guid id, Guid submissionId,
             Guid questionId, ClaimsPrincipal principal, EvaluationContext db, AiGradingService ai, ILogger<AiGradingService> logger,
-            UserDirectoryClient users, CancellationToken ct) =>
+            AiQuota quota, CancellationToken ct) =>
         {
-            if (await users.FeatureAsync("ai-feedback") is null)
-                return EndpointHelpers.Error(403, "L'analyse de ta copie par l'IA est réservée aux formules Premium.");
             var studentId = principal.UserId();
+            if (await quota.RefusalAsync(studentId, AiFeatures.Feedback, ct) is { } refusal)
+                return EndpointHelpers.Error(403, refusal);
             var submission = await db.Submissions.Include(s => s.Assessment).ThenInclude(a => a.Questions)
                 .FirstOrDefaultAsync(s => s.Id == submissionId && s.AssessmentId == id && s.StudentId == studentId, ct);
             if (submission is null) return Results.NotFound();
@@ -379,6 +394,7 @@ public static class SubmissionEndpoints
                 var feedback = await ai.FeedbackAsync(question.Text, question.Explanation, question.Criteria, answer.Text, photos, ct);
                 answer.StudentAiFeedback = feedback;
                 await db.SaveChangesAsync(ct);
+                await quota.RecordAsync(studentId, AiFeatures.Feedback, ct);
                 return Results.Ok(new AiFeedbackDto(questionId, feedback));
             }
             catch (LlmUnavailableException ex)

@@ -120,6 +120,21 @@ public static class EvaluationSchema
             ""Count"" integer NOT NULL,
             CONSTRAINT ""PK_QuizGenerationUsage"" PRIMARY KEY (""UserId"", ""Month"")
         )",
+        // Lecture des photos en arrière-plan
+        @"ALTER TABLE ""AnswerPhotos"" ADD COLUMN IF NOT EXISTS ""TranscriptionPending"" boolean NOT NULL DEFAULT false",
+        // Usage de toutes les fonctions d'IA, par jour : remplace QuizGenerationUsage (quiz seulement, par mois)
+        @"CREATE TABLE IF NOT EXISTS ""AiUsage"" (
+            ""UserId"" uuid NOT NULL,
+            ""Feature"" text NOT NULL,
+            ""Day"" date NOT NULL,
+            ""Count"" integer NOT NULL,
+            CONSTRAINT ""PK_AiUsage"" PRIMARY KEY (""UserId"", ""Feature"", ""Day"")
+        )",
+        // Les générations du mois en cours, comptées dans l'ancienne table, restent décomptées (une seule fois)
+        @"INSERT INTO ""AiUsage"" (""UserId"", ""Feature"", ""Day"", ""Count"")
+          SELECT ""UserId"", 'quiz-ai', date_trunc('month', now() AT TIME ZONE 'UTC')::date, ""Count""
+          FROM ""QuizGenerationUsage"" WHERE ""Month"" = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM')
+          ON CONFLICT DO NOTHING",
     };
 
     public static async Task EnsureAsync(EvaluationContext db)
