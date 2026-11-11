@@ -34,6 +34,7 @@ builder.Services.AddScoped<AiGradingService>();
 builder.Services.AddScoped<AiQuota>();
 builder.Services.AddSingleton<TranscriptionQueue>();
 builder.Services.AddHostedService<TranscriptionWorker>();
+builder.Services.AddHostedService<ExpiredAttemptsWorker>();   // copies abandonnées rendues après l'heure limite (A8)
 
 // Service Cours : texte du cours dont on génère les exercices (JWT de l'utilisateur transmis)
 builder.Services.AddHttpClient<CourseTextClient>(client =>

@@ -158,6 +158,8 @@ public static class AssessmentEndpoints
             assessment.Status = AssessmentStatus.Closed;
             assessment.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
+            // Les élèves qui composaient encore : leur copie est rendue avec le dernier brouillon (A8)
+            await AttemptRules.FinalizeExpiredAsync(db, DateTime.UtcNow, assessmentId: id);
             return Results.Ok(new AssessmentDto(assessment, withQuestions: false));
         })
         .RequireAuthorization(Roles.Teacher)

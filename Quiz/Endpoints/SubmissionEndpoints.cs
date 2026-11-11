@@ -11,8 +11,7 @@ namespace Quiz.Endpoints;
 /// <summary>Tentatives des élèves, copies et correction par l'enseignant.</summary>
 public static class SubmissionEndpoints
 {
-    /// <summary>Marge accordée au-delà de la durée de composition (latence réseau, envoi hors ligne)</summary>
-    private static readonly TimeSpan Grace = TimeSpan.FromMinutes(2);
+    private const string TimeIsUp = "Le temps est écoulé : ta copie ne peut plus être modifiée.";
 
     private const long MaxPhotoBytes = 6 * 1024 * 1024;
     private const int MaxPhotosPerQuestion = 4;
@@ -46,7 +45,18 @@ public static class SubmissionEndpoints
 
             var attempts = await db.Submissions.Where(s => s.AssessmentId == id && s.StudentId == studentId).ToListAsync();
             if (attempts.FirstOrDefault(s => s.Status == SubmissionStatus.InProgress) is { } current)
-                return Results.Ok(ToAttempt(current, assessment, await PhotosAsync(db, current.Id)));
+            {
+                if (!AttemptRules.IsOver(assessment, current.StartedAt, DateTime.UtcNow))
+                    return Results.Ok(ToAttempt(current, assessment, await PhotosAsync(db, current.Id)));
+
+                // Heure limite passée : la tentative est rendue avec son dernier brouillon, on ne la reprend pas
+                await db.Entry(current).Collection(s => s.Answers).LoadAsync();
+                var full = await db.Assessments.Include(a => a.Questions).FirstAsync(a => a.Id == id);
+                await AttemptRules.FinalizeAsync(db, current, full, AnswerDrafts.Parse(current.DraftAnswers), DateTime.UtcNow);
+                await db.SaveChangesAsync();
+                return EndpointHelpers.Error(409, "Le temps de cette tentative est écoulé : ta copie a été rendue avec les réponses enregistrées. "
+                    + "Retrouve-la dans « Mes évaluations ».");
+            }
 
             if (assessment.Kind == AssessmentKind.MockExam && await users.FeatureAsync("mock-exams") is null)
                 return EndpointHelpers.Error(403, "Les épreuves blanches sont réservées aux formules Premium.");
@@ -84,6 +94,13 @@ public static class SubmissionEndpoints
             ClaimsPrincipal principal, EvaluationContext db) =>
         {
             var studentId = principal.UserId();
+            var timing = await db.Submissions.AsNoTracking()
+                .Where(s => s.Id == submissionId && s.AssessmentId == id && s.StudentId == studentId)
+                .Select(s => new { s.StartedAt, s.Assessment })
+                .FirstOrDefaultAsync();
+            if (timing is not null && AttemptRules.IsOver(timing.Assessment, timing.StartedAt, DateTime.UtcNow))
+                return EndpointHelpers.Error(409, TimeIsUp);
+
             var draft = AnswerDrafts.Serialize(req.Answers);
             var saved = await db.Submissions
                 .Where(s => s.Id == submissionId && s.AssessmentId == id && s.StudentId == studentId && s.Status == SubmissionStatus.InProgress)
@@ -110,36 +127,12 @@ public static class SubmissionEndpoints
 
             var assessment = await db.Assessments.Include(a => a.Questions).FirstAsync(a => a.Id == id);
             var now = DateTime.UtcNow;
-            var photographed = (await db.AnswerPhotos.Where(p => p.SubmissionId == submissionId)
-                .Select(p => p.QuestionId).ToListAsync()).ToHashSet();
-            var inputs = (req.Answers ?? new())
-                .GroupBy(a => a.QuestionId)
-                .ToDictionary(g => g.Key, g => g.First());
-
-            foreach (var question in assessment.Questions)
-            {
-                inputs.TryGetValue(question.Id, out var input);
-                var grade = Grader.Grade(question, input, photographed.Contains(question.Id));
-                submission.Answers.Add(new SubmissionAnswer
-                {
-                    SubmissionId = submission.Id,
-                    QuestionId = question.Id,
-                    SelectedOptions = input?.SelectedOptions?.Distinct().ToList() ?? new(),
-                    TrueFalse = input?.TrueFalse,
-                    Text = input?.Text,
-                    AttachmentUrl = input?.AttachmentUrl,
-                    IsCorrect = grade.IsCorrect,
-                    Points = grade.Points,
-                    NeedsManualGrading = grade.NeedsManualGrading
-                });
-            }
-
-            submission.SubmittedAt = now;
-            submission.DraftAnswers = null;
-            submission.MaxScore = assessment.MaxScore;
-            submission.IsLate = assessment.DueAt < now - Grace
-                || (assessment.DurationMinutes is { } minutes && now > submission.StartedAt.AddMinutes(minutes) + Grace);
-            Recompute(submission);
+            // Après l'heure limite (marge comprise) ou la clôture, les réponses envoyées ne comptent plus :
+            // la copie est rendue telle qu'elle était enregistrée (brouillon de quelques secondes avant)
+            var answers = AttemptRules.IsOver(assessment, submission.StartedAt, now)
+                ? AnswerDrafts.Parse(submission.DraftAnswers)
+                : req.Answers;
+            await AttemptRules.FinalizeAsync(db, submission, assessment, answers, now);
 
             await db.SaveChangesAsync();
             return Results.Ok(ToDto(submission, assessment, teacherView: false, await PhotosAsync(db, submission.Id)));
@@ -215,7 +208,7 @@ public static class SubmissionEndpoints
             answer.Feedback = req.Feedback;
             answer.NeedsManualGrading = false;
             answer.IsCorrect = req.Points == question.Points ? true : req.Points == 0 ? false : null;
-            Recompute(submission!);
+            AttemptRules.Recompute(submission!);
 
             await db.SaveChangesAsync();
             return Results.Ok(ToDto(submission!, assessment, teacherView: true, await PhotosAsync(db, submission!.Id)));
@@ -280,6 +273,8 @@ public static class SubmissionEndpoints
             if (submission is null) return Results.NotFound();
             if (submission.Status != SubmissionStatus.InProgress)
                 return EndpointHelpers.Error(409, "Cette copie a déjà été rendue.");
+            if (AttemptRules.IsOver(submission.Assessment, submission.StartedAt, DateTime.UtcNow))
+                return EndpointHelpers.Error(409, TimeIsUp);
             var question = submission.Assessment.Questions.FirstOrDefault(q => q.Id == questionId);
             if (question is null) return Results.NotFound();
             if (question.Type != QuestionType.OpenEnded)
@@ -330,10 +325,12 @@ public static class SubmissionEndpoints
         {
             var studentId = principal.UserId();
             var photo = await db.AnswerPhotos.FirstOrDefaultAsync(p => p.Id == photoId && p.SubmissionId == submissionId && p.StudentId == studentId);
-            var submission = await db.Submissions.FirstOrDefaultAsync(s => s.Id == submissionId && s.AssessmentId == id);
+            var submission = await db.Submissions.Include(s => s.Assessment).FirstOrDefaultAsync(s => s.Id == submissionId && s.AssessmentId == id);
             if (photo is null || submission is null) return Results.NotFound();
             if (submission.Status != SubmissionStatus.InProgress)
                 return EndpointHelpers.Error(409, "Cette copie a déjà été rendue.");
+            if (AttemptRules.IsOver(submission.Assessment, submission.StartedAt, DateTime.UtcNow))
+                return EndpointHelpers.Error(409, TimeIsUp);
 
             db.AnswerPhotos.Remove(photo);
             // Pages renumérotées pour rester continues
@@ -409,29 +406,12 @@ public static class SubmissionEndpoints
     }
 
     /// <summary>Note finale dès que toutes les réponses ont des points ; sinon copie en attente de correction.</summary>
-    private static void Recompute(Submission s)
-    {
-        if (s.Answers.All(a => a.Points is not null))
-        {
-            s.Status = SubmissionStatus.Graded;
-            s.Score = s.Answers.Sum(a => a.Points!.Value);
-            s.GradedAt = DateTime.UtcNow;
-        }
-        else
-        {
-            s.Status = SubmissionStatus.Submitted;
-            s.Score = null;
-            s.GradedAt = null;
-        }
-    }
-
     private static AttemptDto ToAttempt(Submission s, Assessment a, List<AnswerPhoto> photos)
     {
         var questions = a.Questions.OrderBy(q => q.Order).ToList();
         if (a.Shuffle) questions = Grader.StableShuffle(questions, s.Id);
 
-        DateTime? deadline = a.DurationMinutes is { } minutes ? s.StartedAt.AddMinutes(minutes) : null;
-        if (a.DueAt is not null && (deadline is null || a.DueAt < deadline)) deadline = a.DueAt;
+        var deadline = AttemptRules.Deadline(a, s.StartedAt);
 
         return new AttemptDto(s.Id, a.Id, a.Title, s.AttemptNumber, s.StartedAt, deadline,
             questions.Select(q =>

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.ServiceDiscovery;
@@ -21,6 +22,11 @@ public static class Extensions
         builder.AddDefaultHealthChecks();
 
         builder.Services.AddServiceDiscovery();
+
+        // Limites de débit (connexion, codes, IA) placées en tête de chaque service : voir RateLimits/RateLimits.cs
+        builder.Services.TryAddSingleton(TimeProvider.System);
+        builder.Services.AddSingleton<GPOE26.ServiceDefaults.RateLimits.RateLimitStore>();
+        builder.Services.AddTransient<Microsoft.AspNetCore.Hosting.IStartupFilter, GPOE26.ServiceDefaults.RateLimits.RateLimitStartupFilter>();
 
         builder.Services.ConfigureHttpClientDefaults(http =>
         {

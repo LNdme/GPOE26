@@ -338,8 +338,15 @@ else
             }
             else if (_lastSubmitStatus == System.Net.HttpStatusCode.Conflict)
             {
-                // Déjà rendue (autre onglet, envoi précédent arrivé malgré l'erreur) : on s'arrête
+                // Déjà rendue par le serveur (copie abandonnée, autre onglet, envoi arrivé malgré l'erreur) : on l'affiche
                 _timer?.Dispose();
+                _draftLoop?.Cancel();
+                var copy = await Api.GetSubmissionAsync(Id, _attempt.SubmissionId);
+                if (copy.Ok)
+                {
+                    _result = copy.Value;
+                    _error = "Le temps est écoulé : ta copie a été rendue avec les réponses enregistrées.";
+                }
             }
             else
             {
