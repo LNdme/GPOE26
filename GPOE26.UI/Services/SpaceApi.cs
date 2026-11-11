@@ -34,6 +34,8 @@ public interface ISpaceApi
     Task<ApiResult<SpaceStudent>> SetStudentStatusAsync(Guid id, Guid studentId, StudentStatus status);
     Task<ApiResult<bool>> DeleteStudentAsync(Guid id, Guid studentId);
     Task<ApiResult<ImportResult>> ImportStudentsAsync(Guid id, string csv, bool commit);
+    /// <summary>Aperçu d'un fichier Excel (.xlsx), Word (.docx) ou CSV ; le résultat contient le CSV à renvoyer pour enregistrer.</summary>
+    Task<ApiResult<ImportResult>> ImportStudentsFileAsync(Guid id, ImageUpload file);
 
     Task<ApiResult<List<AccessCodeInfo>>> CodesAsync(Guid id, Guid? classId = null, AccessCodeKind? kind = null);
     Task<ApiResult<SpaceStudent>> IssueStudentCodeAsync(Guid id, Guid studentId);
@@ -91,6 +93,8 @@ public class SpaceApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiC
     public Task<ApiResult<bool>> DeleteStudentAsync(Guid id, Guid studentId) => DeleteAsync<bool>($"/organizations/{id}/students/{studentId}");
     public Task<ApiResult<ImportResult>> ImportStudentsAsync(Guid id, string csv, bool commit) =>
         PostAsync<ImportResult>($"/organizations/{id}/students/import", new { csv, commit });
+    public Task<ApiResult<ImportResult>> ImportStudentsFileAsync(Guid id, ImageUpload file) =>
+        UploadAsync<ImportResult>($"/organizations/{id}/students/import-file", file);
 
     public Task<ApiResult<List<AccessCodeInfo>>> CodesAsync(Guid id, Guid? classId = null, AccessCodeKind? kind = null) =>
         GetAsync<List<AccessCodeInfo>>($"/organizations/{id}/codes{Q(("classId", classId), ("kind", kind))}");

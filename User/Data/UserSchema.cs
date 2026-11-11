@@ -244,6 +244,10 @@ public static class UserSchema
         // Code « en blanc » (lot 3, Q8) : la classe où l'élève entrera, faute de ligne élève déjà préparée
         @"ALTER TABLE ""AccessCodes"" ADD COLUMN IF NOT EXISTS ""ClassroomId"" uuid REFERENCES ""Classrooms"" (""Id"") ON DELETE SET NULL",
 
+        // Phase 2, lot 9 : e-mail importé et colonnes en plus du fichier de l'établissement (JSON, titre → valeur)
+        @"ALTER TABLE ""OrganizationStudents"" ADD COLUMN IF NOT EXISTS ""Email"" character varying(256)",
+        @"ALTER TABLE ""OrganizationStudents"" ADD COLUMN IF NOT EXISTS ""ExtraJson"" text",
+
         // Le code de classe commun ne sert plus (lot 7) : les nouvelles classes n'en ont pas
         @"ALTER TABLE ""Classrooms"" ALTER COLUMN ""InviteCode"" DROP NOT NULL",
 

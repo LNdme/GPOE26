@@ -1,0 +1,109 @@
+# Plan — établissements, phase 2 : bibliothèque, connexion par matricule, données partagées
+
+Rédigé le 11 novembre 2026, sur la branche `feat/site-admin-navbar`, après la phase 1 (`docs/PLAN-ETABLISSEMENT.md`, lots 1 à 7, poussée dans la PR #6). Décisions P1 à P6 et questions Q10 à Q15 validées le même jour.
+
+> **Avancement :** lot 9 fait le 11 novembre 2026 (non commité) — voir « Lot 9 : ce qui a été fait ». Lots 8, 10 à 13 à faire.
+
+## Ce que l'utilisateur a demandé
+
+1. Un enseignant peut être **indépendant et membre d'un établissement** en même temps, et partager ses contenus (cours, devoirs, épreuves) avec son établissement.
+2. L'élève se connecte **avec son matricule**, directement dans sa classe, après que l'établissement a **importé un fichier .docx, .csv ou Excel** (nom, e-mail facultatif, matricule, classe — ou « parcours » pour une entreprise —, autres informations).
+3. Un élève qui a **déjà un abonnement** (personnel ou familial) reçoit un accès de l'établissement ; un enseignant a un compte indépendant et un compte d'établissement : comment les relier, et **partager les données** au mieux entre l'agent, l'établissement, l'enseignant, le parent et l'élève.
+
+## Ce que la phase 1 règle déjà
+
+- **Un compte, plusieurs espaces** : un enseignant est `Owner`+`Teacher` de son espace personnel et `Teacher` d'un ou plusieurs établissements ; les classes qu'il crée lui-même vont dans son espace personnel.
+- **Partage vers des classes** : un cours (Cours) ou une épreuve (Quiz) peut déjà viser n'importe quelle classe où l'enseignant enseigne, de ses deux espaces.
+- **Droit Premium** : `GetEntitlementAsync` réunit abonnement personnel, clé familiale et accès par l'espace, et garde le meilleur.
+- **Rattacher un compte existant** : `POST /access-codes/redeem` (profil, accueil élève) — pas de second compte.
+
+## Décisions validées (11 novembre 2026)
+
+| # | Décision |
+|---|---|
+| P1 | Chaque établissement a une **bibliothèque partagée** : un enseignant y dépose un cours, un devoir ou une épreuve ; les autres enseignants (et les gestionnaires) de l'établissement le consultent et en font une **copie** pour leurs classes. |
+| P2 | **L'original reste à son auteur.** S'il quitte l'établissement, il garde ses contenus ; l'établissement garde les copies déjà faites. |
+| P3 | **Connexion par matricule** : identifiant = **matricule + code de l'établissement** ; à la première connexion, le mot de passe est le **code personnel** imprimé sur la fiche ; l'élève choisit ensuite son mot de passe. |
+| P4 | **Import** : Excel `.xlsx`, CSV et Word `.docx` (tableau du document) ; « parcours » pour une entreprise ; les **colonnes en plus** sont gardées telles quelles dans la fiche de l'élève (OpenXML et ClosedXML, licence MIT). |
+| P5 | **Une personne, un compte.** L'abonnement personnel continue ; l'élève et le parent payeur sont **prévenus** que l'établissement couvre déjà l'élève, jusqu'à telle date. |
+| P6 | **Qui voit quoi** : tableau ci-dessous. |
+
+### P6 — partage des données
+
+| | Élève | Parent (lien accepté) | Enseignant | Établissement | Tuteur (agent) |
+|---|---|---|---|---|---|
+| Résultats aux épreuves de l'établissement | oui | oui | sa matière | oui | oui |
+| Travail personnel (tuteur, quiz perso, cours privés) | oui | oui | non | non | oui |
+| Notions fragiles relevées par le tuteur | oui | oui | ses élèves, en résumé | chiffres d'ensemble | oui |
+| Discussions avec le tuteur | oui | non | non | non | oui |
+
+- Le tuteur connaît en plus l'établissement, la classe, **le programme et les épreuves à venir** fixées par les enseignants, et les résultats scolaires.
+- Si l'élève quitte l'établissement : son travail personnel reste à lui ; l'établissement garde ses notes en archive.
+- Enseignant aux deux espaces : une seule bibliothèque personnelle et un seul assistant, qui sait dans quel espace on travaille ; l'établissement ne voit que ce qui touche ses classes ou sa bibliothèque.
+
+---
+
+## 1. Changements de données
+
+### Service User (`userdb`)
+
+| Changement | Pourquoi |
+|---|---|
+| `Organizations.ShortCode` (texte court, unique, ex. `LYCDEMO`) | Code de l'établissement pour la connexion par matricule (P3). Proposé à partir du nom, modifiable par l'administration. Vide pour un espace d'enseignant indépendant au départ ; généré à la première fiche imprimée. |
+| `OrganizationStudents.Email` (facultatif) | E-mail importé ; recopié sur le compte à l'activation s'il n'est pas déjà pris. |
+| `OrganizationStudents.Extra` (`jsonb`) | Colonnes en plus du fichier, avec leur titre (P4) : téléphone, parent, filière, adresse… |
+| `AppUsers.MustChangePassword` (booléen) | Première connexion avec le code : changement de mot de passe obligatoire (P3). |
+| `Classrooms.Kind` déjà `Class`/`Group` | « Parcours » d'une entreprise = groupe de l'institution ; l'import reconnaît la colonne « parcours ». |
+
+### Service Cours (`coursdb`) et service Quiz (`quizdb`)
+
+| Changement | Pourquoi |
+|---|---|
+| `Courses.LibraryOrganizationIds` (`uuid[]`) ; `Assessments.LibraryOrganizationIds` (`uuid[]`) | Bibliothèques d'établissement où le contenu est déposé (P1). |
+| `Courses.SourceCourseId`, `Assessments.SourceAssessmentId` (facultatifs) | Une copie se souvient de son original (« d'après le cours de M. X »), sans en dépendre (P2). |
+
+### Service Chat (`chatdb`)
+
+Rien de nouveau à stocker : `CourseMastery.WeakPoints` (par élève et par cours) existe déjà ; il faut seulement de **nouvelles lectures** contrôlées par les droits (lot 12).
+
+---
+
+## 2. Les lots
+
+| Lot | Contenu | Vérification |
+|---|---|---|
+| **8. Bibliothèque d'établissement** (P1, P2) | Cours et Quiz : déposer / retirer un contenu dans la bibliothèque d'un établissement dont on est enseignant ; lister la bibliothèque (enseignants et gestionnaires de l'établissement) ; **copier** dans ses contenus (sections, questions, pièces jointes), copie liée à son original. Droits demandés au service User (`GET /organizations/mine`). Écran « Bibliothèque » dans « Mon établissement » et dans « Mes cours » / « Épreuves ». | Un enseignant dépose, un autre copie et modifie sa copie sans toucher l'original ; un enseignant d'un autre établissement ne voit rien ; l'auteur retiré de l'établissement garde ses contenus, les copies restent. |
+| **9. Import Excel et Word** (P4) | `.xlsx` (ClosedXML), `.docx` (premier tableau du document, OpenXML), CSV existant ; colonnes « parcours », « e-mail » ; colonnes inconnues gardées dans `Extra` et montrées dans la fiche de l'élève ; aperçu ligne par ligne comme aujourd'hui. | Fichiers d'essai Excel, Word et CSV (accents, cellules fusionnées, lignes vides) ; tests de lecture ; essai dans le navigateur. |
+| **10. Connexion par matricule** (P3) | Code d'établissement ; page de connexion « Élève d'un établissement » (code de l'établissement, matricule, mot de passe) ; première connexion avec le code personnel → compte créé, élève placé dans sa classe, changement de mot de passe obligatoire ; ensuite matricule + mot de passe. Les fiches imprimées donnent le code de l'établissement et le matricule. La page « J'ai un code » reste pour qui préfère un nom d'utilisateur. Limite de tentatives par matricule. | Première connexion, changement de mot de passe, reconnexion ; mauvais code ou matricule d'un autre établissement refusés ; élève retiré refusé ; limite de tentatives. |
+| **11. Abonnements qui se chevauchent** (P5) | Le droit Premium détaille ses sources (personnel, familial, établissement, avec dates) ; à l'activation d'un code ou dans « Abonnement », l'élève est prévenu que l'établissement le couvre ; le parent payeur voit, pour chaque enfant, « couvert par l'établissement jusqu'au … » et peut ne pas renouveler. Même chose pour un enseignant (formule Enseignant + licence de l'établissement). | Élève Premium personnel puis rattaché : avertissement ; parent Famille : enfant marqué « couvert » ; aucune perte d'accès. |
+| **12. Données partagées et agent** (P6) | Tuteur : établissement, classe, **épreuves à venir** (Quiz) et résultats dans son contexte. Enseignant : résumé des notions fragiles de ses élèves sur les cours de sa classe (Chat, droits demandés à User). Établissement : chiffres d'ensemble (notions les plus fragiles par classe, sans nom d'élève). Parent : notions fragiles de son enfant. Discussions du tuteur jamais montrées hors de l'élève. Élève parti : notes gardées en archive par l'établissement, plus d'accès à son travail personnel. | Tests de droits pour chaque case du tableau P6 ; scénario : un élève en difficulté sur un cours, ce que voient l'enseignant, le parent, le gestionnaire. |
+| **13. Enseignant aux deux espaces** | Accueil enseignant groupé par espace (« Lycée X », « Mon espace ») ; l'assistant enseignant sait de quel espace relève la classe dont on parle ; « Mes cours » montre ce qui est déposé dans quelle bibliothèque. | Un enseignant du lycée qui a aussi ses groupes : classes groupées, assistant correct, dépôt en bibliothèque visible. |
+
+Ordre conseillé : 9 et 10 d'abord (les élèves entrent plus simplement), puis 8, 11, 12, 13.
+
+---
+
+## Lot 9 : ce qui a été fait (11 novembre 2026)
+
+- **Lecture des fichiers** (`User/Service/ImportFileReader.cs`) : Excel `.xlsx` (première feuille non vide, cellules lues comme Excel les affiche — un matricule `00123` garde ses zéros —, dates en jj/mm/aaaa, cellules fusionnées reprises), Word `.docx` (premier tableau qui a une colonne « nom » ; cellules fusionnées sur plusieurs colonnes ou vers le bas reprises), CSV (UTF-8 ou Windows-1252). Un ancien `.xls` ou `.doc`, ou un fichier abîmé, est refusé avec une explication. 5 Mo au plus. Paquet ajouté : **ClosedXML 0.105.1** (qui apporte DocumentFormat.OpenXml 3.1.1), sans faille connue.
+- **Lecture des colonnes** (`StudentImport.ParseTable`) : la ligne des titres est cherchée dans les 10 premières lignes (un titre « Liste de la Tle C » au-dessus est ignoré) ; nouvelles colonnes reconnues : **parcours / groupe / promotion / cohorte** (tiennent lieu de classe), **e-mail / courriel**, « étudiant », « employé », « apprenant »… ; **les autres colonnes sont gardées** (titre → valeur).
+- **Fiche de l'élève** : `OrganizationStudents.Email` et `ExtraJson` ; l'e-mail est aussi saisissable à la main ; il est **recopié sur le compte à l'activation** s'il est libre (Q12).
+- **API** : `POST /organizations/{id}/students/import-file` (fichier, aperçu seulement ; renvoie le fichier remis en CSV), puis `POST …/students/import` avec ce CSV et `commit: true` pour enregistrer.
+- **Écran** « Élèves et codes » : choix d'un fichier Excel, Word ou CSV ; l'aperçu montre l'e-mail et les autres informations, et les colonnes gardées ; la liste montre l'e-mail et les autres informations sous le nom.
+
+**Vérifications :** tests 396 / 396, dont 13 nouveaux (vrais classeurs Excel et documents Word fabriqués en mémoire : titre fusionné, matricule à zéros, date Excel, fusion verticale dans Word, document sans tableau, ancien format, fichier abîmé) ; scénario par l'API sur une base neuve avec un classeur et un document d'essai, 15 contrôles ; liste vérifiée dans le navigateur (et matricule long gardé sur une ligne).
+
+---
+
+## 3. Petites questions tranchées
+
+> **Toutes les propositions ci-dessous ont été validées le 11 novembre 2026.**
+
+| # | Question | Décision |
+|---|---|---|
+| Q10 | Format du code d'établissement ? | 4 à 10 lettres et chiffres, proposé à partir du nom (ex. « Lycée de démonstration » → `LYCDEMO`), modifiable par l'administration. |
+| Q11 | Que fait un élève qui oublie son mot de passe (sans e-mail) ? | Le responsable lui redonne un code personnel : la connexion avec ce code remet un mot de passe à choisir. |
+| Q12 | L'e-mail importé devient-il l'identifiant ? | Non : il est recopié sur le compte s'il est libre, et sert à se connecter en plus du matricule. |
+| Q13 | Qui peut déposer dans la bibliothèque ? | Tout enseignant de l'établissement ; le responsable et les gestionnaires peuvent retirer un dépôt. |
+| Q14 | Combien de temps l'établissement garde-t-il les notes d'un élève parti ? | Tant que l'établissement existe sur la plateforme ; effaçables à sa demande. |
+| Q15 | Comment prévenir le parent (P5) ? | Dans son espace (bandeau « Abonnement ») ; par e-mail quand un fournisseur d'e-mail sera branché (audit B12). |

@@ -132,6 +132,7 @@ namespace User.Data
                 entity.Property(s => s.Matricule).HasMaxLength(40);
                 entity.Property(s => s.LastName).HasMaxLength(100);
                 entity.Property(s => s.FirstName).HasMaxLength(100);
+                entity.Property(s => s.Email).HasMaxLength(256);
                 entity.Property(s => s.Status).HasConversion<string>();
                 entity.HasOne<Organization>().WithMany().HasForeignKey(s => s.OrganizationId);
                 entity.HasOne<Classroom>().WithMany().HasForeignKey(s => s.ClassroomId).OnDelete(DeleteBehavior.SetNull);

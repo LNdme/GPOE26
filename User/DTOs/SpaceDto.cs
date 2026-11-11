@@ -86,7 +86,9 @@ public record StudentDto(
     string? Username,
     DateTime? ActivatedAt,
     string? Code,
-    DateTime? CodeExpiresAt
+    DateTime? CodeExpiresAt,
+    string? Email = null,
+    Dictionary<string, string>? Extra = null
 );
 
 /// <summary>Matricule vide : généré (AAAA-NNNN).</summary>
@@ -95,7 +97,8 @@ public record StudentRequest(
     [Required, MinLength(1), MaxLength(100)] string LastName,
     [MaxLength(100)] string? FirstName = null,
     DateOnly? BirthDate = null,
-    Guid? ClassroomId = null
+    Guid? ClassroomId = null,
+    [EmailAddress, MaxLength(256)] string? Email = null
 );
 
 /// <summary>Revoked : retiré par l'établissement ; Left : a quitté l'établissement ; Pending : réintégré (nouveau code à donner).</summary>
@@ -104,10 +107,14 @@ public record StudentStatusRequest(StudentStatus Status);
 /// <summary>Commit faux : aperçu seulement. Vrai : enregistre, si aucune ligne n'est en erreur.</summary>
 public record ImportStudentsRequest([Required, MaxLength(2_000_000)] string Csv, bool Commit = false);
 
-public record ImportRowDto(int Line, string? Matricule, string LastName, string FirstName, string? ClassName, DateOnly? BirthDate, List<string> Errors);
+public record ImportRowDto(int Line, string? Matricule, string LastName, string FirstName, string? ClassName, DateOnly? BirthDate, List<string> Errors,
+    string? Email = null, Dictionary<string, string>? Extra = null);
 
-/// <summary>Résultat d'un import : Imported vrai quand les élèves ont été enregistrés.</summary>
-public record ImportResultDto(int Total, int Valid, bool Imported, List<ImportRowDto> Rows);
+/// <summary>
+/// Résultat d'un import : Imported vrai quand les élèves ont été enregistrés.
+/// Csv : le fichier Excel ou Word remis en CSV ; on le renvoie tel quel (ImportStudentsRequest) pour enregistrer après l'aperçu.
+/// </summary>
+public record ImportResultDto(int Total, int Valid, bool Imported, List<ImportRowDto> Rows, string? Csv = null, List<string>? ExtraColumns = null);
 
 public record AccessCodeDto(
     Guid Id,

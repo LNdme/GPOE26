@@ -86,6 +86,15 @@ namespace User.Model
 
         public DateOnly? BirthDate { get; set; }
 
+        /// <summary>E-mail donné par l'établissement (facultatif) : recopié sur le compte à l'activation s'il est libre.</summary>
+        public string? Email { get; set; }
+
+        /// <summary>
+        /// Colonnes en plus du fichier importé (téléphone, parent, filière…), en JSON { titre : valeur },
+        /// gardées telles quelles pour l'établissement (docs/PLAN-ETABLISSEMENT-2.md, P4).
+        /// </summary>
+        public string? ExtraJson { get; set; }
+
         public Guid? ClassroomId { get; set; }
 
         public Guid? UserId { get; set; }

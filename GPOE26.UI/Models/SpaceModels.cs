@@ -36,17 +36,22 @@ public record SpaceClassRequest(string Name, string? Level = null, SchoolSubSyst
 
 public record AssignTeacherRequest(Guid TeacherId, string? Subject, bool IsMain);
 
+/// <summary>Élève de la liste. Extra : colonnes en plus du fichier importé (téléphone, parent…), titre → valeur.</summary>
 public record SpaceStudent(Guid Id, string Matricule, string LastName, string FirstName, DateOnly? BirthDate, Guid? ClassroomId,
-    string? ClassName, StudentStatus Status, Guid? UserId, string? Username, DateTime? ActivatedAt, string? Code, DateTime? CodeExpiresAt)
+    string? ClassName, StudentStatus Status, Guid? UserId, string? Username, DateTime? ActivatedAt, string? Code, DateTime? CodeExpiresAt,
+    string? Email = null, Dictionary<string, string>? Extra = null)
 {
     public string FullName => $"{LastName} {FirstName}".Trim();
 }
 
-public record StudentRequest(string? Matricule, string LastName, string? FirstName = null, DateOnly? BirthDate = null, Guid? ClassroomId = null);
+public record StudentRequest(string? Matricule, string LastName, string? FirstName = null, DateOnly? BirthDate = null, Guid? ClassroomId = null,
+    string? Email = null);
 
-public record ImportRow(int Line, string? Matricule, string LastName, string FirstName, string? ClassName, DateOnly? BirthDate, List<string> Errors);
+public record ImportRow(int Line, string? Matricule, string LastName, string FirstName, string? ClassName, DateOnly? BirthDate, List<string> Errors,
+    string? Email = null, Dictionary<string, string>? Extra = null);
 
-public record ImportResult(int Total, int Valid, bool Imported, List<ImportRow> Rows);
+/// <summary>Csv : le fichier Excel ou Word remis en CSV par le service, à renvoyer pour enregistrer après l'aperçu.</summary>
+public record ImportResult(int Total, int Valid, bool Imported, List<ImportRow> Rows, string? Csv = null, List<string>? ExtraColumns = null);
 
 public record AccessCodeInfo(Guid Id, string Code, AccessCodeKind Kind, AccessCodeStatus Status, DateTime ExpiresAt,
     Guid? StudentId, string? StudentName, string? Matricule, string? ClassName, DateTime CreatedAt);

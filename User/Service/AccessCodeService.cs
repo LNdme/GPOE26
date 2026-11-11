@@ -137,6 +137,9 @@ public class AccessCodeService(UserContext db, SpaceService spaces)
                 row.UserId = user.Id;
                 row.Status = StudentStatus.Active;
                 row.ActivatedAt = DateTime.UtcNow;
+                // E-mail donné par l'établissement : recopié sur un compte qui n'en a pas, s'il est libre (Q12)
+                if (user.Email is null && row.Email is { } email && !await db.AppUsers.AnyAsync(u => u.Email == email && u.Id != user.Id))
+                    user.Email = email;
                 if (row.ClassroomId is { } classId)
                 {
                     if (!await db.ClassroomMembers.AnyAsync(m => m.ClassroomId == classId && m.StudentId == user.Id))

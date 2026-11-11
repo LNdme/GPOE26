@@ -1,4 +1,5 @@
 using User.Service;
+using W = DocumentFormat.OpenXml.Wordprocessing;
 
 namespace GPOE26.Logic.Tests;
 
@@ -182,4 +183,134 @@ public class AccessCodeRulesTests
     [InlineData(User.Model.AccessCodeKind.Owner, User.Model.UserRole.Student, false)]
     public void Le_code_va_avec_le_bon_type_de_compte(User.Model.AccessCodeKind kind, User.Model.UserRole role, bool expected) =>
         Assert.Equal(expected, AccessCodeService.RoleFits(kind, role));
+}
+
+/// <summary>Import Excel, Word et CSV, parcours, e-mail et colonnes en plus (docs/PLAN-ETABLISSEMENT-2.md, lot 9).</summary>
+public class ImportFileTests
+{
+    private static List<IReadOnlyList<string>> Table(params string[][] rows) => rows.Select(r => (IReadOnlyList<string>)r.ToList()).ToList();
+
+    [Fact]
+    public void Les_lignes_de_titre_au_dessus_des_colonnes_sont_ignorees()
+    {
+        var (rows, error) = StudentImport.ParseTable(Table(
+            ["Liste des élèves — Terminale C", "", ""],
+            [],
+            ["Matricule", "Nom", "Classe"],
+            ["A1", "MBALLA", "Tle C"]));
+        Assert.Null(error);
+        Assert.Equal(("A1", "MBALLA", "Tle C", 4), (rows.Single().Matricule, rows.Single().LastName, rows.Single().ClassName, rows.Single().Line));
+    }
+
+    [Fact]
+    public void Parcours_email_et_autres_colonnes()
+    {
+        var (rows, _) = StudentImport.ParseTable(Table(
+            ["Nom complet", "Parcours", "Adresse e-mail", "Téléphone", "Nom du parent"],
+            ["Essomba Marie", "Data 2026", "Marie.E@Exemple.cm", "699 00 00 00", ""],
+            ["Fouda Paul", "Data 2026", "pas-un-mail", "", "M. Fouda"]));
+
+        Assert.Equal("Data 2026", rows[0].ClassName);
+        Assert.Equal("marie.e@exemple.cm", rows[0].Email);
+        Assert.Equal(new Dictionary<string, string> { ["Téléphone"] = "699 00 00 00" }, rows[0].Extra);   // cellule vide non gardée
+        Assert.Empty(rows[0].Errors);
+        Assert.Contains(rows[1].Errors, e => e.Contains("e-mail illisible"));
+        Assert.Equal("M. Fouda", rows[1].Extra["Nom du parent"]);
+    }
+
+    [Fact]
+    public void Le_csv_remis_en_tableau_puis_en_csv_ne_perd_rien()
+    {
+        var table = Table(["Nom", "Remarque"], ["MBALLA", "dit \"Jojo\"; délégué"]);
+        var back = StudentImport.SplitCsv(StudentImport.ToCsv(table));
+        Assert.Equal(table.Select(r => string.Join("|", r)), back.Select(r => string.Join("|", r)));
+    }
+
+    [Theory]
+    [InlineData("liste.xlsx", ImportFileReader.Kind.Excel)]
+    [InlineData("Liste.DOCX", ImportFileReader.Kind.Word)]
+    [InlineData("liste.csv", ImportFileReader.Kind.Csv)]
+    [InlineData("liste.xls", ImportFileReader.Kind.Unknown)]
+    [InlineData("liste.doc", ImportFileReader.Kind.Unknown)]
+    public void Le_format_vient_de_l_extension(string name, ImportFileReader.Kind kind) =>
+        Assert.Equal(kind, ImportFileReader.KindOf(name));
+
+    [Fact]
+    public void Un_ancien_format_est_refuse_avec_une_explication()
+    {
+        var (table, error) = ImportFileReader.Read(new MemoryStream([1, 2, 3]), "liste.xls");
+        Assert.Empty(table);
+        Assert.Contains("Enregistrer sous", error);
+    }
+
+    [Fact]
+    public void Un_fichier_abime_est_refuse_sans_planter()
+    {
+        var (_, error) = ImportFileReader.Read(new MemoryStream("pas un classeur"u8.ToArray()), "liste.xlsx");
+        Assert.Contains("illisible", error);
+    }
+
+    [Fact]
+    public void Un_classeur_Excel_est_lu_comme_Excel_l_affiche()
+    {
+        using var workbook = new ClosedXML.Excel.XLWorkbook();
+        var sheet = workbook.AddWorksheet("Tle C");
+        sheet.Cell(1, 1).Value = "Lycée de démonstration — liste officielle";
+        sheet.Range(1, 1, 1, 5).Merge();                                  // titre fusionné au-dessus
+        string[] titles = ["N° Matricule", "Nom", "Prénom(s)", "Né(e) le", "Téléphone"];
+        for (var i = 0; i < titles.Length; i++) sheet.Cell(2, i + 1).Value = titles[i];
+        sheet.Cell(3, 1).Value = 123; sheet.Cell(3, 1).Style.NumberFormat.Format = "00000";   // matricule à zéros devant
+        sheet.Cell(3, 2).Value = "MBALLA"; sheet.Cell(3, 3).Value = "Jean Paul";
+        sheet.Cell(3, 4).Value = new DateTime(2009, 3, 5);                // vraie date Excel
+        sheet.Cell(3, 5).Value = "699 11 22 33";
+        using var file = new MemoryStream();
+        workbook.SaveAs(file);
+        file.Position = 0;
+
+        var (table, error) = ImportFileReader.Read(file, "liste.xlsx");
+        Assert.Null(error);
+        var (rows, parseError) = StudentImport.ParseTable(table);
+        Assert.Null(parseError);
+        var r = rows.Single();
+        Assert.Equal(("00123", "MBALLA", "Jean Paul", new DateOnly(2009, 3, 5)), (r.Matricule, r.LastName, r.FirstName, r.BirthDate!.Value));
+        Assert.Equal("699 11 22 33", r.Extra["Téléphone"]);
+    }
+
+    [Fact]
+    public void Le_tableau_d_un_document_Word_est_lu_cellules_fusionnees_comprises()
+    {
+        using var file = new MemoryStream();
+        using (var doc = DocumentFormat.OpenXml.Packaging.WordprocessingDocument.Create(file, DocumentFormat.OpenXml.WordprocessingDocumentType.Document))
+        {
+            var main = doc.AddMainDocumentPart();
+            static W.TableCell Cell(string text, W.TableCellProperties? props = null) =>
+                new(props ?? new W.TableCellProperties(), new W.Paragraph(new W.Run(new W.Text(text))));
+            var table = new W.Table(
+                new W.TableRow(Cell("Matricule"), Cell("Nom et prénoms"), Cell("Classe")),
+                new W.TableRow(Cell("TC-01"), Cell("MBALLA Jean"),
+                    Cell("Terminale C", new W.TableCellProperties(new W.VerticalMerge { Val = W.MergedCellValues.Restart }))),
+                new W.TableRow(Cell("TC-02"), Cell("NGO Aïcha"),
+                    Cell("", new W.TableCellProperties(new W.VerticalMerge()))));     // la classe continue celle du dessus
+            main.Document = new W.Document(new W.Body(new W.Paragraph(new W.Run(new W.Text("Liste de la Terminale C"))), table));
+        }
+        file.Position = 0;
+
+        var (tableRows, error) = ImportFileReader.Read(file, "liste.docx");
+        Assert.Null(error);
+        var (rows, _) = StudentImport.ParseTable(tableRows);
+        Assert.Equal([("TC-01", "MBALLA Jean", "Terminale C"), ("TC-02", "NGO Aïcha", "Terminale C")],
+            rows.Select(r => (r.Matricule, r.LastName, r.ClassName)).ToList());
+    }
+
+    [Fact]
+    public void Un_document_Word_sans_tableau_est_explique()
+    {
+        using var file = new MemoryStream();
+        using (var doc = DocumentFormat.OpenXml.Packaging.WordprocessingDocument.Create(file, DocumentFormat.OpenXml.WordprocessingDocumentType.Document))
+        {
+            doc.AddMainDocumentPart().Document = new W.Document(new W.Body(new W.Paragraph(new W.Run(new W.Text("MBALLA Jean, Tle C")))));
+        }
+        file.Position = 0;
+        Assert.Contains("Aucun tableau", ImportFileReader.Read(file, "liste.docx").Error);
+    }
 }

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using User.Data;
@@ -41,6 +42,7 @@ public static class StudentEndpoints
                 LastName = req.LastName.Trim(),
                 FirstName = req.FirstName?.Trim() ?? "",
                 BirthDate = req.BirthDate,
+                Email = EmailOf(req.Email),
                 ClassroomId = req.ClassroomId
             };
             db.OrganizationStudents.Add(row);
@@ -66,6 +68,7 @@ public static class StudentEndpoints
             row.LastName = req.LastName.Trim();
             row.FirstName = req.FirstName?.Trim() ?? "";
             row.BirthDate = req.BirthDate;
+            row.Email = EmailOf(req.Email);
             await codes.MoveStudentAsync(row, req.ClassroomId);
             await db.SaveChangesAsync();
             return Results.Ok((await StudentsAsync(db, orgId, s => s.Id == row.Id)).Single());
@@ -117,40 +120,23 @@ public static class StudentEndpoints
         // Toujours un aperçu ligne par ligne ; rien n'est enregistré tant qu'une ligne est en erreur.
 
         space.MapPost("/students/import", async (Guid orgId, ImportStudentsRequest req, UserContext db, SpaceService spaces) =>
+            await ImportAsync(db, spaces, orgId, StudentImport.SplitCsv(req.Csv), req.Commit, csv: null))
+        .WithSummary("Importer la liste des élèves (CSV : matricule, nom, prénom, classe ou parcours, e-mail, date de naissance, autres colonnes)")
+        .Produces<ImportResultDto>();
+
+        // Fichier Excel (.xlsx), Word (.docx, tableau) ou CSV : toujours un aperçu ; le résultat contient le fichier remis
+        // en CSV, à renvoyer à /students/import avec commit = true pour enregistrer.
+        space.MapPost("/students/import-file", async (Guid orgId, IFormFile file, UserContext db, SpaceService spaces) =>
         {
-            var (parsed, error) = StudentImport.Parse(req.Csv);
-            if (error is not null) return Results.BadRequest(new { message = error });
-
-            var classes = await CurrentClassesAsync(db, orgId);
-            var existing = (await db.OrganizationStudents.Where(s => s.OrganizationId == orgId).Select(s => s.Matricule).ToListAsync())
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            var rows = parsed.Select(r =>
-            {
-                var errors = new List<string>(r.Errors);
-                if (r.Matricule is { } m && existing.Contains(m)) errors.Add($"matricule {m} déjà inscrit");
-                if (r.ClassName is { } c && !classes.ContainsKey(Key(c))) errors.Add($"classe « {c} » inconnue cette année");
-                return new ImportRowDto(r.Line, r.Matricule, r.LastName, r.FirstName, r.ClassName, r.BirthDate, errors);
-            }).ToList();
-            var valid = rows.Count(r => r.Errors.Count == 0);
-
-            if (!req.Commit || valid < rows.Count)
-                return Results.Ok(new ImportResultDto(rows.Count, valid, false, rows));
-
-            foreach (var r in rows)
-                db.OrganizationStudents.Add(new OrganizationStudent
-                {
-                    OrganizationId = orgId,
-                    Matricule = r.Matricule ?? await spaces.NewMatriculeAsync(orgId),
-                    LastName = r.LastName,
-                    FirstName = r.FirstName,
-                    BirthDate = r.BirthDate,
-                    ClassroomId = r.ClassName is { } c ? classes[Key(c)] : null
-                });
-            await db.SaveChangesAsync();
-            return Results.Ok(new ImportResultDto(rows.Count, valid, true, rows));
+            if (file.Length > ImportFileReader.MaxBytes)
+                return Results.BadRequest(new { message = "Fichier trop gros (5 Mo au plus) : découpez-le, par exemple par niveau." });
+            await using var stream = file.OpenReadStream();
+            var (table, readError) = ImportFileReader.Read(stream, file.FileName);
+            if (readError is not null) return Results.BadRequest(new { message = readError });
+            return await ImportAsync(db, spaces, orgId, table, commit: false, csv: StudentImport.ToCsv(table));
         })
-        .WithSummary("Importer la liste des élèves (CSV : matricule, nom, prénom, classe, date de naissance)")
+        .DisableAntiforgery()
+        .WithSummary("Aperçu de l'import d'un fichier Excel, Word ou CSV")
         .Produces<ImportResultDto>();
 
         // ── Codes personnels ──────────────────────────────────────────────────────
@@ -225,6 +211,61 @@ public static class StudentEndpoints
         .WithSummary("Annuler un code pas encore utilisé");
     }
 
+    /// <summary>
+    /// Contrôle (et enregistre, si commit et aucune erreur) les élèves d'un tableau : lecture StudentImport, puis
+    /// contrôles en base (matricule déjà inscrit, classe ou parcours inconnu cette année).
+    /// </summary>
+    private static async Task<IResult> ImportAsync(UserContext db, SpaceService spaces, Guid orgId,
+        IReadOnlyList<IReadOnlyList<string>> table, bool commit, string? csv)
+    {
+        var (parsed, error) = StudentImport.ParseTable(table);
+        if (error is not null) return Results.BadRequest(new { message = error });
+
+        var classes = await CurrentClassesAsync(db, orgId);
+        var existing = (await db.OrganizationStudents.Where(s => s.OrganizationId == orgId).Select(s => s.Matricule).ToListAsync())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var rows = parsed.Select(r =>
+        {
+            var errors = new List<string>(r.Errors);
+            if (r.Matricule is { } m && existing.Contains(m)) errors.Add($"matricule {m} déjà inscrit");
+            if (r.ClassName is { } c && !classes.ContainsKey(Key(c))) errors.Add($"classe ou parcours « {c} » inconnu cette année");
+            return (Source: r, Dto: new ImportRowDto(r.Line, r.Matricule, r.LastName, r.FirstName, r.ClassName, r.BirthDate, errors,
+                r.Email, r.Extra.Count > 0 ? r.Extra : null));
+        }).ToList();
+        var dtos = rows.Select(r => r.Dto).ToList();
+        var valid = dtos.Count(r => r.Errors.Count == 0);
+        var extraColumns = parsed.SelectMany(r => r.Extra.Keys).Distinct().ToList();
+
+        if (!commit || valid < dtos.Count)
+            return Results.Ok(new ImportResultDto(dtos.Count, valid, false, dtos, csv, extraColumns));
+
+        foreach (var (r, _) in rows)
+            db.OrganizationStudents.Add(new OrganizationStudent
+            {
+                OrganizationId = orgId,
+                Matricule = r.Matricule ?? await spaces.NewMatriculeAsync(orgId),
+                LastName = r.LastName,
+                FirstName = r.FirstName,
+                BirthDate = r.BirthDate,
+                Email = r.Email,
+                ExtraJson = r.Extra.Count > 0 ? JsonSerializer.Serialize(r.Extra) : null,
+                ClassroomId = r.ClassName is { } c ? classes[Key(c)] : null
+            });
+        await db.SaveChangesAsync();
+        return Results.Ok(new ImportResultDto(dtos.Count, valid, true, dtos, csv, extraColumns));
+    }
+
+    private static string? EmailOf(string? email) => string.IsNullOrWhiteSpace(email) ? null : email.Trim().ToLowerInvariant();
+
+    /// <summary>Colonnes en plus d'un élève, lues depuis leur JSON (vide si rien, ou illisible).</summary>
+    public static Dictionary<string, string>? ExtraOf(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try { return JsonSerializer.Deserialize<Dictionary<string, string>>(json); }
+        catch (JsonException) { return null; }
+    }
+
     private static string Key(string className) => StudentImport.Normalize(className);
 
     /// <summary>Classes non archivées de l'année en cours, par nom comparable.</summary>
@@ -241,7 +282,17 @@ public static class StudentEndpoints
             ? Results.BadRequest(new { message = "Classe introuvable dans cet établissement." })
             : null;
 
+    /// <summary>Élèves de la liste, avec leur code à imprimer et leurs autres informations (colonnes en plus du fichier).</summary>
     private static async Task<List<StudentDto>> StudentsAsync(UserContext db, Guid orgId,
+        System.Linq.Expressions.Expression<Func<OrganizationStudent, bool>> filter)
+    {
+        var rows = await StudentRowsAsync(db, orgId, filter);
+        var extras = await db.OrganizationStudents.Where(s => s.OrganizationId == orgId).Where(filter)
+            .Where(s => s.ExtraJson != null).Select(s => new { s.Id, s.ExtraJson }).ToDictionaryAsync(s => s.Id, s => s.ExtraJson);
+        return rows.Select(r => extras.TryGetValue(r.Id, out var json) ? r with { Extra = ExtraOf(json) } : r).ToList();
+    }
+
+    private static async Task<List<StudentDto>> StudentRowsAsync(UserContext db, Guid orgId,
         System.Linq.Expressions.Expression<Func<OrganizationStudent, bool>> filter)
     {
         var now = DateTime.UtcNow;
@@ -258,7 +309,9 @@ public static class StudentEndpoints
                 db.AccessCodes.Where(c => c.OrganizationStudentId == s.Id && c.Status == AccessCodeStatus.Issued && c.ExpiresAt > now)
                     .Select(c => c.Code).FirstOrDefault(),
                 db.AccessCodes.Where(c => c.OrganizationStudentId == s.Id && c.Status == AccessCodeStatus.Issued && c.ExpiresAt > now)
-                    .Select(c => (DateTime?)c.ExpiresAt).FirstOrDefault()))
+                    .Select(c => (DateTime?)c.ExpiresAt).FirstOrDefault(),
+                s.Email,
+                null))
             .ToListAsync();
     }
 
