@@ -33,6 +33,10 @@
                     @if (_overview?.CurrentYear is { } y) { <text> · année @y.Label</text> }
                 </p>
             </div>
+            @if (_space.Type != OrganizationType.Independent)
+            {
+                <a class="ga-btn secondary small" href="/app/bibliotheque/@_space.Id"><Icon Name="book" /> Bibliothèque</a>
+            }
             @if (_managed.Count > 1)
             {
                 <div class="ga-chips" aria-label="Changer d'espace">

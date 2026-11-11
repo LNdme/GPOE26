@@ -26,6 +26,12 @@ public class Assessment
     /// <summary>Classes ou groupes concernés (service User)</summary>
     public List<Guid> ClassroomIds { get; set; } = new();
 
+    /// <summary>Établissements (service User) dans la bibliothèque desquels l'auteur a déposé l'évaluation.</summary>
+    public List<Guid> LibraryOrganizationIds { get; set; } = new();
+
+    /// <summary>Évaluation d'origine d'une copie faite depuis une bibliothèque : simple souvenir, la copie n'en dépend pas.</summary>
+    public Guid? SourceAssessmentId { get; set; }
+
     public DateTime? OpensAt { get; set; }
     public DateTime? DueAt { get; set; }
 

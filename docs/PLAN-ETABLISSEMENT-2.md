@@ -2,7 +2,7 @@
 
 Rédigé le 11 novembre 2026, sur la branche `feat/site-admin-navbar`, après la phase 1 (`docs/PLAN-ETABLISSEMENT.md`, lots 1 à 7, poussée dans la PR #6). Décisions P1 à P6 et questions Q10 à Q15 validées le même jour.
 
-> **Avancement :** lot 9 commité (`56015f4`) ; lot 10 fait le 11 novembre 2026 (non commité) — voir « Lot 9 » et « Lot 10 : ce qui a été fait ». Lots 8, 11 à 13 à faire.
+> **Avancement :** lot 9 commité (`56015f4`), lot 10 commité (`2617802`) ; lot 8 fait le 11 novembre 2026 (non commité) — voir « Lot 8, 9, 10 : ce qui a été fait ». Lots 11 à 13 à faire.
 
 ## Ce que l'utilisateur a demandé
 
@@ -82,6 +82,19 @@ Rien de nouveau à stocker : `CourseMastery.WeakPoints` (par élève et par cour
 Ordre conseillé : 9 et 10 d'abord (les élèves entrent plus simplement), puis 8, 11, 12, 13.
 
 ---
+
+## Lot 8 : ce qui a été fait (11 novembre 2026)
+
+- **Données** : `Courses.LibraryOrganizationIds` et `Assessments.LibraryOrganizationIds` (`uuid[]`, index GIN), `Courses.SourceCourseId` et `Assessments.SourceAssessmentId`, ajoutés au démarrage de Cours et de Quiz (SQL idempotent).
+- **Droits** demandés au service User par une nouvelle route, `GET /organizations/{id}/library` (enseignants, responsable et gestionnaires de l'établissement ; pas pour un espace d'enseignant indépendant) : nom de l'établissement, enseignants actifs, et `CanManage`. Écart assumé : le plan citait `GET /organizations/mine`, qui ne dit pas qui sont les collègues.
+- **Un dépôt n'est visible que si son auteur enseigne encore dans l'établissement** : l'auteur qui part garde ses contenus, ils quittent la bibliothèque avec lui ; ils y reviennent s'il revient (P2).
+- **Cours** : `PUT /cours/{id}/library` (l'auteur, seulement dans un établissement où il enseigne), `GET /cours/library/{orgId}` (auteur, nombre de copies), `DELETE /cours/library/{orgId}/{id}` (l'auteur, ou le responsable et les gestionnaires, Q13), `POST /cours/{id}/copy`. Un collègue peut **lire** un cours déposé. La copie est un brouillon au copieur, sans classe ni dépôt, avec ses propres sections ; **le PDF et les images sont recopiés** et les adresses des images réécrites, pour que la copie survive à l'original. Pas de copie pendant la mise en forme d'un PDF (409).
+- **Quiz** : les mêmes routes sous `/assessments` ; un collègue voit toutes les questions (et les réponses) d'une évaluation déposée. La copie est un brouillon sans classe, sans dates et **sans lien vers le cours de l'auteur** (ce cours ne lui appartient pas).
+- **Corrigé en passant** : supprimer un cours n'effaçait son dossier d'images que s'il avait un PDF (cours importé en photos, copie) ; le dossier est maintenant toujours effacé.
+- **Écrans** : page « Bibliothèque » (`/app/bibliotheque`, lien dans le menu pour qui est dans un établissement, et bouton dans « Mon établissement ») : onglets « Cours » et « Devoirs et épreuves », déposer un de ses contenus, lire, voir les questions, copier (lien « Modifier ma copie »), retirer.
+- Reste pour le lot 13 : montrer dans « Mes cours » et « Épreuves » où chaque contenu est déposé.
+
+**Vérifications :** tests Logic 422 / 422 et Quiz 66 / 66 (visibilité, copie indépendante de l'original, images réécrites, fichiers recopiés) ; scénario sur une base neuve avec les trois services, 55 contrôles (dépôt, lecture et copie par un collègue, refus pour un enseignant indépendant et un élève, retrait par le responsable mais pas par un collègue, auteur retiré puis revenu, original supprimé : la copie et ses images restent) ; parcours dans le navigateur, aussi à 375 px de large. Corrigé pendant l'essai : une copie n'apparaissait dans « Déposer » qu'après rechargement de la page.
 
 ## Lot 9 : ce qui a été fait (11 novembre 2026)
 

@@ -71,6 +71,24 @@ public static class OrganizationEndpoints
         .WithSummary("Tableau de bord de l'espace")
         .Produces<SpaceOverviewDto>();
 
+        // ── GET /organizations/{orgId}/library ────────────────────────────────────
+        // Bibliothèque de l'établissement (phase 2, lot 8) : qui y dépose (les enseignants actifs) et si l'appelant la
+        // gère. Lu par Cours et Quiz avec le jeton de l'utilisateur : un dépôt d'un enseignant parti n'y figure plus (P2).
+        space.MapGet("/library", async (Guid orgId, ClaimsPrincipal principal, UserContext db, SpaceService spaces) =>
+        {
+            var org = await db.Organizations.FindAsync(orgId);
+            if (org is null || org.Type == OrganizationType.Independent) return Results.NotFound();
+            var teachers = await db.OrganizationMembers
+                .Where(m => m.OrganizationId == orgId && m.Role == OrganizationRole.Teacher && m.Status == MemberStatus.Active)
+                .Join(db.AppUsers, m => m.UserId, u => u.Id, (m, u) => new LibraryAuthorDto(u.Id, u.Username))
+                .ToListAsync();
+            var canManage = await spaces.HasRoleAsync(orgId, principal.GetUserId()!.Value, OrganizationRole.Owner, OrganizationRole.Manager);
+            return Results.Ok(new LibrarySpaceDto(org.Id, org.Name, canManage, teachers));
+        })
+        .RequireSpaceRole(OrganizationRole.Owner, OrganizationRole.Manager, OrganizationRole.Teacher)
+        .WithSummary("Bibliothèque de l'établissement : enseignants qui y déposent, et droit de la gérer")
+        .Produces<LibrarySpaceDto>();
+
         // ── Membres ───────────────────────────────────────────────────────────────
 
         space.MapGet("/members", async (Guid orgId, UserContext db) =>

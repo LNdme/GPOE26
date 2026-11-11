@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text;
 using Cours.Data;
 using Cours.DTOs;
+using Cours.Endpoints;
 using Cours.Helpers;
 using Cours.Model;
 using Cours.Service;
@@ -129,6 +130,13 @@ using (var scope = app.Services.CreateScope())
         @"ALTER TABLE ""Courses"" ADD COLUMN IF NOT EXISTS ""StructuringStatus"" text");
     await db.Database.ExecuteSqlRawAsync(
         @"ALTER TABLE ""Courses"" ADD COLUMN IF NOT EXISTS ""SourceUrl"" text");
+    // Bibliothèque d'établissement (phase 2, lot 8)
+    await db.Database.ExecuteSqlRawAsync(
+        @"ALTER TABLE ""Courses"" ADD COLUMN IF NOT EXISTS ""LibraryOrganizationIds"" uuid[] NOT NULL DEFAULT ARRAY[]::uuid[]");
+    await db.Database.ExecuteSqlRawAsync(
+        @"ALTER TABLE ""Courses"" ADD COLUMN IF NOT EXISTS ""SourceCourseId"" uuid");
+    await db.Database.ExecuteSqlRawAsync(
+        @"CREATE INDEX IF NOT EXISTS ""IX_Courses_LibraryOrganizationIds"" ON ""Courses"" USING gin (""LibraryOrganizationIds"")");
     await db.Database.ExecuteSqlRawAsync(
         @"CREATE TABLE IF NOT EXISTS ""CourseLabSuggestions"" (
             ""Id"" uuid NOT NULL,
@@ -677,14 +685,15 @@ cours.MapDelete("/{id:guid}", async (
     if (course is null)
         return Results.NotFound(new { message = "Cours introuvable." });
 
+    var webRoot = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
     if (course.PdfPath is not null)
     {
-        var webRoot = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
         var fullPath = Path.Combine(webRoot, course.PdfPath);
         if (File.Exists(fullPath)) File.Delete(fullPath);
-        var figures = PdfStructuringService.FiguresFolder(webRoot, course.Id);
-        if (Directory.Exists(figures)) Directory.Delete(figures, recursive: true);
     }
+    // Le dossier d'images appartient au cours, avec ou sans PDF (photos importées, copie d'un cours de la bibliothèque)
+    var figures = PdfStructuringService.FiguresFolder(webRoot, course.Id);
+    if (Directory.Exists(figures)) Directory.Delete(figures, recursive: true);
 
     db.Courses.Remove(course);
     await db.SaveChangesAsync();
@@ -697,6 +706,8 @@ cours.MapDelete("/{id:guid}", async (
 
 // ── GET /uploads/cours/{id}/{fichier} ─────────────────────────────────────────
 // Images extraites d'un PDF, lues par le navigateur (sans jeton) : seuls ces fichiers sont servis, jamais le PDF.
+cours.MapLibraryEndpoints();
+
 app.MapGet("/uploads/cours/{courseId:guid}/{file}", (Guid courseId, string file, IWebHostEnvironment env) =>
 {
     if (!System.Text.RegularExpressions.Regex.IsMatch(file, @"^fig-\d+\.(png|jpg|gif|webp)$")) return Results.NotFound();
@@ -710,13 +721,15 @@ app.MapGet("/uploads/cours/{courseId:guid}/{file}", (Guid courseId, string file,
 
 app.Run();
 
-// L'auteur, ou un membre d'une classe avec laquelle le cours est publié
+// L'auteur, un membre d'une classe avec laquelle le cours est publié, ou un enseignant ou gestionnaire
+// d'un établissement dans la bibliothèque duquel il est déposé
 static async Task<bool> CanReadAsync(Course? course, Guid userId, UserDirectoryClient users) =>
     course is not null
     && (course.OwnerId == userId
         || (course.Status == CourseStatus.Published
             && course.ClassroomIds.Count > 0
-            && (await users.MyClassroomIdsAsync()).Overlaps(course.ClassroomIds)));
+            && (await users.MyClassroomIdsAsync()).Overlaps(course.ClassroomIds))
+        || await LibraryEndpoints.CanReadFromLibraryAsync(course, users));
 
 static async Task<CourseFeedbackDto> FeedbackAsync(CoursContext db, Course course, Guid userId)
 {

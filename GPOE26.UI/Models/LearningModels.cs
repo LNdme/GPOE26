@@ -13,7 +13,8 @@ public enum CourseSectionType { Heading, Paragraph, Image }
 public enum CourseStatus { Draft, Published }
 
 public record CourseSummary(Guid Id, string Title, string Subject, string? Description, CourseContentType ContentType,
-    DateTime CreatedAt, CourseStatus Status, List<Guid>? ClassroomIds, Guid OwnerId);
+    DateTime CreatedAt, CourseStatus Status, List<Guid>? ClassroomIds, Guid OwnerId,
+    List<Guid>? LibraryOrganizationIds = null, Guid? SourceCourseId = null);
 
 public record CourseSection(Guid Id, CourseSectionType Type, string Content, int Order, int Level);
 
@@ -22,7 +23,8 @@ public record CourseFeedback(bool? Mine, int? Useful, int? NotUseful);
 
 public record CourseDetail(Guid Id, string Title, string Subject, string? Description, CourseContentType ContentType,
     string? ExtractedText, string? PdfPath, List<CourseSection>? Sections, DateTime CreatedAt, DateTime UpdatedAt,
-    CourseStatus Status, List<Guid>? ClassroomIds, Guid OwnerId, string? StructuringStatus = null, string? SourceUrl = null)
+    CourseStatus Status, List<Guid>? ClassroomIds, Guid OwnerId, string? StructuringStatus = null, string? SourceUrl = null,
+    List<Guid>? LibraryOrganizationIds = null, Guid? SourceCourseId = null)
 {
     /// <summary>Contenu Markdown du cours, reconstitué à partir de ses sections.</summary>
     public string ToMarkdown()
@@ -57,6 +59,20 @@ public record CourseSectionInput(CourseSectionType Type, string Content, int Ord
 public record CourseInput(string Title, string Subject, string? Description, List<CourseSectionInput>? Sections);
 
 public record UploadedFile(string Url);
+
+// ─── Bibliothèque d'établissement (Cours et Quiz) ─────────────────────────────
+
+/// <summary>Cours déposé dans une bibliothèque : Mine si c'est le mien, Copies = copies déjà faites.</summary>
+public record LibraryCourse(Guid Id, string Title, string Subject, string? Description, CourseContentType ContentType,
+    DateTime UpdatedAt, Guid OwnerId, string AuthorName, bool Mine, int Copies);
+
+/// <summary>CanManage : le lecteur (responsable, gestionnaire) peut retirer les dépôts des autres.</summary>
+public record LibraryCourses(Guid OrganizationId, string Name, bool CanManage, List<LibraryCourse> Courses);
+
+public record LibraryAssessment(Guid Id, string Title, string? Description, AssessmentKind Kind, string? Subject,
+    int QuestionCount, decimal MaxScore, DateTime UpdatedAt, Guid AuthorId, string AuthorName, bool Mine, int Copies);
+
+public record LibraryAssessments(Guid OrganizationId, string Name, bool CanManage, List<LibraryAssessment> Assessments);
 
 /// <summary>Labo proposé par l'agent. Block : le bloc Markdown, affichable pour un essai.</summary>
 public record LabSuggestion(Guid Id, string Anchor, string Title, string Reason, string Block);
@@ -132,7 +148,7 @@ public record Assessment(
     DateTime? OpensAt, DateTime? DueAt, int? DurationMinutes, int MaxAttempts,
     bool Shuffle, bool ShowCorrection, bool AllowOffline, bool AiAssistedGrading, int ScaleTo,
     decimal MaxScore, int QuestionCount, DateTime CreatedAt, DateTime UpdatedAt, DateTime? PublishedAt,
-    List<AssessmentQuestion>? Questions)
+    List<AssessmentQuestion>? Questions, List<Guid>? LibraryOrganizationIds = null, Guid? SourceAssessmentId = null)
 {
     public AssessmentDraft ToDraft() => new()
     {

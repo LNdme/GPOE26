@@ -72,16 +72,30 @@ public record AssessmentDto(
     DateTime? OpensAt, DateTime? DueAt, int? DurationMinutes, int MaxAttempts,
     bool Shuffle, bool ShowCorrection, bool AllowOffline, bool AiAssistedGrading, int ScaleTo,
     decimal MaxScore, int QuestionCount, DateTime CreatedAt, DateTime UpdatedAt, DateTime? PublishedAt,
-    List<AssessmentQuestionDto>? Questions)
+    List<AssessmentQuestionDto>? Questions, List<Guid>? LibraryOrganizationIds = null, Guid? SourceAssessmentId = null)
 {
     public AssessmentDto(Assessment a, bool withQuestions) : this(
         a.Id, a.Title, a.Description, a.Kind, a.Status, a.Subject, a.CourseId, a.ClassroomIds,
         a.OpensAt, a.DueAt, a.DurationMinutes, a.MaxAttempts,
         a.Shuffle, a.ShowCorrection, a.AllowOffline, a.AiAssistedGrading, a.ScaleTo,
         a.MaxScore, a.Questions.Count, a.CreatedAt, a.UpdatedAt, a.PublishedAt,
-        withQuestions ? a.Questions.OrderBy(q => q.Order).Select(q => new AssessmentQuestionDto(q)).ToList() : null)
+        withQuestions ? a.Questions.OrderBy(q => q.Order).Select(q => new AssessmentQuestionDto(q)).ToList() : null,
+        a.LibraryOrganizationIds, a.SourceAssessmentId)
     { }
 }
+
+// ─── Bibliothèque d'établissement ─────────────────────────────────────────────
+
+/// <summary>Dépôt d'une évaluation : la liste complète des bibliothèques où elle doit figurer (vide = retirée partout).</summary>
+public record LibraryDepositRequest(List<Guid>? OrganizationIds);
+
+/// <summary>Évaluation d'une bibliothèque : AuthorName pour « d'après… », Mine si c'est la mienne.</summary>
+public record LibraryAssessmentDto(
+    Guid Id, string Title, string? Description, AssessmentKind Kind, string? Subject, int QuestionCount,
+    decimal MaxScore, DateTime UpdatedAt, Guid AuthorId, string AuthorName, bool Mine, int Copies);
+
+/// <summary>Bibliothèque d'un établissement : CanManage = le lecteur peut retirer les dépôts des autres.</summary>
+public record LibraryAssessmentsDto(Guid OrganizationId, string Name, bool CanManage, List<LibraryAssessmentDto> Assessments);
 
 /// <summary>Ligne du tableau des copies (vue enseignant)</summary>
 public record SubmissionRowDto(

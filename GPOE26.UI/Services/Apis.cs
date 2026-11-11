@@ -98,6 +98,10 @@ public interface ICourseApi
     Task<ApiResult<CourseFeedback>> FeedbackAsync(Guid id);
     Task<ApiResult<CourseFeedback>> SetFeedbackAsync(Guid id, bool useful);
     Task<ApiResult<bool>> ClearFeedbackAsync(Guid id);
+    Task<ApiResult<LibraryCourses>> LibraryAsync(Guid organizationId);
+    Task<ApiResult<CourseSummary>> SetLibrariesAsync(Guid id, List<Guid> organizationIds);
+    Task<ApiResult<bool>> RemoveFromLibraryAsync(Guid organizationId, Guid id);
+    Task<ApiResult<CourseDetail>> CopyAsync(Guid id);
 }
 
 /// <summary>Images insérées dans un cours (hébergées par le service du site).</summary>
@@ -124,6 +128,10 @@ public interface IAssessmentApi
     Task<ApiResult<Assessment>> PublishAsync(Guid id);
     Task<ApiResult<Assessment>> CloseAsync(Guid id);
     Task<ApiResult<bool>> DeleteAsync(Guid id);
+    Task<ApiResult<LibraryAssessments>> LibraryAsync(Guid organizationId);
+    Task<ApiResult<Assessment>> SetLibrariesAsync(Guid id, List<Guid> organizationIds);
+    Task<ApiResult<bool>> RemoveFromLibraryAsync(Guid organizationId, Guid id);
+    Task<ApiResult<Assessment>> CopyAsync(Guid id);
     Task<ApiResult<Attempt>> StartAttemptAsync(Guid id);
     /// <summary>Enregistre les réponses en cours de saisie : retrouvées si la page est rechargée ou la connexion coupée.</summary>
     Task<ApiResult<bool>> SaveDraftAsync(Guid id, Guid submissionId, List<AnswerDraft> answers);
@@ -256,6 +264,11 @@ public class CourseApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, Api
     public Task<ApiResult<CourseFeedback>> FeedbackAsync(Guid id) => GetAsync<CourseFeedback>($"/cours/{id}/feedback");
     public Task<ApiResult<CourseFeedback>> SetFeedbackAsync(Guid id, bool useful) => PutAsync<CourseFeedback>($"/cours/{id}/feedback", new { useful });
     public Task<ApiResult<bool>> ClearFeedbackAsync(Guid id) => DeleteAsync<bool>($"/cours/{id}/feedback");
+    public Task<ApiResult<LibraryCourses>> LibraryAsync(Guid organizationId) => GetAsync<LibraryCourses>($"/cours/library/{organizationId}");
+    public Task<ApiResult<CourseSummary>> SetLibrariesAsync(Guid id, List<Guid> organizationIds) =>
+        PutAsync<CourseSummary>($"/cours/{id}/library", new { organizationIds });
+    public Task<ApiResult<bool>> RemoveFromLibraryAsync(Guid organizationId, Guid id) => DeleteAsync<bool>($"/cours/library/{organizationId}/{id}");
+    public Task<ApiResult<CourseDetail>> CopyAsync(Guid id) => PostAsync<CourseDetail>($"/cours/{id}/copy");
 }
 
 public class MediaApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.Site), IMediaApi
@@ -283,6 +296,11 @@ public class AssessmentApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s,
     public Task<ApiResult<Assessment>> PublishAsync(Guid id) => PostAsync<Assessment>($"/assessments/{id}/publish");
     public Task<ApiResult<Assessment>> CloseAsync(Guid id) => PostAsync<Assessment>($"/assessments/{id}/close");
     public Task<ApiResult<bool>> DeleteAsync(Guid id) => DeleteAsync<bool>($"/assessments/{id}");
+    public Task<ApiResult<LibraryAssessments>> LibraryAsync(Guid organizationId) => GetAsync<LibraryAssessments>($"/assessments/library/{organizationId}");
+    public Task<ApiResult<Assessment>> SetLibrariesAsync(Guid id, List<Guid> organizationIds) =>
+        PutAsync<Assessment>($"/assessments/{id}/library", new { organizationIds });
+    public Task<ApiResult<bool>> RemoveFromLibraryAsync(Guid organizationId, Guid id) => DeleteAsync<bool>($"/assessments/library/{organizationId}/{id}");
+    public Task<ApiResult<Assessment>> CopyAsync(Guid id) => PostAsync<Assessment>($"/assessments/{id}/copy");
     public Task<ApiResult<Attempt>> StartAttemptAsync(Guid id) => PostAsync<Attempt>($"/assessments/{id}/attempts");
     public Task<ApiResult<bool>> SaveDraftAsync(Guid id, Guid submissionId, List<AnswerDraft> answers) =>
         PutAsync<bool>($"/assessments/{id}/attempts/{submissionId}/draft", new SubmitAttemptRequest(answers));

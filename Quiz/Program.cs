@@ -115,6 +115,7 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.MapAssessmentEndpoints();
+app.MapLibraryEndpoints();
 app.MapSubmissionEndpoints();
 app.MapProgressEndpoints();
 

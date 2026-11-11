@@ -22,6 +22,18 @@ public record ClassroomRef(Guid Id, string Name, string? InviteCode, Guid Teache
     public static HashSet<Guid> TaughtBy(IEnumerable<ClassroomRef> classrooms, Guid userId) =>
         classrooms.Where(c => c.MyRole is { } role ? role == "Teacher" : c.TeacherId == userId).Select(c => c.Id).ToHashSet();
 }
+/// <summary>Enseignant actif d'un établissement (service User), auteur possible d'un dépôt en bibliothèque.</summary>
+public record LibraryAuthorRef(Guid UserId, string Username);
+
+/// <summary>
+/// Bibliothèque d'un établissement vue par l'utilisateur courant (service User) : ses enseignants actifs,
+/// et CanManage si l'utilisateur en est responsable ou gestionnaire.
+/// </summary>
+public record LibrarySpaceRef(Guid Id, string Name, bool CanManage, List<LibraryAuthorRef> Teachers)
+{
+    public bool IsTeacher(Guid userId) => Teachers.Any(t => t.UserId == userId);
+}
+
 public record MemberRef(Guid Id, string Username, string? Level, DateTime? LastLoginAt);
 public record ChildRef(Guid ChildId, string Username, string Status);
 public record EntitledFeatureRef(string Code, int? Limit);
@@ -63,6 +75,13 @@ public class UserDirectoryClient(HttpClient http, IHttpContextAccessor context)
         var mine = await GetAsync<MySubscriptionsRef>("/subscriptions/me");
         return mine?.Entitlement.Features?.FirstOrDefault(f => f.Code == code);
     }
+
+    /// <summary>
+    /// Bibliothèque d'un établissement, ou null si l'utilisateur n'y est ni enseignant ni gestionnaire
+    /// (ou s'il s'agit d'un espace d'enseignant indépendant).
+    /// </summary>
+    public Task<LibrarySpaceRef?> LibrarySpaceAsync(Guid organizationId) =>
+        GetAsync<LibrarySpaceRef>($"/organizations/{organizationId}/library");
 
     private async Task<T?> GetAsync<T>(string path)
     {

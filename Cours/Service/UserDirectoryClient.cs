@@ -8,6 +8,18 @@ namespace Cours.Service;
 /// </summary>
 public record ClassroomRef(Guid Id, Guid TeacherId, string? MyRole = null);
 
+/// <summary>Enseignant actif d'un établissement (service User), auteur possible d'un dépôt en bibliothèque.</summary>
+public record LibraryAuthorRef(Guid UserId, string Username);
+
+/// <summary>
+/// Bibliothèque d'un établissement vue par l'utilisateur courant (service User) : ses enseignants actifs,
+/// et CanManage si l'utilisateur en est responsable ou gestionnaire.
+/// </summary>
+public record LibrarySpaceRef(Guid Id, string Name, bool CanManage, List<LibraryAuthorRef> Teachers)
+{
+    public bool IsTeacher(Guid userId) => Teachers.Any(t => t.UserId == userId);
+}
+
 /// <summary>
 /// Accès au service User pour le partage des cours : on transmet le JWT de l'utilisateur
 /// courant, et le service User ne renvoie que ses classes (enseignant : celles qu'il anime,
@@ -30,12 +42,33 @@ public class UserDirectoryClient(HttpClient http, IHttpContextAccessor context)
     public static HashSet<Guid> OwnedBy(IEnumerable<ClassroomRef> classrooms, Guid userId) =>
         classrooms.Where(c => c.MyRole is { } role ? role == "Teacher" : c.TeacherId == userId).Select(c => c.Id).ToHashSet();
 
-    private async Task<List<ClassroomRef>> MyClassroomsAsync()
+    /// <summary>
+    /// Bibliothèque d'un établissement, ou null si l'utilisateur n'y est ni enseignant ni gestionnaire
+    /// (ou si l'établissement n'existe pas, ou s'il s'agit d'un espace d'enseignant indépendant).
+    /// </summary>
+    public async Task<LibrarySpaceRef?> LibrarySpaceAsync(Guid organizationId)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/classrooms/mine");
+        using var request = Authorized(HttpMethod.Get, $"/organizations/{organizationId}/library");
+        using var response = await http.SendAsync(request);
+        if (response.StatusCode is System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.NotFound
+            or System.Net.HttpStatusCode.Unauthorized)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<LibrarySpaceRef>();
+    }
+
+    private HttpRequestMessage Authorized(HttpMethod method, string path)
+    {
+        var request = new HttpRequestMessage(method, path);
         var auth = context.HttpContext?.Request.Headers.Authorization.ToString();
         if (!string.IsNullOrEmpty(auth))
             request.Headers.Authorization = AuthenticationHeaderValue.Parse(auth);
+        return request;
+    }
+
+    private async Task<List<ClassroomRef>> MyClassroomsAsync()
+    {
+        using var request = Authorized(HttpMethod.Get, "/classrooms/mine");
 
         using var response = await http.SendAsync(request);
         response.EnsureSuccessStatusCode();

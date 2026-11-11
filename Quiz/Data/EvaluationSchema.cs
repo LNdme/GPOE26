@@ -135,6 +135,10 @@ public static class EvaluationSchema
           SELECT ""UserId"", 'quiz-ai', date_trunc('month', now() AT TIME ZONE 'UTC')::date, ""Count""
           FROM ""QuizGenerationUsage"" WHERE ""Month"" = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM')
           ON CONFLICT DO NOTHING",
+        // Bibliothèque d'établissement (phase 2, lot 8)
+        @"ALTER TABLE ""Assessments"" ADD COLUMN IF NOT EXISTS ""LibraryOrganizationIds"" uuid[] NOT NULL DEFAULT ARRAY[]::uuid[]",
+        @"ALTER TABLE ""Assessments"" ADD COLUMN IF NOT EXISTS ""SourceAssessmentId"" uuid",
+        @"CREATE INDEX IF NOT EXISTS ""IX_Assessments_LibraryOrganizationIds"" ON ""Assessments"" USING gin (""LibraryOrganizationIds"")",
     };
 
     public static async Task EnsureAsync(EvaluationContext db)

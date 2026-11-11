@@ -113,10 +113,13 @@
 
     // Espaces que la personne gère (responsable, gestionnaire, enseignant indépendant) : lien « Mon établissement »
     private List<MySpace> _managed = [];
+    // Établissements où la personne enseigne ou qu'elle gère : lien « Bibliothèque » (lot 8)
+    private bool _inSchool;
     private Guid? _spacesLoadedFor;
 
     private IEnumerable<NavItem> SpaceItems()
     {
+        if (_inSchool) yield return new NavItem("/app/bibliotheque", "Bibliothèque", "book");
         if (_managed.Count == 0) yield break;
         var label = _managed.All(s => s.Type == OrganizationType.Independent) ? "Mes élèves et codes" : "Mon établissement";
         yield return new NavItem("/app/etablissement", label, "building");
@@ -127,7 +130,9 @@
         var me = Session.Profile;
         if (!Session.IsAuthenticated || me is null || me.Role == UserRole.Student || _spacesLoadedFor == me.Id) return;
         _spacesLoadedFor = me.Id;
-        _managed = ((await Spaces.MineAsync()).Value ?? []).Where(s => s.CanManage).ToList();
+        var spaces = (await Spaces.MineAsync()).Value ?? [];
+        _managed = spaces.Where(s => s.CanManage).ToList();
+        _inSchool = spaces.Any(s => s.Type != OrganizationType.Independent);
         await InvokeAsync(StateHasChanged);
     }
 

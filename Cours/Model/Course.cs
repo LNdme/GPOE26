@@ -69,6 +69,14 @@ namespace Cours.Model
 
         public DateTime? PublishedAt { get; set; }
 
+        // ─── Bibliothèque d'établissement ─────────────────────────────────────────
+
+        /// <summary>Établissements (service User) dans la bibliothèque desquels l'auteur a déposé ce cours.</summary>
+        public List<Guid> LibraryOrganizationIds { get; set; } = new();
+
+        /// <summary>Cours d'origine d'une copie faite depuis une bibliothèque : simple souvenir, la copie n'en dépend pas.</summary>
+        public Guid? SourceCourseId { get; set; }
+
         // ─── Métadonnées ──────────────────────────────────────────────────────────
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

@@ -81,6 +81,10 @@ public static class AssessmentEndpoints
             var own = await db.OwnedAssessmentAsync(id, userId);
             if (own is not null) return Results.Ok(new AssessmentDto(own, withQuestions: true));
 
+            // Collègue d'un établissement où l'évaluation est déposée : il la voit entière, pour décider de la copier
+            if (await LibraryEndpoints.ReadableFromLibraryAsync(db, id, users) is { } deposited)
+                return Results.Ok(new AssessmentDto(deposited, withQuestions: true));
+
             if (!principal.IsInRole(Roles.Student)) return Results.NotFound();
             var assigned = (await AssignedToStudentAsync(db, users)).FirstOrDefault(a => a.Id == id);
             return assigned is null ? Results.NotFound() : Results.Ok(new AssessmentDto(assigned, withQuestions: false));

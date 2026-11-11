@@ -152,3 +152,10 @@ public record ActivateCodeRequest(
     [MaxLength(100)] string? FirstName = null,
     string Language = "fr"
 );
+
+// ─── Bibliothèque de l'établissement (phase 2, lot 8) ────────────────────────
+
+public record LibraryAuthorDto(Guid UserId, string Username);
+
+/// <summary>Teachers : enseignants actifs, seuls auteurs dont les dépôts sont montrés. CanManage : peut retirer un dépôt (Q13).</summary>
+public record LibrarySpaceDto(Guid Id, string Name, bool CanManage, List<LibraryAuthorDto> Teachers);
