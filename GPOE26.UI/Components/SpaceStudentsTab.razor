@@ -71,6 +71,7 @@
                                 @if (s.Username is { } u)
                                 {
                                     <span>@u</span>
+                                    @if (s.Code is { } reset) { <span class="ga-code" style="display:block; margin-top:4px; width:max-content" title="Code de reconnexion">@reset</span> }
                                 }
                                 else if (s.Code is { } pending)
                                 {
@@ -97,6 +98,7 @@
                                         }
                                         break;
                                     case StudentStatus.Active:
+                                        <button class="ga-btn ghost small" title="Mot de passe oublié : un code pour se reconnecter avec son matricule" @onclick="() => CodeAsync(s)">Code de reconnexion</button>
                                         <button class="ga-btn ghost small" title="A quitté l'établissement : sa place est libérée" @onclick="() => StatusAsync(s, StudentStatus.Left)">Parti</button>
                                         <button class="ga-btn ghost small" title="Retiré par l'établissement : sa place est libérée" @onclick="() => StatusAsync(s, StudentStatus.Revoked)">Retirer</button>
                                         break;

@@ -27,10 +27,10 @@ public static class OrganizationEndpoints
             var userId = principal.GetUserId();
             var rows = await db.OrganizationMembers
                 .Where(m => m.UserId == userId && m.Status == MemberStatus.Active)
-                .Join(db.Organizations, m => m.OrganizationId, o => o.Id, (m, o) => new { o.Id, o.Name, o.Type, o.City, m.Role })
+                .Join(db.Organizations, m => m.OrganizationId, o => o.Id, (m, o) => new { o.Id, o.Name, o.Type, o.City, o.ShortCode, m.Role })
                 .ToListAsync();
             return Results.Ok(rows.GroupBy(r => r.Id)
-                .Select(g => new MySpaceDto(g.Key, g.First().Name, g.First().Type, g.First().City, g.Select(r => r.Role).Order().ToList()))
+                .Select(g => new MySpaceDto(g.Key, g.First().Name, g.First().Type, g.First().City, g.Select(r => r.Role).Order().ToList(), g.First().ShortCode))
                 .OrderBy(s => s.Name));
         })
         .WithSummary("Mes espaces (établissements, espace d'enseignant indépendant) et mes rôles")
@@ -65,7 +65,7 @@ public static class OrganizationEndpoints
                 students.Where(s => s.Key == StudentStatus.Active).Sum(s => s.Count),
                 students.Where(s => s.Key == StudentStatus.Pending).Sum(s => s.Count),
                 await spaces.SeatLimitAsync(orgId), license?.TeacherSeats, license?.EndsAt,
-                await spaces.StudentsPremiumAsync(orgId)));
+                await spaces.StudentsPremiumAsync(orgId), org.ShortCode));
         })
         .RequireSpaceRole(Managers)
         .WithSummary("Tableau de bord de l'espace")

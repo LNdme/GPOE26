@@ -20,6 +20,18 @@ public static class UserDataMigrations
         await ApplyAsync(db, logger, 3,
             "Codes personnels : les clés partagées des établissements (ETB-/ORG-) sont retirées",
             () => RetireSchoolKeysV3Async(db));
+        await ApplyAsync(db, logger, 4,
+            "Connexion par matricule : un code court pour chaque établissement et espace d'enseignant",
+            () => ShortCodesV4Async(db));
+    }
+
+    /// <summary>Version 4 (phase 2, lot 10). Les espaces créés ensuite reçoivent leur code à la création.</summary>
+    private static async Task ShortCodesV4Async(UserContext db)
+    {
+        var spaces = new SpaceService(db, new ConfigurationBuilder().Build());
+        foreach (var org in await db.Organizations.Where(o => o.ShortCode == null).OrderBy(o => o.CreatedAt).ToListAsync())
+            org.ShortCode = await spaces.UniqueShortCodeAsync(org.Name);
+        await db.SaveChangesAsync();
     }
 
     /// <summary>

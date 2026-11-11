@@ -42,16 +42,30 @@
                         @if (c.StudentName is { } name)
                         {
                             <span class="name">@name</span>
-                            <span class="mat">Matricule @c.Matricule</span>
+                            @if (_space?.ShortCode is null) { <span class="mat">Matricule @c.Matricule</span> }
                         }
                         else if (c.Kind == AccessCodeKind.Student)
                         {
                             <span class="name">Nom : ……………………………………</span>
                         }
                     </div>
-                    <div class="code">@c.Code</div>
-                    <p>Va sur <strong>@ActivationUrl</strong>, saisis ce code, puis choisis ton nom d'utilisateur et ton mot de passe.
-                        Le code ne sert qu'une fois ; il est valable jusqu'au @Labels.ValidUntil(c.ExpiresAt).</p>
+                    @if (c.Kind == AccessCodeKind.Student && c.Matricule is { } mat && _space?.ShortCode is { } school)
+                    {
+                        <dl class="ids">
+                            <div><dt>Établissement</dt><dd>@school</dd></div>
+                            <div><dt>Matricule</dt><dd>@mat</dd></div>
+                        </dl>
+                        <div class="code">@c.Code</div>
+                        <p>Va sur <strong>@LoginUrl</strong>, choisis <strong>« Avec mon matricule »</strong> : saisis le code de l'établissement,
+                            ton matricule, et ce code comme mot de passe. Tu choisiras ensuite ton propre mot de passe.
+                            Le code ne sert qu'une fois ; il est valable jusqu'au @Labels.ValidUntil(c.ExpiresAt).</p>
+                    }
+                    else
+                    {
+                        <div class="code">@c.Code</div>
+                        <p>Va sur <strong>@ActivationUrl</strong>, saisis ce code, puis choisis ton nom d'utilisateur et ton mot de passe.
+                            Le code ne sert qu'une fois ; il est valable jusqu'au @Labels.ValidUntil(c.ExpiresAt).</p>
+                    }
                 </article>
             }
         </div>
@@ -68,7 +82,9 @@
     private MySpace? _space;
     private List<AccessCodeInfo> _codes = [];
 
-    private string ActivationUrl => Nav.BaseUri.TrimEnd('/').Replace("https://", "").Replace("http://", "") + "/code";
+    private string Site => Nav.BaseUri.TrimEnd('/').Replace("https://", "").Replace("http://", "");
+    private string ActivationUrl => Site + "/code";
+    private string LoginUrl => Site + "/login";
 
     protected override async Task LoadAsync()
     {

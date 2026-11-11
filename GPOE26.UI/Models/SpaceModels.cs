@@ -12,7 +12,8 @@ public enum StudentStatus { Pending, Active, Revoked, Left }
 public enum AccessCodeKind { Student, Teacher, Owner }
 public enum AccessCodeStatus { Issued, Used, Revoked, Expired }
 
-public record MySpace(Guid Id, string Name, OrganizationType Type, string? City, List<OrganizationRole> Roles)
+/// <summary>ShortCode : code de l'établissement, que l'élève saisit avec son matricule pour se connecter.</summary>
+public record MySpace(Guid Id, string Name, OrganizationType Type, string? City, List<OrganizationRole> Roles, string? ShortCode = null)
 {
     /// <summary>Responsable ou gestionnaire : peut ouvrir « Mon établissement ».</summary>
     public bool CanManage => Roles.Contains(OrganizationRole.Owner) || Roles.Contains(OrganizationRole.Manager);
@@ -23,7 +24,7 @@ public record SchoolYear(Guid Id, string Label, DateOnly StartsOn, DateOnly Ends
 
 public record SpaceOverview(Guid Id, string Name, OrganizationType Type, string? City, SchoolYear? CurrentYear,
     int ClassCount, int TeacherCount, int StudentsActive, int StudentsPending, int? Seats, int? TeacherSeats, DateTime? LicenseEndsAt,
-    bool StudentsPremium = false);
+    bool StudentsPremium = false, string? ShortCode = null);
 
 public record SpaceMember(Guid UserId, string Username, string? Email, UserRole Role, List<OrganizationRole> Roles, DateTime JoinedAt);
 

@@ -30,6 +30,9 @@ public record EditProfileRequest(
 
 public record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 
+/// <summary>Premier mot de passe, après une connexion avec un code personnel.</summary>
+public record FirstPasswordRequest(string NewPassword);
+
 public static class ProfileRules
 {
     public const int MinPasswordLength = 8;
@@ -133,11 +136,34 @@ public static class ProfileEndpoints
                 return Results.BadRequest(new { message = error });
 
             user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.NewPassword);
+            user.MustChangePassword = false;
             await db.SaveChangesAsync();
             return Results.NoContent();
         })
         .WithSummary("Changer son mot de passe")
         .Produces(204)
         .Produces(400);
+
+        // ── POST /auth/me/first-password ──────────────────────────────────────────
+        // Après une connexion avec un code personnel (matricule), l'élève choisit son mot de passe :
+        // il ne connaît pas d'« ancien » mot de passe. Refusé à tout autre compte.
+        me.MapPost("/first-password", async (FirstPasswordRequest req, ClaimsPrincipal principal, UserContext db) =>
+        {
+            var user = await db.CurrentUserAsync(principal);
+            if (user is null) return Results.Unauthorized();
+            if (!user.MustChangePassword)
+                return Results.Conflict(new { message = "Votre mot de passe est déjà choisi : changez-le depuis votre profil." });
+            if (string.IsNullOrEmpty(req.NewPassword) || req.NewPassword.Length < ProfileRules.MinPasswordLength)
+                return Results.BadRequest(new { message = $"Le mot de passe doit contenir au moins {ProfileRules.MinPasswordLength} caractères." });
+
+            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.NewPassword);
+            user.MustChangePassword = false;
+            await db.SaveChangesAsync();
+            return Results.NoContent();
+        })
+        .WithSummary("Choisir son mot de passe après une connexion avec un code personnel")
+        .Produces(204)
+        .Produces(400)
+        .Produces(409);
     }
 }

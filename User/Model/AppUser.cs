@@ -98,6 +98,12 @@
         /// </summary>
         public bool SiteEditor { get; set; }
 
+        /// <summary>
+        /// Connecté avec un code personnel (première connexion par matricule, ou code de reconnexion donné par
+        /// l'établissement) : l'élève doit choisir son mot de passe avant d'aller plus loin.
+        /// </summary>
+        public bool MustChangePassword { get; set; }
+
         // ─── Métadonnées ──────────────────────────────────────────────────────────
         public DateTime? LastLoginAt { get; set; }
     }

@@ -43,6 +43,8 @@ namespace User.Data
             modelBuilder.Entity<Organization>(entity =>
             {
                 entity.Property(o => o.Name).HasMaxLength(200);
+                entity.Property(o => o.ShortCode).HasMaxLength(10);
+                entity.HasIndex(o => o.ShortCode).IsUnique();
                 entity.Property(o => o.Type).HasConversion<string>();
             });
 

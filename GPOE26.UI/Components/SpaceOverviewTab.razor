@@ -3,6 +3,11 @@
 
 @if (Overview is { } o)
 {
+    @if (o.ShortCode is { } school)
+    {
+        <p style="margin:0">Code de l'établissement : <span class="ga-code">@school</span>
+            <span class="ga-small ga-muted">— avec leur matricule, vos élèves s'en servent pour se connecter (il figure sur leurs fiches).</span></p>
+    }
     <div class="ga-grid tight">
         <div class="ga-stat"><span class="lbl">Élèves inscrits (compte activé)</span><span class="val">@o.StudentsActive<small>@(o.Seats is { } s ? $"/{s} places" : "")</small></span></div>
         <div class="ga-stat amber"><span class="lbl">En attente de leur code</span><span class="val">@o.StudentsPending</span></div>

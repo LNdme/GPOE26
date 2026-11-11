@@ -45,6 +45,23 @@
                         <li style="display:block">
                             <strong>@org.Name</strong>
                             <small style="display:block">@(org.Type == M.OrganizationType.Institution ? "Institution" : "Établissement scolaire")@(org.City is { Length: > 0 } ? $" · {org.City}" : "")</small>
+                            @if (_codeFor == org.Id)
+                            {
+                                <form class="admin-form" style="margin-top:.5rem" @onsubmit="() => SaveCodeAsync(org)" @onsubmit:preventDefault>
+                                    <label><span>Code de l’établissement (4 à 10 lettres ou chiffres)</span>
+                                        <input class="form-control" maxlength="10" style="text-transform:uppercase" @bind="_code" @bind:event="oninput" /></label>
+                                    <small>Le changer oblige à réimprimer les fiches des élèves qui ne se sont pas encore connectés.</small>
+                                    <div class="admin-form__actions">
+                                        <button type="submit" class="site-btn site-btn--primary site-btn--sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_code))">Enregistrer</button>
+                                        <button type="button" class="site-btn site-btn--quiet site-btn--sm" @onclick="() => _codeFor = null">Annuler</button>
+                                    </div>
+                                </form>
+                            }
+                            else
+                            {
+                                <small style="display:block">Code de connexion des élèves : <code>@(org.ShortCode ?? "—")</code>
+                                    <button type="button" class="site-btn site-btn--quiet site-btn--sm" @onclick="() => OpenCode(org)">Changer</button></small>
+                            }
 
                             <div style="margin-top:.5rem">
                                 @if (org.Owners is { Count: > 0 } owners)
@@ -144,7 +161,8 @@
     private bool _loading = true, _busy;
     private string? _error, _notice, _name, _city;
     private M.OrganizationType _type = M.OrganizationType.School;
-    private Guid? _licenseFor, _ownerFor;
+    private Guid? _licenseFor, _ownerFor, _codeFor;
+    private string? _code;
     private string? _ownerEmail;
     private int _seats = 30, _months = 12;
 
@@ -180,6 +198,24 @@
         _name = _city = null;
         await LoadAsync();
         _licenseFor = result.Value.Id;
+    }
+
+    private void OpenCode(M.Organization org)
+    {
+        _codeFor = org.Id;
+        _code = org.ShortCode;
+    }
+
+    private async Task SaveCodeAsync(M.Organization org)
+    {
+        _busy = true;
+        _error = _notice = null;
+        var result = await Platform.SetShortCodeAsync(org.Id, _code!.Trim().ToUpperInvariant());
+        _busy = false;
+        if (!result.Ok) { _error = result.Error; return; }
+        _notice = $"Le code de « {org.Name} » est maintenant {_code!.Trim().ToUpperInvariant()}.";
+        _codeFor = null;
+        await LoadAsync();
     }
 
     private void OpenOwner(M.Organization org)

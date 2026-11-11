@@ -10,6 +10,10 @@ namespace GPOE26.UI.Services;
 public interface IAccountApi
 {
     Task<ApiResult<AuthResponse>> LoginAsync(string email, string password);
+    /// <summary>Élève d'un établissement : code de l'établissement, matricule, mot de passe ou code de sa fiche.</summary>
+    Task<ApiResult<AuthResponse>> LoginMatriculeAsync(string school, string matricule, string password);
+    /// <summary>Premier mot de passe, après une connexion avec le code de sa fiche.</summary>
+    Task<ApiResult<bool>> FirstPasswordAsync(string newPassword);
     Task<ApiResult<AuthResponse>> RegisterAsync(RegisterRequest request);
     Task<ApiResult<UserProfile>> MeAsync();
     Task<ApiResult<UserProfile>> UpdateProfileAsync(EditProfileRequest request);
@@ -166,6 +170,9 @@ public class AccountApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, Ap
 {
     public Task<ApiResult<AuthResponse>> LoginAsync(string email, string password) =>
         PostAsync<AuthResponse>("/auth/login", new LoginRequest(email, password));
+    public Task<ApiResult<AuthResponse>> LoginMatriculeAsync(string school, string matricule, string password) =>
+        PostAsync<AuthResponse>("/auth/login-matricule", new { school, matricule, password });
+    public Task<ApiResult<bool>> FirstPasswordAsync(string newPassword) => PostAsync<bool>("/auth/me/first-password", new { newPassword });
     public Task<ApiResult<AuthResponse>> RegisterAsync(RegisterRequest request) => PostAsync<AuthResponse>("/auth/register", request);
     public Task<ApiResult<UserProfile>> MeAsync() => GetAsync<UserProfile>("/auth/me");
     public Task<ApiResult<UserProfile>> UpdateProfileAsync(EditProfileRequest request) => PutAsync<UserProfile>("/auth/me/profile", request);

@@ -314,3 +314,42 @@ public class ImportFileTests
         Assert.Contains("Aucun tableau", ImportFileReader.Read(file, "liste.docx").Error);
     }
 }
+
+/// <summary>Connexion par matricule (docs/PLAN-ETABLISSEMENT-2.md, lot 10).</summary>
+public class MatriculeLoginRulesTests
+{
+    [Theory]
+    [InlineData("Lycée de démonstration", "LYCDEMO")]
+    [InlineData("Lycée bilingue de Bonabéri", "LYCBILIB")]
+    [InlineData("Startup Kmer Data", "STAKMERD")]
+    [InlineData("Collège", "COLLEGE")]
+    [InlineData("Institut supérieur des sciences et techniques appliquées", "INSSUPESTA")]   // coupé à 10
+    [InlineData("É", "EXXX")]
+    [InlineData("de la", "ECOLE")]
+    public void Le_code_propose_vient_du_nom(string name, string expected)
+    {
+        var code = SpaceRules.ShortCodeFrom(name);
+        Assert.Equal(expected, code);
+        Assert.True(SpaceRules.IsValidShortCode(code));
+    }
+
+    [Theory]
+    [InlineData("LYCDEMO", true)]
+    [InlineData("LYC2026", true)]
+    [InlineData("ABC", false)]
+    [InlineData("TROPLONGCODE", false)]
+    [InlineData("lycdemo", false)]
+    [InlineData("LYC-DEMO", false)]
+    [InlineData("LYCÉE", false)]
+    [InlineData(null, false)]
+    public void Un_code_saisi_compte_4_a_10_lettres_majuscules_ou_chiffres(string? code, bool valid) =>
+        Assert.Equal(valid, SpaceRules.IsValidShortCode(code));
+
+    [Theory]
+    [InlineData("LYCDEMO", "TC-101", "lycdemo.tc-101")]
+    [InlineData("LYCDEMO", "2026/0007", "lycdemo.2026-0007")]
+    [InlineData("LYCDEMO", "Él 12", "lycdemo.el-12")]
+    [InlineData("LYCDEMO", "---", "lycdemo.eleve")]
+    public void Le_nom_d_utilisateur_vient_du_code_et_du_matricule(string school, string matricule, string expected) =>
+        Assert.Equal(expected, SpaceRules.MatriculeUsername(school, matricule));
+}

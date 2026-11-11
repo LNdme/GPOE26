@@ -17,6 +17,8 @@ public interface IPlatformAdminApi
     Task<ApiResult<bool>> RemoveOwnerAsync(Guid organizationId, Guid userId);
     /// <summary>Code responsable à usage unique, pour une personne qui n'a pas encore de compte.</summary>
     Task<ApiResult<AccessCodeInfo>> OwnerCodeAsync(Guid organizationId);
+    /// <summary>Code de l'établissement pour la connexion par matricule (4 à 10 lettres ou chiffres).</summary>
+    Task<ApiResult<bool>> SetShortCodeAsync(Guid organizationId, string code);
 }
 
 public class PlatformAdminApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.User), IPlatformAdminApi
@@ -43,4 +45,7 @@ public class PlatformAdminApi(IHttpClientFactory f, SessionState s) : ApiBase(f,
 
     public Task<ApiResult<AccessCodeInfo>> OwnerCodeAsync(Guid organizationId) =>
         PostAsync<AccessCodeInfo>($"/admin/organizations/{organizationId}/owner-code");
+
+    public Task<ApiResult<bool>> SetShortCodeAsync(Guid organizationId, string code) =>
+        PutAsync<bool>($"/admin/organizations/{organizationId}/short-code", new { code });
 }

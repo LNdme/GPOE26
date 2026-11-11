@@ -19,6 +19,7 @@ public class RateLimitTests
 
     [Theory]
     [InlineData("POST", "/auth/login", "connexion")]
+    [InlineData("POST", "/auth/login-matricule", "connexion-matricule")]
     [InlineData("POST", "/parents/link", "codes")]
     [InlineData("POST", "/subscriptions/redeem", "codes")]
     [InlineData("POST", "/access-codes/redeem", "codes")]

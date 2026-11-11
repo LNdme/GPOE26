@@ -17,16 +17,44 @@
             <p>Connecte-toi pour reprendre là où tu t'es arrêté.</p>
         </div>
 
+        @* Élève d'un établissement : code de l'établissement + matricule (docs/PLAN-ETABLISSEMENT-2.md, P3) *@
+        <div class="ga-tabs" role="tablist" aria-label="Façon de se connecter">
+            <button type="button" role="tab" aria-selected="@Aria.State(!_byMatricule)" class="@(!_byMatricule ? "on" : "")" @onclick="() => Switch(false)">E-mail ou nom d'utilisateur</button>
+            <button type="button" role="tab" aria-selected="@Aria.State(_byMatricule)" class="@(_byMatricule ? "on" : "")" @onclick="() => Switch(true)">Avec mon matricule</button>
+        </div>
+
         <Alert Message="@_error" />
 
-        <div class="ga-field">
-            <label for="login-email">Adresse e-mail ou nom d'utilisateur</label>
-            <input id="login-email" class="ga-input big" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required @bind="_email" />
-        </div>
-        <div class="ga-field">
-            <label for="login-password">Mot de passe</label>
-            <input id="login-password" class="ga-input big" type="password" autocomplete="current-password" required @bind="_password" />
-        </div>
+        @if (_byMatricule)
+        {
+            <div class="ga-form-grid" style="grid-template-columns:repeat(2, minmax(0, 1fr))">
+                <div class="ga-field">
+                    <label for="login-school">Code de l'établissement</label>
+                    <input id="login-school" class="ga-input big" style="text-transform:uppercase" autocomplete="organization" autocapitalize="characters" spellcheck="false"
+                           placeholder="ex. LYCDEMO" required @bind="_school" @bind:event="oninput" />
+                </div>
+                <div class="ga-field">
+                    <label for="login-matricule">Matricule</label>
+                    <input id="login-matricule" class="ga-input big" autocomplete="username" autocapitalize="characters" spellcheck="false" required @bind="_matricule" @bind:event="oninput" />
+                </div>
+            </div>
+            <div class="ga-field">
+                <label for="login-mpassword">Mot de passe</label>
+                <input id="login-mpassword" class="ga-input big" type="password" autocomplete="current-password" required @bind="_password" @bind:event="oninput" />
+                <span class="ga-small ga-muted">Première connexion : le code imprimé sur ta fiche (GP-…). Tu choisiras ensuite ton mot de passe.</span>
+            </div>
+        }
+        else
+        {
+            <div class="ga-field">
+                <label for="login-email">Adresse e-mail ou nom d'utilisateur</label>
+                <input id="login-email" class="ga-input big" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required @bind="_email" />
+            </div>
+            <div class="ga-field">
+                <label for="login-password">Mot de passe</label>
+                <input id="login-password" class="ga-input big" type="password" autocomplete="current-password" required @bind="_password" />
+            </div>
+        }
 
         <button type="submit" class="ga-btn big block" disabled="@_busy">@(_busy ? "Connexion…" : "Se connecter")</button>
 
@@ -39,30 +67,45 @@
 
 @code {
     [SupplyParameterFromQuery(Name = "retour")] public string? ReturnUrl { get; set; }
+    [SupplyParameterFromQuery(Name = "matricule")] public string? MatriculeMode { get; set; }
 
-    private string _email = "", _password = "";
+    private string _email = "", _password = "", _school = "", _matricule = "";
     private string? _error;
-    private bool _busy;
+    private bool _busy, _byMatricule;
 
     protected override async Task OnInitializedAsync()
     {
+        _byMatricule = MatriculeMode is not null;
         await Session.RestoreAsync();
         if (Session.IsAuthenticated) Nav.NavigateTo(AppPage.SafeReturnUrl(ReturnUrl, Session.Role));
+    }
+
+    private void Switch(bool byMatricule)
+    {
+        _byMatricule = byMatricule;
+        _error = null;
+        _password = "";
     }
 
     private async Task SubmitAsync()
     {
         _busy = true;
         _error = null;
-        var result = await Account.LoginAsync(_email.Trim(), _password);
+        var result = _byMatricule
+            ? await Account.LoginMatriculeAsync(_school.Trim(), _matricule.Trim(), _password)
+            : await Account.LoginAsync(_email.Trim(), _password);
         _busy = false;
 
         if (!result.Ok || result.Value is null)
         {
-            _error = result.Status == System.Net.HttpStatusCode.Unauthorized ? "Identifiant ou mot de passe incorrect." : result.Error;
+            _error = result.Status == System.Net.HttpStatusCode.Unauthorized
+                ? (_byMatricule ? "Code d'établissement, matricule ou mot de passe incorrect." : "Identifiant ou mot de passe incorrect.")
+                : result.Error;
             return;
         }
         await Session.SignInAsync(result.Value);
-        Nav.NavigateTo(AppPage.SafeReturnUrl(ReturnUrl, Session.Role));
+        var next = AppPage.SafeReturnUrl(ReturnUrl, Session.Role);
+        // Connecté avec le code de sa fiche : il choisit d'abord son mot de passe
+        Nav.NavigateTo(result.Value.Profile.MustChangePassword ? $"/app/mot-de-passe?retour={Uri.EscapeDataString(next)}" : next);
     }
 }

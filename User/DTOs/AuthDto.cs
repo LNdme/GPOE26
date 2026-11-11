@@ -93,7 +93,8 @@ public record UserProfileDto(
     List<EntitledFeature>? Features = null,
     EducationStage? Stage = null,
     bool SiteEditor = false,
-    bool IsAdmin = false
+    bool IsAdmin = false,
+    bool MustChangePassword = false
 )
 {
     public UserProfileDto(AppUser user, Entitlement? entitlement = null) : this(
@@ -122,7 +123,8 @@ public record UserProfileDto(
         entitlement?.Features,
         user.Stage,
         user.SiteEditor,
-        user.IsAdmin
+        user.IsAdmin,
+        user.MustChangePassword
     )
     { }
 }

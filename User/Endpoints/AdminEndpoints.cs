@@ -75,12 +75,12 @@ public static class AdminEndpoints
         .Produces(409);
 
         // ── POST /admin/organizations ─────────────────────────────────────────────
-        admin.MapPost("/organizations", async (CreateOrganizationRequest req, UserContext db) =>
+        admin.MapPost("/organizations", async (CreateOrganizationRequest req, UserContext db, SpaceService spaces) =>
         {
-            var org = new Organization { Name = req.Name.Trim(), Type = req.Type, City = req.City };
+            var org = new Organization { Name = req.Name.Trim(), Type = req.Type, City = req.City, ShortCode = await spaces.UniqueShortCodeAsync(req.Name) };
             db.Organizations.Add(org);
             await db.SaveChangesAsync();
-            return Results.Created($"/admin/organizations/{org.Id}", new OrganizationDto(org.Id, org.Name, org.Type, org.City, []));
+            return Results.Created($"/admin/organizations/{org.Id}", new OrganizationDto(org.Id, org.Name, org.Type, org.City, [], ShortCode: org.ShortCode));
         })
         .WithSummary("Créer un établissement ou une institution")
         .Produces<OrganizationDto>(201);
@@ -102,7 +102,7 @@ public static class AdminEndpoints
                 licenses.Where(l => l.OrganizationId == o.Id)
                     .Select(l => new SubscriptionDto(l, keys.Where(k => k.SubscriptionId == l.Id)))
                     .ToList(),
-                owners.Where(x => x.OrganizationId == o.Id).Select(x => x.Owner).ToList())));
+                owners.Where(x => x.OrganizationId == o.Id).Select(x => x.Owner).ToList(), o.ShortCode)));
         })
         .WithSummary("Établissements, institutions, leurs licences et leurs responsables")
         .Produces<List<OrganizationDto>>();
@@ -125,6 +125,23 @@ public static class AdminEndpoints
         .WithSummary("Désigner le responsable d'un établissement")
         .Produces<SpaceOwnerDto>()
         .Produces(404);
+
+        // ── PUT /admin/organizations/{id}/short-code ──────────────────────────────
+        // Code de l'établissement pour la connexion par matricule (Q10). Le changer oblige à réimprimer les fiches.
+        admin.MapPut("/organizations/{id:guid}/short-code", async (Guid id, ShortCodeRequest req, UserContext db) =>
+        {
+            var org = await db.Organizations.FindAsync(id);
+            if (org is null) return Results.NotFound();
+            var code = req.Code.Trim().ToUpperInvariant();
+            if (!SpaceRules.IsValidShortCode(code))
+                return Results.BadRequest(new { message = "Le code d'établissement compte 4 à 10 lettres (sans accents) ou chiffres." });
+            if (await db.Organizations.AnyAsync(o => o.ShortCode == code && o.Id != id))
+                return Results.Conflict(new { message = $"Le code {code} est déjà pris par un autre établissement." });
+            org.ShortCode = code;
+            await db.SaveChangesAsync();
+            return Results.Ok(new { org.ShortCode });
+        })
+        .WithSummary("Changer le code de l'établissement (connexion par matricule)");
 
         // ── POST /admin/organizations/{id}/owner-code ─────────────────────────────
         // Code responsable à transmettre quand la personne n'a pas encore de compte : elle le crée avec ce code.

@@ -23,8 +23,10 @@ public static class AccessCodeEndpoints
         {
             var (error, info) = await codes.CheckAsync(req.Code);
             if (error != CodeError.None) return Results.NotFound(new { message = AccessCodeService.Message(error) });
+            if (info!.Student?.UserId is not null)
+                return Results.NotFound(new { message = AccessCodeService.Message(CodeError.ResetCode) });
 
-            var student = info!.Student;
+            var student = info.Student;
             return Results.Ok(new CodeInfoDto(info.Code.Kind, info.Organization.Name,
                 student is null ? null : $"{student.LastName} {student.FirstName}".Trim(),
                 student?.Matricule, info.Classroom?.Name,
@@ -81,6 +83,25 @@ public static class AccessCodeEndpoints
         .Produces<AuthResponse>(201)
         .Produces(400)
         .Produces(409);
+
+        // ── POST /auth/login-matricule ────────────────────────────────────────────
+        // Élève d'un établissement : code de l'établissement + matricule + mot de passe (ou code de sa fiche).
+        app.MapPost("/auth/login-matricule", async (MatriculeLoginRequest req, AccessCodeService codes, Jwtservice jwt, SubscriptionService subs) =>
+        {
+            var (user, activation) = await codes.MatriculeLoginAsync(req.School, req.Matricule, req.Password);
+            if (activation != CodeError.None)
+                return Results.BadRequest(new { message = AccessCodeService.Message(activation) });
+            if (user is null)
+                return Results.Json(new { message = "Code d'établissement, matricule ou mot de passe incorrect." }, statusCode: StatusCodes.Status401Unauthorized);
+
+            var entitlement = await subs.GetEntitlementAsync(user.Id);
+            var (token, expiresAt) = jwt.GenerateToken(user, entitlement);
+            return Results.Ok(new AuthResponse(token, expiresAt, new UserProfileDto(user, entitlement)));
+        })
+        .WithTags("Codes personnels")
+        .WithSummary("Connexion d'un élève par le code de son établissement et son matricule")
+        .Produces<AuthResponse>()
+        .Produces(401);
 
         // ── POST /access-codes/redeem ─────────────────────────────────────────────
         // Un compte existant (élève qui avait un compte individuel, enseignant, futur responsable) saisit son code.

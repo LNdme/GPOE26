@@ -2,7 +2,7 @@
 
 Rédigé le 11 novembre 2026, sur la branche `feat/site-admin-navbar`, après la phase 1 (`docs/PLAN-ETABLISSEMENT.md`, lots 1 à 7, poussée dans la PR #6). Décisions P1 à P6 et questions Q10 à Q15 validées le même jour.
 
-> **Avancement :** lot 9 fait le 11 novembre 2026 (non commité) — voir « Lot 9 : ce qui a été fait ». Lots 8, 10 à 13 à faire.
+> **Avancement :** lot 9 commité (`56015f4`) ; lot 10 fait le 11 novembre 2026 (non commité) — voir « Lot 9 » et « Lot 10 : ce qui a été fait ». Lots 8, 11 à 13 à faire.
 
 ## Ce que l'utilisateur a demandé
 
@@ -92,6 +92,21 @@ Ordre conseillé : 9 et 10 d'abord (les élèves entrent plus simplement), puis 
 - **Écran** « Élèves et codes » : choix d'un fichier Excel, Word ou CSV ; l'aperçu montre l'e-mail et les autres informations, et les colonnes gardées ; la liste montre l'e-mail et les autres informations sous le nom.
 
 **Vérifications :** tests 396 / 396, dont 13 nouveaux (vrais classeurs Excel et documents Word fabriqués en mémoire : titre fusionné, matricule à zéros, date Excel, fusion verticale dans Word, document sans tableau, ancien format, fichier abîmé) ; scénario par l'API sur une base neuve avec un classeur et un document d'essai, 15 contrôles ; liste vérifiée dans le navigateur (et matricule long gardé sur une ligne).
+
+---
+
+## Lot 10 : ce qui a été fait (11 novembre 2026)
+
+- **Code de l'établissement** (`Organizations.ShortCode`, unique) : proposé à partir du nom (« Lycée de démonstration » → `LYCDEMO`, un chiffre ajouté s'il est pris), donné à la création d'un établissement ou d'un espace d'enseignant ; **reprise v4** pour les espaces existants ; modifiable par l'administration (`PUT /admin/organizations/{id}/short-code`, 4 à 10 lettres ou chiffres) ; montré dans « Mon établissement », l'administration et sur les fiches.
+- **Connexion par matricule** (`POST /auth/login-matricule` : code de l'établissement, matricule, mot de passe ; majuscules indifférentes) :
+  - première fois, avec le code de la fiche : le compte est créé (nom d'utilisateur `code.matricule`, ex. `lycdemo.tc-101`, e-mail importé recopié), l'élève est placé dans sa classe et prend une place ;
+  - ensuite, avec son mot de passe (son nom d'utilisateur et son e-mail marchent aussi sur la connexion habituelle) ;
+  - refus sans dire ce qui est faux ; élève parti ou retiré refusé ; **5 échecs par élève en 15 minutes** puis blocage (règle « connexion-matricule » de la limite de tentatives, clé = établissement + matricule).
+- **Premier mot de passe** : après une connexion avec un code, `MustChangePassword` ; la page « Choisis ton mot de passe » (`/app/mot-de-passe`) est la seule ouverte tant qu'il n'est pas choisi (`POST /auth/me/first-password`).
+- **Mot de passe oublié (Q11)** : « Code de reconnexion » dans la liste des élèves, pour un élève qui a son compte ; il ne sert qu'à ce compte (connexion par matricule, puis nouveau mot de passe). **Protection ajoutée** : un tel code ne peut ni créer un autre compte (`/code`), ni être pris par un autre compte — sinon qui trouve la fiche prendrait la place de l'élève.
+- **Écrans** : onglet « Avec mon matricule » sur la page de connexion (`/login?matricule`) ; fiches avec « Établissement » et « Matricule » et la marche à suivre ; code de l'établissement dans l'aperçu et l'administration.
+
+**Vérifications :** tests 416 / 416 (code proposé, code valable, nom d'utilisateur tiré du matricule, règle de limite) ; scénario sur une base neuve, 28 contrôles (reprise v4, première connexion, mot de passe choisi, reconnexion par matricule, nom d'utilisateur et e-mail, code de reconnexion et sa protection, élève parti, limite de tentatives, code changé par l'administration) ; parcours dans le navigateur : connexion par matricule → page du mot de passe imposée (aussi en allant ailleurs) → retour à la page demandée ; fiche imprimable vérifiée. Corrigé pendant l'essai : la touche Entrée juste après la frappe n'envoyait pas le mot de passe (le formulaire vérifie maintenant à l'envoi) ; matricule écrit deux fois sur la fiche.
 
 ---
 

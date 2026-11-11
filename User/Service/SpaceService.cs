@@ -101,7 +101,7 @@ public class SpaceService(UserContext db, IConfiguration config)
     /// <summary>Espace personnel de l'enseignant, créé (avec son année en cours) s'il n'en a pas encore.</summary>
     public async Task<Guid> PersonalSpaceAsync(AppUser teacher)
     {
-        var orgId = await IndependentSpaceOfAsync(teacher.Id) ?? CreateIndependentSpace(teacher);
+        var orgId = await IndependentSpaceOfAsync(teacher.Id) ?? await CreateIndependentSpaceAsync(teacher);
         await CurrentYearIdAsync(orgId);
         return orgId;
     }
@@ -177,9 +177,26 @@ public class SpaceService(UserContext db, IConfiguration config)
         return stored == Guid.Empty ? null : stored;
     }
 
-    private Guid CreateIndependentSpace(AppUser teacher)
+    /// <summary>
+    /// Code d'établissement libre, proposé à partir du nom ; un chiffre est ajouté s'il est déjà pris
+    /// (« LYCDEMO », « LYCDEMO2 »…). Les codes réservés dans l'unité de travail en cours comptent aussi.
+    /// </summary>
+    public async Task<string> UniqueShortCodeAsync(string name)
     {
-        var org = new Organization { Name = SpaceRules.IndependentSpaceName(teacher.Username), Type = OrganizationType.Independent };
+        var stem = SpaceRules.ShortCodeFrom(name);
+        for (var i = 1; ; i++)
+        {
+            var suffix = i == 1 ? "" : i.ToString();
+            var code = stem[..Math.Min(stem.Length, 10 - suffix.Length)] + suffix;
+            if (!db.Organizations.Local.Any(o => o.ShortCode == code) && !await db.Organizations.AnyAsync(o => o.ShortCode == code))
+                return code;
+        }
+    }
+
+    private async Task<Guid> CreateIndependentSpaceAsync(AppUser teacher)
+    {
+        var name = SpaceRules.IndependentSpaceName(teacher.Username);
+        var org = new Organization { Name = name, Type = OrganizationType.Independent, ShortCode = await UniqueShortCodeAsync(name) };
         db.Organizations.Add(org);
         db.OrganizationMembers.Add(new OrganizationMember { OrganizationId = org.Id, UserId = teacher.Id, Role = OrganizationRole.Owner });
         db.OrganizationMembers.Add(new OrganizationMember { OrganizationId = org.Id, UserId = teacher.Id, Role = OrganizationRole.Teacher });

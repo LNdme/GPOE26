@@ -16,7 +16,9 @@ public enum CodeError
     NoLicense,
     AlreadyEnrolled,
     NameRequired,
-    TeachersFull
+    TeachersFull,
+    /// <summary>Code redonné à un élève qui a déjà son compte (mot de passe oublié) : il ne crée pas d'autre compte.</summary>
+    ResetCode
 }
 
 /// <summary>Ce qu'un code donne, montré avant l'activation (« Nom Prénom — Tle C — Lycée X : c'est bien toi ? »).</summary>
@@ -108,6 +110,16 @@ public class AccessCodeService(UserContext db, SpaceService spaces)
             case AccessCodeKind.Student:
             {
                 var row = info.Student;
+                // Code de reconnexion (Q11) : la fiche a déjà son compte. Il ne sert qu'à ce compte-là,
+                // jamais à en créer un autre (sinon qui trouve la fiche prendrait la place de l'élève).
+                if (row?.UserId is { } owner)
+                {
+                    if (owner != user.Id) return CodeError.ResetCode;
+                    MarkUsed(code, user);
+                    await db.SaveChangesAsync();
+                    return CodeError.None;
+                }
+
                 // Un compte ne figure qu'une fois sur la liste d'un espace
                 var otherRow = row?.Id ?? Guid.Empty;
                 if (await db.OrganizationStudents.AnyAsync(s => s.OrganizationId == orgId && s.UserId == user.Id && s.Id != otherRow))
@@ -162,11 +174,99 @@ public class AccessCodeService(UserContext db, SpaceService spaces)
                 break;
         }
 
+        MarkUsed(code, user);
+        await db.SaveChangesAsync();
+        return CodeError.None;
+    }
+
+    private static void MarkUsed(AccessCode code, AppUser user)
+    {
         code.Status = AccessCodeStatus.Used;
         code.UsedAt = DateTime.UtcNow;
         code.UsedByUserId = user.Id;
-        await db.SaveChangesAsync();
-        return CodeError.None;
+    }
+
+    /// <summary>
+    /// Connexion d'un élève par le code de son établissement et son matricule (docs/PLAN-ETABLISSEMENT-2.md, P3, Q11).
+    /// Mot de passe = son mot de passe, ou le code personnel imprimé sur sa fiche :
+    /// - fiche sans compte : le compte est créé (nom d'utilisateur « code.matricule »), l'élève entre dans sa classe ;
+    /// - fiche avec compte : code de reconnexion donné par l'établissement (mot de passe oublié).
+    /// Dans les deux cas, l'élève doit ensuite choisir son mot de passe. Null : refus, sans dire pourquoi
+    /// (ni l'établissement, ni le matricule, ni le mot de passe ne sont confirmés à un inconnu).
+    /// Activation : erreur de place ou de licence, à montrer telle quelle.
+    /// </summary>
+    public async Task<(AppUser? User, CodeError Activation)> MatriculeLoginAsync(string school, string matricule, string password)
+    {
+        var shortCode = school.Trim().ToUpperInvariant();
+        var key = matricule.Trim().ToLower();
+        var org = await db.Organizations.FirstOrDefaultAsync(o => o.ShortCode == shortCode);
+        if (org is null || key.Length == 0) return (null, CodeError.None);
+        var row = await db.OrganizationStudents.FirstOrDefaultAsync(s => s.OrganizationId == org.Id && s.Matricule.ToLower() == key);
+        if (row is null || row.Status is StudentStatus.Revoked or StudentStatus.Left) return (null, CodeError.None);
+
+        var now = DateTime.UtcNow;
+        var typed = CodeGenerator.Normalize(password);
+        var code = await db.AccessCodes.FirstOrDefaultAsync(c => c.OrganizationStudentId == row.Id && c.Status == AccessCodeStatus.Issued
+                                                                 && c.ExpiresAt > now && c.Code == typed);
+        if (row.UserId is { } userId)
+        {
+            var user = await db.AppUsers.FirstOrDefaultAsync(u => u.Id == userId);
+            if (user is null) return (null, CodeError.None);
+            if (code is not null)
+            {
+                MarkUsed(code, user);
+                user.MustChangePassword = true;
+            }
+            else if (!BCrypt.Net.BCrypt.Verify(password, user.PasswordHash))
+                return (null, CodeError.None);
+            user.LastLoginAt = now;
+            await db.SaveChangesAsync();
+            return (user, CodeError.None);
+        }
+
+        // Première connexion : le code de la fiche crée le compte
+        if (code is null) return (null, CodeError.None);
+        var baseName = SpaceRules.MatriculeUsername(org.ShortCode!, row.Matricule);
+        var username = baseName;
+        for (var i = 2; await db.AppUsers.AnyAsync(u => u.Username == username); i++) username = $"{baseName}{i}";
+        var student = new AppUser
+        {
+            Email = null,
+            Username = username,
+            // Mot de passe inconnu de tous : l'élève choisit le sien juste après
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(24))),
+            Role = UserRole.Student,
+            Stage = EducationStage.Secondary,
+            LinkCode = await UniqueLinkCodeAsync(),
+            MustChangePassword = true,
+            LastLoginAt = now
+        };
+
+        var strategy = db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var tx = await db.Database.BeginTransactionAsync();
+            db.AppUsers.Add(student);
+            await db.SaveChangesAsync();
+            var applied = await ApplyAsync(code.Code, student);
+            if (applied != CodeError.None)
+            {
+                await tx.RollbackAsync();
+                db.ChangeTracker.Clear();
+                return ((AppUser?)null, applied);
+            }
+            await tx.CommitAsync();
+            return (student, CodeError.None);
+        });
+    }
+
+    private async Task<string> UniqueLinkCodeAsync()
+    {
+        while (true)
+        {
+            var code = CodeGenerator.LinkCode();
+            if (!await db.AppUsers.AnyAsync(u => u.LinkCode == code)) return code;
+        }
     }
 
     /// <summary>
@@ -211,6 +311,7 @@ public class AccessCodeService(UserContext db, SpaceService spaces)
         CodeError.AlreadyEnrolled => "Ce compte figure déjà sur la liste de cet établissement.",
         CodeError.NameRequired => "Indiquez votre nom pour activer ce code.",
         CodeError.TeachersFull => "La licence de l'établissement ne couvre pas d'enseignant de plus : prévenez-le.",
+        CodeError.ResetCode => "Ce code sert à te reconnecter à ton compte : sur la page de connexion, choisis « Avec mon matricule ».",
         _ => ""
     };
 

@@ -244,6 +244,11 @@ public static class UserSchema
         // Code « en blanc » (lot 3, Q8) : la classe où l'élève entrera, faute de ligne élève déjà préparée
         @"ALTER TABLE ""AccessCodes"" ADD COLUMN IF NOT EXISTS ""ClassroomId"" uuid REFERENCES ""Classrooms"" (""Id"") ON DELETE SET NULL",
 
+        // Phase 2, lot 10 : code de l'établissement (connexion par matricule) et mot de passe à choisir
+        @"ALTER TABLE ""Organizations"" ADD COLUMN IF NOT EXISTS ""ShortCode"" character varying(10)",
+        @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Organizations_ShortCode"" ON ""Organizations"" (""ShortCode"") WHERE ""ShortCode"" IS NOT NULL",
+        @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""MustChangePassword"" boolean NOT NULL DEFAULT false",
+
         // Phase 2, lot 9 : e-mail importé et colonnes en plus du fichier de l'établissement (JSON, titre → valeur)
         @"ALTER TABLE ""OrganizationStudents"" ADD COLUMN IF NOT EXISTS ""Email"" character varying(256)",
         @"ALTER TABLE ""OrganizationStudents"" ADD COLUMN IF NOT EXISTS ""ExtraJson"" text",

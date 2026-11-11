@@ -132,4 +132,8 @@ public record CreateLicenseRequest([Range(1, 100000)] int Seats, [Range(1, 36)] 
 public record ActivateSubscriptionRequest([Range(1, 36)] int? Months = null);
 
 /// <summary>Owners : responsables de l'espace (vide tant que l'administration n'en a pas désigné).</summary>
-public record OrganizationDto(Guid Id, string Name, OrganizationType Type, string? City, List<SubscriptionDto> Licenses, List<SpaceOwnerDto>? Owners = null);
+public record OrganizationDto(Guid Id, string Name, OrganizationType Type, string? City, List<SubscriptionDto> Licenses, List<SpaceOwnerDto>? Owners = null,
+    string? ShortCode = null);
+
+/// <summary>Code de l'établissement : 4 à 10 lettres ou chiffres.</summary>
+public record ShortCodeRequest([Required, MaxLength(10)] string Code);

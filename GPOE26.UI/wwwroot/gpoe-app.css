@@ -630,6 +630,10 @@ pre.lab-host > code { display: none; }
 .code-sheet .who { display: flex; flex-direction: column; gap: 2px; min-height: 40px; }
 .code-sheet .name { font-weight: 700; font-size: 17px; }
 .code-sheet .mat { font-size: 12.5px; color: #5B6478; }
+.code-sheet .ids { display: flex; gap: 18px; margin: 0; }
+.code-sheet .ids div { display: flex; flex-direction: column; }
+.code-sheet .ids dt { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #5B6478; }
+.code-sheet .ids dd { margin: 0; font-family: var(--ga-mono); font-weight: 700; font-size: 15px; color: var(--ga-navy); }
 .code-sheet .code { font-family: var(--ga-mono); font-size: 24px; letter-spacing: .12em; text-align: center; padding: 10px; border-radius: 8px; background: var(--ga-blue-pale); color: var(--ga-navy); }
 .code-sheet p { margin: 0; font-size: 12.5px; line-height: 1.45; color: #3D4560; }
 

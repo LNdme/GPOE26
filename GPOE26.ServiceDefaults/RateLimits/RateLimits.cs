@@ -32,6 +32,12 @@ public sealed record RateRule(string Name, string Method, Regex Path, RateKey Ke
     public bool Matches(HttpRequest request) =>
         HttpMethods.Equals(request.Method, Method) && Path.IsMatch(request.Path.Value ?? "");
 
+    /// <summary>
+    /// Champs du corps JSON qui identifient le compte visé (clé RateKey.Email) : l'e-mail pour la connexion,
+    /// le code de l'établissement et le matricule pour la connexion d'un élève par matricule.
+    /// </summary>
+    public string[] BodyFields { get; init; } = ["email"];
+
     /// <summary>Réponses qui comptent comme un échec : demande refusée par le service, pas une panne.</summary>
     public static bool IsFailure(int status) => status is 400 or 401 or 403 or 404 or 409 or 422;
 }
@@ -71,7 +77,15 @@ public static class RateRules
         RateKey.User, 20, TimeSpan.FromMinutes(1),
         FailuresOnly: false, "Trop de demandes à l'IA en peu de temps. Réessayez {0}.");
 
-    public static readonly IReadOnlyList<RateRule> All = [Login, Codes, Ai];
+    /// <summary>Connexion d'un élève par matricule (phase 2, lot 10) : 5 échecs par élève (établissement + matricule) en 15 minutes.</summary>
+    public static readonly RateRule LoginMatricule = new("connexion-matricule", "POST", P("/auth/login-matricule"), RateKey.Email, 5,
+        TimeSpan.FromMinutes(15), FailuresOnly: true,
+        "Trop d'essais de connexion pour ce matricule. Réessayez {0}, ou demandez un nouveau code à votre établissement.")
+    {
+        BodyFields = ["school", "matricule"]
+    };
+
+    public static readonly IReadOnlyList<RateRule> All = [Login, LoginMatricule, Codes, Ai];
 
     /// <summary>« dans 12 minutes », « dans une minute », « dans quelques secondes ».</summary>
     public static string In(TimeSpan wait) =>
@@ -144,7 +158,7 @@ public sealed class RateLimitMiddleware(RequestDelegate next, RateLimitStore sto
     public async Task InvokeAsync(HttpContext context)
     {
         var rule = config.GetValue("RateLimits:Enabled", true) ? RateRules.All.FirstOrDefault(r => r.Matches(context.Request)) : null;
-        var key = rule is null ? null : rule.Key == RateKey.Email ? await EmailAsync(context.Request) : await UserAsync(context);
+        var key = rule is null ? null : rule.Key == RateKey.Email ? await BodyKeyAsync(context.Request, rule.BodyFields) : await UserAsync(context);
         if (rule is null || key is null)
         {
             await next(context);
@@ -166,17 +180,30 @@ public sealed class RateLimitMiddleware(RequestDelegate next, RateLimitStore sto
     }
 
     /// <summary>Adresse e-mail du corps JSON de la connexion, relu ensuite normalement par l'endpoint.</summary>
-    public static async Task<string?> EmailAsync(HttpRequest request)
+    public static Task<string?> EmailAsync(HttpRequest request) => BodyKeyAsync(request, ["email"]);
+
+    /// <summary>
+    /// Compte visé, lu dans le corps JSON (relu ensuite normalement par l'endpoint) : les champs demandés, en minuscules,
+    /// joints par « / » (« lycdemo/tc-101 »). Null si un champ manque.
+    /// </summary>
+    public static async Task<string?> BodyKeyAsync(HttpRequest request, string[] fields)
     {
         if (request.ContentLength is > MaxLoginBody) return null;
         request.EnableBuffering(MaxLoginBody);
         try
         {
             using var doc = await JsonDocument.ParseAsync(request.Body);
-            foreach (var property in doc.RootElement.EnumerateObject())
-                if (property.Name.Equals("email", StringComparison.OrdinalIgnoreCase) && property.Value.ValueKind == JsonValueKind.String)
-                    return property.Value.GetString()?.Trim().ToLowerInvariant() is { Length: > 0 } email ? email : null;
-            return null;
+            var values = new List<string>();
+            foreach (var field in fields)
+            {
+                var value = doc.RootElement.EnumerateObject()
+                    .Where(p => p.Name.Equals(field, StringComparison.OrdinalIgnoreCase) && p.Value.ValueKind == JsonValueKind.String)
+                    .Select(p => p.Value.GetString()?.Trim().ToLowerInvariant())
+                    .FirstOrDefault();
+                if (string.IsNullOrEmpty(value)) return null;
+                values.Add(value);
+            }
+            return string.Join('/', values);
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException or IOException)
         {

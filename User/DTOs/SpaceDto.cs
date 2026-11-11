@@ -8,7 +8,8 @@ namespace User.DTOs;
 // ══════════════════════════════════════════════════════════════════════════════
 
 /// <summary>Un espace dont je fais partie, avec mes rôles actifs.</summary>
-public record MySpaceDto(Guid Id, string Name, OrganizationType Type, string? City, List<OrganizationRole> Roles);
+/// <summary>ShortCode : code de l'établissement, que l'élève saisit avec son matricule pour se connecter.</summary>
+public record MySpaceDto(Guid Id, string Name, OrganizationType Type, string? City, List<OrganizationRole> Roles, string? ShortCode = null);
 
 public record SchoolYearDto(Guid Id, string Label, DateOnly StartsOn, DateOnly EndsOn, bool IsCurrent)
 {
@@ -33,7 +34,8 @@ public record SpaceOverviewDto(
     int? Seats,
     int? TeacherSeats,
     DateTime? LicenseEndsAt,
-    bool StudentsPremium = false
+    bool StudentsPremium = false,
+    string? ShortCode = null
 );
 
 /// <summary>Personne de l'espace : son rôle sur la plateforme (Role) et ses rôles dans l'espace (Roles).</summary>
@@ -136,6 +138,9 @@ public record CodeRequest([Required, MaxLength(32)] string Code);
 
 /// <summary>Ce que donne un code, montré avant l'activation. NeedsName : code en blanc, le nom est à saisir.</summary>
 public record CodeInfoDto(AccessCodeKind Kind, string OrganizationName, string? StudentName, string? Matricule, string? ClassName, bool NeedsName);
+
+/// <summary>Connexion par matricule : School = code de l'établissement (ex. LYCDEMO) ; Password = mot de passe, ou code de la fiche.</summary>
+public record MatriculeLoginRequest([Required, MaxLength(10)] string School, [Required, MaxLength(40)] string Matricule, [Required, MaxLength(128)] string Password);
 
 /// <summary>Création du compte avec un code personnel. E-mail facultatif (Q4) ; nom pour un code en blanc.</summary>
 public record ActivateCodeRequest(

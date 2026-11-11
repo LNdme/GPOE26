@@ -16,6 +16,12 @@ namespace User.Model
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+        /// <summary>
+        /// Code court de l'établissement (ex : « LYCDEMO »), unique : avec son matricule, un élève se connecte
+        /// (docs/PLAN-ETABLISSEMENT-2.md, P3, Q10). Proposé à partir du nom, modifiable par l'administration.
+        /// </summary>
+        public string? ShortCode { get; set; }
+
         /// <summary>Dernier numéro de matricule généré (AAAA-NNNN) ; incrémenté par un UPDATE atomique.</summary>
         public int MatriculeSeq { get; set; }
     }

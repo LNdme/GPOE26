@@ -81,7 +81,8 @@ public record UserProfile(
     List<EntitledFeature>? Features = null,
     EducationStage? Stage = null,
     bool SiteEditor = false,
-    bool IsAdmin = false
+    bool IsAdmin = false,
+    bool MustChangePassword = false
 )
 {
     /// <summary>Peut gérer le contenu du site de l'établissement (administrateur ou éditeur).</summary>

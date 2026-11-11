@@ -17,6 +17,9 @@ public abstract class AppPage : ComponentBase
     /// <summary>Rôles autorisés (null = tout utilisateur connecté)</summary>
     protected virtual UserRole[]? AllowedRoles => null;
 
+    /// <summary>Vrai pour la seule page ouverte à un élève connecté avec le code de sa fiche, qui doit d'abord choisir son mot de passe.</summary>
+    protected virtual bool AllowsPendingPassword => false;
+
     protected bool Ready { get; private set; }
 
     // Garde le dernier profil connu : un 401 peut fermer la session juste avant la redirection vers /login
@@ -30,6 +33,12 @@ public abstract class AppPage : ComponentBase
         {
             var back = Nav.ToBaseRelativePath(Nav.Uri);
             Nav.NavigateTo($"/login?retour={Uri.EscapeDataString("/" + back)}");
+            return;
+        }
+        if (Session.Profile?.MustChangePassword == true && !AllowsPendingPassword)
+        {
+            var back = Nav.ToBaseRelativePath(Nav.Uri);
+            Nav.NavigateTo($"/app/mot-de-passe?retour={Uri.EscapeDataString("/" + back)}");
             return;
         }
         if (AllowedRoles is { } roles && !roles.Contains(Session.Role!.Value))

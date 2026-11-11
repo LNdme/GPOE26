@@ -151,10 +151,9 @@ public static class StudentEndpoints
         {
             var row = await db.OrganizationStudents.FirstOrDefaultAsync(s => s.Id == studentId && s.OrganizationId == orgId);
             if (row is null) return Results.NotFound();
-            if (row.Status != StudentStatus.Pending)
-                return Results.Conflict(new { message = row.Status == StudentStatus.Active
-                    ? "Cet élève a déjà activé son compte."
-                    : "Réintégrez d'abord cet élève." });
+            // Élève avec compte : code de reconnexion (mot de passe oublié, Q11) ; parti ou retiré : à réintégrer d'abord
+            if (row.Status is StudentStatus.Revoked or StudentStatus.Left)
+                return Results.Conflict(new { message = "Réintégrez d'abord cet élève." });
 
             await codes.IssueForStudentAsync(row, principal.GetUserId());
             await db.SaveChangesAsync();

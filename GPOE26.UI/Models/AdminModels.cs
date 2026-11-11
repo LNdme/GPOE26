@@ -14,7 +14,8 @@ public record SpaceOwner(Guid UserId, string Username, string? Email);
 /// Établissement ou institution, ses licences et ses responsables. Une licence d'établissement n'a plus de clé
 /// partagée : ses élèves et enseignants reçoivent un code personnel.
 /// </summary>
-public record Organization(Guid Id, string Name, OrganizationType Type, string? City, List<SubscriptionInfo> Licenses, List<SpaceOwner>? Owners = null);
+public record Organization(Guid Id, string Name, OrganizationType Type, string? City, List<SubscriptionInfo> Licenses, List<SpaceOwner>? Owners = null,
+    string? ShortCode = null);
 
 public record CreateOrganizationRequest(string Name, OrganizationType Type, string? City);
 
