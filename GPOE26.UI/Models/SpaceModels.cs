@@ -22,7 +22,8 @@ public record MySpace(Guid Id, string Name, OrganizationType Type, string? City,
 public record SchoolYear(Guid Id, string Label, DateOnly StartsOn, DateOnly EndsOn, bool IsCurrent);
 
 public record SpaceOverview(Guid Id, string Name, OrganizationType Type, string? City, SchoolYear? CurrentYear,
-    int ClassCount, int TeacherCount, int StudentsActive, int StudentsPending, int? Seats, int? TeacherSeats, DateTime? LicenseEndsAt);
+    int ClassCount, int TeacherCount, int StudentsActive, int StudentsPending, int? Seats, int? TeacherSeats, DateTime? LicenseEndsAt,
+    bool StudentsPremium = false);
 
 public record SpaceMember(Guid UserId, string Username, string? Email, UserRole Role, List<OrganizationRole> Roles, DateTime JoinedAt);
 

@@ -457,6 +457,7 @@
             _doneText = other
                 ? "Votre groupe est créé. Partagez son code avec vos apprenants pour qu'ils vous rejoignent."
                 : "Vos classes sont créées. Partagez leur code avec vos élèves pour qu'ils vous rejoignent.";
+            _doneText += " Vous pouvez aussi remettre à chaque élève un code personnel (avec son matricule et sa classe) depuis « Mes élèves et codes ».";
             if (Get("acces") == "payer") await CheckoutAsync(SubscriptionPlan.Teacher, period);
             var classes = await Classrooms.MineAsync();
             foreach (var c in classes.Value ?? [])

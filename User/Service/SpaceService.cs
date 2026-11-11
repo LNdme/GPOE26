@@ -30,6 +30,26 @@ public class SpaceService(UserContext db, IConfiguration config)
             .SumAsync(s => s.Seats);
     }
 
+    /// <summary>
+    /// Les élèves activés de l'espace ont-ils l'accès Premium ? Établissement : une licence en cours.
+    /// Enseignant indépendant : sa formule Enseignant (ou son essai) en cours, qui inclut ses élèves (Q1).
+    /// Même règle que SubscriptionService.GetEntitlementAsync (source « space »).
+    /// </summary>
+    public async Task<bool> StudentsPremiumAsync(Guid organizationId)
+    {
+        var type = await db.Organizations.Where(o => o.Id == organizationId).Select(o => (OrganizationType?)o.Type).FirstOrDefaultAsync();
+        if (type != OrganizationType.Independent) return await SeatLimitAsync(organizationId) > 0;
+
+        var now = DateTime.UtcNow;
+        var owners = db.OrganizationMembers
+            .Where(m => m.OrganizationId == organizationId && m.Role == OrganizationRole.Owner && m.Status == MemberStatus.Active)
+            .Select(m => m.UserId);
+        return await db.Subscriptions.AnyAsync(s => s.Plan == SubscriptionPlan.Teacher
+            && (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.Trial) && s.EndsAt > now
+            && ((s.OwnerUserId != null && owners.Contains(s.OwnerUserId.Value))
+                || db.KeyRedemptions.Any(r => r.Key.SubscriptionId == s.Id && !r.Key.IsRevoked && owners.Contains(r.UserId))));
+    }
+
     /// <summary>Élèves qui occupent une place : ceux dont le compte est activé.</summary>
     public Task<int> SeatsUsedAsync(Guid organizationId) =>
         db.OrganizationStudents.CountAsync(s => s.OrganizationId == organizationId && s.Status == StudentStatus.Active);
@@ -67,27 +87,23 @@ public class SpaceService(UserContext db, IConfiguration config)
         SpaceRules.Matricule(DateTime.UtcNow.Year, await NextMatriculeNumberAsync(organizationId));
 
     /// <summary>
-    /// Espace où un enseignant crée ses classes : l'établissement dont il a activé la clé,
-    /// sinon son espace indépendant, créé au besoin (il en est responsable et enseignant).
+    /// Espace où un enseignant crée lui-même ses classes : toujours son espace personnel (enseignant indépendant),
+    /// créé au besoin — il en est responsable et enseignant. Les classes d'un établissement sont créées par sa
+    /// direction (« Mon établissement »), qui y affecte ses enseignants (docs/PLAN-ETABLISSEMENT.md, lot 5) :
+    /// un répétiteur qui enseigne aussi dans un lycée ne mélange pas ses groupes privés et les classes du lycée.
     /// </summary>
     public async Task<(Guid OrganizationId, Guid SchoolYearId)> TeacherSpaceAsync(AppUser teacher)
     {
-        Guid orgId;
-        if (teacher.OrganizationId is { } verified && await OrganizationExistsAsync(verified))
-        {
-            orgId = verified;
-            await EnsureMemberAsync(orgId, teacher.Id, OrganizationRole.Teacher);
-        }
-        else if (await SingleSchoolOfAsync(teacher.Id) is { } school)
-        {
-            // Ajouté à un seul établissement par son responsable (par e-mail) : ses classes vont là
-            orgId = school;
-        }
-        else
-        {
-            orgId = await IndependentSpaceOfAsync(teacher.Id) ?? CreateIndependentSpace(teacher);
-        }
+        var orgId = await PersonalSpaceAsync(teacher);
         return (orgId, await CurrentYearIdAsync(orgId));
+    }
+
+    /// <summary>Espace personnel de l'enseignant, créé (avec son année en cours) s'il n'en a pas encore.</summary>
+    public async Task<Guid> PersonalSpaceAsync(AppUser teacher)
+    {
+        var orgId = await IndependentSpaceOfAsync(teacher.Id) ?? CreateIndependentSpace(teacher);
+        await CurrentYearIdAsync(orgId);
+        return orgId;
     }
 
     /// <summary>La personne a-t-elle, ACTIF, l'un de ces rôles dans l'espace ? Vérifié en base, jamais d'après le jeton.</summary>
@@ -181,19 +197,6 @@ public class SpaceService(UserContext db, IConfiguration config)
             .ToListAsync();
         return reserved.Count == 1 ? reserved[0] : throw new InvalidOperationException($"Espace {organizationId} introuvable.");
     }
-
-    /// <summary>L'établissement (hors espace indépendant) dont la personne est enseignante, s'il n'y en a qu'un.</summary>
-    private async Task<Guid?> SingleSchoolOfAsync(Guid teacherId)
-    {
-        var schools = await db.OrganizationMembers
-            .Where(m => m.UserId == teacherId && m.Role == OrganizationRole.Teacher && m.Status == MemberStatus.Active)
-            .Join(db.Organizations.Where(o => o.Type != OrganizationType.Independent), m => m.OrganizationId, o => o.Id, (m, o) => o.Id)
-            .Distinct().Take(2).ToListAsync();
-        return schools.Count == 1 ? schools[0] : null;
-    }
-
-    private async Task<bool> OrganizationExistsAsync(Guid id) =>
-        db.Organizations.Local.Any(o => o.Id == id) || await db.Organizations.AnyAsync(o => o.Id == id);
 
     private async Task<Guid?> IndependentSpaceOfAsync(Guid teacherId)
     {

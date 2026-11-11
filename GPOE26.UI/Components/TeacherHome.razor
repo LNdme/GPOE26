@@ -1,6 +1,7 @@
 @inject SessionState Session
 @inject IClassroomApi Classrooms
 @inject IAssessmentApi Assessments
+@inject ISpaceApi Spaces
 
 <div class="ga-page">
     <div class="ga-head">
@@ -55,7 +56,11 @@
                 }
 
                 <form class="ga-card" style="border-style:dashed" @onsubmit="CreateClassAsync" @onsubmit:preventDefault>
-                    <h3 class="ga-h3">Créer une classe ou un groupe</h3>
+                    <h3 class="ga-h3">@(_schools.Count > 0 ? "Créer un groupe personnel" : "Créer une classe ou un groupe")</h3>
+                    @if (_schools.Count > 0)
+                    {
+                        <p class="ga-small ga-muted" style="margin:0">Les classes de @string.Join(", ", _schools) sont créées par leur direction, qui vous y affecte. Ce groupe-ci est à vous (cours particuliers, soutien).</p>
+                    }
                     <div class="ga-field">
                         <label for="class-name">Nom</label>
                         <input id="class-name" class="ga-input" placeholder="ex. Terminale C2" @bind="_newClass" />
@@ -127,12 +132,18 @@
     private List<Assessment> _assessments = new();
     private List<(Assessment, int)> _toGrade = new();
     private string? _newClass, _classError;
+    // Établissements où la personne enseigne : leurs classes viennent de la direction, pas de ce formulaire
+    private List<string> _schools = new();
 
     protected override async Task OnInitializedAsync()
     {
         var classes = Classrooms.MineAsync();
         var assessments = Assessments.MineAsTeacherAsync();
-        await Task.WhenAll(classes, assessments);
+        var spaces = Spaces.MineAsync();
+        await Task.WhenAll(classes, assessments, spaces);
+        _schools = (spaces.Result.Value ?? [])
+            .Where(s => s.Type != OrganizationType.Independent && s.Roles.Contains(OrganizationRole.Teacher))
+            .Select(s => s.Name).ToList();
         _classes = classes.Result.Value ?? new();
         _assessments = assessments.Result.Value ?? new();
 

@@ -17,7 +17,8 @@ public record SchoolYearDto(Guid Id, string Label, DateOnly StartsOn, DateOnly E
 
 /// <summary>
 /// Tableau de bord du responsable. Seats : places élèves de la licence en cours (vide sans licence) ;
-/// StudentsActive : élèves dont le compte est activé (ce que les places compteront au lot 3).
+/// StudentsActive : élèves dont le compte est activé (ce que les places comptent).
+/// StudentsPremium : ils ont l'accès Premium (licence en cours, ou formule de l'enseignant indépendant).
 /// </summary>
 public record SpaceOverviewDto(
     Guid Id,
@@ -31,7 +32,8 @@ public record SpaceOverviewDto(
     int StudentsPending,
     int? Seats,
     int? TeacherSeats,
-    DateTime? LicenseEndsAt
+    DateTime? LicenseEndsAt,
+    bool StudentsPremium = false
 );
 
 /// <summary>Personne de l'espace : son rôle sur la plateforme (Role) et ses rôles dans l'espace (Roles).</summary>

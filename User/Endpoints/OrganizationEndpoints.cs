@@ -64,7 +64,8 @@ public static class OrganizationEndpoints
                 await db.OrganizationMembers.CountAsync(m => m.OrganizationId == orgId && m.Role == OrganizationRole.Teacher && m.Status == MemberStatus.Active),
                 students.Where(s => s.Key == StudentStatus.Active).Sum(s => s.Count),
                 students.Where(s => s.Key == StudentStatus.Pending).Sum(s => s.Count),
-                await spaces.SeatLimitAsync(orgId), license?.TeacherSeats, license?.EndsAt));
+                await spaces.SeatLimitAsync(orgId), license?.TeacherSeats, license?.EndsAt,
+                await spaces.StudentsPremiumAsync(orgId)));
         })
         .RequireSpaceRole(Managers)
         .WithSummary("Tableau de bord de l'espace")

@@ -10,7 +10,21 @@
         <div class="ga-stat green"><span class="lbl">Classes cette année</span><span class="val">@o.ClassCount</span></div>
     </div>
 
-    @if (o.Type != OrganizationType.Independent)
+    @if (o.Type == OrganizationType.Independent)
+    {
+        @if (o.StudentsPremium)
+        {
+            <p class="ga-small ga-muted">Votre formule Enseignant est en cours : vos élèves activés ont l'accès Premium (tuteur, quiz…), dans la limite de @o.Seats élèves.</p>
+        }
+        else
+        {
+            <div class="ga-card" style="background:var(--ga-amber-soft)">
+                <span>Vos élèves peuvent déjà activer leur code et suivre vos classes (@o.Seats places). Avec la formule Enseignant, ils ont aussi l'accès Premium : tuteur IA, quiz illimités…</span>
+                <a class="ga-btn small" href="/app/abonnement">Voir la formule Enseignant</a>
+            </div>
+        }
+    }
+    else
     {
         @if (o.Seats is 0 or null)
         {

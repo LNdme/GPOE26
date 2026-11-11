@@ -157,7 +157,7 @@ var auth = app.MapGroup("/auth").WithTags("Auth");
 // Inscription guidée (élève, enseignant ou parent). Les clés et codes sont vérifiés
 // AVANT la création du compte : une clé invalide ne laisse pas de compte à moitié créé.
 auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice jwt,
-    SubscriptionService subs, ClassroomService classrooms) =>
+    SubscriptionService subs, ClassroomService classrooms, SpaceService spaces) =>
 {
     // L'administration est un droit donné par un administrateur, jamais un rôle choisi à l'inscription.
     // Un rôle inconnu (ancien « Admin » envoyé en nombre, par exemple) est refusé.
@@ -223,12 +223,16 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
         TeachingSubjects = teachingSubjects,
         TeachingContext = req.TeachingContext,
         OrganizationName = req.TeachingContext == TeachingContext.Independent ? null : req.OrganizationName,
-        // Connu dès maintenant (la clé est activée plus bas) : les classes créées à l'inscription vont dans cet établissement
+        // Établissement de la clé, connu dès maintenant (la clé est activée plus bas)
         OrganizationId = keyOrganizationId,
         LinkCode = req.Role == UserRole.Student ? await ParentEndpoints.UniqueLinkCodeAsync(db) : null,
         LastLoginAt = DateTime.UtcNow   // l'inscription ouvre la première session
     };
     db.AppUsers.Add(user);
+
+    // Enseignant indépendant : son espace existe dès l'inscription (« Mes élèves et codes »), même sans classe
+    if (req.Role == UserRole.Teacher && req.TeachingContext == TeachingContext.Independent)
+        await spaces.PersonalSpaceAsync(user);
 
     // Enseignant : une classe (ou un groupe) par niveau choisi pendant l'inscription
     if (req.Role == UserRole.Teacher && req.InitialClasses is { Count: > 0 })

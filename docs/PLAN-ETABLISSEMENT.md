@@ -2,7 +2,7 @@
 
 Rédigé le 11 novembre 2026, sur la branche `feat/site-admin-navbar`. Questions Q1 à Q9 validées le même jour.
 
-> **Avancement :** lots 1 à 3 commités le 11 novembre 2026 (`e57fbc9`, `1d68d64`, non poussés) ; lot 4 fait le même jour (non commité). Voir « Lot 1/2/3/4 : ce qui a été fait » en fin de document. Lots 5 à 7 à faire.
+> **Avancement :** lots 1 à 4 commités le 11 novembre 2026 (`e57fbc9`, `1d68d64`, `398154a`, non poussés) ; lot 5 fait le même jour (non commité). Voir « Lot 1 … 5 : ce qui a été fait » en fin de document. Lots 6 et 7 à faire.
 
 ## Le but en une phrase
 
@@ -295,6 +295,18 @@ Ajouts par l'e-mail d'un compte existant : les codes enseignant et responsable a
 **Ailleurs :** connexion par « adresse e-mail ou nom d'utilisateur » ; le code de classe commun n'est plus montré pour une classe d'établissement (« les élèves entrent avec leur code personnel »), le détail d'une classe liste ses enseignants ; le profil indique « aucune adresse » pour un compte sans e-mail. Côté service : la classe porte le type de son espace (`SpaceType`), et un enseignant ajouté à un seul établissement par e-mail y range les classes qu'il crée (limite du lot 2 réglée).
 
 **Vérifications (navigateur, site et service User sur une copie jetable de la base) :** tableau de bord du Lycée de démonstration ; import de 3 élèves avec une classe inconnue signalée puis corrigée ; codes de la classe ; fiches ; création du compte d'un élève par son code (« c'est bien toi ? », classe et licence retrouvées) ; connexion par nom d'utilisateur, y compris en minuscules ; désignation par code responsable dans l'administration. Défauts trouvés pendant l'essai et corrigés : boutons qui restaient grisés tant qu'on n'avait pas quitté le champ (les champs réagissent maintenant à la frappe), nom proposé avec le dernier prénom au lieu du premier, date de fin affichée « 1er août » au lieu du 31 juillet (heure de Douala), ancienne clé annulée montrée comme active. Les écrans du suivi (Quiz, Chat) n'ont pas été lancés dans cette pile.
+
+## Lot 5 : ce qui a été fait (11 novembre 2026)
+
+Une bonne partie de l'enseignant indépendant était déjà en place (espace `Independent`, forfait de 30 places, codes en blanc, Premium par sa formule). Le lot 5 complète :
+
+- **L'espace existe dès l'inscription** d'un enseignant indépendant (`TeachingContext = Independent`), même sans classe : « Mes élèves et codes » est là tout de suite.
+- **Une classe créée par un enseignant va toujours dans son espace personnel** (`SpaceService.TeacherSpaceAsync`). Les classes d'un établissement sont créées par sa direction, qui y affecte ses enseignants (section 3 du plan). Cela remplace la règle des lots 1 à 4 (classes rangées dans l'établissement de la clé, ou de l'unique établissement de l'enseignant) : un répétiteur qui enseigne aussi dans un lycée ne mélange plus ses groupes privés et les classes du lycée. Les classes déjà rangées ne bougent pas.
+- **L'aperçu dit si les élèves ont l'accès Premium** (`StudentsPremium`) : licence en cours pour un établissement ; formule Enseignant ou essai en cours pour un indépendant, sinon un encadré propose la formule.
+- **Accueil enseignant** : s'il enseigne dans un établissement, le formulaire devient « Créer un groupe personnel » et rappelle que les classes de l'établissement viennent de sa direction. L'inscription d'un enseignant mentionne les codes personnels.
+- Message « places pleines » neutre (établissement ou enseignant).
+
+**Vérifications :** tests 384 / 384 (`GPOE26.Logic.Tests`) et 61 / 61 (`Quiz.Tests`) ; scénario par l'API sur une copie jetable de la base, avec un forfait réglé à 2 places (`Subscriptions__IndependentSeats=2`), 17 contrôles : espace créé à l'inscription, classe et élèves avec matricules générés à la suite, 3e élève refusé quand les 2 places sont prises, Premium des élèves dès l'essai de l'enseignant, groupe personnel d'un enseignant de lycée rangé chez lui et pas au lycée, indépendant inscrit avec deux classes dans un seul espace.
 
 ---
 

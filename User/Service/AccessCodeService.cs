@@ -203,7 +203,7 @@ public class AccessCodeService(UserContext db, SpaceService spaces)
         CodeError.Used => "Ce code a déjà servi. Si ce n'était pas vous, prévenez votre établissement.",
         CodeError.Revoked => "Ce code a été annulé : demandez le nouveau à votre établissement.",
         CodeError.WrongRole => "Ce code n'est pas fait pour ce type de compte (élève, enseignant).",
-        CodeError.Full => "Toutes les places de l'établissement sont prises : prévenez votre établissement.",
+        CodeError.Full => "Toutes les places sont prises : prévenez votre établissement ou votre enseignant.",
         CodeError.NoLicense => "L'établissement n'a pas de licence en cours : prévenez-le.",
         CodeError.AlreadyEnrolled => "Ce compte figure déjà sur la liste de cet établissement.",
         CodeError.NameRequired => "Indiquez votre nom pour activer ce code.",
