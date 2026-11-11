@@ -109,8 +109,9 @@ public record CreateClassroomRequest(string Name, string? Level = null, SchoolSu
 
 // ─── Parents ──────────────────────────────────────────────────────────────────
 
+/// <summary>CoveredBy / CoveredUntil : établissement ou enseignant qui couvre déjà l'enfant ; UsesFamilySeat : il a une place de la formule Famille.</summary>
 public record ChildLink(Guid LinkId, LinkStatus Status, Guid ChildId, string Username, string? Level, string? Filiere,
-    string? ExamTarget, bool IsPremium);
+    string? ExamTarget, bool IsPremium, string? CoveredBy = null, DateTime? CoveredUntil = null, bool UsesFamilySeat = false);
 
 public record ParentLink(Guid LinkId, LinkStatus Status, Guid ParentId, string ParentName, DateTime CreatedAt);
 
@@ -121,7 +122,20 @@ public record CreateChildRequest(string Email, string Username, string Password,
 
 public record EntitledFeature(string Code, int? Limit);
 
-public record Entitlement(bool IsPremium, SubscriptionPlan? Plan, DateTime? Until, string? Source, List<EntitledFeature>? Features = null);
+public record Entitlement(bool IsPremium, SubscriptionPlan? Plan, DateTime? Until, string? Source, List<EntitledFeature>? Features = null,
+    List<EntitlementSource>? Sources = null, CoverageOverlap? Overlap = null);
+
+/// <summary>Origine d'un accès Premium (service User).</summary>
+public enum EntitlementSourceKind { Trial, Personal, Family, School, Teacher }
+
+/// <summary>Label : établissement, espace de l'enseignant ou parent payeur.</summary>
+public record EntitlementSource(EntitlementSourceKind Kind, SubscriptionPlan Plan, DateTime Until, string? Label);
+
+/// <summary>Abonnement payé alors qu'un établissement ou un enseignant couvre déjà la personne (P5). PaidBy : parent payeur.</summary>
+public record CoverageOverlap(string CoveredBy, DateTime CoveredUntil, EntitlementSourceKind PaidKind, DateTime PaidUntil, string? PaidBy);
+
+/// <summary>Code personnel accepté ; Overlap si un abonnement payé devient inutile.</summary>
+public record RedeemCodeResult(CoverageOverlap? Overlap);
 
 public record PlanFeature(string Code, string Label, int? Limit);
 

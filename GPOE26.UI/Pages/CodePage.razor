@@ -163,7 +163,8 @@
             await Session.UpdateProfileAsync(profile);
         _busy = false;
         if (!r.Ok) { _error = r.Error; return; }
-        Nav.NavigateTo(_info?.Kind is AccessCodeKind.Owner ? "/app/etablissement" : "/app");
+        // Abonnement payé que l'établissement rend inutile (lot 11) : la page « Abonnement » l'explique
+        Nav.NavigateTo(_info?.Kind is AccessCodeKind.Owner ? "/app/etablissement" : r.Value?.Overlap is not null ? "/app/abonnement" : "/app");
     }
 
     private async Task SignOutAsync() => await Session.SignOutAsync();

@@ -339,6 +339,11 @@
             _classes = (await Classrooms.MineAsync()).Value ?? _classes;
             var joined = _classes.FirstOrDefault(c => !before.Contains(c.Id));
             _joinMessage = joined is null ? "Code validé." : $"Tu as rejoint « {joined.Name} ».";
+            // Lot 11 (P5) : l'établissement couvre maintenant ce que paie l'abonnement personnel ou familial
+            if (result.Value?.Overlap is { } o)
+                _joinMessage += $" {o.CoveredBy} te donne aussi l'accès Premium jusqu'au {Labels.LongDate(o.CoveredUntil)} : "
+                    + (o.PaidKind == EntitlementSourceKind.Family ? "ta place dans la formule Famille n'est pas nécessaire pendant ce temps." : "ton abonnement personnel n'est pas nécessaire pendant ce temps.")
+                    + " Détails dans « Abonnement ».";
             if ((await Account.MeAsync()).Value is { } profile) await Session.UpdateProfileAsync(profile);
             var assessments = await Assessments.MineAsStudentAsync();
             if (assessments.Ok)

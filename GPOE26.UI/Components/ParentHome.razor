@@ -46,6 +46,11 @@
                                 <span class="ga-tag @(child.IsPremium ? "lime" : "grey")">@(child.IsPremium ? "PREMIUM" : "GRATUIT")</span>
                             }
                         </div>
+                        @if (child.CoveredBy is { } school)
+                        {
+                            @* Lot 11 (P5) : l'établissement couvre déjà l'enfant ; rien n'est coupé, le parent peut ne pas renouveler *@
+                            <span class="ga-small ga-muted">Couvert par @school jusqu'au @Labels.LongDate(child.CoveredUntil)@(child.UsesFamilySeat ? " : sa place dans votre formule Famille ne lui sert pas pendant ce temps." : ".")</span>
+                        }
 
                         @if (child.Status == LinkStatus.Active && _progress.TryGetValue(child.ChildId, out var p))
                         {

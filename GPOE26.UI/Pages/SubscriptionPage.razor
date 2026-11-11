@@ -3,6 +3,7 @@
 @inherits AppPage
 @inject IAccountApi Account
 @inject IPlanApi PlanApi
+@inject IFamilyApi Family
 
 <PageTitle>Abonnement — GPOE26</PageTitle>
 
@@ -28,7 +29,20 @@
             <h2 id="h-status" class="ga-h2">@Labels.Of(_mine?.Entitlement.Plan)</h2>
             @if (_mine?.Entitlement is { IsPremium: true } e)
             {
-                <span style="color:#C9D3EA">@(e.Source switch { "key" => "Accès par clé d'abonnement", "trial" => "Période d'essai", _ => "Abonnement personnel" }) · jusqu'au @Labels.Date(e.Until)</span>
+                @* Toutes les sources de l'accès (lot 11) : abonnement personnel, formule Famille, établissement… *@
+                @if (e.Sources is { Count: > 0 } sources)
+                {
+                    <ul class="ga-stack" style="gap:2px; margin:0; padding:0; list-style:none; color:#C9D3EA" aria-label="D'où vient mon accès">
+                        @foreach (var s in sources)
+                        {
+                            <li>@Labels.Of(s) · jusqu'au @Labels.LongDate(s.Until)</li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <span style="color:#C9D3EA">@(e.Source switch { "key" => "Accès par clé d'abonnement", "trial" => "Période d'essai", "space" => "Accès donné par l'établissement", _ => "Abonnement personnel" }) · jusqu'au @Labels.Date(e.Until)</span>
+                }
             }
             @if (_unlocked.Count > 0)
             {
@@ -40,6 +54,25 @@
                 </ul>
             }
         </section>
+
+        <CoverageNotice Overlap="_mine?.Entitlement.Overlap" Familiar="@(Session.Role == UserRole.Student)" />
+
+        @if (_covered.Count > 0)
+        {
+            <section class="ga-card" aria-labelledby="h-covered">
+                <h2 id="h-covered" class="ga-h3">Enfants déjà couverts par leur établissement</h2>
+                <ul class="ga-stack" style="margin:0; padding-left:20px">
+                    @foreach (var c in _covered)
+                    {
+                        <li>
+                            <strong>@c.Username</strong> : couvert par @c.CoveredBy jusqu'au @Labels.LongDate(c.CoveredUntil).
+                            @if (c.UsesFamilySeat) { <text>Sa place dans votre formule Famille ne lui sert pas pendant ce temps.</text> }
+                        </li>
+                    }
+                </ul>
+                <span class="ga-small ga-muted">Rien n'est coupé. Si tous vos enfants sont couverts, vous pouvez ne pas renouveler votre formule Famille.</span>
+            </section>
+        }
 
         @if (_issued is not null)
         {
@@ -136,6 +169,7 @@
     private MySubscriptions? _mine;
     private List<PlanInfo> _plans = new();
     private List<string> _unlocked = new();
+    private List<ChildLink> _covered = new();
     private SimulatedPayment? _issued;
 
     private string ActiveCode => _mine?.Entitlement.Plan switch
@@ -175,6 +209,9 @@
 
         var labels = _plans.SelectMany(p => p.Features).DistinctBy(f => f.Code).ToDictionary(f => f.Code, f => f.Label);
         _unlocked = (_mine?.Entitlement.Features ?? new()).Select(f => labels.GetValueOrDefault(f.Code, f.Code)).ToList();
+        // Parent payeur : enfants qu'un établissement ou un enseignant couvre déjà (P5)
+        if (Session.Role == UserRole.Parent)
+            _covered = ((await Family.ChildrenAsync()).Value ?? []).Where(c => c.CoveredBy is not null).ToList();
         _loading = false;
     }
 

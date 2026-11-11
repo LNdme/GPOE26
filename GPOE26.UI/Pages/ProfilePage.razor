@@ -216,7 +216,8 @@
         if (!r.Ok) { _codeError = r.Error; return; }
         if ((await Account.MeAsync()).Value is { } profile) await Session.UpdateProfileAsync(profile);
         var managed = ((await Spaces.MineAsync()).Value ?? []).Any(s => s.CanManage);
-        Nav.NavigateTo(managed ? "/app/etablissement" : "/app", forceLoad: true);
+        // Abonnement payé que l'établissement rend inutile (lot 11) : la page « Abonnement » l'explique
+        Nav.NavigateTo(managed ? "/app/etablissement" : r.Value?.Overlap is not null ? "/app/abonnement" : "/app", forceLoad: true);
     }
 
     private async Task SaveAsync()

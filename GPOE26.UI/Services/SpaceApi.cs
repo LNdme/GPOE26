@@ -49,7 +49,7 @@ public interface ISpaceApi
     /// <summary>Sans compte : crée le compte avec le code.</summary>
     Task<ApiResult<AuthResponse>> ActivateCodeAsync(ActivateCodeRequest request);
     /// <summary>Compte connecté : le rattache à l'espace du code.</summary>
-    Task<ApiResult<bool>> RedeemCodeAsync(string code);
+    Task<ApiResult<RedeemCodeResult>> RedeemCodeAsync(string code);
 }
 
 public class SpaceApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.User), ISpaceApi
@@ -107,5 +107,5 @@ public class SpaceApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiC
 
     public Task<ApiResult<CodeInfo>> CheckCodeAsync(string code) => PostAsync<CodeInfo>("/auth/codes/check", new { code });
     public Task<ApiResult<AuthResponse>> ActivateCodeAsync(ActivateCodeRequest request) => PostAsync<AuthResponse>("/auth/codes/activate", request);
-    public Task<ApiResult<bool>> RedeemCodeAsync(string code) => PostAsync<bool>("/access-codes/redeem", new { code });
+    public Task<ApiResult<RedeemCodeResult>> RedeemCodeAsync(string code) => PostAsync<RedeemCodeResult>("/access-codes/redeem", new { code });
 }

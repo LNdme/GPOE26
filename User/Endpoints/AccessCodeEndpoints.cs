@@ -105,7 +105,8 @@ public static class AccessCodeEndpoints
 
         // ── POST /access-codes/redeem ─────────────────────────────────────────────
         // Un compte existant (élève qui avait un compte individuel, enseignant, futur responsable) saisit son code.
-        app.MapPost("/access-codes/redeem", async (CodeRequest req, ClaimsPrincipal principal, UserContext db, AccessCodeService codes) =>
+        app.MapPost("/access-codes/redeem", async (CodeRequest req, ClaimsPrincipal principal, UserContext db, AccessCodeService codes,
+            SubscriptionService subs) =>
         {
             var user = await db.CurrentUserAsync(principal);
             if (user is null) return Results.Unauthorized();
@@ -119,7 +120,8 @@ public static class AccessCodeEndpoints
                 return Results.BadRequest(new { message = AccessCodeService.Message(applied) });
             }
             await tx.CommitAsync();
-            return Results.NoContent();
+            // Abonnement payé alors que l'espace couvre maintenant la personne (lot 11, P5) : l'écran la prévient
+            return Results.Ok(new RedeemCodeResultDto((await subs.GetEntitlementAsync(user.Id)).Overlap));
         })
         .RequireAuthorization()
         .WithTags("Codes personnels")

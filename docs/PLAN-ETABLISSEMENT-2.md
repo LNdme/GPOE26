@@ -2,7 +2,7 @@
 
 Rédigé le 11 novembre 2026, sur la branche `feat/site-admin-navbar`, après la phase 1 (`docs/PLAN-ETABLISSEMENT.md`, lots 1 à 7, poussée dans la PR #6). Décisions P1 à P6 et questions Q10 à Q15 validées le même jour.
 
-> **Avancement :** lot 9 commité (`56015f4`), lot 10 commité (`2617802`) ; lot 8 fait le 11 novembre 2026 (non commité) — voir « Lot 8, 9, 10 : ce qui a été fait ». Lots 11 à 13 à faire.
+> **Avancement :** lot 9 commité (`56015f4`), lot 10 commité (`2617802`) ; lot 8 commité (`192d1f6`) ; lot 11 fait le 11 novembre 2026 (non commité) — voir « Lot 8 à 11 : ce qui a été fait ». Lots 12 et 13 à faire.
 
 ## Ce que l'utilisateur a demandé
 
@@ -82,6 +82,16 @@ Rien de nouveau à stocker : `CourseMastery.WeakPoints` (par élève et par cour
 Ordre conseillé : 9 et 10 d'abord (les élèves entrent plus simplement), puis 8, 11, 12, 13.
 
 ---
+
+## Lot 11 : ce qui a été fait (11 novembre 2026)
+
+- **Le droit Premium détaille ses sources** (`Entitlement.Sources`) : essai, formule personnelle (Premium élève ou Enseignant, payée à la caisse ou activée par sa clé `ELE-`/`ENS-`), formule Famille (avec le nom du parent payeur), licence d'un établissement (avec son nom), formule de l'enseignant indépendant qui suit l'élève (avec le nom de son espace). Plan, date et `Source` restent ceux de la source la plus longue ; une formule personnelle activée par sa clé donne maintenant `Source = subscription` (avant : `key`).
+- **Chevauchement** (`Entitlement.Overlap`, règle `EntitlementRules.Overlap`) : un établissement ou un enseignant couvre la personne **et** elle paie (formule personnelle ou place Famille). Un essai ne compte pas. **Rien n'est coupé** (P5).
+- **Élève et enseignant prévenus** : `POST /access-codes/redeem` renvoie l'avertissement ; l'accueil élève l'ajoute au message « Tu as rejoint… », les pages « J'ai un code » et « Profil » ouvrent « Abonnement », qui montre l'avertissement et la liste des sources avec leurs dates. Un enseignant ajouté par la direction le voit dans « Abonnement ».
+- **Parent payeur** : `GET /parents/children` donne pour chaque enfant `CoveredBy`, `CoveredUntil` et `UsesFamilySeat` ; l'accueil parent écrit « Couvert par … jusqu'au … » sous l'enfant, et « Abonnement » liste les enfants couverts, en disant qu'il peut ne pas renouveler. Q15 : pas encore d'e-mail (aucun fournisseur branché).
+- Écart assumé : pas de remboursement ni de mise en pause automatique de l'abonnement payé ; c'est au payeur de ne pas renouveler.
+
+**Vérifications :** tests Logic 434 / 434 (règle de chevauchement, ancienne valeur de `Source`) ; scénario sur une base neuve, 20 contrôles (élève qui paie puis rejoint le lycée, enfant d'une formule Famille et son parent, enseignant avec sa formule ajouté au lycée, élève d'un enseignant indépendant, élève sans abonnement, enseignant en essai, élève parti) ; dans le navigateur : « Abonnement » de l'enfant (sources et avertissement), accueil et « Abonnement » du parent. Trouvé pendant le travail : une formule personnelle payée s'active par sa clé, sans être rattachée au payeur ; elle est bien comptée comme payée. Corrigé pendant l'essai : la phrase de l'avertissement était coupée par un retour à la ligne.
 
 ## Lot 8 : ce qui a été fait (11 novembre 2026)
 

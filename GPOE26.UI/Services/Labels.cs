@@ -112,6 +112,16 @@ public static class Labels
     /// </summary>
     public static string ValidUntil(DateTime utc) => utc.ToString("d MMMM yyyy", Fr);
 
+    /// <summary>D'où vient un accès Premium, en clair (Label : établissement, espace de l'enseignant ou parent payeur).</summary>
+    public static string Of(EntitlementSource s) => s.Kind switch
+    {
+        EntitlementSourceKind.Trial => "Période d'essai",
+        EntitlementSourceKind.Personal => "Abonnement personnel",
+        EntitlementSourceKind.Family => s.Label is { Length: > 0 } payer ? $"Formule Famille de {payer}" : "Formule Famille",
+        EntitlementSourceKind.School => s.Label is { Length: > 0 } school ? $"Licence de {school}" : "Licence de l'établissement",
+        _ => s.Label is { Length: > 0 } space ? $"Offert par l'enseignant ({space})" : "Offert par l'enseignant"
+    };
+
     public static string Date(DateTime? d) => d is null ? "—" : AppTime.ToLocal(d.Value).ToString("ddd d MMM", Fr);
     public static string When(DateTime? d) => d is null ? "—" : AppTime.ToLocal(d.Value).ToString("ddd d MMM · HH'h'mm", Fr);
     public static string Today() => AppTime.Now.ToString("dddd d MMMM", Fr);

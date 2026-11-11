@@ -78,7 +78,10 @@ public record ChildLinkDto(
     string? Level,
     string? Filiere,
     string? ExamTarget,
-    bool IsPremium
+    bool IsPremium,
+    string? CoveredBy = null,
+    DateTime? CoveredUntil = null,
+    bool UsesFamilySeat = false
 );
 
 public record ParentLinkDto(Guid LinkId, LinkStatus Status, Guid ParentId, string ParentName, DateTime CreatedAt);
@@ -86,6 +89,9 @@ public record ParentLinkDto(Guid LinkId, LinkStatus Status, Guid ParentId, strin
 // ─── Abonnements ──────────────────────────────────────────────────────────────
 
 public record RedeemKeyRequest([Required] string Code);
+
+/// <summary>Code personnel accepté. Overlap : la personne paie déjà un abonnement que l'espace rend inutile.</summary>
+public record RedeemCodeResultDto(CoverageOverlap? Overlap);
 
 public record CheckoutRequest(SubscriptionPlan Plan, BillingPeriod Period = BillingPeriod.Monthly);
 

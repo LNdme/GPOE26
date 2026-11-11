@@ -4,8 +4,64 @@ using User.Model;
 
 namespace User.Service;
 
-/// <summary>Droit d'accès Premium d'un utilisateur, quelle qu'en soit l'origine.</summary>
-public record Entitlement(bool IsPremium, SubscriptionPlan? Plan, DateTime? Until, string? Source, List<EntitledFeature>? Features = null);
+/// <summary>
+/// Droit d'accès Premium d'un utilisateur, quelle qu'en soit l'origine. Plan, Until et Source décrivent la source
+/// qui dure le plus longtemps ; Sources les détaille toutes (lot 11) ; Overlap signale un abonnement payé alors
+/// qu'un établissement couvre déjà la personne.
+/// </summary>
+public record Entitlement(bool IsPremium, SubscriptionPlan? Plan, DateTime? Until, string? Source, List<EntitledFeature>? Features = null,
+    List<EntitlementSource>? Sources = null, CoverageOverlap? Overlap = null);
+
+/// <summary>
+/// D'où vient un accès Premium : essai, formule Premium élève ou Enseignant (payée à la caisse, ou activée par
+/// sa clé ELE-/ENS-, que délivre le paiement), formule Famille d'un parent, licence d'un établissement, ou formule
+/// de l'enseignant indépendant qui suit l'élève.
+/// </summary>
+public enum EntitlementSourceKind { Trial, Personal, Family, School, Teacher }
+
+/// <summary>Une source d'accès Premium. Label : nom de l'établissement, de l'espace de l'enseignant ou du parent payeur.</summary>
+public record EntitlementSource(EntitlementSourceKind Kind, SubscriptionPlan Plan, DateTime Until, string? Label);
+
+/// <summary>
+/// Chevauchement (décision P5) : la personne paie (ou un parent paie pour elle) alors qu'un établissement ou
+/// son enseignant la couvre déjà. Rien n'est coupé : on la prévient, et le payeur peut ne pas renouveler.
+/// PaidBy : le parent payeur d'une formule Famille (vide si la personne paie elle-même).
+/// </summary>
+public record CoverageOverlap(string CoveredBy, DateTime CoveredUntil, EntitlementSourceKind PaidKind, DateTime PaidUntil, string? PaidBy);
+
+/// <summary>Règles pures sur les sources d'un accès Premium (testées sans base).</summary>
+public static class EntitlementRules
+{
+    public static bool IsCovering(EntitlementSourceKind kind) => kind is EntitlementSourceKind.School or EntitlementSourceKind.Teacher;
+    public static bool IsPaid(EntitlementSourceKind kind) => kind is EntitlementSourceKind.Personal or EntitlementSourceKind.Family;
+
+    /// <summary>
+    /// Couverture par un établissement (la plus longue) en même temps qu'une formule payée (la plus longue), ou null.
+    /// Un essai ne compte pas : personne ne paie pour rien.
+    /// </summary>
+    public static CoverageOverlap? Overlap(IEnumerable<EntitlementSource> sources)
+    {
+        var list = sources.ToList();
+        var covering = list.Where(s => IsCovering(s.Kind)).MaxBy(s => s.Until);
+        var paid = list.Where(s => IsPaid(s.Kind)).MaxBy(s => s.Until);
+        return covering is null || paid is null
+            ? null
+            : new CoverageOverlap(covering.Label ?? "votre établissement", covering.Until, paid.Kind, paid.Until,
+                paid.Kind == EntitlementSourceKind.Family ? paid.Label : null);
+    }
+
+    /// <summary>
+    /// Ancienne valeur de Source, gardée pour les écrans : trial, subscription, key (formule Famille) ou space.
+    /// Une formule personnelle activée par sa clé donnait « key » ; elle donne maintenant « subscription ».
+    /// </summary>
+    public static string LegacySource(EntitlementSourceKind kind) => kind switch
+    {
+        EntitlementSourceKind.Trial => "trial",
+        EntitlementSourceKind.Personal => "subscription",
+        EntitlementSourceKind.Family => "key",
+        _ => "space"
+    };
+}
 
 /// <summary>Fonctionnalité accessible. Limit : quota mensuel, vide si illimité.</summary>
 public record EntitledFeature(string Code, int? Limit);
@@ -96,29 +152,43 @@ public class SubscriptionService(UserContext db, IConfiguration config, PlanCata
         var now = DateTime.UtcNow;
         var active = new[] { SubscriptionStatus.Active, SubscriptionStatus.Trial };
 
-        var own = await db.Subscriptions
+        var own = (await db.Subscriptions
             .Where(s => s.OwnerUserId == userId
                         && (s.Plan == SubscriptionPlan.StudentPremium || s.Plan == SubscriptionPlan.Teacher || s.Plan == SubscriptionPlan.Family)
                         && active.Contains(s.Status) && s.EndsAt > now)
-            .ToListAsync();
+            .ToListAsync())
+            .Select(s => new EntitlementSource(s.Status == SubscriptionStatus.Trial ? EntitlementSourceKind.Trial : EntitlementSourceKind.Personal,
+                s.Plan, s.EndsAt!.Value, null));
 
-        var viaKey = await db.KeyRedemptions
+        // Clés activées : formule Famille d'un parent, ancienne clé d'établissement, ou formule personnelle (sa clé
+        // ELE-/ENS- est ce que délivre le paiement). Un abonnement déjà compté comme le sien n'est pas compté deux fois.
+        var viaKey = (await db.KeyRedemptions
             .Where(r => r.UserId == userId && !r.Key.IsRevoked)
             .Select(r => r.Key.Subscription)
-            .Where(s => active.Contains(s.Status) && s.EndsAt > now)
-            .ToListAsync();
+            .Where(s => active.Contains(s.Status) && s.EndsAt > now && s.OwnerUserId != userId)
+            .Select(s => new
+            {
+                s.Plan,
+                s.EndsAt,
+                Payer = db.AppUsers.Where(u => u.Id == s.OwnerUserId).Select(u => u.Username).FirstOrDefault(),
+                Organization = db.Organizations.Where(o => o.Id == s.OrganizationId).Select(o => o.Name).FirstOrDefault(),
+            })
+            .ToListAsync())
+            .Select(s => s.Plan switch
+            {
+                SubscriptionPlan.Family => new EntitlementSource(EntitlementSourceKind.Family, s.Plan, s.EndsAt!.Value, s.Payer),
+                SubscriptionPlan.OrganizationLicense => new EntitlementSource(EntitlementSourceKind.School, s.Plan, s.EndsAt!.Value, s.Organization),
+                _ => new EntitlementSource(EntitlementSourceKind.Personal, s.Plan, s.EndsAt!.Value, null),
+            });
 
         var role = await db.AppUsers.Where(u => u.Id == userId).Select(u => (UserRole?)u.Role).FirstOrDefaultAsync();
-        var viaSpace = await SpaceSubscriptionsAsync(userId, now);
-        var all = own.Concat(viaKey).Concat(viaSpace).ToList();
-        var features = MergeFeatures(await catalog.GetAsync(), all.Select(s => s.Plan), role);
-        var best = all.MaxBy(s => s.EndsAt);
-        if (best is null) return new Entitlement(false, null, null, null, features);
+        var sources = own.Concat(viaKey).Concat(await SpaceSourcesAsync(userId, now)).ToList();
+        var features = MergeFeatures(await catalog.GetAsync(), sources.Select(s => s.Plan), role);
+        var best = sources.MaxBy(s => s.Until);
+        if (best is null) return new Entitlement(false, null, null, null, features, []);
 
-        var source = own.Contains(best)
-            ? (best.Status == SubscriptionStatus.Trial ? "trial" : "subscription")
-            : viaKey.Contains(best) ? "key" : "space";
-        return new Entitlement(true, best.Plan, best.EndsAt, source, features);
+        return new Entitlement(true, best.Plan, best.Until, EntitlementRules.LegacySource(best.Kind), features,
+            sources.OrderByDescending(s => s.Until).ToList(), EntitlementRules.Overlap(sources));
     }
 
     /// <summary>
@@ -127,7 +197,7 @@ public class SubscriptionService(UserContext db, IConfiguration config, PlanCata
     /// - élève activé chez un enseignant indépendant : l'équivalent Premium élève, tant que la formule Enseignant
     ///   de cet enseignant est en cours (elle inclut ses élèves, Q1).
     /// </summary>
-    private async Task<List<Subscription>> SpaceSubscriptionsAsync(Guid userId, DateTime now)
+    private async Task<List<EntitlementSource>> SpaceSourcesAsync(Guid userId, DateTime now)
     {
         var active = new[] { SubscriptionStatus.Active, SubscriptionStatus.Trial };
         var studentOf = db.OrganizationStudents.Where(s => s.UserId == userId && s.Status == StudentStatus.Active).Select(s => s.OrganizationId);
@@ -137,24 +207,33 @@ public class SubscriptionService(UserContext db, IConfiguration config, PlanCata
             .Where(s => s.Plan == SubscriptionPlan.OrganizationLicense && s.OrganizationId != null
                         && (studentOf.Contains(s.OrganizationId.Value) || memberOf.Contains(s.OrganizationId.Value))
                         && active.Contains(s.Status) && s.EndsAt > now)
+            .Select(s => new { s.Plan, s.EndsAt, Name = db.Organizations.Where(o => o.Id == s.OrganizationId).Select(o => o.Name).FirstOrDefault() })
             .ToListAsync();
 
-        // Enseignants indépendants dont l'élève est sur la liste, et leur formule Enseignant en cours
+        // Enseignants indépendants dont l'élève est sur la liste (avec le nom de leur espace), et leur formule Enseignant en cours
         var owners = await db.OrganizationMembers
             .Where(m => m.Role == OrganizationRole.Owner && m.Status == MemberStatus.Active && studentOf.Contains(m.OrganizationId)
                         && db.Organizations.Any(o => o.Id == m.OrganizationId && o.Type == OrganizationType.Independent))
-            .Select(m => m.UserId).ToListAsync();
-        var teacherPlans = owners.Count == 0 ? [] : await db.Subscriptions
+            .Select(m => new { m.UserId, Name = db.Organizations.Where(o => o.Id == m.OrganizationId).Select(o => o.Name).FirstOrDefault() })
+            .ToListAsync();
+        var ownerIds = owners.Select(o => o.UserId).ToList();
+        var teacherPlans = ownerIds.Count == 0 ? [] : await db.Subscriptions
             .Where(s => s.Plan == SubscriptionPlan.Teacher && active.Contains(s.Status) && s.EndsAt > now
-                        && ((s.OwnerUserId != null && owners.Contains(s.OwnerUserId.Value))
-                            || db.KeyRedemptions.Any(r => r.Key.SubscriptionId == s.Id && !r.Key.IsRevoked && owners.Contains(r.UserId))))
+                        && ((s.OwnerUserId != null && ownerIds.Contains(s.OwnerUserId.Value))
+                            || db.KeyRedemptions.Any(r => r.Key.SubscriptionId == s.Id && !r.Key.IsRevoked && ownerIds.Contains(r.UserId))))
+            .Select(s => new
+            {
+                s.EndsAt,
+                Owner = s.OwnerUserId ?? db.KeyRedemptions
+                    .Where(r => r.Key.SubscriptionId == s.Id && !r.Key.IsRevoked && ownerIds.Contains(r.UserId))
+                    .Select(r => (Guid?)r.UserId).FirstOrDefault(),
+            })
             .ToListAsync();
 
-        return licenses
-            .Concat(teacherPlans.Select(t => new Subscription
-            {
-                Plan = SubscriptionPlan.StudentPremium, Status = SubscriptionStatus.Active, StartsAt = t.StartsAt, EndsAt = t.EndsAt
-            }))
+        // La formule de l'enseignant vaut, pour ses élèves, l'équivalent du Premium élève
+        return licenses.Select(l => new EntitlementSource(EntitlementSourceKind.School, l.Plan, l.EndsAt!.Value, l.Name))
+            .Concat(teacherPlans.Select(t => new EntitlementSource(EntitlementSourceKind.Teacher, SubscriptionPlan.StudentPremium,
+                t.EndsAt!.Value, owners.FirstOrDefault(o => o.UserId == t.Owner)?.Name)))
             .ToList();
     }
 

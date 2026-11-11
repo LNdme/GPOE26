@@ -1,0 +1,44 @@
+@* Abonnement payé alors qu'un établissement ou un enseignant couvre déjà la personne (lot 11, décision P5).
+   Rien n'est coupé : on prévient, et le payeur peut ne pas renouveler. *@
+@if (Overlap is { } o)
+{
+    @* white-space normal : .ga-alert garde les retours à la ligne, ceux du balisage couperaient les phrases *@
+    <div class="ga-alert warn" role="status" style="white-space:normal">
+        @if (Familiar)
+        {
+            <span>
+                <strong>@o.CoveredBy</strong> te donne déjà l'accès Premium jusqu'au @Labels.LongDate(o.CoveredUntil).
+                @if (o.PaidKind == EntitlementSourceKind.Family)
+                {
+                    <text>Ta place dans la formule Famille@(o.PaidBy is { Length: > 0 } p ? $" de {p}" : "") n'est donc pas nécessaire pendant ce temps : ton parent est prévenu dans son espace.</text>
+                }
+                else
+                {
+                    <text>Ton abonnement personnel n'est donc pas nécessaire pendant ce temps : tu n'as pas besoin de le renouveler.</text>
+                }
+                @if (o.PaidUntil > o.CoveredUntil)
+                {
+                    <text> Il continue après le @Labels.LongDate(o.CoveredUntil), jusqu'au @Labels.LongDate(o.PaidUntil).</text>
+                }
+            </span>
+        }
+        else
+        {
+            <span>
+                <strong>@o.CoveredBy</strong> vous donne déjà l'accès Premium jusqu'au @Labels.LongDate(o.CoveredUntil).
+                Votre abonnement personnel n'est donc pas nécessaire pendant ce temps : vous n'avez pas besoin de le renouveler.
+                @if (o.PaidUntil > o.CoveredUntil)
+                {
+                    <text> Il continue après le @Labels.LongDate(o.CoveredUntil), jusqu'au @Labels.LongDate(o.PaidUntil).</text>
+                }
+            </span>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public CoverageOverlap? Overlap { get; set; }
+
+    /// <summary>Tutoiement (élève) ou vouvoiement (enseignant).</summary>
+    [Parameter] public bool Familiar { get; set; }
+}
