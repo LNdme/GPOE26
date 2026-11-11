@@ -124,7 +124,10 @@ public static partial class MemoryRules
                 .ToList();
 
             var summary = Text(root, "summary");
-            return new Reflection(adds, updates, forget, Limit(summary, 600), Limit(Text(root, "weakPoints"), 300));
+            // weakPoints absent : on ne sait rien (null) ; chaîne vide : plus de notion fragile (""), à effacer.
+            // Avant, la chaîne vide était lue comme « absent » : une notion comprise restait fragile pour toujours.
+            var weak = Text(root, "weakPoints");
+            return new Reflection(adds, updates, forget, Limit(summary, 600), weak is null ? null : Limit(weak, 300) ?? "");
         }
         catch (JsonException)
         {

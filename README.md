@@ -84,7 +84,7 @@ Aucun secret ne doit être commité. Copiez `.env.example` en `.env` (ignoré pa
 | `LLM__EmbeddingModel` | Chat | Modèle d'embeddings de la mémoire des agents (recherche par le sens, avec pgvector) : `liquid/lfm-2.5-embedding-350m:free` par défaut. Vide : recherche par le texte seulement. Changer de modèle est sans risque : les souvenirs déjà enregistrés avec l'ancien restent trouvés par le texte |
 | `LLM__DailyLimitPerUser` | Chat, Quiz | Plafond quotidien de demandes à l'IA par utilisateur et par service (150 par défaut, `0` le désactive), en plus du quota mensuel de la formule. Les demandes servies sont comptées dans la table `AiUsage` ; la lecture d'une copie photographiée pendant une épreuve n'est jamais bloquée |
 | `Services__TimeoutSeconds` | Chat | Délai des appels du tuteur vers Cours, User et Quiz (10 s par défaut) ; un service qui ne répond pas donne 503 et un message, pas un refus d'abonnement |
-| `LlmProvider` | Chat | Anciens écrans `/learning` : `OpenRouter` (défaut, même client que le tuteur), `DeepSeek`, `Claude`, `Gpt`, `Foundry` |
+| `Agents__ReflectionBatch`, `Agents__ReflectionQuietMinutes` | Chat | Mémoire du tuteur consolidée par lots : après 4 questions, ou 10 minutes sans message (un appel au modèle pour plusieurs questions). L'état est en base : rien ne se perd au redémarrage |
 | `ConnectionStrings__ChatDB` | Chat | Base des discussions du tuteur (fournie par Aspire) |
 | `Jwt__Key` / `Jwt__Issuer` / `Jwt__Audience` | tous les services | Clé de signature JWT (32 caractères au moins). Aucune valeur par défaut hors développement : les services **refusent de démarrer** sans clé, ou avec la clé d'exemple des fichiers `appsettings.Development.json`. Avec Aspire : `dotnet user-secrets set "Parameters:jwt-key" "<clé>" --project GPOE26.AppHost` |
 | `Jwt__MaxSessionHours` | User | Durée maximale d'une session prolongée sans ressaisir le mot de passe (12 h par défaut). Le jeton dure 60 min et se renouvelle seul tant que l'utilisateur est actif (`POST /auth/refresh`) |
@@ -168,9 +168,14 @@ L'interface des élèves, enseignants et parents est une **bibliothèque Razor**
 | `POST /tutor/courses/{courseId}/messages` | Poser une question (Premium), éventuellement avec `imageId` ; le contenu du cours est lu dans le service Cours avec le jeton de l'élève (il n'accède qu'à ses cours) |
 | `POST /tutor/images`, `GET /tutor/images/{id}` | Photo d'un exercice (JPEG/PNG/WebP, 6 Mo max), visible de son seul auteur |
 | `PUT /tutor/messages/{id}/pin`, `GET /tutor/pinned` | Épingler une explication, liste des explications épinglées |
-| `DELETE /tutor/courses/{courseId}` | Effacer la discussion d'un cours |
+| `DELETE /tutor/courses/{courseId}` | Effacer la discussion d'un cours (les difficultés notées pour ce cours partent avec elle ; les préférences restent) |
+| `GET /agent/memories`, `DELETE /agent/memories`, `GET/PUT /agent/memory-settings` | Ce que les agents retiennent (tuteur et assistant), « Tout oublier », couper la mémoire |
+| `POST /teacher-agent/ask`, `GET/DELETE /teacher-agent/conversation` | Assistant enseignant : question (les 12 derniers messages sont relus), conversation conservée, effacement |
+| `POST /teacher-agent/compose` | Plan, rédaction ou réécriture dans le ton de l'enseignant ; `courseText` : le cours déjà rédigé, pour continuer sans répéter |
 
-Premium est lu dans le JWT, puis vérifié auprès du service User s'il dit non (clé activée après la connexion).
+Le tuteur reçoit le profil de l'apprenant (classe, sous-système, filière, examen visé et sa date, matières à renforcer, temps d'étude) et répond en anglais à un élève anglophone. Un cours trop long pour le modèle est réduit à son plan et aux parties les plus proches de la question, et le tuteur en est averti. Il doit dire quand une réponse n'est pas dans le cours.
+
+L'accès aux fonctions d'IA est vérifié auprès du service User (formule et quota), à chaque demande.
 
 ### Évaluations (service Quiz) et partage des cours (service Cours)
 

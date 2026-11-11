@@ -1,6 +1,16 @@
 // Petits services navigateur de l'espace d'apprentissage (module ES chargé à la demande).
 // KaTeX et Prism sont fournis par l'hôte (GPOE26.Web) : s'ils manquent, le texte reste lisible tel quel.
 
+// Dernière action de l'élève sur la page (défilement, clic, frappe, toucher) : le temps d'étude ne compte que s'il est là.
+let lastActivity = Date.now();
+for (const type of ['scroll', 'keydown', 'pointerdown', 'pointermove', 'touchstart', 'wheel'])
+    window.addEventListener(type, () => { lastActivity = Date.now(); }, { passive: true, capture: true });
+
+/** Page visible et action de l'élève depuis moins de `ms` millisecondes. */
+export function activeWithin(ms) {
+    return document.visibilityState === 'visible' && Date.now() - lastActivity <= ms;
+}
+
 /** Rend les formules produites par Markdig (.math : \( … \) ou \[ … \]) et colore le code. */
 export function renderMath(element) {
     if (!element) return;

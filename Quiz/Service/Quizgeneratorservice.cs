@@ -97,23 +97,47 @@ public class OpenAiQuizGeneratorService(LlmClient llm, ILogger<OpenAiQuizGenerat
         using var parsed = JsonDocument.Parse(content);
         var questionsArray = parsed.RootElement.GetProperty("questions");
 
+        var questions = ValidQuestions(questionsArray, logger);
+        if (questions.Count == 0)
+            throw new InvalidOperationException("Aucune question exploitable dans la réponse de l'IA.");
+
+        logger.LogInformation("Generated {Count} questions from LLM.", questions.Count);
+        return questions;
+    }
+
+    /// <summary>
+    /// Questions bien formées seulement : un énoncé, au moins deux options non vides, une bonne réponse qui existe.
+    /// Avant, un indice hors limites ou une option manquante donnait une question impossible à réussir.
+    /// </summary>
+    public static List<Question> ValidQuestions(JsonElement questionsArray, ILogger? logger = null)
+    {
         var questions = new List<Question>();
+        if (questionsArray.ValueKind != JsonValueKind.Array) return questions;
+
         foreach (var q in questionsArray.EnumerateArray())
         {
-            var options = q.GetProperty("options").EnumerateArray()
-                .Select(o => o.GetString() ?? "")
-                .ToList();
+            if (q.ValueKind != JsonValueKind.Object) continue;
+            var text = q.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString()?.Trim() : null;
+            var options = q.TryGetProperty("options", out var o) && o.ValueKind == JsonValueKind.Array
+                ? o.EnumerateArray().Select(x => x.ValueKind == JsonValueKind.String ? x.GetString()?.Trim() ?? "" : x.ToString()).ToList()
+                : [];
+            var index = q.TryGetProperty("correctOptionIndex", out var i) && i.ValueKind == JsonValueKind.Number && i.TryGetInt32(out var n) ? n : -1;
+
+            if (string.IsNullOrEmpty(text) || options.Count < 2 || options.Any(string.IsNullOrEmpty)
+                || options.Distinct(StringComparer.OrdinalIgnoreCase).Count() != options.Count || index < 0 || index >= options.Count)
+            {
+                logger?.LogWarning("Question générée écartée (mal formée) : {Text}", text);
+                continue;
+            }
 
             questions.Add(new Question
             {
-                Text = q.GetProperty("text").GetString() ?? "",
+                Text = text,
                 Options = options,
-                CorrectOptionIndex = q.GetProperty("correctOptionIndex").GetInt32(),
-                Explanation = q.GetProperty("explanation").GetString() ?? ""
+                CorrectOptionIndex = index,
+                Explanation = q.TryGetProperty("explanation", out var e) && e.ValueKind == JsonValueKind.String ? e.GetString() ?? "" : ""
             });
         }
-
-        logger.LogInformation("Generated {Count} questions from LLM.", questions.Count);
         return questions;
     }
 

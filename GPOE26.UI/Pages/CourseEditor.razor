@@ -358,7 +358,9 @@
         }
 
         _composing = true;
-        var result = await Agent.ComposeAsync(new ComposeRequest(mode, _subject.Trim(), _title.Trim(), _instructions, selection));
+        // Le cours déjà écrit accompagne la demande : « Rédiger une partie » continue au lieu de recommencer
+        var result = await Agent.ComposeAsync(new ComposeRequest(mode, _subject.Trim(), _title.Trim(), _instructions, selection,
+            mode == "rewrite" ? null : _markdown));
         _composing = false;
         if (result.Value is null)
         {

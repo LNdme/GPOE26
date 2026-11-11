@@ -145,6 +145,10 @@ public class AgentContextService(TutorContext db, PlatformClients platform, Agen
             + "\nAppuie-toi sur ces éléments sans les réciter : adapte tes exemples à ce qu'il comprend déjà, et la longueur de ton aide à son temps disponible (une seule notion si le temps est court).";
     }
 
+    /// <summary>Profil complet de l'utilisateur (langue, sous-système, examen visé, matières…), gardé une minute.</summary>
+    public Task<LearnerProfileRef?> ProfileAsync(CancellationToken ct) =>
+        platform.GetJsonAsync<LearnerProfileRef>("user", "/auth/me", ct);
+
     public Task<ClassProgressRef?> ClassProgressAsync(Guid classroomId, CancellationToken ct) =>
         platform.GetJsonAsync<ClassProgressRef>("quiz", $"/progress/classrooms/{classroomId}", ct);
 

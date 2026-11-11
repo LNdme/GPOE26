@@ -90,7 +90,18 @@ public class AgentMemoryStore(TutorContext db, LlmClient llm)
     }
 }
 
-public record ReflectionJob(Guid UserId, string Kind, Guid? CourseId, string? CourseTitle, string UserText, string AgentText, Guid? SourceMessageId);
+/// <summary>Un échange entre la personne et l'agent.</summary>
+public record ReflectionExchange(string Person, string Agent);
+
+/// <summary>
+/// Échanges à relire pour la mémoire. Plusieurs à la fois pour le tuteur (un appel au modèle par lot, cf.
+/// TutorReflectionScheduler) ; un seul pour l'assistant enseignant. CreatedAt : un « Tout oublier » postérieur l'annule.
+/// </summary>
+public record ReflectionJob(Guid UserId, string Kind, Guid? CourseId, string? CourseTitle, IReadOnlyList<ReflectionExchange> Exchanges,
+    Guid? SourceMessageId)
+{
+    public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
+}
 
 public class AgentReflectionQueue
 {
@@ -107,11 +118,11 @@ public class AgentReflectionQueue
 public class AgentReflectionWorker(AgentReflectionQueue queue, IServiceScopeFactory scopes, ILogger<AgentReflectionWorker> logger) : BackgroundService
 {
     private const string Prompt = """
-        Tu maintiens la mémoire d'un agent pédagogique. À partir de l'échange fourni, réponds uniquement avec un objet JSON :
+        Tu maintiens la mémoire d'un agent pédagogique. À partir des échanges fournis, réponds uniquement avec un objet JSON :
         {"add":[{"type":"fact|preference|difficulty|goal","content":"…","importance":1}],
          "update":[{"id":"…","content":"…"}],"forget":["id"],
          "summary":"portrait court et à jour de la personne, 3 phrases maximum",
-         "weakPoints":"notions de ce cours encore mal comprises, ou chaîne vide"}
+         "weakPoints":"notions de ce cours encore mal comprises, ou chaîne vide si tout semble compris"}
         Retiens seulement ce qui restera utile plus tard : façon de comprendre, difficultés, préférences, objectifs ; pour un enseignant, son style et ses exigences.
         N'invente rien. Ne retiens ni mot de passe, ni donnée de santé, ni information sur la famille ou l'origine.
         Corrige (update) ou supprime (forget) un souvenir contredit par l'échange. Si rien n'est à retenir, laisse les listes vides.
@@ -137,15 +148,16 @@ public class AgentReflectionWorker(AgentReflectionQueue queue, IServiceScopeFact
         }
     }
 
-    private static async Task ProcessAsync(ReflectionJob job, CancellationToken ct, IServiceProvider services)
+    /// <summary>Relit un lot d'échanges et met à jour la mémoire. Utilisé par la file (assistant) et par le planificateur (tuteur).</summary>
+    public static async Task ProcessAsync(ReflectionJob job, CancellationToken ct, IServiceProvider services)
     {
         var db = services.GetRequiredService<TutorContext>();
         var llm = services.GetRequiredService<LlmClient>();
         var store = services.GetRequiredService<AgentMemoryStore>();
-        if (!llm.IsConfigured) return;
+        if (!llm.IsConfigured || job.Exchanges.Count == 0) return;
 
         var profile = await store.ProfileAsync(job.UserId, job.Kind, ct);
-        if (!profile.MemoryEnabled) return;
+        if (!profile.MemoryEnabled || profile.ForgottenAt > job.CreatedAt) return;
 
         var existing = await db.AgentMemories
             .Where(m => m.UserId == job.UserId && m.Kind == job.Kind)
@@ -161,10 +173,7 @@ public class AgentReflectionWorker(AgentReflectionQueue queue, IServiceScopeFact
             {known}
             </souvenirs>
             Cours : {job.CourseTitle ?? "(aucun)"}
-            <echange>
-            Personne : {job.UserText}
-            Agent : {job.AgentText}
-            </echange>
+            {string.Join("\n", job.Exchanges.Select(e => $"<echange>\nPersonne : {e.Person}\nAgent : {e.Agent}\n</echange>"))}
             """;
 
         // Sans réflexion : un modèle « raisonnant » (Nemotron 3.5…) épuisait les 900 jetons à réfléchir et ne répondait rien,
@@ -204,8 +213,12 @@ public class AgentReflectionWorker(AgentReflectionQueue queue, IServiceScopeFact
         if (reflection.WeakPoints is not null && job.CourseId is { } courseId)
         {
             var mastery = await db.CourseMastery.FirstOrDefaultAsync(m => m.UserId == job.UserId && m.CourseId == courseId, ct);
-            if (mastery is not null) mastery.WeakPoints = reflection.WeakPoints;
+            if (mastery is not null) mastery.WeakPoints = reflection.WeakPoints.Length == 0 ? null : reflection.WeakPoints;
         }
+
+        // Un « Tout oublier » arrivé pendant l'appel au modèle l'emporte : rien n'est écrit
+        var forgottenAt = await db.AgentProfiles.AsNoTracking().Where(p => p.Id == profile.Id).Select(p => p.ForgottenAt).FirstOrDefaultAsync(ct);
+        if (forgottenAt > job.CreatedAt) return;
 
         await db.SaveChangesAsync(ct);
         foreach (var memory in added) await store.StoreEmbeddingAsync(memory, ct);

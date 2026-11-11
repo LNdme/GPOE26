@@ -46,6 +46,8 @@ public interface IAgentApi
     Task<ApiResult<bool>> LearnStyleAsync(string text);
     Task<ApiResult<ClassInsightsResult>> ClassInsightsAsync(Guid classroomId);
     Task<ApiResult<AssistantAnswer>> AskAssistantAsync(Guid? classroomId, string message);
+    Task<ApiResult<List<AssistantMessage>>> AssistantConversationAsync();
+    Task<ApiResult<bool>> ClearAssistantConversationAsync();
 }
 
 /// <summary>Catalogue public des formules.</summary>
@@ -193,6 +195,8 @@ public class AgentApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiC
     public Task<ApiResult<bool>> LearnStyleAsync(string text) => PostAsync<bool>("/teacher-agent/learn-style", new { text });
     public Task<ApiResult<ClassInsightsResult>> ClassInsightsAsync(Guid classroomId) => PostAsync<ClassInsightsResult>($"/teacher-agent/classes/{classroomId}/insights");
     public Task<ApiResult<AssistantAnswer>> AskAssistantAsync(Guid? classroomId, string message) => PostAsync<AssistantAnswer>("/teacher-agent/ask", new { classroomId, message });
+    public Task<ApiResult<List<AssistantMessage>>> AssistantConversationAsync() => GetAsync<List<AssistantMessage>>("/teacher-agent/conversation");
+    public Task<ApiResult<bool>> ClearAssistantConversationAsync() => DeleteAsync<bool>("/teacher-agent/conversation");
 }
 
 public class PlanApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.Site), IPlanApi

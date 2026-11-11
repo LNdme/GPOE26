@@ -198,7 +198,11 @@ else
         _loading = false;
     }
 
-    /// <summary>Temps réellement passé sur le cours : alimente le plan du jour et le tuteur.</summary>
+    /// <summary>
+    /// Temps réellement passé sur le cours : alimente le plan du jour et le tuteur. Une tranche de deux minutes
+    /// ne compte que si la page est visible et que l'élève a agi pendant ce temps (avant, un onglet ouvert
+    /// toute la nuit comptait des heures d'étude).
+    /// </summary>
     private void StartStudyClock()
     {
         _studyClock = new CancellationTokenSource();
@@ -209,9 +213,15 @@ else
             try
             {
                 while (await timer.WaitForNextTickAsync(token))
-                    await Agent.RecordStudyAsync(Id, StudyTickMinutes);
+                {
+                    _module ??= await JS.InvokeAsync<IJSObjectReference>("import", token, "./_content/GPOE26.UI/gpoe-app.js");
+                    if (await _module.InvokeAsync<bool>("activeWithin", token, (int)TimeSpan.FromMinutes(StudyTickMinutes).TotalMilliseconds))
+                        await Agent.RecordStudyAsync(Id, StudyTickMinutes);
+                }
             }
             catch (OperationCanceledException) { }
+            catch (JSDisconnectedException) { }
+            catch (JSException) { }
         });
     }
 

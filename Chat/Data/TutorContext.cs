@@ -14,6 +14,7 @@ public class TutorContext(DbContextOptions<TutorContext> options) : DbContext(op
     public DbSet<StudySlot> StudySlots => Set<StudySlot>();
     public DbSet<StudySession> StudySessions => Set<StudySession>();
     public DbSet<AiUsage> AiUsage => Set<AiUsage>();
+    public DbSet<AssistantMessage> AssistantMessages => Set<AssistantMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -59,6 +60,12 @@ public class TutorContext(DbContextOptions<TutorContext> options) : DbContext(op
         {
             e.ToTable("StudySessions");
             e.Property(s => s.Id).ValueGeneratedNever();
+        });
+        modelBuilder.Entity<AssistantMessage>(e =>
+        {
+            e.ToTable("AssistantMessages");
+            e.Property(m => m.Id).ValueGeneratedNever();
+            e.HasIndex(m => new { m.UserId, m.CreatedAt });
         });
         modelBuilder.Entity<AiUsage>(e =>
         {
@@ -173,6 +180,22 @@ public static partial class AgentSchema
             CONSTRAINT ""PK_AiUsage"" PRIMARY KEY (""UserId"", ""Feature"", ""Day"")
         )",
         @"CREATE INDEX IF NOT EXISTS ""IX_TutorMessages_ImageId"" ON ""TutorMessages"" (""ImageId"") WHERE ""ImageId"" IS NOT NULL",
+        // Mémoire consolidée par lots. Les discussions existantes sont considérées comme déjà relues (la colonne
+        // reçoit la date d'ajout) : seuls les nouveaux échanges seront relus. Ensuite, une nouvelle discussion part de null.
+        @"ALTER TABLE ""TutorConversations"" ADD COLUMN IF NOT EXISTS ""ReflectedAt"" timestamp with time zone DEFAULT now()",
+        @"ALTER TABLE ""TutorConversations"" ALTER COLUMN ""ReflectedAt"" DROP DEFAULT",
+        @"ALTER TABLE ""AgentProfiles"" ADD COLUMN IF NOT EXISTS ""ForgottenAt"" timestamp with time zone",
+        // Conversation avec l'assistant enseignant
+        @"CREATE TABLE IF NOT EXISTS ""AssistantMessages"" (
+            ""Id"" uuid NOT NULL,
+            ""UserId"" uuid NOT NULL,
+            ""ClassroomId"" uuid,
+            ""Role"" text NOT NULL,
+            ""Content"" text NOT NULL,
+            ""CreatedAt"" timestamp with time zone NOT NULL,
+            CONSTRAINT ""PK_AssistantMessages"" PRIMARY KEY (""Id"")
+        )",
+        @"CREATE INDEX IF NOT EXISTS ""IX_AssistantMessages_UserId_CreatedAt"" ON ""AssistantMessages"" (""UserId"", ""CreatedAt"")",
     };
 
     /// <summary>La recherche vectorielle est un plus : sans l'extension pgvector, le plein texte suffit.</summary>

@@ -18,7 +18,26 @@ public class TutorConversation
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+    /// <summary>
+    /// Messages déjà relus par la mémoire de l'agent (consolidation par lots, cf. TutorReflectionScheduler) :
+    /// ceux d'après restent à relire. Null : rien n'a encore été relu.
+    /// </summary>
+    public DateTime? ReflectedAt { get; set; }
+
     public List<TutorMessage> Messages { get; set; } = new();
+}
+
+/// <summary>Échange avec l'assistant enseignant, conservé : la conversation continue d'une question à l'autre.</summary>
+public class AssistantMessage
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid UserId { get; set; }
+    /// <summary>Classe dont l'enseignant parlait (suivi anonymisé joint à la question), le cas échéant</summary>
+    public Guid? ClassroomId { get; set; }
+    /// <summary>"user" ou "assistant"</summary>
+    public string Role { get; set; } = "user";
+    public string Content { get; set; } = "";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
 public class TutorMessage

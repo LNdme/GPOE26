@@ -21,7 +21,8 @@ public record AgentMemoryItem(Guid Id, string Type, string Content, int Importan
 public record MemorySettings(bool Enabled, string? Summary);
 
 public record TeacherAgentProfile(string? Tone, string? DetailLevel, string? Samples, string? Summary);
-public record ComposeRequest(string Mode, string? Subject, string? Title, string? Instructions, string? Selection);
+/// <summary>CourseText : le cours déjà rédigé, pour que l'assistant continue sans répéter.</summary>
+public record ComposeRequest(string Mode, string? Subject, string? Title, string? Instructions, string? Selection, string? CourseText = null);
 public record ComposeResult(string Markdown);
 
 public record AtRiskStudent(Guid StudentId, string Name, double? AverageOn20, string Reason);
@@ -29,3 +30,6 @@ public record WeakCourse(Guid CourseId, string Title, double AveragePercent);
 public record ClassInsights(int StudentCount, double? AverageOn20, List<AtRiskStudent> AtRisk, List<WeakCourse> WeakCourses);
 public record ClassInsightsResult(ClassInsights Insights, string? Narrative);
 public record AssistantAnswer(string Answer);
+
+/// <summary>Message de la conversation avec l'assistant enseignant (Role : "user" ou "assistant").</summary>
+public record AssistantMessage(Guid Id, string Role, string Content, Guid? ClassroomId, DateTime CreatedAt);

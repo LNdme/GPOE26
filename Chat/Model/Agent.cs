@@ -36,6 +36,9 @@ public class AgentProfile
 
     /// <summary>L'utilisateur peut couper la mémoire : plus rien n'est retenu ni relu</summary>
     public bool MemoryEnabled { get; set; } = true;
+
+    /// <summary>Dernier « Tout oublier » : une consolidation lancée avant ne doit rien réécrire après</summary>
+    public DateTime? ForgottenAt { get; set; }
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }
 

@@ -10,16 +10,18 @@ namespace Chat.Service;
 public record CourseSectionRef(string? Content, int Order);
 public record CourseRef(Guid Id, string Title, string Subject, string? Description, string? ExtractedText, List<CourseSectionRef>? Sections)
 {
-    /// <summary>Texte du cours donné au tuteur (sections, sinon texte extrait du PDF), borné pour tenir dans le contexte.</summary>
-    public string Text(int max = 40_000)
+    /// <summary>
+    /// Texte entier du cours (sections, sinon texte extrait du PDF). S'il est trop long pour le modèle,
+    /// AgentPrompts.SelectCourse en garde le plan et les parties utiles à la question.
+    /// </summary>
+    public string FullText()
     {
         var text = Sections is { Count: > 0 }
             ? string.Join("\n\n", Sections.OrderBy(s => s.Order).Select(s => s.Content))
             : ExtractedText ?? "";
         // Le tuteur n'a pas besoin de la description technique d'un laboratoire
         text = System.Text.RegularExpressions.Regex.Replace(text, @"```simulation[\s\S]*?```", "[Laboratoire interactif dans le cours]");
-        if (string.IsNullOrWhiteSpace(text)) text = Description ?? "";
-        return text.Length > max ? text[..max] + "\n[…]" : text;
+        return string.IsNullOrWhiteSpace(text) ? Description ?? "" : text;
     }
 }
 

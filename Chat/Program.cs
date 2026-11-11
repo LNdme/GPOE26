@@ -7,24 +7,12 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
-using Microsoft.Extensions.Http.Resilience;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
-builder.Services.AddHttpClient("LlmClient", client =>
-{
-    client.Timeout = TimeSpan.FromMinutes(3);
-})
-    .AddStandardResilienceHandler(options =>
-    {
-        options.AttemptTimeout.Timeout = TimeSpan.FromMinutes(3);
-        options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(3);
-        options.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(10);
-        options.Retry.MaxRetryAttempts = 1;
-    });
 
 
 
@@ -66,6 +54,7 @@ builder.Services.AddScoped<AgentMemoryStore>();
 builder.Services.AddScoped<AgentContextService>();
 builder.Services.AddSingleton<AgentReflectionQueue>();
 builder.Services.AddHostedService<AgentReflectionWorker>();
+builder.Services.AddHostedService<TutorReflectionScheduler>();
 
 var jwtKey = GPOE26.ServiceDefaults.JwtSigningKey.Require(builder.Configuration, builder.Environment);
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -88,32 +77,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddAuthorization();
 
-// Choix du LLM des anciens écrans via la config : "OpenRouter" | "DeepSeek" | "Claude" | "Gpt" | "Foundry"
-var provider = builder.Configuration["LlmProvider"] ?? "OpenRouter";
-
-builder.Services.AddScoped<ILlmService>(sp =>
-{
-    var config = sp.GetRequiredService<IConfiguration>();
-    var http = sp.GetRequiredService<IHttpClientFactory>();
-    var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
-
-    switch (provider)
-    {
-        case "OpenRouter":
-        case "OpenAiCompatible":
-            return new CompatibleLlmService(sp.GetRequiredService<LlmClient>());
-        case "Gpt":
-            return new GptService(config, http);
-        case "Foundry":
-            return new FoundryService(config, http);
-        case "Ollama": // Remplacé par DeepSeek comme demandé
-        case "FallbackChain":
-        case "DeepSeek":
-            return new DeepSeekService(config, http);
-        default:
-            return new ClaudeService(config);
-    }
-});
+// Brouillon de cours (/chat/draft) : même client LLM que le tuteur. Les anciens services (Claude, GPT, DeepSeek,
+// Gemini, Foundry, Ollama…) et le réglage LlmProvider ont été retirés : plus aucun écran ne les utilisait.
+builder.Services.AddScoped<ILlmService, CompatibleLlmService>();
 
 var app = builder.Build();
 

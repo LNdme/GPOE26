@@ -78,7 +78,27 @@
         </section>
 
         <section class="ga-card" aria-labelledby="h-ask">
-            <h2 id="h-ask" class="ga-h3"><Icon Name="chat" /> Poser une question</h2>
+            <div class="ga-row between">
+                <h2 id="h-ask" class="ga-h3"><Icon Name="chat" /> Poser une question</h2>
+                @if (_exchanges.Count > 0)
+                {
+                    @if (_confirmClear)
+                    {
+                        <span class="ga-actions">
+                            <button type="button" class="ga-btn danger small" @onclick="ClearAsync">Effacer la conversation</button>
+                            <button type="button" class="ga-btn ghost small" @onclick="() => _confirmClear = false">Annuler</button>
+                        </span>
+                    }
+                    else
+                    {
+                        <button type="button" class="ga-btn ghost small" @onclick="() => _confirmClear = true"><Icon Name="trash" /> Recommencer</button>
+                    }
+                }
+            </div>
+            @if (_exchanges.Count > 0)
+            {
+                <span class="ga-small ga-muted">La conversation est conservée : l'assistant se souvient de vos derniers échanges.</span>
+            }
             @foreach (var exchange in _exchanges)
             {
                 <div class="ga-field">
@@ -127,7 +147,7 @@
     private readonly List<Exchange> _exchanges = new();
     private ClassInsightsResult? _insights;
     private Guid? _classId;
-    private bool _loading = true, _analyzing, _asking;
+    private bool _loading = true, _analyzing, _asking, _confirmClear;
     private string? _error, _info, _question, _tone, _detail, _samples;
 
     protected override async Task LoadAsync()
@@ -140,6 +160,15 @@
             _detail = profile.Value?.DetailLevel;
             _samples = profile.Value?.Samples;
             _error = profile.Error;
+
+            // Conversation reprise là où elle s'était arrêtée
+            var conversation = await Agent.AssistantConversationAsync();
+            string? question = null;
+            foreach (var m in conversation.Value ?? [])
+            {
+                if (m.Role == "user") question = m.Content;
+                else if (question is not null) { _exchanges.Add(new Exchange(question, m.Content)); question = null; }
+            }
         }
         _loading = false;
     }
@@ -164,6 +193,14 @@
         if (result.Value is null) { _error = result.Error; return; }
         _exchanges.Add(new Exchange(question, result.Value.Answer));
         _question = null;
+    }
+
+    private async Task ClearAsync()
+    {
+        var result = await Agent.ClearAssistantConversationAsync();
+        _confirmClear = false;
+        if (!result.Ok) { _error = result.Error; return; }
+        _exchanges.Clear();
     }
 
     private async Task SaveProfileAsync()
