@@ -46,7 +46,7 @@ namespace User.Service
             var claims = new[]
             {
             new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-            new Claim(JwtRegisteredClaimNames.Email, user.Email),
+            new Claim(JwtRegisteredClaimNames.Email, user.Email ?? ""),
             new Claim("username", user.Username),
             new Claim("role", user.Role.ToString()),
             new Claim("level", user.Level ?? ""),

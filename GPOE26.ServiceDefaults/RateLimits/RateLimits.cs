@@ -49,8 +49,11 @@ public static class RateRules
     public static readonly RateRule Login = new("connexion", "POST", P("/auth/login"), RateKey.Email, 5, TimeSpan.FromMinutes(15),
         FailuresOnly: true, "Trop d'essais de connexion pour ce compte. Réessayez {0}, ou demandez de l'aide à votre établissement.");
 
-    /// <summary>Codes de classe, de rattachement parent et clés d'abonnement : 10 codes refusés en 15 minutes.</summary>
-    public static readonly RateRule Codes = new("codes", "POST", P("/(classrooms/join|parents/link|subscriptions/redeem)"), RateKey.User,
+    /// <summary>
+    /// Codes de classe, de rattachement parent, clés d'abonnement et codes personnels d'établissement saisis par un
+    /// compte existant : 10 codes refusés en 15 minutes.
+    /// </summary>
+    public static readonly RateRule Codes = new("codes", "POST", P("/(classrooms/join|parents/link|subscriptions/redeem|access-codes/redeem)"), RateKey.User,
         10, TimeSpan.FromMinutes(15), FailuresOnly: true, "Trop de codes refusés. Vérifiez le code auprès de la personne qui vous l'a donné, puis réessayez {0}.");
 
     /// <summary>

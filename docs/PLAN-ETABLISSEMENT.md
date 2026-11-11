@@ -2,7 +2,7 @@
 
 Rédigé le 11 novembre 2026, sur la branche `feat/site-admin-navbar`. Questions Q1 à Q9 validées le même jour.
 
-> **Avancement :** lots 1 et 2 faits le 11 novembre 2026 (non commités) — voir « Lot 1 » et « Lot 2 : ce qui a été fait » en fin de document. Lots 3 à 7 à faire.
+> **Avancement :** lots 1 et 2 commités le 11 novembre 2026 (`e57fbc9`, non poussé) ; lot 3 fait le même jour (non commité). Voir « Lot 1/2/3 : ce qui a été fait » en fin de document. Lots 4 à 7 à faire.
 
 ## Le but en une phrase
 
@@ -246,6 +246,38 @@ Ajouts par l'e-mail d'un compte existant : les codes enseignant et responsable a
 - Tests : 330 / 330 (`GPOE26.Logic.Tests`, dont `SpaceTests.cs` : années saisies, partage par un co-enseignant) et 54 / 54 (`Quiz.Tests`, dont `ClassroomAccessTests.cs`).
 - Scénario complet par l'API sur une copie jetable de la sauvegarde (39 contrôles, tous bons) : l'admin désigne le responsable (pas un élève) ; un inconnu et un enseignant pas encore ajouté sont refusés ; année, deux enseignants sur une classe (maths principal, physique) ; chacun voit la classe avec sa matière ; le co-enseignant et le responsable voient la liste des élèves, pas un inconnu ; retirer le professeur principal fait passer le rôle à l'autre ; un gestionnaire crée une classe mais ne nomme personne ; changement d'année ; retrait du responsable par l'admin ; l'ancien parcours « l'enseignant crée sa classe » marche toujours.
 - Un enseignant de démo dont la classe vient de la reprise du lot 1 la voit toujours, avec sa matière et le code.
+
+## Lot 3 : ce qui a été fait (11 novembre 2026)
+
+**Liste des élèves** (`User/Endpoints/StudentEndpoints.cs`, responsable et gestionnaires) :
+- `GET /organizations/{id}/students` (filtres classe, statut ; chaque élève avec son code à imprimer) ; `POST` (à la main, matricule vide = généré) ; `PUT` (corriger, changer de classe : un élève actif suit) ; `POST …/{sid}/status` (`Revoked` / `Left` : place libérée, l'élève quitte les classes de l'espace, son code est annulé ; `Pending` : réintégré) ; `DELETE` (seulement sans compte).
+- `POST /organizations/{id}/students/import` : CSV d'Excel ou LibreOffice (`;` `,` tabulation, guillemets, BOM), titres reconnus sans accents (« N° Matricule », « Prénom(s) », « Né(e) le », « Nom et prénoms »…). Toujours un aperçu ligne par ligne ; rien n'est enregistré tant qu'une ligne est en erreur (nom manquant, date illisible, matricule en double ou déjà inscrit, classe inconnue cette année). Lecture dans `User/Service/StudentImport.cs`. **Excel `.xlsx` direct : pas encore** (Q9 : CSV d'abord).
+
+**Codes personnels** (`AccessCodeService`) : format `GP-XXXX-XXXX`, valables jusqu'à la fin de l'année scolaire en cours (Q7), un seul code valide par élève (en redonner un annule l'ancien).
+- Responsable / gestionnaires : code d'un élève, codes de toute une classe (seulement pour ceux qui n'en ont pas), codes « en blanc » d'une classe (Q8), code enseignant, liste à imprimer (`GET …/codes`), annulation.
+- Admin : `POST /admin/organizations/{id}/owner-code` (code responsable).
+- Activation : `POST /auth/codes/check` (sans compte : « Nom — classe — établissement », ou le nom à saisir pour un code en blanc), `POST /auth/codes/activate` (crée le compte élève ou enseignant ; **e-mail facultatif** ; rien n'est créé si le code ne passe pas), `POST /access-codes/redeem` (compte existant).
+
+**Places :** comptées sous verrou de l'espace (`SELECT … FOR UPDATE`) au moment de l'activation : élèves actifs ≤ places des licences en cours (établissement) ou 30 (`Subscriptions:IndependentSeats`, enseignant indépendant, Q1). Établissement sans licence : activation refusée. Enseignants : plafond `TeacherSeats` s'il est fixé. La colonne `Subscriptions.SeatsUsed` du lot 1 **ne sert pas** : le comptage sous verrou ne peut pas dériver.
+
+**Droit Premium** (`SubscriptionService.GetEntitlementAsync`, source `space`) : élève actif, enseignant ou gestionnaire d'un établissement → sa licence en cours ; élève d'un enseignant indépendant → l'équivalent Premium élève tant que la formule Enseignant (ou l'essai) de cet enseignant est en cours.
+
+**Fin de l'ancien système pour les établissements :**
+- Reprise v3 : les clés `ETB-`/`ORG-` des licences d'établissement sont annulées ; ceux qui les avaient activées gardent leur accès par l'espace (repris au lot 1). Saisir une de ces clés répond : « demandez votre code personnel à votre établissement ».
+- Une nouvelle licence d'établissement n'a plus de clé. Une licence sans établissement (paiement simulé, développement) garde la sienne.
+- Le code de classe commun est refusé pour une classe d'établissement (choix 6) ; chez un indépendant il reste accepté jusqu'au lot 7, dans la limite de ses places.
+- Un enseignant entré par code enseignant range ses nouvelles classes dans l'établissement (règle la limite notée au lot 2 pour ce cas).
+
+**Connexion :** par e-mail ou nom d'utilisateur (sans tenir compte des majuscules s'il n'y a qu'un compte possible) ; `Login.razor` demande « Adresse e-mail ou nom d'utilisateur ».
+
+**Limite de tentatives (audit A9) :** `/access-codes/redeem` est ajouté à la règle « codes » (10 codes refusés en 15 minutes par compte). Les routes sans compte (`/auth/codes/*`) ne peuvent pas être limitées par compte : les codes ont 31⁸ combinaisons, et une limite par adresse IP du visiteur reste à placer côté site (le site appelle les services pour tout le monde).
+
+**À faire ensuite :** lot 4, les écrans (liste, import, fiches de codes à imprimer, page « J'ai un code »).
+
+**Vérifications :**
+- Tests : 367 / 367 (`GPOE26.Logic.Tests`, dont import CSV et règles des codes) et 61 / 61 (`Quiz.Tests`). Le test d'import a trouvé un vrai défaut, corrigé : le titre « Prénom(s) » n'était pas reconnu.
+- Scénario par l'API sur une copie jetable de la sauvegarde, 43 contrôles : licence sans clé, code responsable (refusé à un élève, à usage unique, saisi en minuscules), import avec aperçu puis enregistrement, codes d'une classe, activation sans e-mail puis connexion par nom d'utilisateur, places pleines (aucun compte créé), départ d'un élève (place libérée, plus de classe ni de Premium), code de classe et clé `ETB-` refusés, code enseignant, codes en blanc et Premium par l'essai de l'enseignant indépendant. Le seul écart vient d'une faute de frappe dans le script ; la réponse du service était la bonne.
+- Comptes de démo repris : l'élève et l'enseignant de démo gardent l'accès Premium (licence du lycée de démonstration) et leur classe.
 
 ---
 

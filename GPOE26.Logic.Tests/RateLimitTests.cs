@@ -22,6 +22,7 @@ public class RateLimitTests
     [InlineData("POST", "/classrooms/join", "codes")]
     [InlineData("POST", "/parents/link", "codes")]
     [InlineData("POST", "/subscriptions/redeem", "codes")]
+    [InlineData("POST", "/access-codes/redeem", "codes")]
     [InlineData("POST", "/tutor/courses/8f0e2c55-1d1a-4a0e-9a59-2b0c8d1f3e11/messages/stream", "ia")]
     [InlineData("POST", "/teacher-agent/ask", "ia")]
     [InlineData("POST", "/api/Quiz/generate", "ia")]

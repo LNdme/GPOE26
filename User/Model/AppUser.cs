@@ -4,8 +4,11 @@
     {
         public Guid Id { get; set; } = Guid.NewGuid();
 
-        /// <summary>Adresse email unique — sert d'identifiant de connexion</summary>
-        public required string Email { get; set; }
+        /// <summary>
+        /// Adresse e-mail unique. Facultative pour un élève entré par son code personnel :
+        /// il se connecte alors avec son nom d'utilisateur.
+        /// </summary>
+        public string? Email { get; set; }
 
         public required string Username { get; set; }
 

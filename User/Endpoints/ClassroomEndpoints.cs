@@ -98,9 +98,11 @@ public static class ClassroomEndpoints
             var student = await db.CurrentUserAsync(principal);
             if (student is null) return Results.Unauthorized();
 
-            var classroom = await classrooms.JoinAsync(student, req.Code);
+            var (classroom, error) = await classrooms.JoinAsync(student, req.Code);
+            if (error == JoinError.NotFound)
+                return Results.NotFound(new { message = ClassroomService.Message(error) });
             if (classroom is null)
-                return Results.NotFound(new { message = "Code d'invitation invalide." });
+                return Results.Conflict(new { message = ClassroomService.Message(error) });
 
             await db.SaveChangesAsync();
             var count = await db.ClassroomMembers.CountAsync(m => m.ClassroomId == classroom.Id);

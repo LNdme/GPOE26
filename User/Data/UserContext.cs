@@ -146,6 +146,7 @@ namespace User.Data
                 entity.Property(c => c.Status).HasConversion<string>();
                 entity.HasOne<Organization>().WithMany().HasForeignKey(c => c.OrganizationId);
                 entity.HasOne<OrganizationStudent>().WithMany().HasForeignKey(c => c.OrganizationStudentId);
+                entity.HasOne<Classroom>().WithMany().HasForeignKey(c => c.ClassroomId).OnDelete(DeleteBehavior.SetNull);
             });
 
             modelBuilder.Entity<SchemaVersion>(entity => entity.HasKey(v => v.Version));

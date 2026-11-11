@@ -20,8 +20,8 @@
         <Alert Message="@_error" />
 
         <div class="ga-field">
-            <label for="login-email">Adresse e-mail</label>
-            <input id="login-email" class="ga-input big" type="email" autocomplete="email" required @bind="_email" />
+            <label for="login-email">Adresse e-mail ou nom d'utilisateur</label>
+            <input id="login-email" class="ga-input big" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required @bind="_email" />
         </div>
         <div class="ga-field">
             <label for="login-password">Mot de passe</label>

@@ -123,6 +123,9 @@ namespace User.Model
         /// <summary>Élève visé (codes élèves). Vide pour un code « en blanc » ou un code enseignant / responsable.</summary>
         public Guid? OrganizationStudentId { get; set; }
 
+        /// <summary>Code « en blanc » : classe où l'élève entrera (il saisit lui-même son nom à l'activation).</summary>
+        public Guid? ClassroomId { get; set; }
+
         public AccessCodeStatus Status { get; set; } = AccessCodeStatus.Issued;
 
         public DateTime ExpiresAt { get; set; }

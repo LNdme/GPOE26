@@ -21,7 +21,7 @@ public static class AdminBootstrap
             .ToList();
         if (emails.Count == 0) return;
 
-        var users = await db.AppUsers.Where(u => emails.Contains(u.Email.ToLower())).ToListAsync();
+        var users = await db.AppUsers.Where(u => u.Email != null && emails.Contains(u.Email.ToLower())).ToListAsync();
         foreach (var user in users.Where(u => !u.IsAdmin))
         {
             user.IsAdmin = true;
@@ -29,7 +29,7 @@ public static class AdminBootstrap
         }
         await db.SaveChangesAsync();
 
-        foreach (var missing in emails.Except(users.Select(u => u.Email.ToLowerInvariant())))
+        foreach (var missing in emails.Except(users.Select(u => u.Email!.ToLowerInvariant())))
             logger.LogWarning("Admin:Emails : aucun compte inscrit avec l'adresse {Email}. Inscrivez-le puis redémarrez le service.", missing);
     }
 }

@@ -52,8 +52,12 @@ public record RegisterRequest(
     EducationStage? Stage = null
 );
 
+/// <summary>
+/// Email : l'adresse e-mail OU le nom d'utilisateur (un élève entré par son code n'a pas toujours d'adresse).
+/// Le champ garde son nom pour les clients existants et pour la limite d'essais de connexion.
+/// </summary>
 public record LoginRequest(
-    [Required, EmailAddress] string Email,
+    [Required, MaxLength(256)] string Email,
     [Required] string Password
 );
 
@@ -65,7 +69,7 @@ public record AuthResponse(
 
 public record UserProfileDto(
     Guid Id,
-    string Email,
+    string? Email,
     string Username,
     UserRole Role,
     string? Level,

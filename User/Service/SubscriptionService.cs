@@ -17,7 +17,9 @@ public enum RedeemError
     Revoked,
     Inactive,
     WrongRole,
-    Full
+    Full,
+    /// <summary>Clé d'établissement (ETB-/ORG-) : remplacée par les codes personnels (lot 3).</summary>
+    Replaced
 }
 
 /// <summary>
@@ -107,14 +109,53 @@ public class SubscriptionService(UserContext db, IConfiguration config, PlanCata
             .ToListAsync();
 
         var role = await db.AppUsers.Where(u => u.Id == userId).Select(u => (UserRole?)u.Role).FirstOrDefaultAsync();
-        var features = MergeFeatures(await catalog.GetAsync(), own.Concat(viaKey).Select(s => s.Plan), role);
-        var best = own.Concat(viaKey).MaxBy(s => s.EndsAt);
+        var viaSpace = await SpaceSubscriptionsAsync(userId, now);
+        var all = own.Concat(viaKey).Concat(viaSpace).ToList();
+        var features = MergeFeatures(await catalog.GetAsync(), all.Select(s => s.Plan), role);
+        var best = all.MaxBy(s => s.EndsAt);
         if (best is null) return new Entitlement(false, null, null, null, features);
 
         var source = own.Contains(best)
             ? (best.Status == SubscriptionStatus.Trial ? "trial" : "subscription")
-            : "key";
+            : viaKey.Contains(best) ? "key" : "space";
         return new Entitlement(true, best.Plan, best.EndsAt, source, features);
+    }
+
+    /// <summary>
+    /// Accès donné par un espace (docs/PLAN-ETABLISSEMENT.md, lot 3) :
+    /// - élève activé sur la liste d'un établissement, ou enseignant / gestionnaire de cet établissement : sa licence en cours ;
+    /// - élève activé chez un enseignant indépendant : l'équivalent Premium élève, tant que la formule Enseignant
+    ///   de cet enseignant est en cours (elle inclut ses élèves, Q1).
+    /// </summary>
+    private async Task<List<Subscription>> SpaceSubscriptionsAsync(Guid userId, DateTime now)
+    {
+        var active = new[] { SubscriptionStatus.Active, SubscriptionStatus.Trial };
+        var studentOf = db.OrganizationStudents.Where(s => s.UserId == userId && s.Status == StudentStatus.Active).Select(s => s.OrganizationId);
+        var memberOf = db.OrganizationMembers.Where(m => m.UserId == userId && m.Status == MemberStatus.Active).Select(m => m.OrganizationId);
+
+        var licenses = await db.Subscriptions
+            .Where(s => s.Plan == SubscriptionPlan.OrganizationLicense && s.OrganizationId != null
+                        && (studentOf.Contains(s.OrganizationId.Value) || memberOf.Contains(s.OrganizationId.Value))
+                        && active.Contains(s.Status) && s.EndsAt > now)
+            .ToListAsync();
+
+        // Enseignants indépendants dont l'élève est sur la liste, et leur formule Enseignant en cours
+        var owners = await db.OrganizationMembers
+            .Where(m => m.Role == OrganizationRole.Owner && m.Status == MemberStatus.Active && studentOf.Contains(m.OrganizationId)
+                        && db.Organizations.Any(o => o.Id == m.OrganizationId && o.Type == OrganizationType.Independent))
+            .Select(m => m.UserId).ToListAsync();
+        var teacherPlans = owners.Count == 0 ? [] : await db.Subscriptions
+            .Where(s => s.Plan == SubscriptionPlan.Teacher && active.Contains(s.Status) && s.EndsAt > now
+                        && ((s.OwnerUserId != null && owners.Contains(s.OwnerUserId.Value))
+                            || db.KeyRedemptions.Any(r => r.Key.SubscriptionId == s.Id && !r.Key.IsRevoked && owners.Contains(r.UserId))))
+            .ToListAsync();
+
+        return licenses
+            .Concat(teacherPlans.Select(t => new Subscription
+            {
+                Plan = SubscriptionPlan.StudentPremium, Status = SubscriptionStatus.Active, StartsAt = t.StartsAt, EndsAt = t.EndsAt
+            }))
+            .ToList();
     }
 
     /// <summary>
@@ -129,7 +170,8 @@ public class SubscriptionService(UserContext db, IConfiguration config, PlanCata
             .FirstOrDefaultAsync(k => k.Code == normalized);
 
         if (key is null) return (RedeemError.NotFound, null);
-        if (key.IsRevoked) return (RedeemError.Revoked, key);
+        if (key.IsRevoked)
+            return (key.Subscription is { Plan: SubscriptionPlan.OrganizationLicense, OrganizationId: not null } ? RedeemError.Replaced : RedeemError.Revoked, key);
         if (!key.Subscription.IsCurrent(DateTime.UtcNow)) return (RedeemError.Inactive, key);
 
         if (!CanRedeem(key.Subscription.Plan, role)) return (RedeemError.WrongRole, key);
@@ -225,7 +267,10 @@ public class SubscriptionService(UserContext db, IConfiguration config, PlanCata
         sub.EndsAt = now.AddMonths(months ?? (sub.Period == BillingPeriod.Yearly ? 12 : 1));
 
         SubscriptionKey? key = null;
-        if ((alwaysIssueKey || sub.Plan is SubscriptionPlan.Family or SubscriptionPlan.OrganizationLicense)
+        // La licence d'un établissement n'a plus de clé partagée : ses élèves et enseignants reçoivent un code personnel.
+        // Une licence sans établissement (paiement simulé) garde sa clé.
+        if ((alwaysIssueKey || sub.Plan is SubscriptionPlan.Family
+             || (sub.Plan == SubscriptionPlan.OrganizationLicense && sub.OrganizationId is null))
             && !await db.SubscriptionKeys.AnyAsync(k => k.SubscriptionId == sub.Id))
         {
             var prefix = sub.Plan switch
@@ -268,6 +313,7 @@ public class SubscriptionService(UserContext db, IConfiguration config, PlanCata
         RedeemError.Inactive => "L'abonnement lié à cette clé n'est pas actif.",
         RedeemError.WrongRole => "Cette clé ne peut pas être utilisée avec ce type de compte.",
         RedeemError.Full => "Toutes les places de cette clé sont déjà utilisées.",
+        RedeemError.Replaced => "Les clés d'établissement ne servent plus : demandez votre code personnel à votre établissement.",
         _ => ""
     };
 }

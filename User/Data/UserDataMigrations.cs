@@ -17,7 +17,23 @@ public static class UserDataMigrations
         await ApplyAsync(db, logger, 2,
             "Espaces : établissements et enseignants indépendants, années scolaires, enseignants des classes, liste des élèves",
             () => SpacesV2Async(db, at));
+        await ApplyAsync(db, logger, 3,
+            "Codes personnels : les clés partagées des établissements (ETB-/ORG-) sont retirées",
+            () => RetireSchoolKeysV3Async(db));
     }
+
+    /// <summary>
+    /// Version 3 (lot 3). Ceux qui avaient activé une clé d'établissement sont déjà sur sa liste ou parmi ses
+    /// enseignants (reprise v2, puis tenue à jour) : leur accès passe par l'espace, la clé peut être retirée.
+    /// Les clés de licences sans établissement (paiement simulé) et les clés familiales ne changent pas.
+    /// </summary>
+    private static Task RetireSchoolKeysV3Async(UserContext db) =>
+        db.Database.ExecuteSqlRawAsync("""
+            UPDATE "SubscriptionKeys" k SET "IsRevoked" = true
+            FROM "Subscriptions" s
+            WHERE s."Id" = k."SubscriptionId" AND s."Plan" = 'OrganizationLicense' AND s."OrganizationId" IS NOT NULL
+              AND NOT k."IsRevoked"
+            """);
 
     private static async Task ApplyAsync(UserContext db, ILogger logger, int version, string description, Func<Task> step)
     {

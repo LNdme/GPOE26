@@ -64,6 +64,7 @@ builder.Services.AddHttpClient<PlanCatalogClient>(client =>
     client.BaseAddress = new Uri(builder.Configuration["Services:ApiService"] ?? "http://localhost:5455"));
 builder.Services.AddScoped<ClassroomService>();
 builder.Services.AddScoped<SpaceService>();
+builder.Services.AddScoped<AccessCodeService>();
 
 // Applique les [Required], [MinLength]… des DTOs aux Minimal APIs (sinon ils sont ignorés)
 builder.Services.AddValidation();
@@ -194,9 +195,11 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
 
     if (req.InviteCode is not null)
     {
-        var code = CodeGenerator.Normalize(req.InviteCode);
-        if (!await db.Classrooms.AnyAsync(c => c.InviteCode == code && !c.IsArchived))
-            return Results.BadRequest(new { message = "Code d'invitation de classe invalide." });
+        // Une classe d'établissement se rejoint avec un code personnel, pas avec le code de classe (choix 6)
+        var (_, joinError) = await classrooms.CheckJoinAsync(req.InviteCode);
+        if (joinError != JoinError.None)
+            return Results.BadRequest(new { message = joinError == JoinError.NotFound
+                ? "Code d'invitation de classe invalide." : ClassroomService.Message(joinError) });
     }
 
     var teachingSubjects = req.TeachingSubjects ?? new();
@@ -263,7 +266,17 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
 // ── POST /auth/login ──────────────────────────────────────────────────────────
 auth.MapPost("/login", async (LoginRequest req, UserContext db, Jwtservice jwt, SubscriptionService subs) =>
 {
-    var user = await db.AppUsers.FirstOrDefaultAsync(u => u.Email == req.Email.ToLower());
+    // Adresse e-mail ou nom d'utilisateur (élève entré par son code, sans adresse)
+    var login = req.Email.Trim();
+    // Le nom d'utilisateur est retrouvé tel quel, sinon sans tenir compte des majuscules s'il n'y a qu'un compte possible.
+    var user = login.Contains('@')
+        ? await db.AppUsers.FirstOrDefaultAsync(u => u.Email == login.ToLower())
+        : await db.AppUsers.FirstOrDefaultAsync(u => u.Username == login)
+          ?? (await db.AppUsers.Where(u => u.Username.ToLower() == login.ToLower()).Take(2).ToListAsync()) switch
+             {
+                 [var only] => only,
+                 _ => null
+             };
 
     // Message identique que l'email soit inconnu ou que le mdp soit faux
     // → ne pas indiquer à un attaquant lequel des deux est incorrect
@@ -326,6 +339,8 @@ app.MapSubscriptionEndpoints();
 app.MapAdminEndpoints();
 app.MapProfileEndpoints();
 app.MapOrganizationEndpoints();
+app.MapStudentEndpoints();
+app.MapAccessCodeEndpoints();
 
 
 

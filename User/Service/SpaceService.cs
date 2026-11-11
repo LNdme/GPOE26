@@ -9,8 +9,63 @@ namespace User.Service;
 /// Comme ClassroomService, prépare les lignes sans SaveChanges ; les lignes créées dans la même unité de travail
 /// (inscription d'un enseignant avec plusieurs classes, par exemple) sont cherchées aussi dans le suivi d'EF.
 /// </summary>
-public class SpaceService(UserContext db)
+public class SpaceService(UserContext db, IConfiguration config)
 {
+    /// <summary>Places élèves d'un enseignant indépendant (Q1) : réglable par Subscriptions:IndependentSeats.</summary>
+    public int IndependentSeats => config.GetValue("Subscriptions:IndependentSeats", 30);
+
+    /// <summary>
+    /// Places élèves de l'espace : celles des licences en cours d'un établissement (0 sans licence),
+    /// ou le forfait d'un enseignant indépendant.
+    /// </summary>
+    public async Task<int> SeatLimitAsync(Guid organizationId)
+    {
+        var type = await db.Organizations.Where(o => o.Id == organizationId).Select(o => (OrganizationType?)o.Type).FirstOrDefaultAsync();
+        if (type == OrganizationType.Independent) return IndependentSeats;
+
+        var now = DateTime.UtcNow;
+        return await db.Subscriptions
+            .Where(s => s.OrganizationId == organizationId && s.Plan == SubscriptionPlan.OrganizationLicense
+                        && (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.Trial) && s.EndsAt > now)
+            .SumAsync(s => s.Seats);
+    }
+
+    /// <summary>Élèves qui occupent une place : ceux dont le compte est activé.</summary>
+    public Task<int> SeatsUsedAsync(Guid organizationId) =>
+        db.OrganizationStudents.CountAsync(s => s.OrganizationId == organizationId && s.Status == StudentStatus.Active);
+
+    /// <summary>Plafond d'enseignants de la licence en cours ; vide : sans plafond.</summary>
+    public async Task<bool> CanAddTeacherAsync(Guid organizationId)
+    {
+        var now = DateTime.UtcNow;
+        var limit = await db.Subscriptions
+            .Where(s => s.OrganizationId == organizationId && s.Status == SubscriptionStatus.Active && s.EndsAt > now)
+            .OrderByDescending(s => s.EndsAt).Select(s => s.TeacherSeats).FirstOrDefaultAsync();
+        return limit is not { } max
+               || await db.OrganizationMembers.CountAsync(m => m.OrganizationId == organizationId
+                      && m.Role == OrganizationRole.Teacher && m.Status == MemberStatus.Active) < max;
+    }
+
+    /// <summary>
+    /// Verrouille la ligne de l'espace jusqu'à la fin de la transaction en cours : les activations simultanées
+    /// comptent les places l'une après l'autre et ne dépassent jamais la licence.
+    /// </summary>
+    public Task LockAsync(Guid organizationId) =>
+        db.Database.ExecuteSqlInterpolatedAsync($@"SELECT 1 FROM ""Organizations"" WHERE ""Id"" = {organizationId} FOR UPDATE");
+
+    /// <summary>Date limite d'un code : fin de l'année scolaire en cours de l'espace (Q7), en fin de journée UTC.</summary>
+    public async Task<DateTime> CodeExpiryAsync(Guid organizationId)
+    {
+        var end = await db.SchoolYears.Where(y => y.OrganizationId == organizationId && y.IsCurrent)
+                      .Select(y => (DateOnly?)y.EndsOn).FirstOrDefaultAsync()
+                  ?? SpaceRules.SchoolYearOf(DateOnly.FromDateTime(DateTime.UtcNow)).EndsOn;
+        return end.ToDateTime(new TimeOnly(23, 59, 59), DateTimeKind.Utc);
+    }
+
+    /// <summary>Matricule généré (AAAA-NNNN) pour un élève saisi ou importé sans matricule.</summary>
+    public async Task<string> NewMatriculeAsync(Guid organizationId) =>
+        SpaceRules.Matricule(DateTime.UtcNow.Year, await NextMatriculeNumberAsync(organizationId));
+
     /// <summary>
     /// Espace où un enseignant crée ses classes : l'établissement dont il a activé la clé,
     /// sinon son espace indépendant, créé au besoin (il en est responsable et enseignant).

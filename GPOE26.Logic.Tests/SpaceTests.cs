@@ -98,3 +98,88 @@ public class MultiTeacherSharingTests
         Assert.Empty(Cours.Service.UserDirectoryClient.OwnedBy([classroom], _main));
     }
 }
+
+/// <summary>Import de la liste des élèves (lot 3) : un CSV tel qu'Excel ou LibreOffice l'enregistrent.</summary>
+public class StudentImportTests
+{
+    [Fact]
+    public void Un_fichier_Excel_francais_est_lu()
+    {
+        // Excel en français : séparateur « ; », titres accentués, BOM en tête
+        var csv = "﻿N° Matricule;Nom;Prénom(s);Classe;Né(e) le\r\n" +
+                  "LYC-001;MBALLA;Jean Paul;Tle C;05/03/2009\r\n" +
+                  ";NGO BIYONG;Aïcha;2nde A;\r\n";
+        var (rows, error) = StudentImport.Parse(csv);
+
+        Assert.Null(error);
+        Assert.Equal(2, rows.Count);
+        var first = rows[0];
+        Assert.Equal((2, "LYC-001", "MBALLA", "Jean Paul", "Tle C", new DateOnly(2009, 3, 5)),
+            (first.Line, first.Matricule, first.LastName, first.FirstName, first.ClassName, first.BirthDate));
+        Assert.Null(rows[1].Matricule);           // vide : sera généré
+        Assert.Equal("NGO BIYONG", rows[1].LastName);
+        Assert.All(rows, r => Assert.Empty(r.Errors));
+    }
+
+    [Fact]
+    public void Virgules_et_guillemets()
+    {
+        var csv = "matricule,nom et prénom,classe\n1,\"Essomba, Marie\",\"1ère D\"\n";
+        var (rows, _) = StudentImport.Parse(csv);
+        Assert.Equal("Essomba, Marie", rows.Single().LastName);
+        Assert.Equal("1ère D", rows.Single().ClassName);
+    }
+
+    [Fact]
+    public void Les_erreurs_sont_signalees_ligne_par_ligne()
+    {
+        var csv = "matricule;nom;classe;date de naissance\nA1;Mballa;Tle C;31/02/2009\nA1;Essomba;Tle C;\nA2;;Tle C;\n";
+        var (rows, error) = StudentImport.Parse(csv);
+
+        Assert.Null(error);
+        Assert.Contains(rows[0].Errors, e => e.Contains("date de naissance"));
+        Assert.Contains(rows[1].Errors, e => e.Contains("déjà donné ligne 2"));
+        Assert.Contains(rows[2].Errors, e => e.Contains("nom manquant"));
+    }
+
+    [Theory]
+    [InlineData("", "vide")]
+    [InlineData("matricule;classe\nA1;Tle C\n", "nom")]
+    [InlineData("nom;classe\n", "titres")]
+    public void Un_fichier_inutilisable_est_refuse(string csv, string expected)
+    {
+        var (rows, error) = StudentImport.Parse(csv);
+        Assert.Empty(rows);
+        Assert.Contains(expected, error);
+    }
+
+    [Theory]
+    [InlineData("N° Matricule", "n matricule")]
+    [InlineData("  Prénom(s) ", "prenom s")]
+    [InlineData("Né(e) le", "ne e le")]
+    public void Les_titres_sont_compares_sans_accents(string title, string expected) =>
+        Assert.Equal(expected, StudentImport.Normalize(title));
+}
+
+/// <summary>Codes personnels (lot 3).</summary>
+public class AccessCodeRulesTests
+{
+    [Fact]
+    public void Un_code_personnel_a_huit_caracteres_sans_ambiguite()
+    {
+        var code = CodeGenerator.AccessCode();
+        Assert.Matches("^GP-[A-HJ-KM-NP-Z2-9]{4}-[A-HJ-KM-NP-Z2-9]{4}$", code);
+        Assert.DoesNotContain('O', code[3..]);
+        Assert.DoesNotContain('0', code);
+    }
+
+    [Theory]
+    [InlineData(User.Model.AccessCodeKind.Student, User.Model.UserRole.Student, true)]
+    [InlineData(User.Model.AccessCodeKind.Student, User.Model.UserRole.Teacher, false)]
+    [InlineData(User.Model.AccessCodeKind.Teacher, User.Model.UserRole.Teacher, true)]
+    [InlineData(User.Model.AccessCodeKind.Teacher, User.Model.UserRole.Student, false)]
+    [InlineData(User.Model.AccessCodeKind.Owner, User.Model.UserRole.Parent, true)]
+    [InlineData(User.Model.AccessCodeKind.Owner, User.Model.UserRole.Student, false)]
+    public void Le_code_va_avec_le_bon_type_de_compte(User.Model.AccessCodeKind kind, User.Model.UserRole role, bool expected) =>
+        Assert.Equal(expected, AccessCodeService.RoleFits(kind, role));
+}

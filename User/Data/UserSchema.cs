@@ -241,6 +241,9 @@ public static class UserSchema
         // Un seul code valide à la fois par élève : réimprimer révoque l'ancien.
         @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_AccessCodes_OneIssuedPerStudent"" ON ""AccessCodes"" (""OrganizationStudentId"") WHERE ""Status"" = 'Issued' AND ""OrganizationStudentId"" IS NOT NULL",
 
+        // Code « en blanc » (lot 3, Q8) : la classe où l'élève entrera, faute de ligne élève déjà préparée
+        @"ALTER TABLE ""AccessCodes"" ADD COLUMN IF NOT EXISTS ""ClassroomId"" uuid REFERENCES ""Classrooms"" (""Id"") ON DELETE SET NULL",
+
         // Reprises de données à ne jouer qu'une fois (cf. UserDataMigrations)
         @"CREATE TABLE IF NOT EXISTS ""SchemaVersions"" (
             ""Version"" integer NOT NULL,

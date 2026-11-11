@@ -39,7 +39,7 @@ public static class OrganizationEndpoints
         var space = group.MapGroup("/{orgId:guid}");
 
         // ── GET /organizations/{orgId} ────────────────────────────────────────────
-        space.MapGet("", async (Guid orgId, UserContext db) =>
+        space.MapGet("", async (Guid orgId, UserContext db, SpaceService spaces) =>
         {
             var org = await db.Organizations.FindAsync(orgId);
             if (org is null) return Results.NotFound();
@@ -64,7 +64,7 @@ public static class OrganizationEndpoints
                 await db.OrganizationMembers.CountAsync(m => m.OrganizationId == orgId && m.Role == OrganizationRole.Teacher && m.Status == MemberStatus.Active),
                 students.Where(s => s.Key == StudentStatus.Active).Sum(s => s.Count),
                 students.Where(s => s.Key == StudentStatus.Pending).Sum(s => s.Count),
-                license?.Seats, license?.TeacherSeats, license?.EndsAt));
+                await spaces.SeatLimitAsync(orgId), license?.TeacherSeats, license?.EndsAt));
         })
         .RequireSpaceRole(Managers)
         .WithSummary("Tableau de bord de l'espace")
@@ -117,17 +117,8 @@ public static class OrganizationEndpoints
             if (user.Role != UserRole.Teacher)
                 return Results.BadRequest(new { message = "Ce compte n'est pas un compte enseignant." });
 
-            if (!await spaces.HasRoleAsync(orgId, user.Id, OrganizationRole.Teacher))
-            {
-                var now = DateTime.UtcNow;
-                var limit = await db.Subscriptions
-                    .Where(s => s.OrganizationId == orgId && s.Status == SubscriptionStatus.Active && s.EndsAt > now)
-                    .OrderByDescending(s => s.EndsAt).Select(s => s.TeacherSeats).FirstOrDefaultAsync();
-                var count = await db.OrganizationMembers.CountAsync(m => m.OrganizationId == orgId
-                    && m.Role == OrganizationRole.Teacher && m.Status == MemberStatus.Active);
-                if (limit is { } max && count >= max)
-                    return Results.Conflict(new { message = $"La licence couvre {max} enseignant(s) : toutes les places sont prises." });
-            }
+            if (!await spaces.HasRoleAsync(orgId, user.Id, OrganizationRole.Teacher) && !await spaces.CanAddTeacherAsync(orgId))
+                return Results.Conflict(new { message = "La licence ne couvre pas d'enseignant de plus : toutes les places sont prises." });
 
             await spaces.GrantRoleAsync(orgId, user.Id, OrganizationRole.Teacher);
             await db.SaveChangesAsync();

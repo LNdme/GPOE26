@@ -126,6 +126,20 @@ public static class AdminEndpoints
         .Produces<SpaceOwnerDto>()
         .Produces(404);
 
+        // ── POST /admin/organizations/{id}/owner-code ─────────────────────────────
+        // Code responsable à transmettre quand la personne n'a pas encore de compte : elle le crée avec ce code.
+        admin.MapPost("/organizations/{id:guid}/owner-code", async (Guid id, ClaimsPrincipal me, UserContext db, AccessCodeService codes) =>
+        {
+            var org = await db.Organizations.FirstOrDefaultAsync(o => o.Id == id && o.Type != OrganizationType.Independent);
+            if (org is null) return Results.NotFound();
+            var code = await codes.IssueAsync(id, AccessCodeKind.Owner, me.GetUserId());
+            await db.SaveChangesAsync();
+            return Results.Ok(new AccessCodeDto(code.Id, code.Code, code.Kind, code.Status, code.ExpiresAt, null, null, null, null, code.CreatedAt));
+        })
+        .WithSummary("Code responsable (usage unique) pour un établissement")
+        .Produces<AccessCodeDto>()
+        .Produces(404);
+
         // ── DELETE /admin/organizations/{id}/owners/{userId} ──────────────────────
         admin.MapDelete("/organizations/{id:guid}/owners/{userId:guid}", async (Guid id, Guid userId, UserContext db, SpaceService spaces) =>
         {
