@@ -16,7 +16,8 @@
             <h1>Licences des établissements</h1>
             <p>
                 Une licence donne l’accès Premium aux enseignants et aux élèves d’un établissement ou d’une institution.
-                Elle est active dès sa création : transmettez sa <strong>clé</strong> à la structure, chaque personne la saisit dans « Abonnement ».
+                Désignez ensuite son <strong>responsable</strong> : il gère lui-même classes, enseignants et élèves, et remet à chacun un
+                <strong>code personnel</strong> (« Mon établissement »). Il n’y a plus de clé partagée.
             </p>
         </div>
     </div>
@@ -43,7 +44,24 @@
                     {
                         <li style="display:block">
                             <strong>@org.Name</strong>
-                            <small style="display:block">@(org.Type == M.OrganizationType.School ? "Établissement scolaire" : "Institution")@(org.City is { Length: > 0 } ? $" · {org.City}" : "")</small>
+                            <small style="display:block">@(org.Type == M.OrganizationType.Institution ? "Institution" : "Établissement scolaire")@(org.City is { Length: > 0 } ? $" · {org.City}" : "")</small>
+
+                            <div style="margin-top:.5rem">
+                                @if (org.Owners is { Count: > 0 } owners)
+                                {
+                                    @foreach (var owner in owners)
+                                    {
+                                        <small style="display:block">
+                                            Responsable : <strong>@owner.Username</strong>@(owner.Email is { } mail ? $" ({mail})" : "")
+                                            <button type="button" class="site-btn site-btn--quiet site-btn--sm" @onclick="() => RemoveOwnerAsync(org, owner)">Retirer</button>
+                                        </small>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="admin-badge is-muted">Sans responsable</span>
+                                }
+                            </div>
 
                             @foreach (var license in org.Licenses)
                             {
@@ -52,7 +70,14 @@
                                     <small>@license.Seats places@(license.EndsAt is { } end ? $" · jusqu’au {end.ToLocalTime():dd/MM/yyyy}" : "")</small>
                                     @foreach (var key in license.Keys)
                                     {
-                                        <small style="display:block">Clé <code>@key.Code</code> · @key.UsedCount / @key.MaxUses place(s) utilisée(s)</small>
+                                        @if (key.IsRevoked)
+                                        {
+                                            <small style="display:block">Ancienne clé <code>@key.Code</code> annulée : remplacée par les codes personnels.</small>
+                                        }
+                                        else
+                                        {
+                                            <small style="display:block">Clé <code>@key.Code</code> · @key.UsedCount / @key.MaxUses place(s) utilisée(s)</small>
+                                        }
                                     }
                                 </div>
                             }
@@ -70,9 +95,23 @@
                                     </div>
                                 </form>
                             }
+                            else if (_ownerFor == org.Id)
+                            {
+                                <form class="admin-form" style="margin-top:.75rem" @onsubmit="() => SetOwnerAsync(org)" @onsubmit:preventDefault>
+                                    <label><span>E-mail du compte du responsable</span><input type="email" class="form-control" placeholder="direction@exemple.cm" @bind="_ownerEmail" /></label>
+                                    <div class="admin-form__actions">
+                                        <button type="submit" class="site-btn site-btn--primary site-btn--sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_ownerEmail))">Désigner</button>
+                                        <button type="button" class="site-btn site-btn--ghost site-btn--sm" disabled="@_busy" @onclick="() => OwnerCodeAsync(org)">Pas de compte : code responsable</button>
+                                        <button type="button" class="site-btn site-btn--quiet site-btn--sm" @onclick="() => _ownerFor = null">Annuler</button>
+                                    </div>
+                                </form>
+                            }
                             else
                             {
-                                <button type="button" class="site-btn site-btn--ghost site-btn--sm" style="margin-top:.5rem" @onclick="() => OpenLicense(org)">Nouvelle licence</button>
+                                <div style="margin-top:.5rem; display:flex; gap:.5rem; flex-wrap:wrap">
+                                    <button type="button" class="site-btn site-btn--ghost site-btn--sm" @onclick="() => OpenLicense(org)">Nouvelle licence</button>
+                                    <button type="button" class="site-btn site-btn--ghost site-btn--sm" @onclick="() => OpenOwner(org)">Désigner le responsable</button>
+                                </div>
                             }
                         </li>
                     }
@@ -105,7 +144,8 @@
     private bool _loading = true, _busy;
     private string? _error, _notice, _name, _city;
     private M.OrganizationType _type = M.OrganizationType.School;
-    private Guid? _licenseFor;
+    private Guid? _licenseFor, _ownerFor;
+    private string? _ownerEmail;
     private int _seats = 30, _months = 12;
 
     protected override async Task OnInitializedAsync()
@@ -142,6 +182,48 @@
         _licenseFor = result.Value.Id;
     }
 
+    private void OpenOwner(M.Organization org)
+    {
+        _ownerFor = org.Id;
+        _licenseFor = null;
+        _ownerEmail = null;
+    }
+
+    private async Task SetOwnerAsync(M.Organization org)
+    {
+        _busy = true;
+        _error = _notice = null;
+        var result = await Platform.SetOwnerAsync(org.Id, _ownerEmail!.Trim());
+        _busy = false;
+        if (!result.Ok) { _error = result.Error; return; }
+        _notice = $"{result.Value!.Username} est responsable de « {org.Name} ». Il trouve « Mon établissement » dans son espace.";
+        _ownerFor = null;
+        await LoadAsync();
+    }
+
+    private async Task OwnerCodeAsync(M.Organization org)
+    {
+        _busy = true;
+        _error = _notice = null;
+        var result = await Platform.OwnerCodeAsync(org.Id);
+        _busy = false;
+        if (!result.Ok) { _error = result.Error; return; }
+        _notice = $"Code responsable de « {org.Name} » : {result.Value!.Code} (une seule fois, jusqu’au {result.Value.ExpiresAt:dd/MM/yyyy}). "
+                  + "La personne crée son compte sur la page « J’ai un code » (/code), ou le saisit dans son profil si elle en a déjà un.";
+        _ownerFor = null;
+    }
+
+    private async Task RemoveOwnerAsync(M.Organization org, M.SpaceOwner owner)
+    {
+        _busy = true;
+        _error = _notice = null;
+        var result = await Platform.RemoveOwnerAsync(org.Id, owner.UserId);
+        _busy = false;
+        if (!result.Ok) { _error = result.Error; return; }
+        _notice = $"{owner.Username} n’est plus responsable de « {org.Name} ».";
+        await LoadAsync();
+    }
+
     private async Task CreateLicenseAsync(M.Organization org)
     {
         _busy = true;
@@ -150,7 +232,9 @@
         _busy = false;
         if (!result.Ok) { _error = result.Error; return; }
         var key = result.Value!.Keys.FirstOrDefault()?.Code;
-        _notice = $"Licence de {result.Value.Seats} places créée pour « {org.Name} »." + (key is null ? "" : $" Clé à transmettre : {key}.");
+        _notice = $"Licence de {result.Value.Seats} places créée pour « {org.Name} »." + (key is null
+            ? (org.Owners is { Count: > 0 } ? "" : " Désignez maintenant son responsable.")
+            : $" Clé à transmettre : {key}.");
         _licenseFor = null;
         await LoadAsync();
     }

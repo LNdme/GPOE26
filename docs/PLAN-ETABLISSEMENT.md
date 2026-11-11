@@ -2,7 +2,7 @@
 
 Rédigé le 11 novembre 2026, sur la branche `feat/site-admin-navbar`. Questions Q1 à Q9 validées le même jour.
 
-> **Avancement :** lots 1 et 2 commités le 11 novembre 2026 (`e57fbc9`, non poussé) ; lot 3 fait le même jour (non commité). Voir « Lot 1/2/3 : ce qui a été fait » en fin de document. Lots 4 à 7 à faire.
+> **Avancement :** lots 1 à 3 commités le 11 novembre 2026 (`e57fbc9`, `1d68d64`, non poussés) ; lot 4 fait le même jour (non commité). Voir « Lot 1/2/3/4 : ce qui a été fait » en fin de document. Lots 5 à 7 à faire.
 
 ## Le but en une phrase
 
@@ -278,6 +278,23 @@ Ajouts par l'e-mail d'un compte existant : les codes enseignant et responsable a
 - Tests : 367 / 367 (`GPOE26.Logic.Tests`, dont import CSV et règles des codes) et 61 / 61 (`Quiz.Tests`). Le test d'import a trouvé un vrai défaut, corrigé : le titre « Prénom(s) » n'était pas reconnu.
 - Scénario par l'API sur une copie jetable de la sauvegarde, 43 contrôles : licence sans clé, code responsable (refusé à un élève, à usage unique, saisi en minuscules), import avec aperçu puis enregistrement, codes d'une classe, activation sans e-mail puis connexion par nom d'utilisateur, places pleines (aucun compte créé), départ d'un élève (place libérée, plus de classe ni de Premium), code de classe et clé `ETB-` refusés, code enseignant, codes en blanc et Premium par l'essai de l'enseignant indépendant. Le seul écart vient d'une faute de frappe dans le script ; la réponse du service était la bonne.
 - Comptes de démo repris : l'élève et l'enseignant de démo gardent l'accès Premium (licence du lycée de démonstration) et leur classe.
+
+## Lot 4 : ce qui a été fait (11 novembre 2026)
+
+**« Mon établissement »** (`/app/etablissement`, lien dans le menu pour le responsable, les gestionnaires et l'enseignant indépendant — « Mes élèves et codes » pour ce dernier) : `GPOE26.UI/Pages/SpacePage.razor` et un composant par onglet (`Components/Space*Tab.razor`).
+- **Vue d'ensemble** : places occupées sur la licence, élèves en attente, enseignants, classes ; alerte si l'établissement n'a pas de licence ; années scolaires (préparer, passer à une autre).
+- **Classes** : création dans l'année en cours, affectation d'un enseignant par matière (professeur principal), retrait, archivage avec confirmation ; chez un indépendant, « 5 codes en blanc » ; lien vers les fiches.
+- **Enseignants** : équipe et rôles, ajout par e-mail, **code enseignant**, retrait ; gestionnaires (responsable seulement).
+- **Élèves et codes** : filtres par classe et statut, changement de classe sur la ligne, code à donner ou à redonner, départ / retrait / réintégration, effacement (sans compte, avec confirmation), inscription à la main, **import** (fichier ou copier-coller) avec aperçu ligne par ligne. Un CSV d'Excel enregistré en Windows-1252 est lu correctement (accents).
+- **Fiches à imprimer** (`/app/etablissement/{id}/fiches?classe=…`) : une fiche à découper par code (établissement, classe, nom, matricule, code, adresse de la page « J'ai un code », date de fin) ; l'impression masque le reste de la page.
+
+**« J'ai un code »** (`/code`, lien depuis la page de connexion) : le code est vérifié, la page montre « Nom — classe — établissement, c'est bien toi ? », propose un nom d'utilisateur (« jean.mballa »), demande un mot de passe et un e-mail facultatif ; pour un code en blanc, le nom et le prénom. Une personne déjà connectée rattache son compte à la place. Le profil a aussi un champ « Code personnel d'établissement ».
+
+**Administration** (`/admin/licences`) : responsables de chaque établissement, désignation par e-mail ou **code responsable**, retrait ; plus de clé pour une nouvelle licence ; une ancienne clé annulée est affichée comme telle.
+
+**Ailleurs :** connexion par « adresse e-mail ou nom d'utilisateur » ; le code de classe commun n'est plus montré pour une classe d'établissement (« les élèves entrent avec leur code personnel »), le détail d'une classe liste ses enseignants ; le profil indique « aucune adresse » pour un compte sans e-mail. Côté service : la classe porte le type de son espace (`SpaceType`), et un enseignant ajouté à un seul établissement par e-mail y range les classes qu'il crée (limite du lot 2 réglée).
+
+**Vérifications (navigateur, site et service User sur une copie jetable de la base) :** tableau de bord du Lycée de démonstration ; import de 3 élèves avec une classe inconnue signalée puis corrigée ; codes de la classe ; fiches ; création du compte d'un élève par son code (« c'est bien toi ? », classe et licence retrouvées) ; connexion par nom d'utilisateur, y compris en minuscules ; désignation par code responsable dans l'administration. Défauts trouvés pendant l'essai et corrigés : boutons qui restaient grisés tant qu'on n'avait pas quitté le champ (les champs réagissent maintenant à la frappe), nom proposé avec le dernier prénom au lieu du premier, date de fin affichée « 1er août » au lieu du 31 juillet (heure de Douala), ancienne clé annulée montrée comme active. Les écrans du suivi (Quiz, Chat) n'ont pas été lancés dans cette pile.
 
 ---
 

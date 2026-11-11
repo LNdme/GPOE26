@@ -1,0 +1,86 @@
+@page "/app/etablissement/{Id:guid}/fiches"
+@layout FocusLayout
+@inherits AppPage
+@inject ISpaceApi Spaces
+
+<PageTitle>Fiches de codes — GPOE26</PageTitle>
+
+<div class="ga-page sheets">
+    <div class="ga-head no-print">
+        <div>
+            <a class="ga-back" href="/app/etablissement/@Id?onglet=eleves"><Icon Name="left" /> @(_space?.Name ?? "Mon établissement")</a>
+            <h1>Fiches de codes@(_className is { } n ? $" — {n}" : "")</h1>
+            <p>@_codes.Count code(s) valable(s). Découpez les fiches et remettez chacune à la bonne personne : un code ne sert qu'une fois.</p>
+        </div>
+        <div class="ga-actions">
+            <button class="ga-btn" onclick="window.print()" disabled="@(_codes.Count == 0)">Imprimer</button>
+        </div>
+    </div>
+
+    @if (!Ready || _loading)
+    {
+        <Loading />
+    }
+    else
+    {
+        <Alert Message="@_error" />
+        @if (_codes.Count == 0)
+        {
+            <div class="ga-card no-print">
+                <div class="ga-empty"><span>Aucun code à imprimer. Donnez d'abord leurs codes aux élèves (« Élèves et codes »).</span></div>
+            </div>
+        }
+        <div class="code-sheets">
+            @foreach (var c in _codes)
+            {
+                <article class="code-sheet">
+                    <header>
+                        <strong>@(_space?.Name)</strong>
+                        <span>@(c.Kind == AccessCodeKind.Teacher ? "Code enseignant" : c.ClassName ?? "")</span>
+                    </header>
+                    <div class="who">
+                        @if (c.StudentName is { } name)
+                        {
+                            <span class="name">@name</span>
+                            <span class="mat">Matricule @c.Matricule</span>
+                        }
+                        else if (c.Kind == AccessCodeKind.Student)
+                        {
+                            <span class="name">Nom : ……………………………………</span>
+                        }
+                    </div>
+                    <div class="code">@c.Code</div>
+                    <p>Va sur <strong>@ActivationUrl</strong>, saisis ce code, puis choisis ton nom d'utilisateur et ton mot de passe.
+                        Le code ne sert qu'une fois ; il est valable jusqu'au @Labels.ValidUntil(c.ExpiresAt).</p>
+                </article>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    [SupplyParameterFromQuery(Name = "classe")] public Guid? ClassId { get; set; }
+    [SupplyParameterFromQuery(Name = "sorte")] public string? Kind { get; set; }
+
+    private bool _loading = true;
+    private string? _error, _className;
+    private MySpace? _space;
+    private List<AccessCodeInfo> _codes = [];
+
+    private string ActivationUrl => Nav.BaseUri.TrimEnd('/').Replace("https://", "").Replace("http://", "") + "/code";
+
+    protected override async Task LoadAsync()
+    {
+        _space = ((await Spaces.MineAsync()).Value ?? []).FirstOrDefault(s => s.Id == Id && s.CanManage);
+        if (_space is null) { _error = "Espace introuvable, ou vous ne le gérez pas."; _loading = false; return; }
+
+        AccessCodeKind? kind = Enum.TryParse<AccessCodeKind>(Kind, true, out var k) ? k : null;
+        var r = await Spaces.CodesAsync(Id, ClassId, kind);
+        _codes = r.Value ?? [];
+        _error = r.Error;
+        if (ClassId is { } classId)
+            _className = ((await Spaces.ClassesAsync(Id)).Value ?? []).FirstOrDefault(c => c.Id == classId)?.Name;
+        _loading = false;
+    }
+}

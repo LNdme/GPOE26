@@ -1,0 +1,110 @@
+@page "/app/etablissement"
+@page "/app/etablissement/{Id:guid}"
+@layout AppLayout
+@inherits AppPage
+@inject ISpaceApi Spaces
+
+<PageTitle>@(_space?.Name ?? "Mon établissement") — GPOE26</PageTitle>
+
+<div class="ga-page">
+    @if (!Ready || _loading)
+    {
+        <Loading />
+    }
+    else if (_space is null)
+    {
+        <div class="ga-head"><div><h1>Mon établissement</h1></div></div>
+        <div class="ga-card">
+            <div class="ga-empty">
+                <span>Vous ne gérez aucun établissement. Le responsable d'un établissement est désigné par l'administration de la plateforme ;
+                il peut ensuite vous nommer gestionnaire. Si on vous a donné un code responsable, saisissez-le dans votre profil.</span>
+                <a class="ga-btn small" href="/app/profil">Mon profil</a>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="ga-head">
+            <div>
+                <h1>@_space.Name</h1>
+                <p>
+                    @(_space.Type == OrganizationType.Independent ? "Votre espace d'enseignant" : "Établissement")@(_space.City is { Length: > 0 } ? $" · {_space.City}" : "")
+                    · vous êtes @(_space.IsOwner ? "responsable" : "gestionnaire")
+                    @if (_overview?.CurrentYear is { } y) { <text> · année @y.Label</text> }
+                </p>
+            </div>
+            @if (_managed.Count > 1)
+            {
+                <div class="ga-chips" aria-label="Changer d'espace">
+                    @foreach (var s in _managed)
+                    {
+                        <a class="ga-chip @(s.Id == _space.Id ? "on" : "")" href="/app/etablissement/@s.Id">@s.Name</a>
+                    }
+                </div>
+            }
+        </div>
+
+        <div class="ga-tabs" role="tablist" aria-label="Gestion de l'espace">
+            @foreach (var (key, label) in Tabs)
+            {
+                <button role="tab" aria-selected="@Aria.State(_tab == key)" class="@(_tab == key ? "on" : "")" @onclick="() => _tab = key">@label</button>
+            }
+        </div>
+
+        @switch (_tab)
+        {
+            case "classes":
+                <SpaceClassesTab Space="_space" Overview="_overview" Changed="RefreshOverviewAsync" />
+                break;
+            case "enseignants":
+                <SpaceTeachersTab Space="_space" Overview="_overview" Changed="RefreshOverviewAsync" />
+                break;
+            case "eleves":
+                <SpaceStudentsTab Space="_space" Overview="_overview" Changed="RefreshOverviewAsync" />
+                break;
+            default:
+                <SpaceOverviewTab Space="_space" Overview="_overview" Changed="RefreshOverviewAsync" GoTo="tab => _tab = tab" />
+                break;
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+    [SupplyParameterFromQuery(Name = "onglet")] public string? Tab { get; set; }
+
+    private bool _loading = true;
+    private string _tab = "apercu";
+    private List<MySpace> _managed = [];
+    private MySpace? _space;
+    private SpaceOverview? _overview;
+
+    private static readonly (string Key, string Label)[] Tabs =
+        [("apercu", "Vue d'ensemble"), ("classes", "Classes"), ("enseignants", "Enseignants"), ("eleves", "Élèves et codes")];
+
+    protected override async Task LoadAsync()
+    {
+        _managed = ((await Spaces.MineAsync()).Value ?? []).Where(s => s.CanManage).ToList();
+        _space = _managed.FirstOrDefault(s => s.Id == Id) ?? _managed.FirstOrDefault();
+        if (Tab is { } t && Tabs.Any(x => x.Key == t)) _tab = t;
+        await RefreshOverviewAsync();
+        _loading = false;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Changement d'espace par les puces : la page est réutilisée, on recharge le nouvel espace
+        if (Ready && !_loading && Id is { } id && _space?.Id != id && _managed.FirstOrDefault(s => s.Id == id) is { } next)
+        {
+            _space = next;
+            await RefreshOverviewAsync();
+        }
+    }
+
+    private async Task RefreshOverviewAsync()
+    {
+        if (_space is null) return;
+        _overview = (await Spaces.OverviewAsync(_space.Id)).Value;
+        StateHasChanged();
+    }
+}

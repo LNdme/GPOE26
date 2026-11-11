@@ -78,6 +78,11 @@ public class SpaceService(UserContext db, IConfiguration config)
             orgId = verified;
             await EnsureMemberAsync(orgId, teacher.Id, OrganizationRole.Teacher);
         }
+        else if (await SingleSchoolOfAsync(teacher.Id) is { } school)
+        {
+            // Ajouté à un seul établissement par son responsable (par e-mail) : ses classes vont là
+            orgId = school;
+        }
         else
         {
             orgId = await IndependentSpaceOfAsync(teacher.Id) ?? CreateIndependentSpace(teacher);
@@ -175,6 +180,16 @@ public class SpaceService(UserContext db, IConfiguration config)
             .SqlQuery<int>($@"UPDATE ""Organizations"" SET ""MatriculeSeq"" = ""MatriculeSeq"" + 1 WHERE ""Id"" = {organizationId} RETURNING ""MatriculeSeq"" AS ""Value""")
             .ToListAsync();
         return reserved.Count == 1 ? reserved[0] : throw new InvalidOperationException($"Espace {organizationId} introuvable.");
+    }
+
+    /// <summary>L'établissement (hors espace indépendant) dont la personne est enseignante, s'il n'y en a qu'un.</summary>
+    private async Task<Guid?> SingleSchoolOfAsync(Guid teacherId)
+    {
+        var schools = await db.OrganizationMembers
+            .Where(m => m.UserId == teacherId && m.Role == OrganizationRole.Teacher && m.Status == MemberStatus.Active)
+            .Join(db.Organizations.Where(o => o.Type != OrganizationType.Independent), m => m.OrganizationId, o => o.Id, (m, o) => o.Id)
+            .Distinct().Take(2).ToListAsync();
+        return schools.Count == 1 ? schools[0] : null;
     }
 
     private async Task<bool> OrganizationExistsAsync(Guid id) =>

@@ -1,0 +1,192 @@
+@* Classes de l'année en cours : création, enseignants par matière, codes de la classe *@
+@inject ISpaceApi Spaces
+@inject NavigationManager Nav
+
+<Alert Message="@_error" />
+
+@if (Overview?.CurrentYear is null)
+{
+    <div class="ga-card"><div class="ga-empty"><span>Préparez d'abord l'année scolaire en cours (onglet « Vue d'ensemble »).</span></div></div>
+}
+else
+{
+    <form class="ga-card" style="border-style:dashed" @onsubmit="CreateAsync" @onsubmit:preventDefault>
+        <h2 class="ga-h3">Nouvelle classe — @Overview.CurrentYear.Label</h2>
+        <div class="ga-form-grid">
+            <div class="ga-field"><label for="cl-name">Nom</label><input id="cl-name" class="ga-input" placeholder="ex. Terminale C2" @bind="_name" @bind:event="oninput" /></div>
+            <div class="ga-field"><label for="cl-level">Niveau (facultatif)</label><input id="cl-level" class="ga-input" placeholder="ex. Terminale" @bind="_level" /></div>
+            <div class="ga-field">
+                <label for="cl-sub">Sous-système</label>
+                <select id="cl-sub" class="ga-select" @bind="_subSystem">
+                    <option value="">—</option>
+                    <option value="@SchoolSubSystem.Francophone">Francophone</option>
+                    <option value="@SchoolSubSystem.Anglophone">Anglophone</option>
+                </select>
+            </div>
+        </div>
+        <button type="submit" class="ga-btn" disabled="@string.IsNullOrWhiteSpace(_name)"><Icon Name="plus" /> Créer la classe</button>
+    </form>
+
+    @if (_loading)
+    {
+        <Loading />
+    }
+    else if (_classes.Count == 0)
+    {
+        <div class="ga-card"><div class="ga-empty"><span>Aucune classe cette année.</span></div></div>
+    }
+    else
+    {
+        <div class="ga-grid">
+            @foreach (var c in _classes)
+            {
+                var form = FormFor(c.Id);
+                <article class="ga-card">
+                    <div class="ga-row between" style="align-items:flex-start">
+                        <div>
+                            <h3 class="ga-h3">@c.Name</h3>
+                            <span class="ga-small ga-muted">@c.MemberCount élève(s)@(c.Level is { Length: > 0 } ? $" · {c.Level}" : "")</span>
+                        </div>
+                        @if (_confirmArchive == c.Id)
+                        {
+                            <span class="ga-row" style="gap:6px">
+                                <button class="ga-btn small" @onclick="() => ArchiveAsync(c)">Archiver</button>
+                                <button class="ga-btn ghost small" @onclick="() => _confirmArchive = null">Annuler</button>
+                            </span>
+                        }
+                        else
+                        {
+                            <button class="ga-btn ghost small" aria-label="Archiver la classe @c.Name" title="Archiver (élèves et historique conservés)" @onclick="() => _confirmArchive = c.Id"><Icon Name="trash" /></button>
+                        }
+                    </div>
+
+                    <div class="ga-stack" style="gap:6px">
+                        <span class="ga-label">Enseignants</span>
+                        @if (c.Teachers.Count == 0)
+                        {
+                            <span class="ga-small ga-muted">Aucun enseignant affecté.</span>
+                        }
+                        @foreach (var t in c.Teachers)
+                        {
+                            <span class="ga-row" style="gap:6px">
+                                <span class="ga-tag @(t.IsMain ? "green" : "")">@t.Username · @(t.Subject.Length > 0 ? t.Subject : "toutes matières")@(t.IsMain ? " · principal" : "")</span>
+                                <button class="ga-icon-btn" style="width:28px; height:28px" aria-label="Retirer @t.Username (@t.Subject) de la classe" @onclick="() => UnassignAsync(c, t)"><Icon Name="x" Size="16" /></button>
+                            </span>
+                        }
+                    </div>
+
+                    @if (_teachers.Count > 0)
+                    {
+                        <form class="ga-stack" style="gap:8px" @onsubmit="() => AssignAsync(c)" @onsubmit:preventDefault>
+                            <div class="ga-form-grid" style="grid-template-columns:repeat(auto-fit, minmax(140px, 1fr))">
+                                <select class="ga-select" aria-label="Enseignant à affecter à @c.Name" @bind="form.TeacherId">
+                                    <option value="">Enseignant…</option>
+                                    @foreach (var t in _teachers) { <option value="@t.UserId">@t.Username</option> }
+                                </select>
+                                <input class="ga-input" aria-label="Matière" placeholder="Matière" @bind="form.Subject" />
+                            </div>
+                            <div class="ga-row between">
+                                <label class="ga-check"><input type="checkbox" @bind="form.IsMain" /> Professeur principal</label>
+                                <button type="submit" class="ga-btn small secondary" disabled="@(form.TeacherId is null)">Affecter</button>
+                            </div>
+                        </form>
+                    }
+
+                    <div class="ga-row" style="gap:8px; flex-wrap:wrap">
+                        @if (Space.Type == OrganizationType.Independent)
+                        {
+                            <button class="ga-btn small secondary" @onclick="() => BlankCodesAsync(c)">5 codes en blanc</button>
+                        }
+                        <a class="ga-btn small ghost" href="/app/etablissement/@Space.Id/fiches?classe=@c.Id">Fiches de codes</a>
+                    </div>
+                </article>
+            }
+        </div>
+        @if (_teachers.Count == 0)
+        {
+            <p class="ga-small ga-muted">Ajoutez des enseignants (onglet « Enseignants ») pour les affecter aux classes.</p>
+        }
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public MySpace Space { get; set; } = default!;
+    [Parameter] public SpaceOverview? Overview { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private class AssignForm { public Guid? TeacherId { get; set; } public string? Subject { get; set; } public bool IsMain { get; set; } }
+
+    private bool _loading = true;
+    private string? _error;
+    private List<SpaceClass> _classes = [];
+    private List<SpaceMember> _teachers = [];
+    private readonly Dictionary<Guid, AssignForm> _forms = [];
+    private string _name = "", _level = "";
+    private SchoolSubSystem? _subSystem;
+    private Guid _loadedFor;
+    private Guid? _confirmArchive;
+
+    private AssignForm FormFor(Guid classId) => _forms.TryGetValue(classId, out var f) ? f : _forms[classId] = new AssignForm();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == Space.Id) return;
+        _loadedFor = Space.Id;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        var classes = Spaces.ClassesAsync(Space.Id);
+        var members = Spaces.MembersAsync(Space.Id);
+        await Task.WhenAll(classes, members);
+        _classes = classes.Result.Value ?? [];
+        _teachers = (members.Result.Value ?? []).Where(m => m.Roles.Contains(OrganizationRole.Teacher)).ToList();
+        _error = classes.Result.Error ?? members.Result.Error;
+        _loading = false;
+    }
+
+    private async Task CreateAsync()
+    {
+        var r = await Spaces.CreateClassAsync(Space.Id, new SpaceClassRequest(_name.Trim(), string.IsNullOrWhiteSpace(_level) ? null : _level.Trim(), _subSystem));
+        if (!r.Ok) { _error = r.Error; return; }
+        _name = _level = "";
+        _error = null;
+        await LoadAsync();
+        await Changed.InvokeAsync();
+    }
+
+    private async Task AssignAsync(SpaceClass c)
+    {
+        var form = FormFor(c.Id);
+        if (form.TeacherId is not { } teacherId) return;
+        var r = await Spaces.AssignTeacherAsync(Space.Id, c.Id, new AssignTeacherRequest(teacherId, form.Subject?.Trim(), form.IsMain));
+        if (!r.Ok) { _error = r.Error; return; }
+        _forms.Remove(c.Id);
+        _error = null;
+        await LoadAsync();
+    }
+
+    private async Task UnassignAsync(SpaceClass c, ClassTeacher t)
+    {
+        var r = await Spaces.UnassignTeacherAsync(Space.Id, c.Id, t.TeacherId, t.Subject);
+        if (!r.Ok) { _error = r.Error; return; }
+        await LoadAsync();
+    }
+
+    private async Task ArchiveAsync(SpaceClass c)
+    {
+        var r = await Spaces.ArchiveClassAsync(Space.Id, c.Id);
+        if (!r.Ok) { _error = r.Error; return; }
+        await LoadAsync();
+        await Changed.InvokeAsync();
+    }
+
+    private async Task BlankCodesAsync(SpaceClass c)
+    {
+        var r = await Spaces.IssueBlankCodesAsync(Space.Id, c.Id, 5);
+        if (!r.Ok) { _error = r.Error; return; }
+        Nav.NavigateTo($"/app/etablissement/{Space.Id}/fiches?classe={c.Id}");
+    }
+}

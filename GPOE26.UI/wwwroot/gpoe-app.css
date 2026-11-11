@@ -622,3 +622,20 @@ pre.lab-host > code { display: none; }
   .ga-card.sunk { padding: 12px; }
   .ga-task { padding: 14px 16px; }
 }
+
+/* ── Fiches de codes personnels (espace d'établissement), à découper ─────────── */
+.code-sheets { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.code-sheet { border: 1.5px dashed #9AA3B8; border-radius: 12px; padding: 16px; background: #fff; display: flex; flex-direction: column; gap: 10px; break-inside: avoid; }
+.code-sheet header { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--ga-navy); }
+.code-sheet .who { display: flex; flex-direction: column; gap: 2px; min-height: 40px; }
+.code-sheet .name { font-weight: 700; font-size: 17px; }
+.code-sheet .mat { font-size: 12.5px; color: #5B6478; }
+.code-sheet .code { font-family: var(--ga-mono); font-size: 24px; letter-spacing: .12em; text-align: center; padding: 10px; border-radius: 8px; background: var(--ga-blue-pale); color: var(--ga-navy); }
+.code-sheet p { margin: 0; font-size: 12.5px; line-height: 1.45; color: #3D4560; }
+
+@media print {
+    .no-print, .ga-sidebar, .ga-topbar, .ga-scrim { display: none !important; }
+    body, .ga-app, .ga-page.sheets { background: #fff !important; padding: 0 !important; }
+    .code-sheets { grid-template-columns: repeat(2, 1fr); gap: 8mm; }
+    .code-sheet { border-color: #555; }
+}

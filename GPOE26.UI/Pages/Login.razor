@@ -32,6 +32,7 @@
 
         <hr class="ga-divider" />
         <p style="text-align:center; margin:0">Pas encore de compte ? <a href="/register" style="font-weight:600; text-decoration:none">Inscris-toi</a></p>
+        <p style="text-align:center; margin:0">Ton établissement t'a donné un code ? <a href="/code" style="font-weight:600; text-decoration:none">J'ai un code</a></p>
         <p style="text-align:center; margin:0" class="ga-small"><a href="/">Retour au site de l'établissement</a></p>
     </form>
 </div>
@@ -58,7 +59,7 @@
 
         if (!result.Ok || result.Value is null)
         {
-            _error = result.Status == System.Net.HttpStatusCode.Unauthorized ? "E-mail ou mot de passe incorrect." : result.Error;
+            _error = result.Status == System.Net.HttpStatusCode.Unauthorized ? "Identifiant ou mot de passe incorrect." : result.Error;
             return;
         }
         await Session.SignInAsync(result.Value);

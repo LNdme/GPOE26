@@ -173,6 +173,8 @@ public static class ClassroomEndpoints
         Guid userId, Func<Classroom, ClassroomRole> roleOf)
     {
         var teachers = await OrganizationEndpoints.TeachersOfAsync(db, rows.Select(r => r.Classroom.Id).ToList());
+        var orgIds = rows.Select(r => r.Classroom.OrganizationId).OfType<Guid>().Distinct().ToList();
+        var types = await db.Organizations.Where(o => orgIds.Contains(o.Id)).ToDictionaryAsync(o => o.Id, o => o.Type);
         return rows.Select(r =>
         {
             var c = r.Classroom;
@@ -184,7 +186,8 @@ public static class ClassroomEndpoints
                 main?.TeacherId ?? c.TeacherId ?? Guid.Empty, main?.Username ?? "", r.Count, c.CreatedAt,
                 role,
                 list.Where(t => t.TeacherId == userId).Select(t => t.Subject).ToList(),
-                list, c.OrganizationId, c.SchoolYearId);
+                list, c.OrganizationId, c.SchoolYearId,
+                c.OrganizationId is { } orgId && types.TryGetValue(orgId, out var type) ? type : null);
         }).ToList();
     }
 }

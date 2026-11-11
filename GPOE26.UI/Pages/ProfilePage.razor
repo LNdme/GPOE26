@@ -2,6 +2,7 @@
 @layout AppLayout
 @inherits AppPage
 @inject IAccountApi Account
+@inject ISpaceApi Spaces
 
 <PageTitle>Mon profil — GPOE26</PageTitle>
 
@@ -25,7 +26,7 @@
                 <h2 id="h-identity" class="ga-h3">@Me.Username</h2>
                 <dl class="pf-facts">
                     <div><dt>Rôle</dt><dd>@(Me.Stage == EducationStage.Higher ? "Étudiant" : Labels.Of(Me.Role))@(Me.IsAdmin ? " · administrateur" : Me.SiteEditor ? " · éditeur du site" : "")</dd></div>
-                    <div><dt>E-mail</dt><dd>@Me.Email</dd></div>
+                    <div><dt>E-mail</dt><dd>@(Me.Email ?? "Aucune adresse (connexion par nom d'utilisateur)")</dd></div>
                     <div><dt>Membre depuis</dt><dd>@Me.CreatedAt.ToLocalTime().ToString("d MMMM yyyy", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"))</dd></div>
                     <div><dt>Abonnement</dt><dd>@(Me.IsPremium ? $"{Labels.Of(Me.Plan)}{(Me.PremiumUntil is { } until ? $" jusqu'au {until.ToLocalTime():dd/MM/yyyy}" : "")}" : "Gratuit")</dd></div>
                     @if (Me.OrganizationName is { Length: > 0 })
@@ -40,14 +41,26 @@
             </div>
         </section>
 
+        <form class="ga-card ga-stack" @onsubmit="RedeemCodeAsync" @onsubmit:preventDefault aria-labelledby="h-code">
+            <h2 id="h-code" class="ga-h3"><Icon Name="key" /> Code personnel d'établissement</h2>
+            <p class="ga-small ga-muted" style="margin:0">Un établissement ou un enseignant vous a remis un code (GP-…) : il rattache ce compte à sa classe, à son équipe ou à sa direction.</p>
+            <Alert Message="@_codeError" />
+            <div class="ga-row" style="gap:10px; flex-wrap:wrap">
+                <input class="ga-input" style="flex:1; min-width:180px; font-family:var(--ga-mono); text-transform:uppercase" aria-label="Code personnel"
+                       placeholder="GP-XXXX-XXXX" autocomplete="off" spellcheck="false" @bind="_accessCode" @bind:event="oninput" />
+                <button type="submit" class="ga-btn secondary" disabled="@(_codeBusy || string.IsNullOrWhiteSpace(_accessCode))">Valider le code</button>
+            </div>
+        </form>
+
         <form class="ga-card ga-stack" @onsubmit="SaveAsync" @onsubmit:preventDefault aria-labelledby="h-edit">
             <h2 id="h-edit" class="ga-h3"><Icon Name="user" /> Modifier mes informations</h2>
             <Alert Message="@_profileError" />
             <Alert Message="@_profileOk" Kind="success" />
 
             <div class="ga-field">
-                <label for="pf-name">Nom affiché</label>
-                <input id="pf-name" class="ga-input" maxlength="64" required minlength="3" autocomplete="name" @bind="_username" />
+                <label for="pf-name">Nom d'utilisateur</label>
+                <input id="pf-name" class="ga-input" maxlength="64" required minlength="3" autocomplete="username" @bind="_username" />
+                <span class="ga-small ga-muted">Il sert aussi à vous connecter (avec ou à la place de l'e-mail).</span>
             </div>
             <div class="ga-field">
                 <label for="pf-lang">Langue</label>
@@ -188,6 +201,23 @@
 
     private static List<string> SplitList(string? value) =>
         (value ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+
+    private string _accessCode = "";
+    private string? _codeError;
+    private bool _codeBusy;
+
+    /// <summary>Rattache le compte avec un code personnel, puis recharge l'application (menu, droits, classes).</summary>
+    private async Task RedeemCodeAsync()
+    {
+        _codeBusy = true;
+        _codeError = null;
+        var r = await Spaces.RedeemCodeAsync(_accessCode.Trim());
+        _codeBusy = false;
+        if (!r.Ok) { _codeError = r.Error; return; }
+        if ((await Account.MeAsync()).Value is { } profile) await Session.UpdateProfileAsync(profile);
+        var managed = ((await Spaces.MineAsync()).Value ?? []).Any(s => s.CanManage);
+        Nav.NavigateTo(managed ? "/app/etablissement" : "/app", forceLoad: true);
+    }
 
     private async Task SaveAsync()
     {

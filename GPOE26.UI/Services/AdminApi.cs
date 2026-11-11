@@ -13,6 +13,10 @@ public interface IPlatformAdminApi
     Task<ApiResult<List<Organization>>> OrganizationsAsync();
     Task<ApiResult<Organization>> CreateOrganizationAsync(CreateOrganizationRequest request);
     Task<ApiResult<SubscriptionInfo>> CreateLicenseAsync(Guid organizationId, CreateLicenseRequest request);
+    Task<ApiResult<SpaceOwner>> SetOwnerAsync(Guid organizationId, string email);
+    Task<ApiResult<bool>> RemoveOwnerAsync(Guid organizationId, Guid userId);
+    /// <summary>Code responsable à usage unique, pour une personne qui n'a pas encore de compte.</summary>
+    Task<ApiResult<AccessCodeInfo>> OwnerCodeAsync(Guid organizationId);
 }
 
 public class PlatformAdminApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.User), IPlatformAdminApi
@@ -30,4 +34,13 @@ public class PlatformAdminApi(IHttpClientFactory f, SessionState s) : ApiBase(f,
 
     public Task<ApiResult<SubscriptionInfo>> CreateLicenseAsync(Guid organizationId, CreateLicenseRequest request) =>
         PostAsync<SubscriptionInfo>($"/admin/organizations/{organizationId}/licenses", request);
+
+    public Task<ApiResult<SpaceOwner>> SetOwnerAsync(Guid organizationId, string email) =>
+        PutAsync<SpaceOwner>($"/admin/organizations/{organizationId}/owners", new { email });
+
+    public Task<ApiResult<bool>> RemoveOwnerAsync(Guid organizationId, Guid userId) =>
+        DeleteAsync<bool>($"/admin/organizations/{organizationId}/owners/{userId}");
+
+    public Task<ApiResult<AccessCodeInfo>> OwnerCodeAsync(Guid organizationId) =>
+        PostAsync<AccessCodeInfo>($"/admin/organizations/{organizationId}/owner-code");
 }

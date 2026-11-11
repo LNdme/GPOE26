@@ -25,6 +25,7 @@ public record JoinClassroomRequest([Required] string Code);
 /// MyRole : ce que l'utilisateur y est (enseignant affecté, gestionnaire de l'espace, élève) — c'est ce que
 /// Quiz et Cours lisent pour savoir s'il peut y publier. MySubjects : ses matières dans la classe.
 /// InviteCode n'est renseigné que pour un enseignant de la classe ou un gestionnaire.
+/// SpaceType : établissement (les élèves entrent par leur code personnel) ou enseignant indépendant (code de classe accepté).
 /// </summary>
 public record ClassroomDto(
     Guid Id,
@@ -42,7 +43,8 @@ public record ClassroomDto(
     List<string>? MySubjects = null,
     List<ClassTeacherDto>? Teachers = null,
     Guid? OrganizationId = null,
-    Guid? SchoolYearId = null
+    Guid? SchoolYearId = null,
+    OrganizationType? SpaceType = null
 );
 
 public record ClassroomMemberDto(

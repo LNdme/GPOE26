@@ -2,6 +2,7 @@
 @implements IDisposable
 @inject SessionState Session
 @inject NavigationManager Nav
+@inject ISpaceApi Spaces
 
 <div class="ga-app">
     <div class="ga-shell @(_reading ? "reading" : "") @(_railOpen ? "rail-open" : "")">
@@ -33,7 +34,7 @@
                 </div>
 
                 <div class="ga-nav">
-                    @foreach (var item in Items(me.Role))
+                    @foreach (var item in Items(me.Role).Concat(SpaceItems()))
                     {
                         <NavLink href="@item.Href" title="@item.Label" aria-label="@item.Label" Match="@(item.Href == "/app" ? NavLinkMatch.All : NavLinkMatch.Prefix)">
                             <Icon Name="@item.Icon" /> <span>@item.Label</span>
@@ -110,6 +111,26 @@
         ]
     };
 
+    // Espaces que la personne gère (responsable, gestionnaire, enseignant indépendant) : lien « Mon établissement »
+    private List<MySpace> _managed = [];
+    private Guid? _spacesLoadedFor;
+
+    private IEnumerable<NavItem> SpaceItems()
+    {
+        if (_managed.Count == 0) yield break;
+        var label = _managed.All(s => s.Type == OrganizationType.Independent) ? "Mes élèves et codes" : "Mon établissement";
+        yield return new NavItem("/app/etablissement", label, "building");
+    }
+
+    private async Task LoadSpacesAsync()
+    {
+        var me = Session.Profile;
+        if (!Session.IsAuthenticated || me is null || me.Role == UserRole.Student || _spacesLoadedFor == me.Id) return;
+        _spacesLoadedFor = me.Id;
+        _managed = ((await Spaces.MineAsync()).Value ?? []).Where(s => s.CanManage).ToList();
+        await InvokeAsync(StateHasChanged);
+    }
+
     private static string SpaceLabel(UserRole role) => role switch
     {
         UserRole.Teacher => "Espace enseignant",
@@ -123,12 +144,19 @@
         Nav.LocationChanged += OnLocationChanged;
         _reading = ReaderPath.IsMatch(Nav.Uri);
         await Session.RestoreAsync();
+        await LoadSpacesAsync();
     }
 
     private void OnSessionChanged()
     {
         if (!Session.IsAuthenticated)
+        {
+            _managed = [];
+            _spacesLoadedFor = null;
             Nav.NavigateTo("/login");
+        }
+        else
+            _ = LoadSpacesAsync();
         InvokeAsync(StateHasChanged);
     }
 

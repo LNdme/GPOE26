@@ -58,7 +58,7 @@ public record EditProfileRequest
 
 public record UserProfile(
     Guid Id,
-    string Email,
+    string? Email,
     string Username,
     UserRole Role,
     string? Level,
@@ -93,9 +93,19 @@ public record AuthResponse(string Token, DateTime ExpiresAt, UserProfile Profile
 
 // ─── Classes ──────────────────────────────────────────────────────────────────
 
+/// <summary>
+/// Classe vue par l'utilisateur. Une classe peut avoir plusieurs enseignants (Teachers) ; TeacherName est le professeur
+/// principal. SpaceType : dans un établissement, les élèves entrent par leur code personnel, pas par InviteCode.
+/// </summary>
 public record Classroom(
     Guid Id, string Name, ClassroomKind Kind, string? Level, SchoolSubSystem? SubSystem, string? Subject,
-    string? InviteCode, Guid TeacherId, string TeacherName, int MemberCount, DateTime CreatedAt);
+    string? InviteCode, Guid TeacherId, string TeacherName, int MemberCount, DateTime CreatedAt,
+    ClassroomRole? MyRole = null, List<string>? MySubjects = null, List<ClassTeacher>? Teachers = null,
+    Guid? OrganizationId = null, Guid? SchoolYearId = null, OrganizationType? SpaceType = null)
+{
+    /// <summary>Le code de classe commun sert encore (enseignant indépendant, ou classe sans espace).</summary>
+    public bool UsesInviteCode => SpaceType is null or OrganizationType.Independent;
+}
 
 public record ClassroomMember(Guid Id, string Username, string? Level, string? Filiere, DateTime JoinedAt, DateTime? LastLoginAt);
 

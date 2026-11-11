@@ -1,0 +1,131 @@
+@* Enseignants et gestionnaires d'un espace *@
+@inject ISpaceApi Spaces
+@inject SessionState Session
+
+<Alert Message="@_error" />
+
+<div class="ga-split">
+    <section class="main ga-card" aria-labelledby="h-team">
+        <h2 id="h-team" class="ga-h2">Équipe</h2>
+        @if (_loading)
+        {
+            <Loading />
+        }
+        else
+        {
+            <div class="ga-list">
+                @foreach (var m in _members)
+                {
+                    <div class="ga-item">
+                        <span class="ga-avatar">@Labels.Initial(m.Username)</span>
+                        <span class="grow">
+                            <strong>@m.Username</strong>
+                            <span class="ga-small ga-muted">@(m.Email ?? "sans e-mail") · depuis le @Labels.Date(m.JoinedAt)</span>
+                        </span>
+                        @foreach (var role in m.Roles) { <span class="ga-tag @(role == OrganizationRole.Owner ? "purple" : role == OrganizationRole.Manager ? "amber" : "")">@Labels.Of(role).ToUpperInvariant()</span> }
+                        @if (m.Roles.Contains(OrganizationRole.Teacher) && m.UserId != Session.Profile?.Id)
+                        {
+                            <button class="ga-btn ghost small" aria-label="Retirer @m.Username des enseignants" @onclick="() => RemoveTeacherAsync(m)">Retirer</button>
+                        }
+                        @if (Space.IsOwner && m.Roles.Contains(OrganizationRole.Manager))
+                        {
+                            <button class="ga-btn ghost small" aria-label="Retirer à @m.Username le rôle de gestionnaire" @onclick="() => RemoveManagerAsync(m)">Plus gestionnaire</button>
+                        }
+                    </div>
+                }
+            </div>
+            <p class="ga-small ga-muted">Retirer un enseignant le retire aussi de ses classes ; ses cours et évaluations restent à lui.</p>
+        }
+    </section>
+
+    <aside class="ga-stack">
+        <form class="ga-card" @onsubmit="AddTeacherAsync" @onsubmit:preventDefault>
+            <h2 class="ga-h3">Ajouter un enseignant</h2>
+            <div class="ga-field">
+                <label for="t-mail">E-mail de son compte enseignant</label>
+                <input id="t-mail" class="ga-input" type="email" placeholder="nom@exemple.com" @bind="_teacherEmail" @bind:event="oninput" />
+            </div>
+            <button type="submit" class="ga-btn secondary" disabled="@string.IsNullOrWhiteSpace(_teacherEmail)">Ajouter</button>
+            <hr class="ga-divider" />
+            <p class="ga-small ga-muted" style="margin:0">Pas encore de compte ? Donnez-lui un code enseignant : il crée son compte sur la page « J'ai un code ».</p>
+            <button type="button" class="ga-btn ghost" @onclick="TeacherCodeAsync"><Icon Name="key" /> Code enseignant</button>
+            @if (_teacherCode is { } issued)
+            {
+                <p style="margin:0">Code à transmettre : <span class="ga-code">@issued.Code</span><br /><span class="ga-small ga-muted">Valable une fois, jusqu'au @Labels.ValidUntil(issued.ExpiresAt).</span></p>
+            }
+        </form>
+
+        @if (Space.IsOwner && Space.Type != OrganizationType.Independent)
+        {
+            <form class="ga-card" @onsubmit="AddManagerAsync" @onsubmit:preventDefault>
+                <h2 class="ga-h3">Nommer un gestionnaire</h2>
+                <p class="ga-small ga-muted" style="margin:0">Il gère classes, enseignants, élèves et codes, sans pouvoir nommer d'autres gestionnaires.</p>
+                <div class="ga-field">
+                    <label for="m-mail">E-mail de son compte</label>
+                    <input id="m-mail" class="ga-input" type="email" placeholder="nom@exemple.com" @bind="_managerEmail" @bind:event="oninput" />
+                </div>
+                <button type="submit" class="ga-btn secondary" disabled="@string.IsNullOrWhiteSpace(_managerEmail)">Nommer</button>
+            </form>
+        }
+    </aside>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public MySpace Space { get; set; } = default!;
+    [Parameter] public SpaceOverview? Overview { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private bool _loading = true;
+    private string? _error;
+    private List<SpaceMember> _members = [];
+    private string _teacherEmail = "", _managerEmail = "";
+    private AccessCodeInfo? _teacherCode;
+    private Guid _loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == Space.Id) return;
+        _loadedFor = Space.Id;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var r = await Spaces.MembersAsync(Space.Id);
+        _members = r.Value ?? [];
+        _error = r.Error;
+        _loading = false;
+    }
+
+    private async Task Done(ApiResult<bool> r)
+    {
+        _error = r.Error;
+        if (!r.Ok) return;
+        await LoadAsync();
+        await Changed.InvokeAsync();
+    }
+
+    private async Task AddTeacherAsync()
+    {
+        var r = await Spaces.AddTeacherAsync(Space.Id, _teacherEmail.Trim());
+        if (r.Ok) _teacherEmail = "";
+        await Done(r);
+    }
+
+    private async Task AddManagerAsync()
+    {
+        var r = await Spaces.AddManagerAsync(Space.Id, _managerEmail.Trim());
+        if (r.Ok) _managerEmail = "";
+        await Done(r);
+    }
+
+    private async Task RemoveTeacherAsync(SpaceMember m) => await Done(await Spaces.RemoveTeacherAsync(Space.Id, m.UserId));
+    private async Task RemoveManagerAsync(SpaceMember m) => await Done(await Spaces.RemoveManagerAsync(Space.Id, m.UserId));
+
+    private async Task TeacherCodeAsync()
+    {
+        var r = await Spaces.IssueTeacherCodeAsync(Space.Id);
+        _teacherCode = r.Value;
+        _error = r.Error;
+    }
+}

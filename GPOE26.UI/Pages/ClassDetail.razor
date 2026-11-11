@@ -22,10 +22,23 @@
             <div>
                 <a class="ga-back" href="/app"><Icon Name="left" /> Mes classes</a>
                 <h1>@_class.Name</h1>
-                <p>@_members.Count @(_class.Kind == ClassroomKind.Group ? "apprenant(s)" : "élève(s)")@(_class.Subject is { Length: > 0 } ? $" · {_class.Subject}" : "") · code d'invitation <span class="ga-code">@_class.InviteCode</span></p>
+                <p>
+                    @_members.Count @(_class.Kind == ClassroomKind.Group ? "apprenant(s)" : "élève(s)")@(_class.Subject is { Length: > 0 } ? $" · {_class.Subject}" : "")
+                    @if (_class.UsesInviteCode)
+                    {
+                        <text> · code d'invitation <span class="ga-code">@_class.InviteCode</span></text>
+                    }
+                    @if (_class.Teachers is { Count: > 1 } teachers)
+                    {
+                        <br /><span class="ga-small">Enseignants : @string.Join(" · ", teachers.Select(t => t.Subject.Length > 0 ? $"{t.Username} ({t.Subject})" : t.Username))</span>
+                    }
+                </p>
             </div>
             <div class="ga-actions">
-                <button class="ga-btn secondary" @onclick="RegenerateAsync">Nouveau code</button>
+                @if (_class.UsesInviteCode)
+                {
+                    <button class="ga-btn secondary" @onclick="RegenerateAsync">Nouveau code</button>
+                }
                 <a class="ga-btn" href="/app/evaluations/nouvelle">Nouvelle épreuve</a>
             </div>
         </div>
@@ -48,7 +61,9 @@
             </div>
             @if (_members.Count == 0)
             {
-                <div class="ga-empty"><span>Aucun élève pour l'instant : partagez le code <strong>@_class.InviteCode</strong>.</span></div>
+                <div class="ga-empty"><span>@(_class.UsesInviteCode
+                    ? (MarkupString)$"Aucun élève pour l'instant : partagez le code <strong>{_class.InviteCode}</strong>."
+                    : (MarkupString)"Aucun élève pour l'instant : ils arrivent en activant le code personnel que leur donne l'établissement.")</span></div>
             }
             else
             {
