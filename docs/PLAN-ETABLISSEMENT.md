@@ -2,7 +2,7 @@
 
 Rédigé le 11 novembre 2026, sur la branche `feat/site-admin-navbar`. Questions Q1 à Q9 validées le même jour.
 
-> **Avancement :** lots 1 à 5 commités le 11 novembre 2026 (`e57fbc9`, `1d68d64`, `398154a`, `2ffbbb0`, non poussés) ; lot 6 fait le même jour (non commité). Voir « Lot 1 … 6 : ce qui a été fait » en fin de document. Reste le lot 7.
+> **Avancement :** lots 1 à 6 commités le 11 novembre 2026 (`e57fbc9`, `1d68d64`, `398154a`, `2ffbbb0`, `6990bd4`, non poussés) ; lot 7 fait le même jour (non commité). Voir « Lot 1 … 7 : ce qui a été fait » en fin de document. Le plan est terminé.
 
 ## Le but en une phrase
 
@@ -317,6 +317,20 @@ Une bonne partie de l'enseignant indépendant était déjà en place (espace `In
 **Vérifications :** tests 384 / 384 et 63 / 63 (dont la règle « qui voit tout » et la lecture de `isManager`) ; scénario avec les vrais services User et Quiz sur une copie jetable de la base, 11 contrôles : un responsable à compte parent, deux enseignants (maths, physique) qui publient chacun une évaluation pour la même classe — ce qui vérifie aussi en vrai le co-enseignant du lot 2 —, chaque enseignant voit la sienne, le responsable voit les deux avec leur matière, l'élève et un enseignant d'ailleurs sont refusés, l'enseignant de maths nommé gestionnaire voit tout. Page de suivi essayée dans le navigateur avec le compte parent responsable.
 
 **Remarque (déjà là avant) :** la page d'une classe attend le service Cours (titres des cours) avant de s'afficher ; si Cours est arrêté, elle reste sur « Chargement… ».
+
+## Lot 7 : ce qui a été fait (11 novembre 2026)
+
+**Le code de classe commun disparaît** (choix 6) :
+- service User : plus de `POST /classrooms/join` ni de `POST /classrooms/{id}/invite-code` ; l'inscription refuse un `inviteCode` en renvoyant vers la page « J'ai un code » ; les nouvelles classes n'ont plus de code (`Classrooms.InviteCode` devient facultatif) ; le DTO de classe ne l'expose plus ; la limite de tentatives ne compte plus cette route ;
+- écrans : l'accueil élève propose « J'ai un code personnel » à la place de « Rejoindre une classe » ; l'accueil enseignant et la page d'une classe renvoient vers « Élèves et codes » ; l'inscription guidée d'un élève ou d'un étudiant commence par « Ton établissement ou ton enseignant t'a-t-il donné un code personnel ? » (oui → `/code`), celle d'un enseignant propose « J'ai un code enseignant » (→ `/code`) à la place de la clé de l'établissement ; la clé d'abonnement d'un élève n'est plus présentée que comme la clé familiale.
+
+**Les restes des clés d'établissement partent** : plus de rattachement à un espace par une clé dans `SubscriptionService.RedeemAsync` (les clés ETB-/ORG- sont annulées depuis la reprise v3) ; le jeu de démonstration ne crée plus ni la clé `ETB-DEMO-PROF` ni le code `DEM-TLC` (la classe de démo est créée directement dans le lycée).
+
+**Écart avec le plan : `Classrooms.TeacherId` est gardé.** Il sert de copie du professeur principal (la référence reste `ClassroomTeachers`), lue en secours par Quiz et Cours. Le supprimer obligeait à réécrire la reprise v2 et le jeu de démonstration, sans rien changer pour les utilisateurs.
+
+**Documentation et scripts :** README (API des codes personnels et des espaces, comptes de démonstration) ; `scripts/test-user-api.sh` (élève entré par code personnel, enseignant indépendant, institution par code responsable puis code enseignant), `scripts/test-evaluations.sh` (Bob entre par son code), `scripts/seed-tutor-demo.py` (classe retrouvée par son nom).
+
+**Vérifications :** tests 383 / 383 (un cas de moins : la route retirée) et 63 / 63 ; démarrage sur une **base neuve** (schéma, démonstration, reprises v2 et v3 enchaînées : classe de démo au lycée avec année, professeur principal et élève sur la liste, aucune clé) ; les sections réécrites de `test-user-api.sh` rejouées en Python sur cette base, 33 contrôles bons ; inscription guidée essayée dans le navigateur (la question du code personnel mène à `/code`). **Non fait** : lancer les scripts bash eux-mêmes — `jq` n'est pas installé sur la machine ; leur syntaxe est vérifiée (`bash -n`).
 
 ---
 

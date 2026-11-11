@@ -178,8 +178,9 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
     if (req.Role == UserRole.Teacher && req.Filiere is not null)
         return Results.BadRequest(new { message = "Un enseignant ne peut pas avoir de filière." });
 
-    if (req.InviteCode is not null && req.Role != UserRole.Student)
-        return Results.BadRequest(new { message = "Seul un élève peut rejoindre une classe." });
+    // Les classes se rejoignent avec un code personnel (page « J'ai un code »), plus avec un code de classe commun
+    if (!string.IsNullOrWhiteSpace(req.InviteCode))
+        return Results.BadRequest(new { message = "Les codes de classe ne servent plus : entrez avec le code personnel (GP-…) que vous a donné votre établissement ou votre enseignant, sur la page « J'ai un code »." });
 
     if (req.StartTrial && req.Role != UserRole.Teacher)
         return Results.BadRequest(new { message = "L'essai gratuit est réservé aux enseignants." });
@@ -193,14 +194,6 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
         keyOrganizationId = key?.Subscription.OrganizationId;
     }
 
-    if (req.InviteCode is not null)
-    {
-        // Une classe d'établissement se rejoint avec un code personnel, pas avec le code de classe (choix 6)
-        var (_, joinError) = await classrooms.CheckJoinAsync(req.InviteCode);
-        if (joinError != JoinError.None)
-            return Results.BadRequest(new { message = joinError == JoinError.NotFound
-                ? "Code d'invitation de classe invalide." : ClassroomService.Message(joinError) });
-    }
 
     var teachingSubjects = req.TeachingSubjects ?? new();
     var user = new AppUser
@@ -246,9 +239,6 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
             await classrooms.CreateAsync(user, name, isSchool ? name.Trim() : null, subSystem);
         }
     }
-
-    if (req.InviteCode is not null)
-        await classrooms.JoinAsync(user, req.InviteCode);
 
     await db.SaveChangesAsync();
 

@@ -17,14 +17,11 @@ public record CreateClassroomRequest(
     string? Subject = null
 );
 
-public record JoinClassroomRequest([Required] string Code);
-
 /// <summary>
 /// Classe vue par l'utilisateur connecté.
 /// TeacherId / TeacherName : professeur principal (Guid.Empty et "" si la classe n'en a pas).
 /// MyRole : ce que l'utilisateur y est (enseignant affecté, gestionnaire de l'espace, élève) — c'est ce que
 /// Quiz et Cours lisent pour savoir s'il peut y publier. MySubjects : ses matières dans la classe.
-/// InviteCode n'est renseigné que pour un enseignant de la classe ou un gestionnaire.
 /// SpaceType : établissement (les élèves entrent par leur code personnel) ou enseignant indépendant (code de classe accepté).
 /// IsManager (détail d'une classe seulement) : l'utilisateur gère l'espace de la classe, même s'il y enseigne aussi —
 /// le suivi lui montre alors toutes les évaluations de la classe, pas seulement les siennes.
@@ -36,7 +33,6 @@ public record ClassroomDto(
     string? Level,
     SchoolSubSystem? SubSystem,
     string? Subject,
-    string? InviteCode,
     Guid TeacherId,
     string TeacherName,
     int MemberCount,

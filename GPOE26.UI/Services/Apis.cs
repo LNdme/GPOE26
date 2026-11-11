@@ -61,10 +61,8 @@ public interface IClassroomApi
     Task<ApiResult<List<Classroom>>> MineAsync();
     Task<ApiResult<Classroom>> GetAsync(Guid id);
     Task<ApiResult<Classroom>> CreateAsync(CreateClassroomRequest request);
-    Task<ApiResult<Classroom>> JoinAsync(string code);
     Task<ApiResult<List<ClassroomMember>>> MembersAsync(Guid id);
     Task<ApiResult<bool>> RemoveMemberAsync(Guid classroomId, Guid studentId);
-    Task<ApiResult<bool>> RegenerateCodeAsync(Guid id);
 }
 
 public interface IFamilyApi
@@ -215,11 +213,9 @@ public class ClassroomApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, 
     public Task<ApiResult<List<Classroom>>> MineAsync() => GetAsync<List<Classroom>>("/classrooms/mine");
     public Task<ApiResult<Classroom>> GetAsync(Guid id) => GetAsync<Classroom>($"/classrooms/{id}");
     public Task<ApiResult<Classroom>> CreateAsync(CreateClassroomRequest request) => PostAsync<Classroom>("/classrooms", request);
-    public Task<ApiResult<Classroom>> JoinAsync(string code) => PostAsync<Classroom>("/classrooms/join", new { code });
     public Task<ApiResult<List<ClassroomMember>>> MembersAsync(Guid id) => GetAsync<List<ClassroomMember>>($"/classrooms/{id}/members");
     public Task<ApiResult<bool>> RemoveMemberAsync(Guid classroomId, Guid studentId) =>
         DeleteAsync<bool>($"/classrooms/{classroomId}/members/{studentId}");
-    public Task<ApiResult<bool>> RegenerateCodeAsync(Guid id) => PostAsync<bool>($"/classrooms/{id}/invite-code");
 }
 
 public class FamilyApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.User), IFamilyApi

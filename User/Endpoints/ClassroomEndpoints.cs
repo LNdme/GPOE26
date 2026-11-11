@@ -11,6 +11,7 @@ namespace User.Endpoints;
 /// <summary>
 /// Classes vues par leurs enseignants (plusieurs, un par matière), leurs élèves et les gestionnaires de leur espace.
 /// La gestion complète (créer pour l'établissement, affecter les enseignants) est dans OrganizationEndpoints.
+/// Un élève entre dans une classe par son code personnel (AccessCodeEndpoints) : il n'y a plus de code de classe commun.
 /// </summary>
 public static class ClassroomEndpoints
 {
@@ -94,27 +95,6 @@ public static class ClassroomEndpoints
         .WithSummary("Élèves d'une classe (ses enseignants et les gestionnaires de l'espace)")
         .Produces<List<ClassroomMemberDto>>();
 
-        // ── POST /classrooms/join ─────────────────────────────────────────────────
-        group.MapPost("/join", async (JoinClassroomRequest req, ClaimsPrincipal principal, UserContext db, ClassroomService classrooms) =>
-        {
-            var student = await db.CurrentUserAsync(principal);
-            if (student is null) return Results.Unauthorized();
-
-            var (classroom, error) = await classrooms.JoinAsync(student, req.Code);
-            if (error == JoinError.NotFound)
-                return Results.NotFound(new { message = ClassroomService.Message(error) });
-            if (classroom is null)
-                return Results.Conflict(new { message = ClassroomService.Message(error) });
-
-            await db.SaveChangesAsync();
-            var count = await db.ClassroomMembers.CountAsync(m => m.ClassroomId == classroom.Id);
-            return Results.Ok((await ToDtosAsync(db, [(classroom, count)], student.Id, _ => ClassroomRole.Student)).Single());
-        })
-        .RequireAuthorization(Policies.Student)
-        .WithSummary("Rejoindre une classe avec son code d'invitation")
-        .Produces<ClassroomDto>()
-        .Produces(404);
-
         // ── DELETE /classrooms/{id}/members/{studentId} ───────────────────────────
         // Un enseignant de la classe ou un gestionnaire retire un élève, ou l'élève quitte la classe.
         group.MapDelete("/{id:guid}/members/{studentId:guid}", async (Guid id, Guid studentId, ClaimsPrincipal principal,
@@ -129,19 +109,6 @@ public static class ClassroomEndpoints
             return deleted == 0 ? Results.NotFound() : Results.NoContent();
         })
         .WithSummary("Retirer un élève / quitter la classe");
-
-        // ── POST /classrooms/{id}/invite-code ─────────────────────────────────────
-        // Régénère le code (par ex. s'il a circulé hors de la classe).
-        group.MapPost("/{id:guid}/invite-code", async (Guid id, ClaimsPrincipal principal, UserContext db, ClassroomService classrooms) =>
-        {
-            if (!await CanTeachOrManageAsync(db, classrooms, id, principal.GetUserId())) return Results.NotFound();
-
-            var classroom = await db.Classrooms.FirstAsync(c => c.Id == id);
-            classroom.InviteCode = await classrooms.UniqueInviteCodeAsync();
-            await db.SaveChangesAsync();
-            return Results.Ok(new { classroom.InviteCode });
-        })
-        .WithSummary("Régénérer le code d'invitation");
 
         // ── DELETE /classrooms/{id} ───────────────────────────────────────────────
         // Archivage par le professeur principal ou un gestionnaire : les élèves et l'historique sont conservés.
@@ -184,7 +151,6 @@ public static class ClassroomEndpoints
             var main = list.FirstOrDefault(t => t.IsMain);
             var role = roleOf(c);
             return new ClassroomDto(c.Id, c.Name, c.Kind, c.Level, c.SubSystem, c.Subject,
-                role is ClassroomRole.Teacher or ClassroomRole.Manager ? c.InviteCode : null,
                 main?.TeacherId ?? c.TeacherId ?? Guid.Empty, main?.Username ?? "", r.Count, c.CreatedAt,
                 role,
                 list.Where(t => t.TeacherId == userId).Select(t => t.Subject).ToList(),

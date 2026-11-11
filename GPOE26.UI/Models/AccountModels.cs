@@ -29,7 +29,6 @@ public record RegisterRequest
     public string? ExamTarget { get; init; }
     public List<string>? FocusSubjects { get; init; }
     public int? DailyStudyMinutes { get; init; }
-    public string? InviteCode { get; init; }
     public List<string>? TeachingSubjects { get; init; }
     public TeachingContext? TeachingContext { get; init; }
     public string? OrganizationName { get; init; }
@@ -95,17 +94,13 @@ public record AuthResponse(string Token, DateTime ExpiresAt, UserProfile Profile
 
 /// <summary>
 /// Classe vue par l'utilisateur. Une classe peut avoir plusieurs enseignants (Teachers) ; TeacherName est le professeur
-/// principal. SpaceType : dans un établissement, les élèves entrent par leur code personnel, pas par InviteCode.
+/// principal. Les élèves y entrent avec leur code personnel. SpaceType : établissement ou enseignant indépendant.
 /// </summary>
 public record Classroom(
     Guid Id, string Name, ClassroomKind Kind, string? Level, SchoolSubSystem? SubSystem, string? Subject,
-    string? InviteCode, Guid TeacherId, string TeacherName, int MemberCount, DateTime CreatedAt,
+    Guid TeacherId, string TeacherName, int MemberCount, DateTime CreatedAt,
     ClassroomRole? MyRole = null, List<string>? MySubjects = null, List<ClassTeacher>? Teachers = null,
-    Guid? OrganizationId = null, Guid? SchoolYearId = null, OrganizationType? SpaceType = null, bool IsManager = false)
-{
-    /// <summary>Le code de classe commun sert encore (enseignant indépendant, ou classe sans espace).</summary>
-    public bool UsesInviteCode => SpaceType is null or OrganizationType.Independent;
-}
+    Guid? OrganizationId = null, Guid? SchoolYearId = null, OrganizationType? SpaceType = null, bool IsManager = false);
 
 public record ClassroomMember(Guid Id, string Username, string? Level, string? Filiere, DateTime JoinedAt, DateTime? LastLoginAt);
 

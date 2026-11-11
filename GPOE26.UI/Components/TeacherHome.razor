@@ -43,13 +43,16 @@
                                 <h3 class="ga-h3">@c.Name</h3>
                                 <span class="ga-muted ga-small">@c.MemberCount @(c.Kind == ClassroomKind.Group ? "apprenant(s)" : "élève(s)")@(c.Subject is { Length: > 0 } ? $" · {c.Subject}" : "")</span>
                             </div>
-                            @if (c.UsesInviteCode)
-                            {
-                                <span class="ga-code" title="Code d'invitation">@c.InviteCode</span>
-                            }
                         </div>
                         <div class="ga-row between">
-                            <span class="ga-small ga-muted">@(c.UsesInviteCode ? "Code à partager avec les élèves" : c.Teachers?.Count > 1 ? $"{c.Teachers.Count} enseignants · {string.Join(", ", c.MySubjects ?? [])}" : "Les élèves entrent avec leur code personnel")</span>
+                            @if (c.SpaceType == OrganizationType.Independent && c.OrganizationId is { } space)
+                            {
+                                <a class="ga-small" href="/app/etablissement/@space?onglet=eleves">Élèves et codes</a>
+                            }
+                            else
+                            {
+                                <span class="ga-small ga-muted">@(c.Teachers?.Count > 1 ? $"{c.Teachers.Count} enseignants · {string.Join(", ", c.MySubjects ?? [])}" : "Élèves inscrits par l'établissement")</span>
+                            }
                             <a class="ga-btn small secondary" href="/app/classes/@c.Id">Voir le suivi</a>
                         </div>
                     </article>

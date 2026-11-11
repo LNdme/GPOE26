@@ -146,42 +146,6 @@ public class SpaceService(UserContext db, IConfiguration config)
         return true;
     }
 
-    /// <summary>Ajoute le rôle s'il manque. Un rôle retiré (Removed) n'est pas rendu ici.</summary>
-    public async Task EnsureMemberAsync(Guid organizationId, Guid userId, OrganizationRole role)
-    {
-        var exists = db.OrganizationMembers.Local.Any(m => m.OrganizationId == organizationId && m.UserId == userId && m.Role == role)
-            || await db.OrganizationMembers.AnyAsync(m => m.OrganizationId == organizationId && m.UserId == userId && m.Role == role);
-        if (!exists)
-            db.OrganizationMembers.Add(new OrganizationMember { OrganizationId = organizationId, UserId = userId, Role = role });
-    }
-
-    /// <summary>
-    /// Inscrit sur la liste de l'espace un élève entré par l'ancien chemin (code de classe ou clé partagée),
-    /// avec un matricule généré. S'il y figure déjà, renseigne seulement sa classe si elle manquait.
-    /// </summary>
-    public async Task EnsureStudentAsync(Guid organizationId, AppUser student, Guid? classroomId)
-    {
-        var row = db.OrganizationStudents.Local.FirstOrDefault(s => s.OrganizationId == organizationId && s.UserId == student.Id)
-            ?? await db.OrganizationStudents.FirstOrDefaultAsync(s => s.OrganizationId == organizationId && s.UserId == student.Id);
-        if (row is not null)
-        {
-            row.ClassroomId ??= classroomId;
-            return;
-        }
-
-        var now = DateTime.UtcNow;
-        db.OrganizationStudents.Add(new OrganizationStudent
-        {
-            OrganizationId = organizationId,
-            Matricule = SpaceRules.Matricule(now.Year, await NextMatriculeNumberAsync(organizationId)),
-            LastName = student.Username,
-            ClassroomId = classroomId,
-            UserId = student.Id,
-            Status = StudentStatus.Active,
-            ActivatedAt = now
-        });
-    }
-
     /// <summary>
     /// Numéro suivant, réservé par un UPDATE atomique : deux inscriptions simultanées n'ont jamais le même.
     /// Un espace pas encore enregistré (créé dans cette unité de travail) est compté en mémoire.

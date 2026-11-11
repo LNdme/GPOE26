@@ -27,7 +27,7 @@ public enum RedeemError
 /// Un utilisateur est Premium s'il possède un abonnement individuel en cours
 /// (StudentPremium, Teacher, essai) ou s'il a activé une clé dont l'abonnement est en cours.
 /// </summary>
-public class SubscriptionService(UserContext db, IConfiguration config, PlanCatalogClient catalog, SpaceService spaces)
+public class SubscriptionService(UserContext db, IConfiguration config, PlanCatalogClient catalog)
 {
     public int TrialDays => config.GetValue("Subscriptions:TrialDays", 14);
     public int FamilySeats => config.GetValue("Subscriptions:FamilySeats", 3);
@@ -198,16 +198,6 @@ public class SubscriptionService(UserContext db, IConfiguration config, PlanCata
 
         db.KeyRedemptions.Add(new KeyRedemption { KeyId = key!.Id, UserId = user.Id });
 
-        // Une licence d'organisation rattache l'utilisateur à sa structure : enseignant de l'espace,
-        // ou élève de sa liste (sans classe tant que le responsable ne l'a pas placé)
-        if (key.Subscription.OrganizationId is { } orgId)
-        {
-            user.OrganizationId = orgId;
-            if (user.Role == UserRole.Teacher)
-                await spaces.EnsureMemberAsync(orgId, user.Id, OrganizationRole.Teacher);
-            else if (user.Role == UserRole.Student)
-                await spaces.EnsureStudentAsync(orgId, user, classroomId: null);
-        }
 
         await db.SaveChangesAsync();
         return RedeemError.None;

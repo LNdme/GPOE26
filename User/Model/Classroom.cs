@@ -1,8 +1,8 @@
 namespace User.Model
 {
     /// <summary>
-    /// Une classe (établissement scolaire) ou un groupe (autre institution) animé par un enseignant.
-    /// Les élèves la rejoignent avec son code d'invitation.
+    /// Une classe (établissement scolaire) ou un groupe (autre institution) d'un espace.
+    /// Les élèves y entrent avec leur code personnel.
     /// </summary>
     public class Classroom
     {
@@ -29,8 +29,11 @@ namespace User.Model
 
         public string? Subject { get; set; }
 
-        /// <summary>Code partagé aux élèves pour rejoindre la classe (ex: "K7P-Q2M")</summary>
-        public required string InviteCode { get; set; }
+        /// <summary>
+        /// Ancien code de classe commun (ex : « K7P-Q2M »), qui ne sert plus : un élève entre par son code personnel
+        /// (docs/PLAN-ETABLISSEMENT.md, lot 7). Gardé pour les classes qui en avaient un ; vide pour les nouvelles.
+        /// </summary>
+        public string? InviteCode { get; set; }
 
         public bool IsArchived { get; set; }
 

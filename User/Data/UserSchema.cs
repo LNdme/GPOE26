@@ -244,6 +244,9 @@ public static class UserSchema
         // Code « en blanc » (lot 3, Q8) : la classe où l'élève entrera, faute de ligne élève déjà préparée
         @"ALTER TABLE ""AccessCodes"" ADD COLUMN IF NOT EXISTS ""ClassroomId"" uuid REFERENCES ""Classrooms"" (""Id"") ON DELETE SET NULL",
 
+        // Le code de classe commun ne sert plus (lot 7) : les nouvelles classes n'en ont pas
+        @"ALTER TABLE ""Classrooms"" ALTER COLUMN ""InviteCode"" DROP NOT NULL",
+
         // Reprises de données à ne jouer qu'une fois (cf. UserDataMigrations)
         @"CREATE TABLE IF NOT EXISTS ""SchemaVersions"" (
             ""Version"" integer NOT NULL,

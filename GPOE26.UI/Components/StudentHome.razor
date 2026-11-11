@@ -5,6 +5,8 @@
 @inject IClassroomApi Classrooms
 @inject IFamilyApi Family
 @inject IAgentApi Agent
+@inject ISpaceApi Spaces
+@inject IAccountApi Account
 
 <div class="ga-page">
     <div class="ga-head">
@@ -206,11 +208,13 @@
                         <div class="ga-item"><span class="ga-avatar green">@Labels.Initial(c.Name)</span><span class="grow"><strong>@c.Name</strong><span class="ga-small ga-muted">@c.TeacherName</span></span></div>
                     }
                     <div class="ga-field">
-                        <label for="join-code">Rejoindre une classe</label>
+                        <label for="join-code">J'ai un code personnel</label>
                         <div class="ga-row">
-                            <input id="join-code" class="ga-input" style="flex:1 1 170px; min-width:0" placeholder="Code de la classe" @bind="_joinCode" />
-                            <button class="ga-btn" type="submit" disabled="@string.IsNullOrWhiteSpace(_joinCode)">Rejoindre</button>
+                            <input id="join-code" class="ga-input" style="flex:1 1 170px; min-width:0; font-family:var(--ga-mono); text-transform:uppercase"
+                                   placeholder="GP-XXXX-XXXX" autocomplete="off" spellcheck="false" @bind="_joinCode" @bind:event="oninput" />
+                            <button class="ga-btn" type="submit" disabled="@string.IsNullOrWhiteSpace(_joinCode)">Valider</button>
                         </div>
+                        <span class="ga-small ga-muted">Donné par ton établissement ou ton enseignant : il te place dans ta classe.</span>
                     </div>
                     <Alert Message="@_joinMessage" Kind="@(_joinOk ? "success" : "error")" />
                 </form>
@@ -322,15 +326,20 @@
         }
     }
 
+    /// <summary>Code personnel (GP-…) : rattache le compte à l'établissement ou à l'enseignant, et à sa classe.</summary>
     private async Task JoinAsync()
     {
-        var result = await Classrooms.JoinAsync(_joinCode!.Trim());
+        var before = _classes.Select(c => c.Id).ToHashSet();
+        var result = await Spaces.RedeemCodeAsync(_joinCode!.Trim());
         _joinOk = result.Ok;
-        _joinMessage = result.Ok ? $"Tu as rejoint « {result.Value!.Name} »." : result.Error;
+        _joinMessage = result.Error;
         if (result.Ok)
         {
             _joinCode = null;
             _classes = (await Classrooms.MineAsync()).Value ?? _classes;
+            var joined = _classes.FirstOrDefault(c => !before.Contains(c.Id));
+            _joinMessage = joined is null ? "Code validé." : $"Tu as rejoint « {joined.Name} ».";
+            if ((await Account.MeAsync()).Value is { } profile) await Session.UpdateProfileAsync(profile);
             var assessments = await Assessments.MineAsStudentAsync();
             if (assessments.Ok)
                 _todo = assessments.Value!.Where(a => a.Status == AssessmentStatus.Published && (a.HasAttemptInProgress || a.AttemptsUsed == 0)).ToList();

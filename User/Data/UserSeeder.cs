@@ -12,9 +12,7 @@ public static class UserSeeder
     public static readonly Guid ParentId = Guid.Parse("44444444-4444-4444-4444-444444444444");
     public static readonly Guid DemoSchoolId = Guid.Parse("55555555-5555-5555-5555-555555555555");
 
-    /// <summary>Clé de licence de l'établissement de démonstration (développement uniquement)</summary>
-    public const string DemoLicenseKey = "ETB-DEMO-PROF";
-    public const string DemoInviteCode = "DEM-TLC";
+    public const string DemoClassName = "Terminale C";
 
     public static async Task SeedAsync(UserContext db, bool isDevelopment)
     {
@@ -47,7 +45,7 @@ public static class UserSeeder
         if (teacher is { OrganizationId: null }) teacher.OrganizationId = DemoSchoolId;
 
         await db.Classrooms
-            .Where(c => c.InviteCode == DemoInviteCode && c.OrganizationId == null)
+            .Where(c => c.Name == DemoClassName && c.TeacherId == TeacherId && c.OrganizationId == null)
             .ExecuteUpdateAsync(s => s.SetProperty(c => c.OrganizationId, DemoSchoolId));
 
         if (await db.AppUsers.AnyAsync(u => u.Id == AdminId)
@@ -154,19 +152,20 @@ public static class UserSeeder
             EndsAt = DateTime.UtcNow.AddYears(1)
         };
         db.Subscriptions.Add(license);
-        db.SubscriptionKeys.Add(new SubscriptionKey { Code = DemoLicenseKey, SubscriptionId = license.Id, MaxUses = license.Seats });
-
+        // Plus de clé partagée : élèves et enseignants entrent par leur code personnel (docs/PLAN-ETABLISSEMENT.md).
+        // La reprise des données (UserDataMigrations), jouée juste après, range la classe dans l'année en cours,
+        // fait de ProfMaths son professeur principal et inscrit EleveTest sur la liste du lycée.
         if (await db.AppUsers.AnyAsync(u => u.Id == TeacherId)
-            && !await db.Classrooms.AnyAsync(c => c.InviteCode == DemoInviteCode))
+            && !await db.Classrooms.AnyAsync(c => c.Name == DemoClassName && c.TeacherId == TeacherId))
         {
             var classroom = new Classroom
             {
-                Name = "Terminale C",
+                Name = DemoClassName,
                 TeacherId = TeacherId,
+                OrganizationId = DemoSchoolId,
                 Level = "Terminale",
                 SubSystem = SchoolSubSystem.Francophone,
-                Subject = "Mathématiques",
-                InviteCode = DemoInviteCode
+                Subject = "Mathématiques"
             };
             db.Classrooms.Add(classroom);
             if (await db.AppUsers.AnyAsync(u => u.Id == StudentId))

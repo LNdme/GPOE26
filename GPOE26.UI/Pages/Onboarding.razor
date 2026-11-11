@@ -1,7 +1,6 @@
 @page "/register"
 @layout FocusLayout
 @inject IAccountApi Account
-@inject IClassroomApi Classrooms
 @inject IFamilyApi Family
 @inject SessionState Session
 @inject NavigationManager Nav
@@ -213,6 +212,7 @@
         if (key == "classe") { _a.Remove("serie"); _a["exam"] = ExamFor.GetValueOrDefault(value); }
         if (key == "struct") { _a.Remove("acces"); }
         if (key == "acces") { _a.Remove("cle"); _a.Remove("formule"); }
+        if ((key == "codeperso" && value == "oui") || (key == "acces" && value == "code")) { Nav.NavigateTo("/code"); return; }
         Set(key, value);
     }
 
@@ -262,18 +262,22 @@
 
         if (role == "eleve")
         {
+            s.Add(new("codeperso", StepKind.Choice, "Ton établissement ou ton enseignant t'a-t-il donné un code personnel ?",
+                "Il commence par GP- : il crée ton compte et te place directement dans ta classe.",
+                [new("oui", "Oui, j'ai un code", "Je crée mon compte avec"), new("non", "Non, je m'inscris seul", "Pour un usage personnel")]));
             s.Add(new("name", StepKind.Text, "Bienvenue ! Comment devons-nous t'appeler ?", Label: "Ton prénom", Placeholder: "Ton prénom"));
             School(s, child: false, greeting: name);
             s.Add(new("mat", StepKind.Multi, "Quelles matières veux-tu renforcer ?", "Choisis-en autant que tu veux.",
                 (Get("sys") == "en" ? EnSubjects : FrSubjects).Select(m => new Opt(m, m)).ToArray()));
             s.Add(new("temps", StepKind.Choice, "Combien de temps peux-tu étudier par jour ?", "Tu pourras le modifier à tout moment.",
                 [new("15", "15 min", "Léger"), new("30", "30 min", "Régulier"), new("45", "45 min", "Sérieux"), new("60", "1 h ou plus", "Intensif")]));
-            s.Add(new("invite", StepKind.Text, "Ton enseignant t'a-t-il donné un code de classe ?", "Tu pourras aussi rejoindre une classe plus tard.",
-                Label: "Code de classe (facultatif)", Placeholder: "ex. K7P-Q2M", Optional: true));
             LearnerAccess(s);
         }
         else if (role == "etudiant")
         {
+            s.Add(new("codeperso", StepKind.Choice, "Ton établissement ou ton enseignant t'a-t-il donné un code personnel ?",
+                "Il commence par GP- : il crée ton compte et te place directement dans ta classe.",
+                [new("oui", "Oui, j'ai un code", "Je crée mon compte avec"), new("non", "Non, je m'inscris seul", "Pour un usage personnel")]));
             s.Add(new("name", StepKind.Text, "Bienvenue ! Comment devons-nous t'appeler ?", Label: "Ton prénom", Placeholder: "Ton prénom"));
             s.Add(new("etab", StepKind.Text, "Où étudies-tu ?", Label: "Université ou école", Placeholder: "ex. Université de Yaoundé I", Optional: true));
             s.Add(new("cycle", StepKind.Choice, "En quelle année es-tu ?", Opts: HigherCycles.Select(c => new Opt(c, c)).ToArray()));
@@ -281,8 +285,6 @@
             s.Add(new("mat", StepKind.Multi, "Quels domaines veux-tu travailler ?", "Choisis-en autant que tu veux.", HigherSubjects.Select(m => new Opt(m, m)).ToArray()));
             s.Add(new("temps", StepKind.Choice, "Combien de temps peux-tu étudier par jour ?", "Tu pourras le modifier à tout moment.",
                 [new("30", "30 min", "Régulier"), new("60", "1 h", "Sérieux"), new("120", "2 h", "Intensif"), new("180", "3 h ou plus", "Préparation d'examens")]));
-            s.Add(new("invite", StepKind.Text, "Ton enseignant t'a-t-il donné un code de cours ?", "Tu pourras aussi rejoindre un groupe plus tard.",
-                Label: "Code (facultatif)", Placeholder: "ex. K7P-Q2M", Optional: true));
             LearnerAccess(s);
         }
         else if (role == "enseignant")
@@ -307,19 +309,16 @@
             else
             {
                 s.Add(new("ensMat", StepKind.Multi, "Quelles matières enseignez-vous ?", "Plusieurs choix possibles.", FrSubjects.Select(m => new Opt(m, m)).ToArray()));
-                s.Add(new("ensCls", StepKind.Multi, "Dans quelles classes ?", "Une classe sera créée pour chacune, avec son code d'invitation.",
+                s.Add(new("ensCls", StepKind.Multi, "Dans quelles classes ?", "Une classe sera créée dans votre espace pour chacune ; vous y inscrirez vos élèves, qui entreront avec un code personnel.",
                     FrClasses.Concat(EnClasses).Select(c => new Opt(c, c)).ToArray()));
             }
             var access = new List<Opt>();
             if (Get("struct") != "indep")
-                access.Add(new("cle", other ? "J'ai la clé de mon institution" : "J'ai la clé de mon établissement", "Fournie par votre administration"));
+                access.Add(new("code", "J'ai un code enseignant", other ? "Donné par mon institution" : "Donné par la direction de mon établissement"));
             access.Add(new("payer", "Je prends mon propre abonnement", "Abonnement enseignant individuel"));
             access.Add(new("essai", "Essayer gratuitement", "Essai sans engagement"));
             s.Add(new("acces", StepKind.Choice, "Comment souhaitez-vous accéder à GPOE26 ?", Opts: access.ToArray()));
-            if (Get("acces") == "cle")
-                s.Add(new("cle", StepKind.Text, other ? "Saisissez la clé de votre institution" : "Saisissez la clé de votre établissement",
-                    Label: "Clé d'abonnement", Placeholder: "ex. ETB-LYC4-H8MQ", Help: "Elle vous rattache automatiquement à la licence de votre structure."));
-            else if (Get("acces") == "payer")
+            if (Get("acces") == "payer")
                 s.Add(new("formule", StepKind.Choice, "Choisissez votre formule", Opts:
                     [new("Monthly", "Enseignant · mensuel"), new("Yearly", "Enseignant · annuel")]));
             s.Add(new("account", StepKind.Account, "Dernière étape : créez votre compte"));
@@ -355,7 +354,7 @@
     {
         s.Add(new("acces", StepKind.Choice, "Comment veux-tu accéder à GPOE26 ?", "Les cours partagés par tes enseignants restent toujours gratuits.",
         [
-            new("cle", "J'ai une clé d'abonnement", "Donnée par un parent ou par ton établissement"),
+            new("cle", "J'ai une clé d'abonnement", "Donnée par un parent (formule Famille)"),
             new("payer", "Je prends mon abonnement", "Mobile Money ou carte bancaire"),
             new("gratuit", "Commencer gratuitement", "Tu pourras passer à Premium plus tard")
         ]));
@@ -409,7 +408,6 @@
             ExamTarget = role == "eleve" ? exam : null,
             FocusSubjects = learner ? GetList("mat").ToList() : null,
             DailyStudyMinutes = learner && int.TryParse(Get("temps"), out var m) ? m : null,
-            InviteCode = learner && !string.IsNullOrWhiteSpace(Get("invite")) ? Get("invite")!.Trim() : null,
             TeachingContext = role == "enseignant"
                 ? Get("struct") switch { "autre" => TeachingContext.Institution, "indep" => TeachingContext.Independent, _ => TeachingContext.School }
                 : null,
@@ -454,14 +452,10 @@
         {
             var other = Get("struct") == "autre";
             _doneTitle = $"Bienvenue, {name} !";
-            _doneText = other
-                ? "Votre groupe est créé. Partagez son code avec vos apprenants pour qu'ils vous rejoignent."
-                : "Vos classes sont créées. Partagez leur code avec vos élèves pour qu'ils vous rejoignent.";
-            _doneText += " Vous pouvez aussi remettre à chaque élève un code personnel (avec son matricule et sa classe) depuis « Mes élèves et codes ».";
+            _doneText = (other ? "Votre groupe est créé." : "Vos classes sont créées.")
+                        + " Inscrivez vos élèves et remettez à chacun son code personnel depuis « Mes élèves et codes » :"
+                        + " en l'activant, il crée son compte et entre dans sa classe.";
             if (Get("acces") == "payer") await CheckoutAsync(SubscriptionPlan.Teacher, period);
-            var classes = await Classrooms.MineAsync();
-            foreach (var c in classes.Value ?? [])
-                _codes.Add(new($"Code d'invitation — {c.Name}", c.InviteCode ?? "—"));
         }
         else
         {

@@ -31,10 +31,6 @@
                 <h1>@_class.Name</h1>
                 <p>
                     @_members.Count @(_class.Kind == ClassroomKind.Group ? "apprenant(s)" : "élève(s)")@(_class.Subject is { Length: > 0 } ? $" · {_class.Subject}" : "")
-                    @if (_class.UsesInviteCode)
-                    {
-                        <text> · code d'invitation <span class="ga-code">@_class.InviteCode</span></text>
-                    }
                     @if (_class.Teachers is { Count: > 1 } teachers)
                     {
                         <br /><span class="ga-small">Enseignants : @string.Join(" · ", teachers.Select(t => t.Subject.Length > 0 ? $"{t.Username} ({t.Subject})" : t.Username))</span>
@@ -42,9 +38,9 @@
                 </p>
             </div>
             <div class="ga-actions">
-                @if (_class.UsesInviteCode)
+                @if (_class.OrganizationId is { } space && (_class.IsManager || _class.SpaceType == OrganizationType.Independent))
                 {
-                    <button class="ga-btn secondary" @onclick="RegenerateAsync">Nouveau code</button>
+                    <a class="ga-btn secondary" href="/app/etablissement/@space?onglet=eleves">Élèves et codes</a>
                 }
                 @if (_class.MyRole != ClassroomRole.Manager)
                 {
@@ -71,9 +67,7 @@
             </div>
             @if (_members.Count == 0)
             {
-                <div class="ga-empty"><span>@(_class.UsesInviteCode
-                    ? (MarkupString)$"Aucun élève pour l'instant : partagez le code <strong>{_class.InviteCode}</strong>."
-                    : (MarkupString)"Aucun élève pour l'instant : ils arrivent en activant le code personnel que leur donne l'établissement.")</span></div>
+                <div class="ga-empty"><span>Aucun élève pour l'instant : chacun arrive en activant son code personnel (« Élèves et codes »).</span></div>
             }
             else
             {
@@ -178,13 +172,6 @@
         _courseTitles = (courses.Result.Value ?? new()).ToDictionary(c => c.Id, c => c.Title);
         _error = cls.Result.Error ?? progress.Result.Error;
         _loading = false;
-    }
-
-    private async Task RegenerateAsync()
-    {
-        var r = await Classrooms.RegenerateCodeAsync(Id);
-        if (!r.Ok) { _error = r.Error; return; }
-        _class = (await Classrooms.GetAsync(Id)).Value ?? _class;
     }
 
     private async Task RemoveAsync(ClassroomMember m)

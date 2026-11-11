@@ -230,8 +230,7 @@ public static class OrganizationEndpoints
                 OrganizationId = orgId,
                 SchoolYearId = yearId,
                 Level = req.Level,
-                SubSystem = req.SubSystem,
-                InviteCode = await classrooms.UniqueInviteCodeAsync()
+                SubSystem = req.SubSystem
             };
             db.Classrooms.Add(classroom);
             await db.SaveChangesAsync();
