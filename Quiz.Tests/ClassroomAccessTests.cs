@@ -41,4 +41,22 @@ public class ClassroomAccessTests
         var classes = JsonSerializer.Deserialize<List<ClassroomRef>>(json, JsonDefaults.Options)!;
         Assert.Single(ClassroomRef.TaughtBy(classes, _me));
     }
+
+    [Fact]
+    public void Le_gestionnaire_voit_toutes_les_evaluations_un_enseignant_les_siennes()
+    {
+        Assert.True(ClassroomRef.SeesAllAssessments(new ClassroomRef(Guid.NewGuid(), "Tle C", null, _main, "Manager", IsManager: true)));
+        // Enseignant qui gère aussi l'établissement : son rôle affiché reste « Teacher », mais il voit tout
+        Assert.True(ClassroomRef.SeesAllAssessments(new ClassroomRef(Guid.NewGuid(), "Tle C", null, _main, "Teacher", IsManager: true)));
+        Assert.False(ClassroomRef.SeesAllAssessments(new ClassroomRef(Guid.NewGuid(), "Tle C", null, _main, "Teacher")));
+        Assert.False(ClassroomRef.SeesAllAssessments(null));
+    }
+
+    [Fact]
+    public void Le_detail_de_classe_du_service_User_dit_s_il_gere()
+    {
+        var json = $$"""{"id":"{{Guid.NewGuid()}}","name":"Tle C","inviteCode":null,"teacherId":"{{_main}}","myRole":"Teacher","isManager":true}""";
+        var classroom = JsonSerializer.Deserialize<ClassroomRef>(json, JsonDefaults.Options);
+        Assert.True(ClassroomRef.SeesAllAssessments(classroom));
+    }
 }

@@ -26,6 +26,8 @@ public record JoinClassroomRequest([Required] string Code);
 /// Quiz et Cours lisent pour savoir s'il peut y publier. MySubjects : ses matières dans la classe.
 /// InviteCode n'est renseigné que pour un enseignant de la classe ou un gestionnaire.
 /// SpaceType : établissement (les élèves entrent par leur code personnel) ou enseignant indépendant (code de classe accepté).
+/// IsManager (détail d'une classe seulement) : l'utilisateur gère l'espace de la classe, même s'il y enseigne aussi —
+/// le suivi lui montre alors toutes les évaluations de la classe, pas seulement les siennes.
 /// </summary>
 public record ClassroomDto(
     Guid Id,
@@ -44,7 +46,8 @@ public record ClassroomDto(
     List<ClassTeacherDto>? Teachers = null,
     Guid? OrganizationId = null,
     Guid? SchoolYearId = null,
-    OrganizationType? SpaceType = null
+    OrganizationType? SpaceType = null,
+    bool IsManager = false
 );
 
 public record ClassroomMemberDto(

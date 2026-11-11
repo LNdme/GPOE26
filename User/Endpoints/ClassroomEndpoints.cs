@@ -60,7 +60,7 @@ public static class ClassroomEndpoints
         .Produces<List<ClassroomDto>>();
 
         // ── GET /classrooms/{id} ──────────────────────────────────────────────────
-        group.MapGet("/{id:guid}", async (Guid id, ClaimsPrincipal principal, UserContext db, ClassroomService classrooms) =>
+        group.MapGet("/{id:guid}", async (Guid id, ClaimsPrincipal principal, UserContext db, ClassroomService classrooms, SpaceService spaces) =>
         {
             var userId = principal.GetUserId();
             var classroom = await db.Classrooms.FirstOrDefaultAsync(c => c.Id == id);
@@ -68,7 +68,9 @@ public static class ClassroomEndpoints
                 return Results.NotFound();
 
             var count = await db.ClassroomMembers.CountAsync(m => m.ClassroomId == id);
-            return Results.Ok((await ToDtosAsync(db, [(classroom, count)], userId.Value, _ => role)).Single());
+            var isManager = classroom.OrganizationId is { } orgId
+                            && await spaces.HasRoleAsync(orgId, userId.Value, OrganizationRole.Owner, OrganizationRole.Manager);
+            return Results.Ok((await ToDtosAsync(db, [(classroom, count)], userId.Value, _ => role)).Single() with { IsManager = isManager });
         })
         .WithSummary("Détail d'une classe (enseignant, gestionnaire ou membre)")
         .Produces<ClassroomDto>()

@@ -20,7 +20,14 @@
     {
         <div class="ga-head">
             <div>
-                <a class="ga-back" href="/app"><Icon Name="left" /> Mes classes</a>
+                @if (ManagerView)
+                {
+                    <a class="ga-back" href="/app/etablissement/@_class.OrganizationId?onglet=classes"><Icon Name="left" /> Mon établissement</a>
+                }
+                else
+                {
+                    <a class="ga-back" href="/app"><Icon Name="left" /> Mes classes</a>
+                }
                 <h1>@_class.Name</h1>
                 <p>
                     @_members.Count @(_class.Kind == ClassroomKind.Group ? "apprenant(s)" : "élève(s)")@(_class.Subject is { Length: > 0 } ? $" · {_class.Subject}" : "")
@@ -39,7 +46,10 @@
                 {
                     <button class="ga-btn secondary" @onclick="RegenerateAsync">Nouveau code</button>
                 }
-                <a class="ga-btn" href="/app/evaluations/nouvelle">Nouvelle épreuve</a>
+                @if (_class.MyRole != ClassroomRole.Manager)
+                {
+                    <a class="ga-btn" href="/app/evaluations/nouvelle">Nouvelle épreuve</a>
+                }
             </div>
         </div>
         <Alert Message="@_error" />
@@ -73,7 +83,7 @@
                             <tr>
                                 <th scope="col">Élève</th>
                                 <th scope="col">Dernière connexion</th>
-                                @foreach (var a in _progress?.Assessments ?? []) { <th scope="col" style="text-align:center" title="@a.Title">@Short(a.Title)</th> }
+                                @foreach (var a in _progress?.Assessments ?? []) { <th scope="col" style="text-align:center" title="@(a.Subject is { Length: > 0 } s ? $"{a.Title} · {s}" : a.Title)">@Short(a.Title)@if (ManagerView && a.Subject is { Length: > 0 } subject) { <br /><small class="ga-muted">@subject</small> }</th> }
                                 @foreach (var c in CourseIds) { <th scope="col" style="text-align:center">Maîtrise · @Short(CourseTitle(c))</th> }
                                 <th scope="col">Moyenne</th>
                             </tr>
@@ -128,7 +138,9 @@
 
 @code {
     [Parameter] public Guid Id { get; set; }
-    protected override UserRole[]? AllowedRoles => [UserRole.Teacher];
+    // Gestionnaire d'un établissement (enseignant ou non) : il suit toutes les évaluations de la classe
+    protected override UserRole[]? AllowedRoles => [UserRole.Teacher, UserRole.Parent];
+    private bool ManagerView => _class?.IsManager == true;
 
     private bool _loading = true, _onlyHelp;
     private string? _error;

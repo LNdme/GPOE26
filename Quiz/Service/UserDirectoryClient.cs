@@ -7,8 +7,14 @@ namespace Quiz.Service;
 /// Classe renvoyée par le service User. MyRole : place de l'utilisateur dans la classe (« Teacher », « Manager »,
 /// « Student ») ; une classe peut avoir plusieurs enseignants, TeacherId n'est que le professeur principal.
 /// </summary>
-public record ClassroomRef(Guid Id, string Name, string? InviteCode, Guid TeacherId, string? MyRole = null)
+public record ClassroomRef(Guid Id, string Name, string? InviteCode, Guid TeacherId, string? MyRole = null, bool IsManager = false)
 {
+    /// <summary>
+    /// Le suivi d'une classe montre toutes ses évaluations au gestionnaire de l'espace (lot 6), et seulement
+    /// les siennes à un enseignant : chacun suit sa matière.
+    /// </summary>
+    public static bool SeesAllAssessments(ClassroomRef? classroom) => classroom?.IsManager == true;
+
     /// <summary>
     /// Classes où l'utilisateur enseigne : les seules qu'une évaluation peut viser.
     /// Sans MyRole (service User antérieur au lot 2), on retombe sur le professeur principal.
@@ -37,7 +43,10 @@ public class UserDirectoryClient(HttpClient http, IHttpContextAccessor context)
     public async Task<List<ClassroomRef>> MyClassroomsAsync() =>
         await GetAsync<List<ClassroomRef>>("/classrooms/mine") ?? new();
 
-    /// <summary>Élèves d'une classe dont l'utilisateur est l'enseignant (null sinon).</summary>
+    /// <summary>Une classe vue par l'utilisateur (place, gestionnaire ou non) ; null s'il n'y a pas accès.</summary>
+    public Task<ClassroomRef?> ClassroomAsync(Guid classroomId) => GetAsync<ClassroomRef>($"/classrooms/{classroomId}");
+
+    /// <summary>Élèves d'une classe, pour ses enseignants et les gestionnaires de son espace (null sinon).</summary>
     public Task<List<MemberRef>?> MembersAsync(Guid classroomId) =>
         GetAsync<List<MemberRef>>($"/classrooms/{classroomId}/members");
 

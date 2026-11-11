@@ -2,7 +2,7 @@
 
 Rédigé le 11 novembre 2026, sur la branche `feat/site-admin-navbar`. Questions Q1 à Q9 validées le même jour.
 
-> **Avancement :** lots 1 à 4 commités le 11 novembre 2026 (`e57fbc9`, `1d68d64`, `398154a`, non poussés) ; lot 5 fait le même jour (non commité). Voir « Lot 1 … 5 : ce qui a été fait » en fin de document. Lots 6 et 7 à faire.
+> **Avancement :** lots 1 à 5 commités le 11 novembre 2026 (`e57fbc9`, `1d68d64`, `398154a`, `2ffbbb0`, non poussés) ; lot 6 fait le même jour (non commité). Voir « Lot 1 … 6 : ce qui a été fait » en fin de document. Reste le lot 7.
 
 ## Le but en une phrase
 
@@ -307,6 +307,16 @@ Une bonne partie de l'enseignant indépendant était déjà en place (espace `In
 - Message « places pleines » neutre (établissement ou enseignant).
 
 **Vérifications :** tests 384 / 384 (`GPOE26.Logic.Tests`) et 61 / 61 (`Quiz.Tests`) ; scénario par l'API sur une copie jetable de la base, avec un forfait réglé à 2 places (`Subscriptions__IndependentSeats=2`), 17 contrôles : espace créé à l'inscription, classe et élèves avec matricules générés à la suite, 3e élève refusé quand les 2 places sont prises, Premium des élèves dès l'essai de l'enseignant, groupe personnel d'un enseignant de lycée rangé chez lui et pas au lycée, indépendant inscrit avec deux classes dans un seul espace.
+
+## Lot 6 : ce qui a été fait (11 novembre 2026)
+
+- **Suivi d'une classe** (Quiz `GET /progress/classrooms/{id}`) : un enseignant voit ses évaluations (sa matière) ; le **gestionnaire** de l'espace voit celles de **tous** les enseignants de la classe, avec leur matière. S'il enseigne aussi dans la classe, il voit tout (`IsManager` dans le détail de la classe, côté User).
+- La route n'est plus réservée aux comptes enseignants : un responsable peut avoir un compte parent. L'accès reste décidé par le service User, qui ne donne la liste des élèves qu'aux enseignants de la classe et aux gestionnaires (un élève ou un enseignant d'ailleurs reçoit 404).
+- **Écrans** : bouton « Suivi » sur chaque classe de « Mon établissement » ; la page de la classe s'ouvre aussi aux comptes parent gestionnaires, avec un retour vers « Mon établissement », la matière sous chaque évaluation et sans « Nouvelle épreuve ».
+
+**Vérifications :** tests 384 / 384 et 63 / 63 (dont la règle « qui voit tout » et la lecture de `isManager`) ; scénario avec les vrais services User et Quiz sur une copie jetable de la base, 11 contrôles : un responsable à compte parent, deux enseignants (maths, physique) qui publient chacun une évaluation pour la même classe — ce qui vérifie aussi en vrai le co-enseignant du lot 2 —, chaque enseignant voit la sienne, le responsable voit les deux avec leur matière, l'élève et un enseignant d'ailleurs sont refusés, l'enseignant de maths nommé gestionnaire voit tout. Page de suivi essayée dans le navigateur avec le compte parent responsable.
+
+**Remarque (déjà là avant) :** la page d'une classe attend le service Cours (titres des cours) avant de s'afficher ; si Cours est arrêté, elle reste sur « Chargement… ».
 
 ---
 

@@ -101,7 +101,7 @@ public record Classroom(
     Guid Id, string Name, ClassroomKind Kind, string? Level, SchoolSubSystem? SubSystem, string? Subject,
     string? InviteCode, Guid TeacherId, string TeacherName, int MemberCount, DateTime CreatedAt,
     ClassroomRole? MyRole = null, List<string>? MySubjects = null, List<ClassTeacher>? Teachers = null,
-    Guid? OrganizationId = null, Guid? SchoolYearId = null, OrganizationType? SpaceType = null)
+    Guid? OrganizationId = null, Guid? SchoolYearId = null, OrganizationType? SpaceType = null, bool IsManager = false)
 {
     /// <summary>Le code de classe commun sert encore (enseignant indépendant, ou classe sans espace).</summary>
     public bool UsesInviteCode => SpaceType is null or OrganizationType.Independent;

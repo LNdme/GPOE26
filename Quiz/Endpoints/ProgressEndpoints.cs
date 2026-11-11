@@ -15,28 +15,32 @@ public static class ProgressEndpoints
         var group = app.MapGroup("/progress").WithTags("Suivi").RequireAuthorization();
 
         // ── GET /progress/classrooms/{classroomId} ────────────────────────────────
-        // Tableau de l'enseignant : élèves × évaluations, et maîtrise par cours.
+        // Tableau d'une classe : élèves × évaluations, et maîtrise par cours. Le service User décide qui y a accès
+        // (enseignants de la classe, gestionnaires de son espace) : il ne donne la liste des élèves qu'à eux.
+        // Un enseignant voit ses évaluations (sa matière) ; un gestionnaire, celles de tous les enseignants (lot 6).
         group.MapGet("/classrooms/{classroomId:guid}", async (Guid classroomId, ClaimsPrincipal principal,
             EvaluationContext db, UserDirectoryClient users, ProgressService progress) =>
         {
-            var members = await users.MembersAsync(classroomId);
+            var classroom = users.ClassroomAsync(classroomId);
+            var membersTask = users.MembersAsync(classroomId);
+            var members = await membersTask;
             if (members is null) return Results.NotFound();
 
-            var teacherId = principal.UserId();
-            var assessments = await db.Assessments.Include(a => a.Questions)
-                .Where(a => a.TeacherId == teacherId && a.Status != AssessmentStatus.Draft && a.ClassroomIds.Contains(classroomId))
-                .AsNoTracking()
-                .ToListAsync();
+            var userId = principal.UserId();
+            var query = db.Assessments.Include(a => a.Questions)
+                .Where(a => a.Status != AssessmentStatus.Draft && a.ClassroomIds.Contains(classroomId));
+            if (!ClassroomRef.SeesAllAssessments(await classroom))
+                query = query.Where(a => a.TeacherId == userId);
+            var assessments = await query.AsNoTracking().ToListAsync();
 
             var computed = await progress.ComputeAsync(members.Select(m => m.Id).ToList(), assessments, onlyReleased: false);
             var students = members.Select(m => computed[m.Id] with { Username = m.Username, LastLoginAt = m.LastLoginAt }).ToList();
             var headers = assessments.OrderBy(a => a.DueAt ?? a.PublishedAt ?? a.CreatedAt)
-                .Select(a => new AssessmentHeaderDto(a.Id, a.Title, a.Kind, a.DueAt, a.CourseId)).ToList();
+                .Select(a => new AssessmentHeaderDto(a.Id, a.Title, a.Kind, a.DueAt, a.CourseId, a.Subject)).ToList();
 
             return Results.Ok(new ClassroomProgressDto(classroomId, headers, students));
         })
-        .RequireAuthorization(Roles.Teacher)
-        .WithSummary("Suivi d'une classe")
+        .WithSummary("Suivi d'une classe (ses enseignants ; ses gestionnaires voient toutes les évaluations)")
         .Produces<ClassroomProgressDto>()
         .Produces(404);
 

@@ -215,7 +215,7 @@ public record CourseMastery(Guid CourseId, decimal Earned, decimal Max, double P
 public record StudentProgress(Guid StudentId, string? Username, DateTime? LastLoginAt, double? AverageOn20,
     List<AssessmentResult> Results, List<CourseMastery> Mastery);
 
-public record AssessmentHeader(Guid Id, string Title, AssessmentKind Kind, DateTime? DueAt, Guid? CourseId);
+public record AssessmentHeader(Guid Id, string Title, AssessmentKind Kind, DateTime? DueAt, Guid? CourseId, string? Subject = null);
 
 public record ClassroomProgress(Guid ClassroomId, List<AssessmentHeader> Assessments, List<StudentProgress> Students);
 

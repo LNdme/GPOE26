@@ -150,7 +150,8 @@ public record StudentProgressDto(
     Guid StudentId, string? Username, DateTime? LastLoginAt, double? AverageOn20,
     List<AssessmentResultDto> Results, List<CourseMasteryDto> Mastery);
 
-public record AssessmentHeaderDto(Guid Id, string Title, AssessmentKind Kind, DateTime? DueAt, Guid? CourseId);
+/// <summary>Subject : matière de l'évaluation (utile au gestionnaire, qui voit celles de tous les enseignants).</summary>
+public record AssessmentHeaderDto(Guid Id, string Title, AssessmentKind Kind, DateTime? DueAt, Guid? CourseId, string? Subject = null);
 
 public record ClassroomProgressDto(Guid ClassroomId, List<AssessmentHeaderDto> Assessments, List<StudentProgressDto> Students);
 
