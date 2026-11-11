@@ -80,9 +80,19 @@
                     @if (_photoPreview is not null) { <span class="ga-photo"><img src="@_photoPreview" alt="Photo en cours d'envoi" /></span> }
                     <p class="tu-text">@_sending</p>
                 </article>
-                <article class="tu-msg bot typing" aria-label="Le tuteur rédige sa réponse"><span></span><span></span><span></span>
-                    <span class="ga-small ga-muted" style="margin-left:8px">@(_photo is not null ? "Je lis ta copie…" : "Je réfléchis…")</span>
-                </article>
+                @if (_streamHtml is not null)
+                {
+                    @* La réponse s'affiche pendant que le tuteur l'écrit *@
+                    <article class="tu-msg bot streaming" aria-live="polite" aria-busy="true">
+                        <div class="tu-md">@((MarkupString)_streamHtml)</div>
+                    </article>
+                }
+                else
+                {
+                    <article class="tu-msg bot typing" aria-label="Le tuteur rédige sa réponse"><span></span><span></span><span></span>
+                        <span class="ga-small ga-muted" style="margin-left:8px">@(_photo is not null ? "Je lis ta copie…" : "Je réfléchis…")</span>
+                    </article>
+                }
             }
         }
     </div>
@@ -253,8 +263,12 @@
             imageId = upload.Value!.Id;
         }
 
-        var result = await Tutor.AskAsync(CourseId, text, imageId);
+        _stream.Clear();
+        _streamHtml = null;
+        _lastRefresh = DateTime.MinValue;
+        var result = await Tutor.AskStreamAsync(CourseId, text, imageId, OnDeltaAsync);
         _busy = false;
+        _streamHtml = null;
         if (!result.Ok)
         {
             // La question reste dans la zone de saisie : l'élève peut réessayer
@@ -268,6 +282,25 @@
         _input = null;
         RemovePhoto();
         _scrollPending = true;
+    }
+
+    // Réponse en cours d'écriture : l'écran est rafraîchi au plus toutes les 120 ms (pas à chaque mot)
+    private readonly System.Text.StringBuilder _stream = new();
+    private string? _streamHtml;
+    private DateTime _lastRefresh;
+    private static readonly TimeSpan StreamRefresh = TimeSpan.FromMilliseconds(120);
+
+    private Task OnDeltaAsync(string piece)
+    {
+        _stream.Append(piece);
+        if (DateTime.UtcNow - _lastRefresh < StreamRefresh) return Task.CompletedTask;
+        _lastRefresh = DateTime.UtcNow;
+        return InvokeAsync(() =>
+        {
+            _streamHtml = MarkdownRenderer.Render(_stream.ToString()).Html;
+            _scrollPending = true;
+            StateHasChanged();
+        });
     }
 
     private async Task PinAsync(TutorMessage m)

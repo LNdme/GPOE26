@@ -1,0 +1,40 @@
+@implements IDisposable
+@inject NavigationManager Nav
+
+@* Une page qui plante affiche ce message au lieu de figer l'écran.
+   Le reste de l'application (menu, en-tête) continue de fonctionner, et changer de page efface l'erreur. *@
+<ErrorBoundary @ref="_boundary">
+    <ChildContent>@ChildContent</ChildContent>
+    <ErrorContent>
+        <div class="gpoe-crash" role="alert">
+            <h2>Cette page a rencontré un problème</h2>
+            <p>Ce qui était déjà enregistré n'est pas perdu. Vous pouvez réessayer, recharger la page ou revenir à l'accueil.</p>
+            <div class="gpoe-crash__actions">
+                <button type="button" class="ga-btn" @onclick="Retry">Réessayer</button>
+                <button type="button" class="ga-btn secondary" @onclick="Reload">Recharger la page</button>
+                <a class="ga-btn ghost" href="@HomeHref">Retour à l'accueil</a>
+            </div>
+        </div>
+    </ErrorContent>
+</ErrorBoundary>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>Lien du bouton « Retour à l'accueil » : /app, /admin ou le site.</summary>
+    [Parameter] public string HomeHref { get; set; } = "/";
+
+    private ErrorBoundary? _boundary;
+
+    protected override void OnInitialized() => Nav.LocationChanged += OnLocationChanged;
+
+    // Une autre page s'affiche : l'erreur de la précédente ne doit pas la masquer
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e) =>
+        _ = InvokeAsync(() => _boundary?.Recover());
+
+    private void Retry() => _boundary?.Recover();
+
+    private void Reload() => Nav.Refresh(forceReload: true);
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+}

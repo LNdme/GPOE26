@@ -596,3 +596,29 @@ pre.lab-host > code { display: none; }
     .pf-identity { flex-direction: column; }
     .pf-facts > div { grid-template-columns: 1fr; gap: 2px; }
 }
+
+/* ── Erreurs : page qui plante (PageErrorBoundary) et connexion perdue (#blazor-error-ui) ── */
+.gpoe-crash { max-width: 640px; margin: 48px auto; padding: 28px; background: var(--ga-surface); border: 1px solid var(--ga-line); border-radius: var(--ga-radius); display: flex; flex-direction: column; gap: 12px; color: var(--ga-text); font-family: var(--ga-font); }
+.gpoe-crash h2 { margin: 0; font-size: 22px; color: var(--ga-navy); }
+.gpoe-crash p { margin: 0; color: var(--ga-muted); }
+.gpoe-crash__actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
+#blazor-error-ui { display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 2000; padding: 14px 48px 14px 20px; background: var(--ga-red-soft); color: var(--ga-red-ink); border-top: 2px solid #E7B9A0; font: 500 15px var(--ga-font); box-shadow: 0 -4px 16px rgba(14, 35, 80, .12); }
+#blazor-error-ui a.reload { color: var(--ga-navy); font-weight: 700; text-decoration: underline; margin-left: 8px; }
+#blazor-error-ui .dismiss { position: absolute; right: 14px; top: 10px; border: none; background: none; font-size: 22px; line-height: 1; color: inherit; cursor: pointer; }
+/* Session qui se termine (SessionNotice) */
+.gpoe-session-notice { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 1900; width: min(640px, calc(100% - 32px)); display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 14px; background: var(--ga-amber-soft); color: var(--ga-amber-ink); font: 500 15px var(--ga-font); box-shadow: 0 6px 24px rgba(14, 35, 80, .18); }
+.gpoe-session-notice > span { flex: 1 1 260px; }
+.gpoe-session-notice.is-ended { background: var(--ga-red-soft); color: var(--ga-red-ink); }
+/* ── Calibrage sur téléphone et tablette (lot E) ─────────────────────────────── */
+@media (max-width: 900px) {
+  /* Lecture d'un cours : les deux rangées (cours, puis outils) ne s'étirent plus pour remplir l'écran,
+     et la fin du cours n'est plus cachée par le bouton flottant « Tuteur IA » */
+  .rd { align-content: flex-start; padding-bottom: 84px; }
+}
+@media (max-width: 560px) {
+  /* Cartes imbriquées : moins de marge intérieure, plus de place pour le contenu (≈ 40 px de largeur gagnés) */
+  .ga-page { padding-top: 22px; gap: 18px; }
+  .ga-card { padding: 16px; }
+  .ga-card.sunk { padding: 12px; }
+  .ga-task { padding: 14px 16px; }
+}

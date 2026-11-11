@@ -87,6 +87,23 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
+// Adresse inconnue : la page « Introuvable » plutôt qu'une page vide du navigateur.
+// Seulement pour les pages : une image ou un fichier absent garde une simple réponse 404.
+app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+app.Use(async (context, next) =>
+{
+    var path = context.Request.Path;
+    var isPage = HttpMethods.IsGet(context.Request.Method)
+                 && !Path.HasExtension(path.Value)
+                 && !path.StartsWithSegments("/uploads")
+                 && !path.StartsWithSegments("/_framework")
+                 && !path.StartsWithSegments("/_content")
+                 && !path.StartsWithSegments("/_blazor");
+    if (!isPage && context.Features.Get<Microsoft.AspNetCore.Diagnostics.IStatusCodePagesFeature>() is { } pages)
+        pages.Enabled = false;
+    await next();
+});
+
 app.UseAntiforgery();
 app.UseOutputCache();
 app.MapStaticAssets();

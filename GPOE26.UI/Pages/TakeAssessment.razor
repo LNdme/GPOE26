@@ -316,14 +316,38 @@ else
         StateHasChanged();
     }
 
+    // Envoi automatique à la fin du temps : retenté jusqu'au succès (réseau coupé, service redémarré…)
+    private DateTime _nextAutoSubmit = DateTime.MinValue;
+    private int _autoSubmitFailures;
+
+    /// <summary>Délai avant le prochain essai : 5 s, 10 s, 20 s, puis 30 s au plus.</summary>
+    public static TimeSpan AutoSubmitRetryDelay(int failures) =>
+        TimeSpan.FromSeconds(Math.Min(30, 5 * Math.Pow(2, Math.Max(0, failures - 1))));
+
     private async Task TickAsync()
     {
-        if (_attempt?.Deadline is { } deadline && DateTime.UtcNow >= deadline && _result is null && !_busy)
+        if (_attempt?.Deadline is { } deadline && DateTime.UtcNow >= deadline && _result is null && !_busy
+            && DateTime.UtcNow >= _nextAutoSubmit)
         {
             // Temps écoulé : la copie est rendue automatiquement pour ne rien perdre
-            _timer?.Dispose();
-            _error = "Le temps est écoulé : ta copie a été rendue automatiquement.";
+            _error = "Le temps est écoulé : envoi de ta copie…";
             await SubmitAsync();
+            if (_result is not null)
+            {
+                _error = "Le temps est écoulé : ta copie a été rendue automatiquement.";
+            }
+            else if (_lastSubmitStatus == System.Net.HttpStatusCode.Conflict)
+            {
+                // Déjà rendue (autre onglet, envoi précédent arrivé malgré l'erreur) : on s'arrête
+                _timer?.Dispose();
+            }
+            else
+            {
+                _autoSubmitFailures++;
+                var delay = AutoSubmitRetryDelay(_autoSubmitFailures);
+                _nextAutoSubmit = DateTime.UtcNow + delay;
+                _error = $"Le temps est écoulé, mais ta copie n'a pas encore pu être envoyée ({_error}). Nouvel essai dans {delay.TotalSeconds:0} s : garde cette page ouverte.";
+            }
         }
         StateHasChanged();
     }
@@ -356,12 +380,15 @@ else
         for (var i = 0; i < list.Count; i++) list[i] = list[i] with { Page = i + 1 };
     }
 
+    private System.Net.HttpStatusCode _lastSubmitStatus;
+
     private async Task SubmitAsync()
     {
         _busy = true;
         var result = await Api.SubmitAsync(Id, _attempt!.SubmissionId, _answers.Values.ToList());
         _busy = false;
         _confirm = false;
+        _lastSubmitStatus = result.Status;
         if (!result.Ok) { _error = result.Error; return; }
         _timer?.Dispose();
         _draftLoop?.Cancel();

@@ -143,6 +143,14 @@ using (var scope = app.Services.CreateScope())
         )");
     await db.Database.ExecuteSqlRawAsync(
         @"CREATE INDEX IF NOT EXISTS ""IX_CourseLabSuggestions_CourseId_Status"" ON ""CourseLabSuggestions"" (""CourseId"", ""Status"")");
+    await db.Database.ExecuteSqlRawAsync(
+        @"CREATE TABLE IF NOT EXISTS ""CourseFeedback"" (
+            ""CourseId"" uuid NOT NULL REFERENCES ""Courses"" (""Id"") ON DELETE CASCADE,
+            ""UserId"" uuid NOT NULL,
+            ""Useful"" boolean NOT NULL,
+            ""UpdatedAt"" timestamp with time zone NOT NULL,
+            CONSTRAINT ""PK_CourseFeedback"" PRIMARY KEY (""CourseId"", ""UserId"")
+        )");
     await CoursSeeder.SeedAsync(db);
 }
 
@@ -222,19 +230,53 @@ cours.MapGet("/{id:guid}", async (Guid id, ClaimsPrincipal principal, CoursConte
         .Include(c => c.Sections.OrderBy(s => s.Order))
         .FirstOrDefaultAsync(c => c.Id == id);
 
-    var allowed = course is not null
-        && (course.OwnerId == userId
-            || (course.Status == CourseStatus.Published
-                && course.ClassroomIds.Count > 0
-                && (await users.MyClassroomIdsAsync()).Overlaps(course.ClassroomIds)));
-
-    return !allowed
+    return !await CanReadAsync(course, userId.Value, users)
         ? Results.NotFound(new { message = "Cours introuvable." })
         : Results.Ok(new CourseDto(course!));
 })
 .WithSummary("Détail d'un cours")
 .Produces<CourseDto>()
 .Produces(404);
+
+// ── Avis « Ce cours vous a-t-il été utile ? » ─────────────────────────────────
+// Un lecteur donne, change ou retire son avis ; l'auteur voit les totaux (jamais qui a répondu quoi).
+cours.MapGet("/{id:guid}/feedback", async (Guid id, ClaimsPrincipal principal, CoursContext db, UserDirectoryClient users) =>
+{
+    var userId = ClaimsHelper.GetUserId(principal);
+    if (userId is null) return Results.Unauthorized();
+    var course = await db.Courses.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id);
+    if (!await CanReadAsync(course, userId.Value, users)) return Results.NotFound(new { message = "Cours introuvable." });
+    return Results.Ok(await FeedbackAsync(db, course!, userId.Value));
+})
+.WithSummary("Avis « utile » : le mien, et les totaux pour l'auteur")
+.Produces<CourseFeedbackDto>();
+
+cours.MapPut("/{id:guid}/feedback", async (Guid id, CourseFeedbackRequest req, ClaimsPrincipal principal, CoursContext db, UserDirectoryClient users) =>
+{
+    var userId = ClaimsHelper.GetUserId(principal);
+    if (userId is null) return Results.Unauthorized();
+    var course = await db.Courses.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id);
+    if (!await CanReadAsync(course, userId.Value, users)) return Results.NotFound(new { message = "Cours introuvable." });
+    if (course!.OwnerId == userId) return Results.BadRequest(new { message = "L'auteur d'un cours ne donne pas d'avis sur son propre cours." });
+
+    var feedback = await db.Feedback.FindAsync(id, userId.Value);
+    if (feedback is null) db.Feedback.Add(feedback = new CourseFeedback { CourseId = id, UserId = userId.Value });
+    feedback.Useful = req.Useful;
+    feedback.UpdatedAt = DateTime.UtcNow;
+    await db.SaveChangesAsync();
+    return Results.Ok(await FeedbackAsync(db, course, userId.Value));
+})
+.WithSummary("Donner ou changer son avis « utile »")
+.Produces<CourseFeedbackDto>();
+
+cours.MapDelete("/{id:guid}/feedback", async (Guid id, ClaimsPrincipal principal, CoursContext db) =>
+{
+    var userId = ClaimsHelper.GetUserId(principal);
+    if (userId is null) return Results.Unauthorized();
+    await db.Feedback.Where(f => f.CourseId == id && f.UserId == userId).ExecuteDeleteAsync();
+    return Results.NoContent();
+})
+.WithSummary("Retirer son avis « utile »");
 
 // ── POST /cours ───────────────────────────────────────────────────────────────
 cours.MapPost("", async (
@@ -667,3 +709,22 @@ app.MapGet("/uploads/cours/{courseId:guid}/{file}", (Guid courseId, string file,
 .WithSummary("Image extraite d'un PDF");
 
 app.Run();
+
+// L'auteur, ou un membre d'une classe avec laquelle le cours est publié
+static async Task<bool> CanReadAsync(Course? course, Guid userId, UserDirectoryClient users) =>
+    course is not null
+    && (course.OwnerId == userId
+        || (course.Status == CourseStatus.Published
+            && course.ClassroomIds.Count > 0
+            && (await users.MyClassroomIdsAsync()).Overlaps(course.ClassroomIds)));
+
+static async Task<CourseFeedbackDto> FeedbackAsync(CoursContext db, Course course, Guid userId)
+{
+    var mine = await db.Feedback.Where(f => f.CourseId == course.Id && f.UserId == userId)
+        .Select(f => (bool?)f.Useful).FirstOrDefaultAsync();
+    if (course.OwnerId != userId) return new CourseFeedbackDto(mine, null, null);
+
+    var useful = await db.Feedback.CountAsync(f => f.CourseId == course.Id && f.Useful);
+    var notUseful = await db.Feedback.CountAsync(f => f.CourseId == course.Id && !f.Useful);
+    return new CourseFeedbackDto(mine, useful, notUseful);
+}

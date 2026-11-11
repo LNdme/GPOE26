@@ -88,83 +88,72 @@ public static class TutorEndpoints
             TutorContext db, PlatformClients platform, LlmClient llm, AgentContextService agent,
             AiQuota quota, ILogger<TutorContext> logger, CancellationToken ct) =>
         {
-            var userId = UserId(principal);
-            var text = req.Message?.Trim() ?? "";
-            if (text.Length == 0 && req.ImageId is null)
-                return Error(400, "Écris ta question ou joins une photo.");
-            if (text.Length > 4000)
-                return Error(400, "Ta question est trop longue (4 000 caractères au maximum).");
-            if ((await quota.CheckAsync(userId, AiFeatures.Tutor, ct)).Refusal is { } refusal)
-                return Error(403, refusal);
-
-            var course = await platform.CourseAsync(courseId, ct);
-            if (course is null) return Error(404, "Cours introuvable.");
-
-            TutorImage? image = null;
-            if (req.ImageId is { } imageId)
-            {
-                image = await db.Images.FirstOrDefaultAsync(i => i.Id == imageId && i.UserId == userId, ct);
-                if (image is null) return Error(404, "Photo introuvable : envoie-la de nouveau.");
-            }
-
-            var conversation = await db.Conversations
-                .Include(c => c.Messages.OrderBy(m => m.CreatedAt))
-                .FirstOrDefaultAsync(c => c.UserId == userId && c.CourseId == courseId, ct);
-            if (conversation is null)
-            {
-                conversation = new TutorConversation { UserId = userId, CourseId = courseId };
-                db.Conversations.Add(conversation);
-            }
-            conversation.CourseTitle = course.Title;
-            conversation.Subject = course.Subject;
-
-            if (text.Length == 0) text = "Voici ma copie : peux-tu vérifier ma démarche ?";
-
-            // Contexte du modèle : le cours (ou ses parties utiles s'il est long), le profil, la mémoire,
-            // les derniers échanges, puis la question (et sa photo)
-            var profile = await agent.ProfileAsync(ct);
-            var excerpt = AgentPrompts.SelectCourse(course.FullText(), text);
-            var isTeacher = principal.FindFirst("role")?.Value == "Teacher";
-            var messages = new List<LlmMessage>
-            {
-                new("system", string.Format(SystemPrompt, Learner(principal), course.Title, course.Subject, excerpt.Text, AgentPrompts.LanguageRule(profile))
-                    + (excerpt.Note is { } note ? $"\n\nÀ savoir : {note}" : "")
-                    + (principal.FindFirst("stage")?.Value == "Higher" ? HigherEducation : "")
-                    + AgentMemoryStore.Render(isTeacher ? "Profil de l'enseignant" : "Profil de l'apprenant",
-                        isTeacher ? AgentPrompts.TeacherLines(profile) : AgentPrompts.LearnerLines(profile, DateOnly.FromDateTime(DateTime.UtcNow)))
-                    + await agent.StudentContextAsync(userId, courseId, text, ct))
-            };
-            messages.AddRange(conversation.Messages.TakeLast(HistoryForModel)
-                .Select(m => new LlmMessage(m.Role, m.ImageId is null ? m.Content : $"{m.Content}\n[photo de copie jointe]")));
-            messages.Add(new LlmMessage("user", text, image is null ? null : [new LlmImage(image.ContentType, image.Data)]));
+            var (refusal, ask) = await PrepareAsync(courseId, req, principal, db, platform, agent, quota, ct);
+            if (refusal is not null) return refusal;
 
             string reply;
             try
             {
-                reply = await llm.CompleteAsync(messages, ct: ct);
+                reply = await llm.CompleteAsync(ask!.Messages, ct: ct);
             }
             catch (LlmUnavailableException ex)
             {
                 logger.LogWarning(ex, "Tuteur indisponible");
-                return ex is LlmNotConfiguredException
-                    ? Error(503, "Le tuteur n'est pas activé sur ce serveur : aucune clé d'IA n'est configurée.")
-                    : Error(502, "Le tuteur ne répond pas pour le moment. Ta question n'a pas été perdue : réessaie dans un instant.");
+                return Error(ex is LlmNotConfiguredException ? 503 : 502, Unavailable(ex));
             }
 
-            var now = DateTime.UtcNow;
-            var question = new TutorMessage { ConversationId = conversation.Id, Role = "user", Content = text, ImageId = image?.Id, CreatedAt = now };
-            var answer = new TutorMessage { ConversationId = conversation.Id, Role = "assistant", Content = reply, CreatedAt = now.AddMilliseconds(1) };
-            db.Messages.AddRange(question, answer);
-            conversation.UpdatedAt = now;
-            await db.SaveChangesAsync(ct);
-            await quota.RecordAsync(userId, AiFeatures.Tutor, ct);
-
-            await agent.TouchCourseAsync(userId, courseId, course.Title, course.Subject, ct);
-            // La mémoire relit les échanges par lots (TutorReflectionScheduler) : un appel au modèle pour plusieurs questions
-
-            return Results.Ok(new AskTutorResponse(new TutorMessageDto(question), new TutorMessageDto(answer)));
+            var saved = await SaveAsync(ask!, reply, db, agent, quota, ct);
+            return Results.Ok(saved);
         })
         .WithSummary("Poser une question au tuteur (Premium) — la question et la réponse sont enregistrées");
+
+        // ── POST /tutor/courses/{courseId}/messages/stream ────────────────────────
+        // La même question, mais la réponse s'affiche pendant que le modèle l'écrit (au lieu d'une longue attente).
+        // Réponse en NDJSON : {"type":"start"}, puis {"type":"delta","text":…} au fil de l'eau, puis {"type":"done",…} avec les deux messages
+        // enregistrés, ou {"type":"error","message":…} (rien n'est alors enregistré ni décompté).
+        group.MapPost("/courses/{courseId:guid}/messages/stream", async (Guid courseId, AskTutorRequest req, ClaimsPrincipal principal,
+            HttpContext http, TutorContext db, PlatformClients platform, LlmClient llm, AgentContextService agent,
+            AiQuota quota, ILogger<TutorContext> logger, CancellationToken ct) =>
+        {
+            var (refusal, ask) = await PrepareAsync(courseId, req, principal, db, platform, agent, quota, ct);
+            if (refusal is not null) return refusal;
+
+            http.Response.ContentType = "application/x-ndjson; charset=utf-8";
+            http.Response.Headers.CacheControl = "no-cache";
+            http.Response.Headers["X-Accel-Buffering"] = "no";   // proxy (Replit, nginx) : ne pas retenir la réponse
+            http.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpResponseBodyFeature>()?.DisableBuffering();
+            async Task WriteAsync(object line)
+            {
+                await http.Response.WriteAsync(System.Text.Json.JsonSerializer.Serialize(line, System.Text.Json.JsonSerializerOptions.Web) + "\n", ct);
+                await http.Response.Body.FlushAsync(ct);
+            }
+
+            // Première ligne envoyée tout de suite : le site sait que la question est acceptée, même si le premier mot tarde
+            // (sans elle, les en-têtes n'arrivaient qu'avec le premier mot, et le délai du site pouvait expirer avant)
+            await WriteAsync(new { type = "start" });
+
+            var reply = new System.Text.StringBuilder();
+            try
+            {
+                await foreach (var piece in llm.StreamAsync(ask!.Messages, ct: ct))
+                {
+                    reply.Append(piece);
+                    await WriteAsync(new { type = "delta", text = piece });
+                }
+            }
+            catch (LlmUnavailableException ex)
+            {
+                logger.LogWarning(ex, "Tuteur indisponible");
+                await WriteAsync(new { type = "error", message = Unavailable(ex) });
+                return Results.Empty;
+            }
+
+            var text = LlmClient.StripThinking(reply.ToString())!.Trim();
+            var saved = await SaveAsync(ask!, text, db, agent, quota, ct);
+            await WriteAsync(new { type = "done", question = saved.Question, answer = saved.Answer });
+            return Results.Empty;
+        })
+        .WithSummary("Poser une question au tuteur, réponse affichée au fil de l'eau (NDJSON)");
 
         // ── POST /tutor/images ────────────────────────────────────────────────────
         group.MapPost("/images", async (IFormFile file, ClaimsPrincipal principal, TutorContext db, PlatformClients platform, CancellationToken ct) =>
@@ -253,6 +242,89 @@ public static class TutorEndpoints
         .WithSummary("Effacer la discussion sur un cours (recommencer)");
     }
 
+    /// <summary>Une question prête à partir : la discussion, le contexte complet du modèle, la photo éventuelle.</summary>
+    private sealed record TutorAsk(Guid UserId, string Text, TutorImage? Image, TutorConversation Conversation,
+        CourseRef Course, List<LlmMessage> Messages);
+
+    /// <summary>
+    /// Vérifie la question (texte, quota, cours, photo) et construit le contexte du modèle : le cours (ou ses parties
+    /// utiles s'il est long), le profil, la mémoire, les derniers échanges, puis la question. Commun aux deux routes.
+    /// </summary>
+    private static async Task<(IResult? Refusal, TutorAsk? Ask)> PrepareAsync(Guid courseId, AskTutorRequest req,
+        ClaimsPrincipal principal, TutorContext db, PlatformClients platform, AgentContextService agent, AiQuota quota, CancellationToken ct)
+    {
+        var userId = UserId(principal);
+        var text = req.Message?.Trim() ?? "";
+        if (text.Length == 0 && req.ImageId is null)
+            return (Error(400, "Écris ta question ou joins une photo."), null);
+        if (text.Length > 4000)
+            return (Error(400, "Ta question est trop longue (4 000 caractères au maximum)."), null);
+        if ((await quota.CheckAsync(userId, AiFeatures.Tutor, ct)).Refusal is { } refusal)
+            return (Error(403, refusal), null);
+
+        var course = await platform.CourseAsync(courseId, ct);
+        if (course is null) return (Error(404, "Cours introuvable."), null);
+
+        TutorImage? image = null;
+        if (req.ImageId is { } imageId)
+        {
+            image = await db.Images.FirstOrDefaultAsync(i => i.Id == imageId && i.UserId == userId, ct);
+            if (image is null) return (Error(404, "Photo introuvable : envoie-la de nouveau."), null);
+        }
+
+        var conversation = await db.Conversations
+            .Include(c => c.Messages.OrderBy(m => m.CreatedAt))
+            .FirstOrDefaultAsync(c => c.UserId == userId && c.CourseId == courseId, ct);
+        if (conversation is null)
+        {
+            conversation = new TutorConversation { UserId = userId, CourseId = courseId };
+            db.Conversations.Add(conversation);
+        }
+        conversation.CourseTitle = course.Title;
+        conversation.Subject = course.Subject;
+
+        if (text.Length == 0) text = "Voici ma copie : peux-tu vérifier ma démarche ?";
+
+        var profile = await agent.ProfileAsync(ct);
+        var excerpt = AgentPrompts.SelectCourse(course.FullText(), text);
+        var isTeacher = principal.FindFirst("role")?.Value == "Teacher";
+        var messages = new List<LlmMessage>
+        {
+            new("system", string.Format(SystemPrompt, Learner(principal), course.Title, course.Subject, excerpt.Text, AgentPrompts.LanguageRule(profile))
+                + (excerpt.Note is { } note ? $"\n\nÀ savoir : {note}" : "")
+                + (principal.FindFirst("stage")?.Value == "Higher" ? HigherEducation : "")
+                + AgentMemoryStore.Render(isTeacher ? "Profil de l'enseignant" : "Profil de l'apprenant",
+                    isTeacher ? AgentPrompts.TeacherLines(profile) : AgentPrompts.LearnerLines(profile, DateOnly.FromDateTime(DateTime.UtcNow)))
+                + await agent.StudentContextAsync(userId, courseId, text, ct))
+        };
+        messages.AddRange(conversation.Messages.TakeLast(HistoryForModel)
+            .Select(m => new LlmMessage(m.Role, m.ImageId is null ? m.Content : $"{m.Content}\n[photo de copie jointe]")));
+        messages.Add(new LlmMessage("user", text, image is null ? null : [new LlmImage(image.ContentType, image.Data)]));
+
+        return (null, new TutorAsk(userId, text, image, conversation, course, messages));
+    }
+
+    /// <summary>Enregistre la question et la réponse, décompte la demande, et note le cours comme étudié.</summary>
+    private static async Task<AskTutorResponse> SaveAsync(TutorAsk ask, string reply, TutorContext db,
+        AgentContextService agent, AiQuota quota, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var question = new TutorMessage { ConversationId = ask.Conversation.Id, Role = "user", Content = ask.Text, ImageId = ask.Image?.Id, CreatedAt = now };
+        var answer = new TutorMessage { ConversationId = ask.Conversation.Id, Role = "assistant", Content = reply, CreatedAt = now.AddMilliseconds(1) };
+        db.Messages.AddRange(question, answer);
+        ask.Conversation.UpdatedAt = now;
+        await db.SaveChangesAsync(ct);
+        await quota.RecordAsync(ask.UserId, AiFeatures.Tutor, ct);
+
+        await agent.TouchCourseAsync(ask.UserId, ask.Course.Id, ask.Course.Title, ask.Course.Subject, ct);
+        // La mémoire relit les échanges par lots (TutorReflectionScheduler) : un appel au modèle pour plusieurs questions
+        return new AskTutorResponse(new TutorMessageDto(question), new TutorMessageDto(answer));
+    }
+
+    private static string Unavailable(LlmUnavailableException ex) => ex is LlmNotConfiguredException
+        ? "Le tuteur n'est pas activé sur ce serveur : aucune clé d'IA n'est configurée."
+        : "Le tuteur ne répond pas pour le moment. Ta question n'a pas été perdue : réessaie dans un instant.";
+
     /// <summary>
     /// Qui parle au tuteur. Un enseignant y vient pour préparer ou essayer son cours : le traiter comme un élève
     /// de « secondaire » faussait le ton et le niveau des réponses.
@@ -275,8 +347,33 @@ public static class TutorEndpoints
             ? id
             : throw new UnauthorizedAccessException();
 
-    private static string? Preview(string? text) =>
-        text is null ? null : text.Length > 140 ? text[..140].TrimEnd() + "…" : text;
+    /// <summary>Aperçu d'un message dans la liste des discussions : texte lisible, 140 caractères au plus.</summary>
+    public static string? Preview(string? text)
+    {
+        if (text is null) return null;
+        var plain = PlainText(text);
+        return plain.Length > 140 ? plain[..140].TrimEnd() + "…" : plain;
+    }
+
+    /// <summary>
+    /// Retire la mise en forme Markdown et LaTeX d'une réponse pour l'afficher en texte simple
+    /// (« la **vitesse** vaut $9{,}8 \times 2$ » devient « la vitesse vaut 9,8 × 2 »).
+    /// </summary>
+    public static string PlainText(string markdown)
+    {
+        var s = markdown.Replace("{,}", ",");
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"\\frac\{([^{}]*)\}\{([^{}]*)\}", "$1/$2");
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"\\sqrt\{([^{}]*)\}", "√($1)");
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"\\(times|cdot|approx|leq|geq|neq|to|pi|Delta|alpha|theta)\b", m => m.Groups[1].Value switch
+        {
+            "times" => "×", "cdot" => "·", "approx" => "≈", "leq" => "≤", "geq" => "≥", "neq" => "≠",
+            "to" => "→", "pi" => "π", "Delta" => "Δ", "alpha" => "α", _ => "θ"
+        });
+        s = s.Replace("^2", "²").Replace("^3", "³");
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"\\[()\[\]]|\\[a-zA-Z]+|\$+|\*+|`+|^#+\s*|^>\s*|[{}]", "",
+            System.Text.RegularExpressions.RegexOptions.Multiline);
+        return System.Text.RegularExpressions.Regex.Replace(s, @"\s+", " ").Trim();
+    }
 
     private static IResult Error(int status, string message) => Results.Json(new { message }, statusCode: status);
 }

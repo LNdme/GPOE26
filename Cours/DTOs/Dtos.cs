@@ -126,4 +126,9 @@ namespace Cours.DTOs
 
     /// <summary>Partage d'un cours : publié pour ces classes, ou repassé en brouillon (Publish = false)</summary>
     public record ShareCourseRequest(bool Publish, List<Guid>? ClassroomIds);
+
+    /// <summary>Avis « utile » : Mine pour le lecteur ; les totaux seulement pour l'auteur (null sinon).</summary>
+    public record CourseFeedbackDto(bool? Mine, int? Useful, int? NotUseful);
+
+    public record CourseFeedbackRequest(bool Useful);
 }

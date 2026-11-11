@@ -139,6 +139,18 @@ namespace Cours.Model
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
 
+    /// <summary>
+    /// « Ce cours vous a-t-il été utile ? » : un avis par lecteur et par cours, qu'il peut changer ou retirer.
+    /// L'auteur du cours voit le total ; personne ne voit qui a répondu quoi.
+    /// </summary>
+    public class CourseFeedback
+    {
+        public Guid CourseId { get; set; }
+        public Guid UserId { get; set; }
+        public bool Useful { get; set; }
+        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    }
+
     public enum CourseStatus
     {
         Draft,

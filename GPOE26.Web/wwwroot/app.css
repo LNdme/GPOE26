@@ -1890,3 +1890,6 @@ h1:focus {
         flex-direction: column;
     }
 }
+
+/* Page d'erreur rendue sans menu (BareLayout) */
+.gpoe-bare { min-height: 100vh; padding: 16px; background: #F6F5F1; }

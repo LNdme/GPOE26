@@ -93,6 +93,9 @@ public interface ICourseApi
     Task<ApiResult<CourseDetail>> AcceptLabAsync(Guid id, Guid suggestionId);
     Task<ApiResult<CourseDetail>> AcceptAllLabsAsync(Guid id);
     Task<ApiResult<bool>> RefuseLabAsync(Guid id, Guid suggestionId);
+    Task<ApiResult<CourseFeedback>> FeedbackAsync(Guid id);
+    Task<ApiResult<CourseFeedback>> SetFeedbackAsync(Guid id, bool useful);
+    Task<ApiResult<bool>> ClearFeedbackAsync(Guid id);
 }
 
 /// <summary>Images insérées dans un cours (hébergées par le service du site).</summary>
@@ -141,6 +144,9 @@ public interface ITutorApi
     Task<ApiResult<List<TutorConversationSummary>>> ConversationsAsync();
     Task<ApiResult<TutorConversation>> ConversationAsync(Guid courseId);
     Task<ApiResult<TutorExchange>> AskAsync(Guid courseId, string? message, Guid? imageId);
+
+    /// <summary>Même question, mais chaque morceau de la réponse est transmis à <paramref name="onDelta"/> dès qu'il est écrit.</summary>
+    Task<ApiResult<TutorExchange>> AskStreamAsync(Guid courseId, string? message, Guid? imageId, Func<string, Task> onDelta, CancellationToken ct = default);
     Task<ApiResult<UploadedImage>> UploadImageAsync(ImageUpload image);
     Task<string?> ImageAsync(Guid imageId);
     Task<ApiResult<TutorMessage>> PinAsync(Guid messageId, bool pinned);
@@ -244,6 +250,9 @@ public class CourseApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, Api
     public Task<ApiResult<CourseDetail>> AcceptLabAsync(Guid id, Guid suggestionId) => PostAsync<CourseDetail>($"/cours/{id}/lab-suggestions/{suggestionId}/accept");
     public Task<ApiResult<CourseDetail>> AcceptAllLabsAsync(Guid id) => PostAsync<CourseDetail>($"/cours/{id}/lab-suggestions/accept-all");
     public Task<ApiResult<bool>> RefuseLabAsync(Guid id, Guid suggestionId) => PostAsync<bool>($"/cours/{id}/lab-suggestions/{suggestionId}/refuse");
+    public Task<ApiResult<CourseFeedback>> FeedbackAsync(Guid id) => GetAsync<CourseFeedback>($"/cours/{id}/feedback");
+    public Task<ApiResult<CourseFeedback>> SetFeedbackAsync(Guid id, bool useful) => PutAsync<CourseFeedback>($"/cours/{id}/feedback", new { useful });
+    public Task<ApiResult<bool>> ClearFeedbackAsync(Guid id) => DeleteAsync<bool>($"/cours/{id}/feedback");
 }
 
 public class MediaApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.Site), IMediaApi
@@ -331,6 +340,8 @@ public class TutorApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiC
     public Task<ApiResult<TutorConversation>> ConversationAsync(Guid courseId) => GetAsync<TutorConversation>($"/tutor/courses/{courseId}");
     public Task<ApiResult<TutorExchange>> AskAsync(Guid courseId, string? message, Guid? imageId) =>
         PostAsync<TutorExchange>($"/tutor/courses/{courseId}/messages", new { message, imageId });
+    public Task<ApiResult<TutorExchange>> AskStreamAsync(Guid courseId, string? message, Guid? imageId, Func<string, Task> onDelta, CancellationToken ct = default) =>
+        PostStreamAsync<TutorExchange>($"/tutor/courses/{courseId}/messages/stream", new { message, imageId }, onDelta, ct);
     public Task<ApiResult<UploadedImage>> UploadImageAsync(ImageUpload image) => UploadAsync<UploadedImage>("/tutor/images", image);
     public Task<string?> ImageAsync(Guid imageId) => DataUrlAsync($"/tutor/images/{imageId}");
     public Task<ApiResult<TutorMessage>> PinAsync(Guid messageId, bool pinned) =>

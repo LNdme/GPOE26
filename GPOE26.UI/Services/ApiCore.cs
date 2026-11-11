@@ -150,6 +150,63 @@ public abstract class ApiBase(IHttpClientFactory factory, SessionState session, 
         }
     }
 
+    /// <summary>
+    /// Requête dont la réponse arrive en NDJSON, ligne par ligne : {"type":"delta","text":…} transmis à
+    /// <paramref name="onDelta"/> au fur et à mesure, puis {"type":"done",…} (le résultat) ou {"type":"error","message":…}.
+    /// Une erreur avant le début du flux (400, 403, 404…) se lit comme pour un appel ordinaire.
+    /// </summary>
+    protected async Task<ApiResult<T>> PostStreamAsync<T>(string path, object body, Func<string, Task> onDelta, CancellationToken ct)
+    {
+        try
+        {
+            await RenewSessionIfDueAsync();
+            using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body, body.GetType(), options: Json) };
+            if (session.Token is { } token)
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            using var response = await factory.CreateClient(clientName).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                if (response.StatusCode == HttpStatusCode.Unauthorized && session.IsAuthenticated)
+                    await session.ExpireAsync();
+                return new ApiResult<T>(default, await ReadErrorAsync(response), response.StatusCode);
+            }
+
+            using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(ct));
+            while (await reader.ReadLineAsync(ct) is { } line)
+            {
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                using var doc = JsonDocument.Parse(line);
+                var root = doc.RootElement;
+                switch (root.TryGetProperty("type", out var type) ? type.GetString() : null)
+                {
+                    case "delta":
+                        if (root.TryGetProperty("text", out var text) && text.GetString() is { Length: > 0 } piece)
+                            await onDelta(piece);
+                        break;
+                    case "done":
+                        return new ApiResult<T>(root.Deserialize<T>(Json), null, response.StatusCode);
+                    case "error":
+                        return new ApiResult<T>(default, root.TryGetProperty("message", out var m) ? m.GetString() : "Une erreur est survenue. Réessayez.",
+                            HttpStatusCode.BadGateway);
+                }
+            }
+            return new ApiResult<T>(default, "La réponse a été interrompue. Réessayez.", HttpStatusCode.BadGateway);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return new ApiResult<T>(default, "Demande annulée.", HttpStatusCode.RequestTimeout);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException or JsonException)
+        {
+            return new ApiResult<T>(default, "La connexion au service a été coupée. Réessayez.", HttpStatusCode.ServiceUnavailable);
+        }
+        catch (TaskCanceledException)
+        {
+            return new ApiResult<T>(default, "Le service met trop de temps à répondre.", HttpStatusCode.RequestTimeout);
+        }
+    }
+
     private static async Task<string> ReadErrorAsync(HttpResponseMessage response)
     {
         try

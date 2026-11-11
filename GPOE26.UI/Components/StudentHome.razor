@@ -111,7 +111,7 @@
                     {
                         <article class="ga-task" style="flex-direction:row; flex-wrap:wrap; align-items:center">
                             <span class="ga-avatar amber" style="border-radius:12px; width:46px; height:46px"><Icon Name="book" /></span>
-                            <div class="ga-stack" style="gap:2px; flex:1 1 220px">
+                            <div class="ga-stack" style="gap:2px; flex:1 1 150px; min-width:0">
                                 <span class="kicker">@c.Subject</span>
                                 <h3>@c.Title</h3>
                             </div>
@@ -159,7 +159,15 @@
 
                 <section class="ga-card" aria-labelledby="h-today">
                     <h2 id="h-today" class="ga-h3"><Icon Name="calendar" /> Ton plan du jour</h2>
-                    @if (_plan is not { HasSchedule: true })
+                    @if (_planLoading)
+                    {
+                        <span class="ga-small ga-muted"><span class="ga-spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:-2px"></span> Préparation de ton plan…</span>
+                    }
+                    else if (_planError)
+                    {
+                        <span class="ga-small ga-muted">Ton plan du jour n'a pas pu être préparé. Actualise la page dans un instant.</span>
+                    }
+                    else if (_plan is not { HasSchedule: true })
                     {
                         <span class="ga-small ga-muted">Indique ton emploi du temps : on organisera tes révisions selon ton temps libre.</span>
                         <a class="ga-btn secondary small" style="align-self:flex-start" href="/app/emploi-du-temps">Renseigner mon emploi du temps</a>
@@ -199,8 +207,8 @@
                     }
                     <div class="ga-field">
                         <label for="join-code">Rejoindre une classe</label>
-                        <div class="ga-row" style="flex-wrap:nowrap">
-                            <input id="join-code" class="ga-input" placeholder="Code donné par l'enseignant" @bind="_joinCode" />
+                        <div class="ga-row">
+                            <input id="join-code" class="ga-input" style="flex:1 1 170px; min-width:0" placeholder="Code de la classe" @bind="_joinCode" />
                             <button class="ga-btn" type="submit" disabled="@string.IsNullOrWhiteSpace(_joinCode)">Rejoindre</button>
                         </div>
                     </div>
@@ -235,6 +243,7 @@
     private bool _joinOk;
     private string? _loadError;
     private DayPlan? _plan;
+    private bool _planLoading = true, _planError;
 
     private static string BlockTime(int minutes) => $"{minutes / 60:00}h{minutes % 60:00}";
 
@@ -247,7 +256,8 @@
             var progress = Progress.MineAsync();
             var classes = Classrooms.MineAsync();
             var parents = Family.MyParentsAsync();
-            _plan = (await Agent.TodayPlanAsync()).Value;
+            // Le plan du jour interroge plusieurs services : il arrive après, sans retarder le reste de la page
+            _ = LoadPlanAsync();
             await Task.WhenAll(assessments, courses, progress, classes, parents);
 
             var assessmentResult = await assessments;
@@ -277,6 +287,22 @@
         {
             _loading = false;
         }
+    }
+
+    private async Task LoadPlanAsync()
+    {
+        try
+        {
+            var result = await Agent.TodayPlanAsync();
+            _plan = result.Value;
+            _planError = !result.Ok;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or InvalidOperationException)
+        {
+            _planError = true;
+        }
+        _planLoading = false;
+        await InvokeAsync(StateHasChanged);
     }
 
     private HashSet<DateTime> _dueDays = new(), _doneDays = new();

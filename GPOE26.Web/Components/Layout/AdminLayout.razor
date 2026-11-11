@@ -88,8 +88,9 @@
                     <a class="site-btn site-btn--ghost site-btn--sm" href="/" target="_blank" rel="noopener">Voir le site <Icon Name="external" Size="14" /></a>
                 </header>
                 <main class="admin-main">
-                    @Body
+                    <PageErrorBoundary HomeHref="/admin">@Body</PageErrorBoundary>
                 </main>
+                <SessionNotice />
             </div>
         </div>
     }

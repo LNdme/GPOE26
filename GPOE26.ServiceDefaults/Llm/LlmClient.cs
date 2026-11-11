@@ -92,6 +92,158 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
         throw new LlmUnavailableException("Aucun modèle n'a pu répondre. Réessayez dans un instant.", last);
     }
 
+    /// <summary>
+    /// Comme <see cref="CompleteAsync"/>, mais la réponse arrive morceau par morceau, dès que le modèle l'écrit.
+    /// Le modèle suivant n'est essayé que si le précédent échoue avant d'avoir rien écrit ; une coupure
+    /// au milieu de la réponse lève <see cref="LlmUnavailableException"/> (le début déjà reçu reste à l'appelant).
+    /// </summary>
+    public async IAsyncEnumerable<string> StreamAsync(IReadOnlyList<LlmMessage> messages, int maxTokens = 4000,
+        double temperature = 0.4, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        if (!IsConfigured)
+            throw new LlmNotConfiguredException();
+
+        var vision = messages.Any(m => m.Images is { Count: > 0 });
+        var models = vision ? VisionModels : TextModels;
+        var firstToken = TimeSpan.FromSeconds(int.TryParse(config["LLM:AttemptTimeoutSeconds"], out var s) ? s : 90);
+        Exception? last = null;
+
+        foreach (var model in models)
+        {
+            // Délai jusqu'au premier mot : un fournisseur gratuit saturé ne doit pas bloquer les suivants.
+            // Une fois la réponse commencée, elle a jusqu'à quatre minutes pour se terminer.
+            using var attempt = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            attempt.CancelAfter(firstToken);
+
+            HttpResponseMessage? response = null;
+            Stream? body = null;
+            try
+            {
+                using var request = BuildRequest(model, messages, maxTokens, temperature, reasoning: true, stream: true);
+                response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, attempt.Token);
+                if (!response.IsSuccessStatusCode)
+                    throw new HttpRequestException($"{(int)response.StatusCode} {Truncate(await response.Content.ReadAsStringAsync(attempt.Token))}",
+                        null, response.StatusCode);
+                body = await response.Content.ReadAsStreamAsync(attempt.Token);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                response?.Dispose();
+                throw;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+            {
+                logger.LogWarning("Modèle {Model} indisponible : {Error}", model, ex.Message);
+                response?.Dispose();
+                last = ex;
+                continue;
+            }
+
+            using (response)
+            await using (body)
+            {
+                var reader = new StreamReader(body, Encoding.UTF8);
+                var thinking = new ThinkingFilter();
+                var wrote = false;
+                while (true)
+                {
+                    string? piece;
+                    try
+                    {
+                        var line = await reader.ReadLineAsync(attempt.Token);
+                        if (line is null) break;
+                        piece = ReadStreamLine(line, out var done);
+                        if (done) break;
+                    }
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex) when (ex is IOException or HttpRequestException or OperationCanceledException or JsonException)
+                    {
+                        if (wrote)
+                            throw new LlmUnavailableException("La réponse a été interrompue. Réessayez dans un instant.", ex);
+                        logger.LogWarning("Modèle {Model} interrompu avant de répondre : {Error}", model, ex.Message);
+                        last = ex;
+                        break;
+                    }
+
+                    if (thinking.Visible(piece) is not { Length: > 0 } visible) continue;
+                    if (!wrote)
+                    {
+                        wrote = true;
+                        attempt.CancelAfter(TimeSpan.FromMinutes(4));
+                    }
+                    yield return visible;
+                }
+
+                if (wrote) yield break;
+                if (last is null)
+                    logger.LogWarning("Réponse vide du modèle {Model}, essai du suivant", model);
+                last ??= new LlmUnavailableException($"Réponse vide de {model}");
+            }
+        }
+
+        throw new LlmUnavailableException("Aucun modèle n'a pu répondre. Réessayez dans un instant.", last);
+    }
+
+    /// <summary>
+    /// Une ligne du flux « server-sent events » d'une API compatible OpenAI : renvoie le texte ajouté (ou null),
+    /// et <paramref name="done"/> à la fin du flux. Une erreur du fournisseur dans le flux lève HttpRequestException.
+    /// </summary>
+    public static string? ReadStreamLine(string line, out bool done)
+    {
+        done = false;
+        if (!line.StartsWith("data:", StringComparison.Ordinal)) return null;   // commentaires « : OPENROUTER PROCESSING », lignes vides
+        var data = line[5..].Trim();
+        if (data == "[DONE]") { done = true; return null; }
+        if (data.Length == 0) return null;
+
+        using var doc = JsonDocument.Parse(data);
+        if (doc.RootElement.TryGetProperty("error", out var error))
+            throw new HttpRequestException(Truncate(error.ToString()), null, HttpStatusCode.BadGateway);
+        if (!doc.RootElement.TryGetProperty("choices", out var choices) || choices.GetArrayLength() == 0) return null;
+        return choices[0].TryGetProperty("delta", out var delta)
+               && delta.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.String
+            ? content.GetString()
+            : null;
+    }
+
+    /// <summary>
+    /// Au fil du flux, cache la réflexion qu'un modèle « raisonnant » écrit entre &lt;think&gt; et &lt;/think&gt;
+    /// au début de sa réponse (l'équivalent de <see cref="StripThinking"/> pour une réponse en morceaux).
+    /// </summary>
+    public sealed class ThinkingFilter
+    {
+        private readonly StringBuilder _pending = new();
+        private bool _decided, _inside;
+
+        public string? Visible(string? piece)
+        {
+            if (string.IsNullOrEmpty(piece)) return null;
+            if (_decided && !_inside) return piece;
+
+            _pending.Append(piece);
+            var text = _pending.ToString();
+            if (!_decided)
+            {
+                var start = text.TrimStart();
+                // Pas encore assez de texte pour savoir si la réponse commence par <think>
+                if (start.Length < "<think>".Length && "<think>".StartsWith(start, StringComparison.OrdinalIgnoreCase)) return null;
+                _decided = true;
+                _inside = start.StartsWith("<think>", StringComparison.OrdinalIgnoreCase);
+                if (!_inside) { _pending.Clear(); return text; }
+            }
+
+            var end = text.IndexOf("</think>", StringComparison.OrdinalIgnoreCase);
+            if (end < 0) return null;
+            _inside = false;
+            _pending.Clear();
+            var rest = text[(end + "</think>".Length)..].TrimStart();
+            return rest.Length > 0 ? rest : null;
+        }
+    }
+
     /// <summary>Vecteur de sens d'un texte (réglage LLM:EmbeddingModel). Null si aucun modèle n'est configuré ou en cas d'échec.</summary>
     public async Task<float[]?> EmbedAsync(string text, CancellationToken ct = default)
     {
@@ -116,8 +268,8 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
         }
     }
 
-    private async Task<string?> CallAsync(string model, IReadOnlyList<LlmMessage> messages, int maxTokens,
-        double temperature, bool requireComplete, bool reasoning, CancellationToken ct)
+    private HttpRequestMessage BuildRequest(string model, IReadOnlyList<LlmMessage> messages, int maxTokens,
+        double temperature, bool reasoning, bool stream)
     {
         var body = new JsonObject
         {
@@ -126,11 +278,13 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
             ["temperature"] = temperature,
             ["messages"] = new JsonArray(messages.Select(ToJson).ToArray())
         };
+        if (stream)
+            body["stream"] = true;
         // Paramètre propre à OpenRouter : d'autres fournisseurs compatibles OpenAI refuseraient un champ inconnu
         if (!reasoning && IsOpenRouter)
             body["reasoning"] = new JsonObject { ["enabled"] = false };
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/chat/completions")
+        var request = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/chat/completions")
         {
             Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")
         };
@@ -138,7 +292,13 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ApiKey);
         // En-têtes recommandés par OpenRouter (ignorés par les autres fournisseurs)
         request.Headers.TryAddWithoutValidation("X-Title", "GPOE26");
+        return request;
+    }
 
+    private async Task<string?> CallAsync(string model, IReadOnlyList<LlmMessage> messages, int maxTokens,
+        double temperature, bool requireComplete, bool reasoning, CancellationToken ct)
+    {
+        using var request = BuildRequest(model, messages, maxTokens, temperature, reasoning, stream: false);
         using var response = await http.SendAsync(request, ct);
         var json = await response.Content.ReadAsStringAsync(ct);
         if (!response.IsSuccessStatusCode)

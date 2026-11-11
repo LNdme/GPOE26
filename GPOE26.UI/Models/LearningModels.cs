@@ -17,6 +17,9 @@ public record CourseSummary(Guid Id, string Title, string Subject, string? Descr
 
 public record CourseSection(Guid Id, CourseSectionType Type, string Content, int Order, int Level);
 
+/// <summary>Avis « Ce cours vous a-t-il été utile ? » : le mien, et les totaux (pour l'auteur seulement).</summary>
+public record CourseFeedback(bool? Mine, int? Useful, int? NotUseful);
+
 public record CourseDetail(Guid Id, string Title, string Subject, string? Description, CourseContentType ContentType,
     string? ExtractedText, string? PdfPath, List<CourseSection>? Sections, DateTime CreatedAt, DateTime UpdatedAt,
     CourseStatus Status, List<Guid>? ClassroomIds, Guid OwnerId, string? StructuringStatus = null, string? SourceUrl = null)

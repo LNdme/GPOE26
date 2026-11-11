@@ -85,11 +85,28 @@ else
             }
 
             <div class="ga-row between" style="margin-top:28px; padding-top:18px; border-top:1px solid #ECEAE3; font-family:var(--ga-font)">
-                <span class="ga-small ga-muted">Ce cours vous a-t-il été utile ?</span>
-                <span class="ga-actions">
-                    <button class="ga-btn small @(_vote == 1 ? "" : "secondary")" aria-pressed="@Aria.State(_vote == 1)" @onclick="() => _vote = 1">Oui</button>
-                    <button class="ga-btn small @(_vote == -1 ? "" : "secondary")" aria-pressed="@Aria.State(_vote == -1)" @onclick="() => _vote = -1">Non</button>
-                </span>
+                @if (_course.OwnerId == Me.Id)
+                {
+                    @* L'auteur voit ce que ses lecteurs en pensent (sans savoir qui a répondu quoi) *@
+                    <span class="ga-small ga-muted">
+                        @if (_feedback is { Useful: { } yes, NotUseful: { } no } && yes + no > 0)
+                        {
+                            <text>Avis des lecteurs : <strong>@yes</strong> @(yes > 1 ? "l'ont trouvé utile" : "l'a trouvé utile"), <strong>@no</strong> non.</text>
+                        }
+                        else
+                        {
+                            <text>Vos lecteurs pourront dire ici si ce cours leur a été utile.</text>
+                        }
+                    </span>
+                }
+                else
+                {
+                    <span class="ga-small ga-muted">@(_feedbackError ?? (_feedback?.Mine is null ? "Ce cours vous a-t-il été utile ?" : "Merci pour votre avis. Vous pouvez le changer."))</span>
+                    <span class="ga-actions">
+                        <button class="ga-btn small @(_feedback?.Mine == true ? "" : "secondary")" aria-pressed="@Aria.State(_feedback?.Mine == true)" disabled="@_voting" @onclick="() => VoteAsync(true)">Oui</button>
+                        <button class="ga-btn small @(_feedback?.Mine == false ? "" : "secondary")" aria-pressed="@Aria.State(_feedback?.Mine == false)" disabled="@_voting" @onclick="() => VoteAsync(false)">Non</button>
+                    </span>
+                }
             </div>
         </article>
 
@@ -172,7 +189,9 @@ else
     private CourseDetail? _course;
     private List<TocEntry> _toc = new();
     private List<StudentAssessment> _related = new();
-    private int _vote;
+    private CourseFeedback? _feedback;
+    private string? _feedbackError;
+    private bool _voting;
     private bool _tutorOpen, _mathPending, _tocOpen = true, _restructuring;
     private CancellationTokenSource? _poll, _studyClock;
     private int _analysisVersion;
@@ -187,6 +206,7 @@ else
         var result = await Courses.GetAsync(Id);
         _error = result.Error;
         Show(result.Value);
+        if (result.Ok) _feedback = (await Courses.FeedbackAsync(Id)).Value;
 
         // Évaluations d'entraînement ouvertes : proposées à l'élève à la fin du cours
         if (Session.Role == UserRole.Student)
@@ -196,6 +216,26 @@ else
             _related = (mine.Value ?? new()).Where(a => a.Kind == AssessmentKind.Practice && a.CanStart(DateTime.UtcNow)).Take(3).ToList();
         }
         _loading = false;
+    }
+
+    /// <summary>Oui ou Non ; cliquer de nouveau sur l'avis déjà donné le retire.</summary>
+    private async Task VoteAsync(bool useful)
+    {
+        _voting = true;
+        _feedbackError = null;
+        if (_feedback?.Mine == useful)
+        {
+            var cleared = await Courses.ClearFeedbackAsync(Id);
+            if (cleared.Ok) _feedback = _feedback with { Mine = null };
+            else _feedbackError = cleared.Error;
+        }
+        else
+        {
+            var saved = await Courses.SetFeedbackAsync(Id, useful);
+            if (saved.Ok) _feedback = saved.Value;
+            else _feedbackError = saved.Error;
+        }
+        _voting = false;
     }
 
     /// <summary>
