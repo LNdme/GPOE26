@@ -1,0 +1,266 @@
+# Plan — comptes d'établissement et d'enseignant indépendant
+
+Rédigé le 11 novembre 2026, sur la branche `feat/site-admin-navbar`. Questions Q1 à Q9 validées le même jour.
+
+> **Avancement :** lots 1 et 2 faits le 11 novembre 2026 (non commités) — voir « Lot 1 » et « Lot 2 : ce qui a été fait » en fin de document. Lots 3 à 7 à faire.
+
+## Le but en une phrase
+
+Un établissement (ou un enseignant indépendant) **gère lui-même** ses enseignants, ses classes et ses élèves ; chaque élève entre avec **son propre code**, qui le relie à son matricule et à sa classe. Le suivi part de là.
+
+## Les choix déjà validés
+
+1. Un **responsable** par établissement, désigné par l'admin de la plateforme. Il peut ajouter d'autres **gestionnaires**.
+2. Le responsable **importe la liste des élèves** (nom, matricule, classe) depuis Excel/CSV, ou les saisit à la main.
+3. Chaque élève reçoit un **code personnel à usage unique**. L'activer crée le compte, place l'élève dans sa classe et consomme une place de licence. Le responsable voit les codes, les réimprime, les révoque (la place est libérée).
+4. Une classe a **plusieurs enseignants, un par matière**. Les classes sont rattachées à une **année scolaire**.
+5. L'**enseignant indépendant** suit le même schéma en petit ; le matricule est généré automatiquement ; sa formule compte un nombre de places (environ 30).
+6. Un élève peut encore s'inscrire seul, **pour un usage individuel uniquement**. Un élève d'établissement n'entre que par son code.
+7. Le **matricule est unique dans l'établissement**.
+8. Les classes existantes sont **migrées** vers leur établissement ou vers l'espace de leur enseignant.
+9. Les **parents ne changent pas** (`ParentChildLinks`).
+
+---
+
+## 1. Ce qui ne va pas aujourd'hui (base `userdb`)
+
+| Problème | Où |
+|---|---|
+| `Organizations` n'est qu'un nom ; personne ne la gère, à part l'admin de la plateforme. | `User/Model/Organization.cs`, `User/Endpoints/AdminEndpoints.cs` |
+| La licence donne **une clé partagée** (`ETB-…`, `MaxUses = places`) : premier arrivé, premier servi ; une place prise n'est jamais rendue. | `SubscriptionService.RedeemAsync`, `SubscriptionKeys`, `KeyRedemptions` |
+| Aucune liste d'élèves, aucun matricule : l'établissement ne sait pas qui sont ses élèves. | — |
+| Une classe = **un seul** `TeacherId`, avec un code d'invitation commun à toute la classe. | `Classrooms`, `ClassroomService.JoinAsync` |
+| `Classrooms.TeacherId` est en `ON DELETE CASCADE` : supprimer le compte d'un enseignant **supprime la classe** et ses inscriptions. | `User/Data/UserSchema.cs:63` |
+| Connexion par e-mail seulement, e-mail obligatoire : bloquant pour des élèves sans adresse. | `User/Program.cs:259`, `AppUsers.Email NOT NULL` |
+| Pas de limite de tentatives sur les codes : un code court peut être deviné. | `User/Program.cs` (aucun `AddRateLimiter`) |
+
+## 2. Le modèle cible
+
+### Idée centrale : tout le monde a un « espace »
+
+Un **enseignant indépendant devient un petit établissement** (`Organizations.Type = Independent`) dont il est à la fois responsable et unique enseignant. Ainsi il n'y a **qu'un seul modèle** à coder, tester et afficher — c'est le choix 5 pris au pied de la lettre.
+
+```
+Organizations (School | Institution | Independent)
+ ├─ OrganizationMembers      responsable, gestionnaires, enseignants  (comptes existants)
+ ├─ Subscriptions            la licence : places élèves (+ places enseignants)
+ ├─ SchoolYears              « 2026-2027 », une seule en cours
+ │    └─ Classrooms          rattachées à une année
+ │         ├─ ClassroomTeachers   un enseignant par matière, un professeur principal
+ │         └─ ClassroomMembers    (inchangé) élèves ayant un compte
+ └─ OrganizationStudents     la liste officielle : matricule, nom, classe — AVANT tout compte
+      └─ AccessCodes         code personnel à usage unique → crée le compte
+```
+
+### Nouvelles tables et changements
+
+| Table | Colonnes principales | Règles |
+|---|---|---|
+| `OrganizationMembers` | `OrganizationId`, `UserId`, `Role` (`Owner` / `Manager` / `Teacher`), `Status` (`Active` / `Removed`), `JoinedAt` | Clé (`OrganizationId`, `UserId`, `Role`) : une ligne par rôle. Au moins un `Owner` actif par espace. Un enseignant peut appartenir à plusieurs établissements (cas des vacataires). |
+| `SchoolYears` | `Id`, `OrganizationId`, `Label`, `StartsOn`, `EndsOn`, `IsCurrent` | Une seule année `IsCurrent` par espace (index unique partiel). |
+| `OrganizationStudents` | `Id`, `OrganizationId`, `Matricule`, `LastName`, `FirstName`, `BirthDate?`, `ClassroomId?`, `UserId?`, `Status` (`Pending` / `Active` / `Revoked` / `Left`), `CreatedAt`, `ActivatedAt?` | **Unique (`OrganizationId`, `Matricule`)** (choix 7). Unique (`OrganizationId`, `UserId`) quand renseigné : un même compte peut figurer dans deux espaces (son lycée et son répétiteur). La ligne survit d'une année à l'autre : passer en classe supérieure = changer `ClassroomId`. `ClassroomId` est la classe principale ; les groupes multiples d'un indépendant restent dans `ClassroomMembers`. |
+| `AccessCodes` | `Id`, `Code`, `OrganizationId`, `Kind` (`Student` / `Teacher` / `Owner`), `OrganizationStudentId?`, `Status` (`Issued` / `Used` / `Revoked` / `Expired`), `ExpiresAt`, `UsedAt?`, `UsedByUserId?`, `CreatedByUserId` | Code unique, à usage unique. Un seul code `Issued` à la fois par élève : réimprimer en génère un nouveau et révoque l'ancien. |
+| `Classrooms` | **+** `SchoolYearId`, `OrganizationId` devient obligatoire ; `TeacherId` devient **nullable** et en `ON DELETE SET NULL` | `TeacherId` est conservé pendant la transition comme « professeur principal », puis supprimé (lot 7). `InviteCode` devient facultatif puis disparaît. |
+| `ClassroomTeachers` | `ClassroomId`, `TeacherId`, `Subject`, `IsMain` | Clé (`ClassroomId`, `TeacherId`, `Subject`). Un enseignant d'une classe doit être `OrganizationMembers` actif de l'espace. |
+| `Subscriptions` | **+** `SeatsUsed`, **+** `TeacherSeats?` | `SeatsUsed` est réservé par un `UPDATE … WHERE SeatsUsed < Seats` (même technique que `RedeemAsync` aujourd'hui), pour tenir face aux activations simultanées. |
+| `AppUsers` | `Email` devient **nullable** | Index unique conservé (PostgreSQL accepte plusieurs `NULL`). `OrganizationId` / `OrganizationName` deviennent de simples affichages, la vérité est dans `OrganizationMembers` / `OrganizationStudents`. |
+
+### Les codes
+
+- Format : `GP-XXXX-XXXX` (8 caractères de l'alphabet actuel sans 0/O/1/I/L : 31⁸ ≈ 8,5 × 10¹¹), généré par `CodeGenerator`.
+- Stockés en clair pour pouvoir être **revus et réimprimés** (choix 3). Le risque est faible : le code ne sert qu'une fois et expire.
+- Validité par défaut : jusqu'à la fin de l'année scolaire (à confirmer, question Q7).
+- **Limite de tentatives** sur l'activation (limiteur ASP.NET Core par adresse IP) : sans elle, un code peut être deviné.
+
+### Les droits — qui peut faire quoi
+
+| Action | Admin plateforme | Responsable (`Owner`) | Gestionnaire (`Manager`) | Enseignant | Élève |
+|---|---|---|---|---|---|
+| Créer l'établissement, la licence, désigner le responsable | ✅ | | | | |
+| Ajouter / retirer un gestionnaire | ✅ | ✅ | | | |
+| Années scolaires, classes, affectation des enseignants | | ✅ | ✅ | | |
+| Inviter / retirer un enseignant | | ✅ | ✅ | | |
+| Importer les élèves, générer / réimprimer / révoquer les codes | | ✅ | ✅ | | |
+| Voir les élèves et le suivi d'une classe | | ✅ | ✅ | ses classes | |
+| Créer des évaluations et cours pour une classe | | | | ses classes | |
+| Activer son code | | | | ✅ (code enseignant) | ✅ |
+
+Les droits d'espace sont vérifiés **en base** à chaque appel, comme `RequireAdmin` (`User/Endpoints/Policies.cs`) : un nouveau filtre `RequireOrganizationRole(orgId, Owner|Manager)`. Rien n'est ajouté au jeton.
+
+### Le droit Premium
+
+`SubscriptionService.GetEntitlementAsync` ajoute deux sources :
+- élève : une ligne `OrganizationStudents` `Active` dont l'espace a une licence en cours ;
+- enseignant / gestionnaire : une ligne `OrganizationMembers` `Active` dans un tel espace.
+
+La révocation d'un élève passe `Status` à `Revoked`, décrémente `SeatsUsed` et retire l'élève de `ClassroomMembers`. Son compte reste (il peut continuer en usage individuel gratuit, choix 6).
+
+---
+
+## 3. Les parcours
+
+### Admin de la plateforme
+1. Crée l'établissement et sa licence (`/admin/licences`, existant).
+2. **Nouveau :** désigne le responsable — par l'e-mail d'un compte existant, ou en générant un **code responsable** (`Kind = Owner`) à lui transmettre.
+
+### Responsable / gestionnaire — nouvel espace « Mon établissement »
+1. Tableau de bord : places utilisées / total, année en cours, nombre de classes, d'enseignants, d'élèves activés / en attente.
+2. **Années et classes** : créer l'année 2026-2027, créer les classes, affecter un enseignant par matière, choisir le professeur principal.
+3. **Enseignants** : inviter (code enseignant personnel, ou e-mail d'un compte existant), retirer.
+4. **Élèves** :
+   - importer un fichier (colonnes : matricule, nom, prénom, classe, date de naissance facultative) avec un **aperçu avant validation** (lignes en erreur, matricules en double, classes inconnues) ;
+   - ajouter à la main, changer de classe, marquer « a quitté l'établissement » ;
+   - générer les codes d'une classe, **imprimer une fiche par élève** (nom, classe, code, adresse du site, mode d'emploi) ;
+   - révoquer un code ou un élève (la place revient).
+5. **Gestionnaires** (responsable seulement) : ajouter / retirer.
+
+### Élève d'établissement
+1. Page publique **« J'ai un code »** : il saisit son code.
+2. L'écran affiche « *Nom Prénom — Terminale C — Lycée X* : c'est bien toi ? ».
+3. Il choisit un **nom d'utilisateur** (proposé à partir de son nom) et un mot de passe ; l'e-mail est facultatif.
+4. Le compte est créé, l'élève est placé dans sa classe, la place est consommée, il est connecté.
+5. Ensuite il se connecte avec **son nom d'utilisateur ou son e-mail**.
+
+Un élève qui a **déjà un compte** individuel peut saisir le code depuis son profil : le compte est relié à sa ligne `OrganizationStudents` au lieu d'en créer un autre.
+
+### Enseignant d'établissement
+- Il active son code enseignant (nouveau compte ou compte existant) et devient `OrganizationMembers.Teacher`.
+- Il ne crée plus ses classes : il voit celles où le responsable l'a affecté, avec sa matière.
+
+### Enseignant indépendant
+- À l'inscription (`TeachingContext = Independent`) ou à la souscription de la formule Enseignant : création automatique de son espace (`Type = Independent`), dont il est `Owner` et `Teacher`, avec une année en cours.
+- Il crée ses classes lui-même et ajoute ses élèves (nom, classe) ; **le matricule est généré** (format en question Q2).
+- Places : celles de sa formule (environ 30, question Q1).
+- Mêmes fiches de codes, même page d'activation pour ses élèves.
+
+### Élève individuel
+Inchangé : inscription libre, usage individuel. Il ne peut plus rejoindre une classe par un code de classe commun.
+
+---
+
+## 4. Les autres services
+
+Les bases Cours, Quiz et Chat ne gardent que des identifiants ; elles demandent les droits au service User. Le changement est petit mais **obligatoire dès qu'une classe a deux enseignants** :
+
+| Où | Aujourd'hui | Demain |
+|---|---|---|
+| `GET /classrooms/mine` (User) | Enseignant : `TeacherId == moi` | Enseignant : présent dans `ClassroomTeachers`. Le DTO gagne `MyRole` (`Teacher` / `Student` / `Manager`), `MySubjects` et `Teachers[]`. `TeacherId` reste rempli (professeur principal) pour ne rien casser. |
+| `GET /classrooms/{id}/members` (User) | Propriétaire seulement | Enseignant de la classe **ou** gestionnaire de l'espace. |
+| Quiz `AssessmentEndpoints.cs:186` (`OwnedClassroomIdsAsync`), `UserDirectoryClient.cs` | `c.TeacherId == userId` | `c.MyRole == Teacher` |
+| Quiz `ProgressEndpoints.cs:27` | Évaluations de **l'enseignant connecté** | Inchangé pour un enseignant (il voit sa matière). Un gestionnaire voit **toutes** les évaluations de la classe (nouveau cas). |
+| Cours `UserDirectoryClient.cs:27` | `c.TeacherId == userId` | `c.MyRole == Teacher` |
+| Chat `AgentContextService.cs:105` | Noms des classes | Inchangé ; peut ajouter la matière de l'enseignant. |
+| `Assessments.TeacherId` (Quiz) | Auteur | **Inchangé** : reste l'auteur. |
+
+Interface (`GPOE26.UI`) : `AccountModels.cs:98`, `Apis.cs:209-215`, `ClassDetail.razor`, `TeacherHome.razor` (le code d'invitation disparaît), `Onboarding.razor` (étapes `invite` et `cle`), `Login.razor` (identifiant au lieu d'e-mail), `SubscriptionPage.razor`.
+
+---
+
+## 5. La migration des données (choix 8)
+
+Le schéma est créé par du SQL idempotent rejoué à chaque démarrage (`UserSchema.cs`). La reprise des données ne doit tourner **qu'une fois** : ajout d'une petite table `SchemaVersions` et d'une étape « migration v2 » exécutée dans une transaction si elle n'est pas encore notée.
+
+1. **Sauvegarde** de `userdb` avant tout (`pg_dump`).
+2. Pour chaque établissement existant : une année « 2026-2027 » en cours.
+3. Pour chaque enseignant qui a des classes **sans** établissement : un espace `Independent` à son nom, avec une année en cours.
+4. Chaque classe : `SchoolYearId` renseigné, `OrganizationId` renseigné, une ligne `ClassroomTeachers` (`TeacherId`, `Subject`, `IsMain = true`).
+5. Clés `ETB-` / `ORG-` déjà activées : enseignants → `OrganizationMembers.Teacher` ; élèves → `OrganizationStudents` `Active` avec matricule généré ; `SeatsUsed` recalculé.
+6. Élèves des `ClassroomMembers` sans ligne `OrganizationStudents` : création avec matricule généré, `Active`.
+7. Les clés `ETB-` / `ORG-` sont ensuite révoquées : on n'en émet plus.
+8. Comptes de démonstration : selon la réponse à Q3.
+
+---
+
+## 6. Les lots
+
+Chaque lot se compile, passe les tests et laisse le site utilisable.
+
+| Lot | Contenu | Vérification |
+|---|---|---|
+| **1. Schéma et migration** | Nouvelles tables, `TeacherId` nullable et `SET NULL`, `Email` nullable, `SchemaVersions`, migration v2. Aucune page ne change. | Migration jouée sur une copie de la base réelle ; tests existants verts ; contrôle SQL des comptes (classes, élèves, places). |
+| **2. Espace et enseignants** | Filtre `RequireOrganizationRole` ; API `/organizations/{id}/…` : membres, années, classes, affectations. `GET /classrooms/mine` étendu ; Quiz, Cours, Chat passent à `MyRole`. Admin : désigner le responsable. | Tests des règles de droits ; scénario API : deux enseignants sur une classe, chacun ne voit que ses évaluations. |
+| **3. Élèves et codes** | `OrganizationStudents`, import CSV/Excel avec aperçu, codes, activation, places, révocation, droit Premium ; connexion par nom d'utilisateur ; limiteur de tentatives. | Tests : unicité du matricule, places pleines, activation simultanée, code révoqué / expiré / déjà utilisé, révocation qui libère la place. |
+| **4. Pages « Mon établissement »** | Tableau de bord, classes, enseignants, élèves, import, fiches de codes à imprimer, gestionnaires ; page « J'ai un code » ; `Login.razor`. | Essai dans le navigateur, du responsable à l'élève connecté dans sa classe. |
+| **5. Enseignant indépendant** | Création automatique de l'espace, matricules générés, places de la formule. | Scénario : inscription indépendant → 3 élèves → codes → activation. |
+| **6. Suivi par le gestionnaire** | Le gestionnaire voit le suivi de toutes les classes (Quiz `ProgressEndpoints`). | Test d'accès : gestionnaire oui, enseignant d'une autre classe non. |
+| **7. Nettoyage** | Retrait de `POST /classrooms/join`, de `InviteCode`, de `Classrooms.TeacherId`, des clés `ETB-`/`ORG-` ; README, `scripts/test-user-api.sh`, `scripts/seed-tutor-demo.py`. | Recherche de toute référence restante ; tests verts. |
+
+Les lots 1 à 3 sont la base ; 4 rend la chose visible ; 5 à 7 peuvent suivre.
+
+---
+
+## Lot 1 : ce qui a été fait (11 novembre 2026)
+
+**Code :**
+- `User/Data/UserSchema.cs` : nouvelles tables (`OrganizationMembers`, `SchoolYears`, `ClassroomTeachers`, `OrganizationStudents`, `AccessCodes`, `SchemaVersions`), `AppUsers.Email` facultatif, `Classrooms.TeacherId` facultatif et en `ON DELETE SET NULL`, `Classrooms.SchoolYearId`, `Organizations.MatriculeSeq`, `Subscriptions.SeatsUsed` / `TeacherSeats`.
+- `User/Model/OrganizationSpace.cs` (nouveaux modèles), `UserContext` (relations déclarées pour l'ordre des insertions).
+- `User/Data/UserDataMigrations.cs` : reprise v2, jouée une fois au démarrage, dans une transaction, notée dans `SchemaVersions`.
+- `User/Service/SpaceService.cs` + `SpaceRules.cs` : les anciens parcours tiennent les nouvelles tables à jour (création de classe → espace, année, professeur principal ; code de classe ou clé `ETB-` → liste des élèves avec matricule, ou membre enseignant).
+- Inscription : avec une clé d'établissement, les classes créées à l'inscription vont dans cet établissement (elles restaient sans établissement).
+- Démonstration (développement seulement, Q3) : la classe de ProfMaths va au « Lycée de démonstration », AdminGPOE en devient responsable.
+
+**Écarts avec la section 5 :**
+- Les clés `ETB-` / `ORG-` ne sont **pas** révoquées au lot 1 : elles donnent encore l'accès Premium. Le lot 3 les retire en même temps qu'il bascule le droit Premium.
+- `SeatsUsed` est créé à 0 ; le lot 3 le calcule au moment de la bascule.
+- `Classrooms.OrganizationId` reste facultatif en base ; toute classe créée en a désormais un.
+- Le nom d'un élève repris est son nom d'utilisateur : la base ne connaît pas d'autre nom.
+
+**Vérifications :**
+- 293 tests unitaires réussis (dont 12 nouveaux, `GPOE26.Logic.Tests/SpaceTests.cs`).
+- Reprise jouée sur une copie jetable de la sauvegarde du 10 novembre : 4 espaces indépendants créés, la classe de démo rangée au lycée, 7 classes avec année et professeur principal, l'élève de démo sur la liste (`2026-0001`). Pas rejouée au redémarrage.
+- Parcours par l'API sur cette copie : indépendant avec 2 classes puis une 3e (un seul espace), élève par code de classe dans 2 classes (une seule ligne), enseignant et élève avec la clé `ETB-DEMO-PROF`.
+- Suppression d'un enseignant sur la copie : sa classe reste, sans enseignant.
+- Non vérifié : les tests après les deux dernières retouches (relations EF, jeu de démonstration), faute de place sur le disque C ; la compilation et les parcours API, eux, ont été rejoués après ces retouches.
+
+## Lot 2 : ce qui a été fait (11 novembre 2026)
+
+**Droits :** `RequireSpaceRole(…)` (`User/Endpoints/Policies.cs`) vérifie en base, à chaque appel, le rôle actif dans l'espace de la route `/organizations/{orgId}/…` ; refus en 403 avec un message.
+
+**API de l'espace** (`User/Endpoints/OrganizationEndpoints.cs`) :
+
+| Route | Qui | Rôle |
+|---|---|---|
+| `GET /organizations/mine` | tout compte | mes espaces et mes rôles |
+| `GET /organizations/{id}` | responsable, gestionnaire | tableau de bord (année, classes, enseignants, élèves, places) |
+| `GET /organizations/{id}/members` | responsable, gestionnaire | membres et leurs rôles |
+| `POST`/`DELETE /organizations/{id}/managers` | responsable | nommer / retirer un gestionnaire |
+| `POST`/`DELETE /organizations/{id}/teachers` | responsable, gestionnaire | ajouter / retirer un enseignant ; le retrait le retire aussi de ses classes, le rôle de professeur principal passe au suivant ; plafond `TeacherSeats` respecté |
+| `GET`/`POST /organizations/{id}/years`, `POST …/years/{yid}/current` | responsable, gestionnaire | années ; une seule en cours |
+| `GET`/`POST`/`PUT`/`DELETE /organizations/{id}/classes` | responsable, gestionnaire | classes de l'année (créées sans enseignant), archivage |
+| `PUT`/`DELETE /organizations/{id}/classes/{cid}/teachers` | responsable, gestionnaire | affectation par matière, professeur principal |
+| `PUT`/`DELETE /admin/organizations/{id}/owners` | admin plateforme | désigner / retirer le responsable ; `GET /admin/organizations` montre les responsables et n'affiche plus les espaces indépendants |
+
+Ajouts par l'e-mail d'un compte existant : les codes enseignant et responsable arrivent au lot 3.
+
+**Classes** (`ClassroomEndpoints.cs`) : un enseignant voit les classes où il est **affecté** (`ClassroomTeachers`), plus seulement celles dont il est `TeacherId`. Le DTO gagne `MyRole` (`Teacher` / `Manager` / `Student`), `MySubjects`, `Teachers`, `OrganizationId`, `SchoolYearId` ; `TeacherId`/`TeacherName` = professeur principal. Liste des élèves, retrait d'un élève, nouveau code : enseignants de la classe et gestionnaires. Archivage : professeur principal ou gestionnaire.
+
+**Autres services :** Quiz (`ClassroomRef.TaughtBy`) et Cours (`UserDirectoryClient.OwnedBy`) décident d'après `MyRole == "Teacher"` : un co-enseignant peut viser la classe d'une évaluation ou y partager un cours ; un gestionnaire non. Sans `MyRole` (ancien service User), ils retombent sur le professeur principal. Chat : rien à changer (il ne lit que les noms).
+
+**Pas d'interface au lot 2** : les écrans (responsable, désignation par l'admin dans `/admin/licences`) sont au lot 4.
+
+**Limites connues, pour les lots suivants :**
+- Un enseignant ajouté à un établissement par e-mail qui crée lui-même une classe la range dans son espace indépendant (son compte n'a pas l'établissement « vérifié » par la clé). À régler au lot 4, quand les enseignants d'établissement ne créeront plus leurs classes.
+- Le suivi d'une classe par le gestionnaire (Quiz `ProgressEndpoints`) reste au lot 6.
+
+**Vérifications :**
+- Tests : 330 / 330 (`GPOE26.Logic.Tests`, dont `SpaceTests.cs` : années saisies, partage par un co-enseignant) et 54 / 54 (`Quiz.Tests`, dont `ClassroomAccessTests.cs`).
+- Scénario complet par l'API sur une copie jetable de la sauvegarde (39 contrôles, tous bons) : l'admin désigne le responsable (pas un élève) ; un inconnu et un enseignant pas encore ajouté sont refusés ; année, deux enseignants sur une classe (maths principal, physique) ; chacun voit la classe avec sa matière ; le co-enseignant et le responsable voient la liste des élèves, pas un inconnu ; retirer le professeur principal fait passer le rôle à l'autre ; un gestionnaire crée une classe mais ne nomme personne ; changement d'année ; retrait du responsable par l'admin ; l'ancien parcours « l'enseignant crée sa classe » marche toujours.
+- Un enseignant de démo dont la classe vient de la reprise du lot 1 la voit toujours, avec sa matière et le code.
+
+---
+
+## 7. Questions tranchées
+
+> **Toutes les propositions ci-dessous ont été validées le 11 novembre 2026.** Elles font désormais partie du plan.
+
+| # | Question | Décision |
+|---|---|---|
+| Q1 | Nombre de places d'un enseignant indépendant ? | 30 dans la formule Enseignant. |
+| Q2 | Format du matricule généré (indépendant, migration) ? | `AAAA-NNNN` (année d'entrée + numéro), ex. `2026-0007`. Les établissements importent leurs propres matricules. |
+| Q3 | Comptes et classes de démonstration (`@gpoe26.cm`) ? | Les migrer comme les autres (espace « Lycée de démonstration »), seulement en développement. |
+| Q4 | E-mail facultatif pour les élèves activés par code, connexion par nom d'utilisateur ? | Oui : beaucoup d'élèves n'ont pas d'adresse. Sans e-mail, le mot de passe oublié est réinitialisé par le responsable (nouveau code). |
+| Q5 | Les enseignants consomment-ils des places de licence ? | Non : places pour les élèves ; nombre d'enseignants plafonné à part (`TeacherSeats`). |
+| Q6 | Un enseignant peut-il appartenir à plusieurs établissements ? | Oui (vacataires) ; il choisit l'espace affiché. |
+| Q7 | Durée de validité d'un code non utilisé ? | Jusqu'à la fin de l'année scolaire. |
+| Q8 | Pour l'indépendant, des codes « en blanc » (l'élève saisit lui-même son nom à l'activation) ? | Oui, en option : moins de saisie pour l'enseignant. |
+| Q9 | Format d'import ? | CSV dès le lot 3 ; Excel `.xlsx` en plus (paquet ClosedXML, licence MIT). |

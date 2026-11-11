@@ -19,7 +19,13 @@ public record CreateClassroomRequest(
 
 public record JoinClassroomRequest([Required] string Code);
 
-/// <summary>InviteCode n'est renseigné que pour l'enseignant propriétaire.</summary>
+/// <summary>
+/// Classe vue par l'utilisateur connecté.
+/// TeacherId / TeacherName : professeur principal (Guid.Empty et "" si la classe n'en a pas).
+/// MyRole : ce que l'utilisateur y est (enseignant affecté, gestionnaire de l'espace, élève) — c'est ce que
+/// Quiz et Cours lisent pour savoir s'il peut y publier. MySubjects : ses matières dans la classe.
+/// InviteCode n'est renseigné que pour un enseignant de la classe ou un gestionnaire.
+/// </summary>
 public record ClassroomDto(
     Guid Id,
     string Name,
@@ -31,7 +37,12 @@ public record ClassroomDto(
     Guid TeacherId,
     string TeacherName,
     int MemberCount,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    ClassroomRole? MyRole = null,
+    List<string>? MySubjects = null,
+    List<ClassTeacherDto>? Teachers = null,
+    Guid? OrganizationId = null,
+    Guid? SchoolYearId = null
 );
 
 public record ClassroomMemberDto(
@@ -119,4 +130,5 @@ public record CreateLicenseRequest([Range(1, 100000)] int Seats, [Range(1, 36)] 
 
 public record ActivateSubscriptionRequest([Range(1, 36)] int? Months = null);
 
-public record OrganizationDto(Guid Id, string Name, OrganizationType Type, string? City, List<SubscriptionDto> Licenses);
+/// <summary>Owners : responsables de l'espace (vide tant que l'administration n'en a pas désigné).</summary>
+public record OrganizationDto(Guid Id, string Name, OrganizationType Type, string? City, List<SubscriptionDto> Licenses, List<SpaceOwnerDto>? Owners = null);

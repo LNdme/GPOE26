@@ -63,6 +63,7 @@ builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient<PlanCatalogClient>(client =>
     client.BaseAddress = new Uri(builder.Configuration["Services:ApiService"] ?? "http://localhost:5455"));
 builder.Services.AddScoped<ClassroomService>();
+builder.Services.AddScoped<SpaceService>();
 
 // Applique les [Required], [MinLength]… des DTOs aux Minimal APIs (sinon ils sont ignorés)
 builder.Services.AddValidation();
@@ -116,6 +117,8 @@ using (var scope = app.Services.CreateScope())
     await UserSchema.EnsureAsync(db);
     await UserSeeder.SeedAsync(db, app.Environment.IsDevelopment());
     await AdminBootstrap.PromoteConfiguredAdminsAsync(db, app.Configuration, app.Logger);
+    // Après le jeu de démonstration, pour qu'il soit repris comme le reste
+    await UserDataMigrations.RunAsync(db, app.Logger);
 }
 
 if (app.Environment.IsDevelopment())
@@ -180,11 +183,13 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
     if (req.StartTrial && req.Role != UserRole.Teacher)
         return Results.BadRequest(new { message = "L'essai gratuit est réservé aux enseignants." });
 
+    Guid? keyOrganizationId = null;
     if (req.SubscriptionKey is not null)
     {
-        var (error, _) = await subs.CheckKeyAsync(req.SubscriptionKey, req.Role);
+        var (error, key) = await subs.CheckKeyAsync(req.SubscriptionKey, req.Role);
         if (error != RedeemError.None)
             return Results.BadRequest(new { message = SubscriptionService.Message(error) });
+        keyOrganizationId = key?.Subscription.OrganizationId;
     }
 
     if (req.InviteCode is not null)
@@ -215,6 +220,8 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
         TeachingSubjects = teachingSubjects,
         TeachingContext = req.TeachingContext,
         OrganizationName = req.TeachingContext == TeachingContext.Independent ? null : req.OrganizationName,
+        // Connu dès maintenant (la clé est activée plus bas) : les classes créées à l'inscription vont dans cet établissement
+        OrganizationId = keyOrganizationId,
         LinkCode = req.Role == UserRole.Student ? await ParentEndpoints.UniqueLinkCodeAsync(db) : null,
         LastLoginAt = DateTime.UtcNow   // l'inscription ouvre la première session
     };
@@ -318,6 +325,7 @@ app.MapParentEndpoints();
 app.MapSubscriptionEndpoints();
 app.MapAdminEndpoints();
 app.MapProfileEndpoints();
+app.MapOrganizationEndpoints();
 
 
 

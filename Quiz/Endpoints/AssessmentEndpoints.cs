@@ -179,12 +179,9 @@ public static class AssessmentEndpoints
         .WithSummary("Supprimer une évaluation sans copie");
     }
 
-    /// <summary>Classes dont l'utilisateur connecté est l'enseignant.</summary>
-    private static async Task<HashSet<Guid>> OwnedClassroomIdsAsync(ClaimsPrincipal principal, UserDirectoryClient users)
-    {
-        var userId = principal.UserId();
-        return (await users.MyClassroomsAsync()).Where(c => c.TeacherId == userId).Select(c => c.Id).ToHashSet();
-    }
+    /// <summary>Classes où l'utilisateur connecté enseigne (une classe peut avoir plusieurs enseignants).</summary>
+    private static async Task<HashSet<Guid>> OwnedClassroomIdsAsync(ClaimsPrincipal principal, UserDirectoryClient users) =>
+        ClassroomRef.TaughtBy(await users.MyClassroomsAsync(), principal.UserId());
 
     /// <summary>Refus si l'évaluation vise une classe dont l'enseignant n'est pas le propriétaire, sinon null.</summary>
     private static async Task<IResult?> ForeignClassroomsAsync(AssessmentInput input, ClaimsPrincipal principal, UserDirectoryClient users)

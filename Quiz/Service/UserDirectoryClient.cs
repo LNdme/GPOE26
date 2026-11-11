@@ -3,7 +3,19 @@ using System.Net.Http.Headers;
 
 namespace Quiz.Service;
 
-public record ClassroomRef(Guid Id, string Name, string? InviteCode, Guid TeacherId);
+/// <summary>
+/// Classe renvoyée par le service User. MyRole : place de l'utilisateur dans la classe (« Teacher », « Manager »,
+/// « Student ») ; une classe peut avoir plusieurs enseignants, TeacherId n'est que le professeur principal.
+/// </summary>
+public record ClassroomRef(Guid Id, string Name, string? InviteCode, Guid TeacherId, string? MyRole = null)
+{
+    /// <summary>
+    /// Classes où l'utilisateur enseigne : les seules qu'une évaluation peut viser.
+    /// Sans MyRole (service User antérieur au lot 2), on retombe sur le professeur principal.
+    /// </summary>
+    public static HashSet<Guid> TaughtBy(IEnumerable<ClassroomRef> classrooms, Guid userId) =>
+        classrooms.Where(c => c.MyRole is { } role ? role == "Teacher" : c.TeacherId == userId).Select(c => c.Id).ToHashSet();
+}
 public record MemberRef(Guid Id, string Username, string? Level, DateTime? LastLoginAt);
 public record ChildRef(Guid ChildId, string Username, string Status);
 public record EntitledFeatureRef(string Code, int? Limit);

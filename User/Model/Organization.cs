@@ -15,11 +15,16 @@ namespace User.Model
         public string? City { get; set; }
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        /// <summary>Dernier numéro de matricule généré (AAAA-NNNN) ; incrémenté par un UPDATE atomique.</summary>
+        public int MatriculeSeq { get; set; }
     }
 
     public enum OrganizationType
     {
         School,
-        Institution
+        Institution,
+        /// <summary>Espace d'un enseignant indépendant (répétiteur, cours particuliers), dont il est le responsable.</summary>
+        Independent
     }
 }

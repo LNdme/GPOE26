@@ -12,9 +12,15 @@ namespace User.Model
 
         public ClassroomKind Kind { get; set; } = ClassroomKind.Class;
 
-        public Guid TeacherId { get; set; }
+        /// <summary>
+        /// Professeur principal, gardé pendant la transition vers ClassroomTeachers (plusieurs enseignants par classe).
+        /// Vide si son compte a été supprimé : la classe, elle, est conservée.
+        /// </summary>
+        public Guid? TeacherId { get; set; }
 
         public Guid? OrganizationId { get; set; }
+
+        public Guid? SchoolYearId { get; set; }
 
         /// <summary>Niveau (ex: "Terminale", "Upper Sixth") — null pour un groupe hors scolaire</summary>
         public string? Level { get; set; }
@@ -47,5 +53,15 @@ namespace User.Model
     {
         Class,
         Group
+    }
+
+    /// <summary>Place de l'utilisateur connecté dans une classe (renvoyée aux autres services par /classrooms).</summary>
+    public enum ClassroomRole
+    {
+        /// <summary>Enseignant affecté à la classe (une matière au moins).</summary>
+        Teacher,
+        /// <summary>Responsable ou gestionnaire de l'espace de la classe.</summary>
+        Manager,
+        Student
     }
 }

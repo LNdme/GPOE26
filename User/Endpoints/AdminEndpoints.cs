@@ -86,20 +86,55 @@ public static class AdminEndpoints
         .Produces<OrganizationDto>(201);
 
         // ── GET /admin/organizations ──────────────────────────────────────────────
+        // Les espaces d'enseignants indépendants n'y figurent pas : ils se gèrent seuls.
         admin.MapGet("/organizations", async (UserContext db) =>
         {
-            var orgs = await db.Organizations.OrderBy(o => o.Name).ToListAsync();
+            var orgs = await db.Organizations.Where(o => o.Type != OrganizationType.Independent).OrderBy(o => o.Name).ToListAsync();
             var licenses = await db.Subscriptions.Where(s => s.OrganizationId != null).ToListAsync();
             var ids = licenses.Select(l => l.Id).ToList();
             var keys = await db.SubscriptionKeys.Where(k => ids.Contains(k.SubscriptionId)).ToListAsync();
+            var owners = await db.OrganizationMembers
+                .Where(m => m.Role == OrganizationRole.Owner && m.Status == MemberStatus.Active)
+                .Join(db.AppUsers, m => m.UserId, u => u.Id, (m, u) => new { m.OrganizationId, Owner = new SpaceOwnerDto(u.Id, u.Username, u.Email) })
+                .ToListAsync();
 
             return Results.Ok(orgs.Select(o => new OrganizationDto(o.Id, o.Name, o.Type, o.City,
                 licenses.Where(l => l.OrganizationId == o.Id)
                     .Select(l => new SubscriptionDto(l, keys.Where(k => k.SubscriptionId == l.Id)))
-                    .ToList())));
+                    .ToList(),
+                owners.Where(x => x.OrganizationId == o.Id).Select(x => x.Owner).ToList())));
         })
-        .WithSummary("Établissements, institutions et leurs licences")
+        .WithSummary("Établissements, institutions, leurs licences et leurs responsables")
         .Produces<List<OrganizationDto>>();
+
+        // ── PUT /admin/organizations/{id}/owners ──────────────────────────────────
+        // Désigne le responsable du compte d'un établissement (compte existant ; le code responsable arrive au lot 3).
+        admin.MapPut("/organizations/{id:guid}/owners", async (Guid id, AddSpaceMemberRequest req, UserContext db, SpaceService spaces) =>
+        {
+            if (!await db.Organizations.AnyAsync(o => o.Id == id && o.Type != OrganizationType.Independent)) return Results.NotFound();
+            var user = await db.AppUsers.FirstOrDefaultAsync(u => u.Email == req.Email.Trim().ToLower());
+            if (user is null)
+                return Results.NotFound(new { message = "Aucun compte avec cette adresse : la personne doit d'abord s'inscrire." });
+            if (user.Role == UserRole.Student)
+                return Results.BadRequest(new { message = "Un compte élève ne peut pas être responsable d'un établissement." });
+
+            await spaces.GrantRoleAsync(id, user.Id, OrganizationRole.Owner);
+            await db.SaveChangesAsync();
+            return Results.Ok(new SpaceOwnerDto(user.Id, user.Username, user.Email));
+        })
+        .WithSummary("Désigner le responsable d'un établissement")
+        .Produces<SpaceOwnerDto>()
+        .Produces(404);
+
+        // ── DELETE /admin/organizations/{id}/owners/{userId} ──────────────────────
+        admin.MapDelete("/organizations/{id:guid}/owners/{userId:guid}", async (Guid id, Guid userId, UserContext db, SpaceService spaces) =>
+        {
+            if (!await db.Organizations.AnyAsync(o => o.Id == id && o.Type != OrganizationType.Independent)) return Results.NotFound();
+            if (!await spaces.RevokeRoleAsync(id, userId, OrganizationRole.Owner)) return Results.NotFound();
+            await db.SaveChangesAsync();
+            return Results.NoContent();
+        })
+        .WithSummary("Retirer un responsable d'établissement");
 
         // ── POST /admin/organizations/{id}/licenses ───────────────────────────────
         // Licence active immédiatement ; la clé (ETB-… / ORG-…) est à transmettre à la structure.

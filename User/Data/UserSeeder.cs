@@ -27,7 +27,34 @@ public static class UserSeeder
         await EnsureLinkCodesAsync(db);
 
         if (isDevelopment)
+        {
             await SeedDemoAsync(db);
+            await AttachDemoToSchoolAsync(db);
+        }
+    }
+
+    /// <summary>
+    /// Range la démonstration dans le « Lycée de démonstration » (docs/PLAN-ETABLISSEMENT.md, question Q3) :
+    /// ProfMaths en est l'enseignant, sa classe en fait partie, AdminGPOE en est le responsable.
+    /// Joué avant la reprise des données, qui complète le reste (année, liste des élèves).
+    /// Ne déplace jamais une classe déjà rangée dans un espace.
+    /// </summary>
+    private static async Task AttachDemoToSchoolAsync(UserContext db)
+    {
+        if (!await db.Organizations.AnyAsync(o => o.Id == DemoSchoolId)) return;
+
+        var teacher = await db.AppUsers.FindAsync(TeacherId);
+        if (teacher is { OrganizationId: null }) teacher.OrganizationId = DemoSchoolId;
+
+        await db.Classrooms
+            .Where(c => c.InviteCode == DemoInviteCode && c.OrganizationId == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.OrganizationId, DemoSchoolId));
+
+        if (await db.AppUsers.AnyAsync(u => u.Id == AdminId)
+            && !await db.OrganizationMembers.AnyAsync(m => m.OrganizationId == DemoSchoolId && m.UserId == AdminId && m.Role == OrganizationRole.Owner))
+            db.OrganizationMembers.Add(new OrganizationMember { OrganizationId = DemoSchoolId, UserId = AdminId, Role = OrganizationRole.Owner });
+
+        await db.SaveChangesAsync();
     }
 
     private static async Task SeedUsersAsync(UserContext db)
