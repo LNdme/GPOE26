@@ -52,6 +52,7 @@ builder.Services.AddHostedService<TutorImageCleanup>();
 // Mémoire des agents : relue à chaque question, consolidée en arrière-plan après chaque échange
 builder.Services.AddScoped<AgentMemoryStore>();
 builder.Services.AddScoped<AgentContextService>();
+builder.Services.AddScoped<CourseIndex>();   // passages des cours pour le tuteur (H12)
 builder.Services.AddSingleton<AgentReflectionQueue>();
 builder.Services.AddHostedService<AgentReflectionWorker>();
 builder.Services.AddHostedService<TutorReflectionScheduler>();

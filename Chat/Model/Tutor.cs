@@ -37,6 +37,8 @@ public class AssistantMessage
     /// <summary>"user" ou "assistant"</summary>
     public string Role { get; set; } = "user";
     public string Content { get; set; } = "";
+    /// <summary>Modèle d'IA qui a écrit la réponse (null pour une question)</summary>
+    public string? Model { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
@@ -56,6 +58,9 @@ public class TutorMessage
     /// <summary>Explication épinglée par l'élève pour la revoir</summary>
     public bool Pinned { get; set; }
 
+    /// <summary>Modèle d'IA qui a écrit la réponse (null pour une question) : pour savoir d'où vient une erreur</summary>
+    public string? Model { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
@@ -65,6 +70,22 @@ public class TutorImage
     public Guid UserId { get; set; }
     public string ContentType { get; set; } = "image/jpeg";
     public byte[] Data { get; set; } = [];
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
+/// Passage d'un cours indexé pour le tuteur (H12) : texte, titre de sa partie et vecteur de sens.
+/// Refait quand le texte du cours change (TextHash) ou que le modèle d'embeddings change.
+/// </summary>
+public class CourseChunk
+{
+    public Guid CourseId { get; set; }
+    public int Position { get; set; }
+    public string TextHash { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string Content { get; set; } = "";
+    public float[]? Embedding { get; set; }
+    public string? EmbeddingModel { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 

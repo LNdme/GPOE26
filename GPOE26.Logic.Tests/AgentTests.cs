@@ -76,7 +76,7 @@ public class CourseSelectionTests
         Assert.Contains("Plan complet du cours :\n- Cinématique\n- Dynamique\n- Chute libre\n- Énergie", excerpt.Text);
         Assert.Contains("h = ½ g t²", excerpt.Text);
         Assert.NotNull(excerpt.Note);
-        Assert.Contains("partie(s) sur 4", excerpt.Note);
+        Assert.Contains("passage(s) sur", excerpt.Note);
     }
 
     [Fact]
@@ -96,8 +96,9 @@ public class CourseSelectionTests
     public void Un_long_texte_sans_titre_est_coupe_avec_une_note()
     {
         var excerpt = AgentPrompts.SelectCourse(new string('x', 2000), "question", 1000);
-        Assert.StartsWith(new string('x', 1000), excerpt.Text);
-        Assert.Contains("seul son début", excerpt.Note);
+        Assert.StartsWith("### Cours\n" + new string('x', 500), excerpt.Text);
+        Assert.True(excerpt.Text.Length <= 1000);
+        Assert.Contains("1 passage(s) sur 2", excerpt.Note);
     }
 
     [Fact]

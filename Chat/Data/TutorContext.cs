@@ -15,6 +15,7 @@ public class TutorContext(DbContextOptions<TutorContext> options) : DbContext(op
     public DbSet<StudySession> StudySessions => Set<StudySession>();
     public DbSet<AiUsage> AiUsage => Set<AiUsage>();
     public DbSet<AssistantMessage> AssistantMessages => Set<AssistantMessage>();
+    public DbSet<CourseChunk> CourseChunks => Set<CourseChunk>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -66,6 +67,11 @@ public class TutorContext(DbContextOptions<TutorContext> options) : DbContext(op
             e.ToTable("AssistantMessages");
             e.Property(m => m.Id).ValueGeneratedNever();
             e.HasIndex(m => new { m.UserId, m.CreatedAt });
+        });
+        modelBuilder.Entity<CourseChunk>(e =>
+        {
+            e.ToTable("CourseChunks");
+            e.HasKey(c => new { c.CourseId, c.Position });
         });
         modelBuilder.Entity<AiUsage>(e =>
         {
@@ -185,6 +191,20 @@ public static partial class AgentSchema
         @"ALTER TABLE ""TutorConversations"" ADD COLUMN IF NOT EXISTS ""ReflectedAt"" timestamp with time zone DEFAULT now()",
         @"ALTER TABLE ""TutorConversations"" ALTER COLUMN ""ReflectedAt"" DROP DEFAULT",
         @"ALTER TABLE ""AgentProfiles"" ADD COLUMN IF NOT EXISTS ""ForgottenAt"" timestamp with time zone",
+        // H11 : modèle d'IA qui a écrit chaque réponse
+        @"ALTER TABLE ""TutorMessages"" ADD COLUMN IF NOT EXISTS ""Model"" text",
+        // H12 : passages des cours et leurs vecteurs de sens (comparés par le service, sans dépendre de pgvector)
+        @"CREATE TABLE IF NOT EXISTS ""CourseChunks"" (
+            ""CourseId"" uuid NOT NULL,
+            ""Position"" integer NOT NULL,
+            ""TextHash"" text NOT NULL,
+            ""Title"" text NOT NULL,
+            ""Content"" text NOT NULL,
+            ""Embedding"" real[],
+            ""EmbeddingModel"" text,
+            ""CreatedAt"" timestamp with time zone NOT NULL,
+            CONSTRAINT ""PK_CourseChunks"" PRIMARY KEY (""CourseId"", ""Position"")
+        )",
         // Conversation avec l'assistant enseignant
         @"CREATE TABLE IF NOT EXISTS ""AssistantMessages"" (
             ""Id"" uuid NOT NULL,
@@ -196,6 +216,8 @@ public static partial class AgentSchema
             CONSTRAINT ""PK_AssistantMessages"" PRIMARY KEY (""Id"")
         )",
         @"CREATE INDEX IF NOT EXISTS ""IX_AssistantMessages_UserId_CreatedAt"" ON ""AssistantMessages"" (""UserId"", ""CreatedAt"")",
+        // H11, après la création de la table (sur une base neuve, l'ordre compte)
+        @"ALTER TABLE ""AssistantMessages"" ADD COLUMN IF NOT EXISTS ""Model"" text",
     };
 
     /// <summary>La recherche vectorielle est un plus : sans l'extension pgvector, le plein texte suffit.</summary>

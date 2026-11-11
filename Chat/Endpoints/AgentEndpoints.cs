@@ -305,13 +305,14 @@ public static class AgentEndpoints
 
             try
             {
-                var reply = await llm.CompleteAsync([new LlmMessage("system", system), .. history, new LlmMessage("user", message)], ct: ct);
+                var info = new LlmCallInfo();
+                var reply = await llm.CompleteAsync([new LlmMessage("system", system), .. history, new LlmMessage("user", message)], ct: ct, info: info);
                 await quota.RecordAsync(userId, AiFeatures.TeacherAgent, ct);
 
                 var now = DateTime.UtcNow;
                 db.AssistantMessages.AddRange(
                     new AssistantMessage { UserId = userId, ClassroomId = req.ClassroomId, Role = "user", Content = message, CreatedAt = now },
-                    new AssistantMessage { UserId = userId, ClassroomId = req.ClassroomId, Role = "assistant", Content = reply, CreatedAt = now.AddMilliseconds(1) });
+                    new AssistantMessage { UserId = userId, ClassroomId = req.ClassroomId, Role = "assistant", Content = reply, Model = info.Model, CreatedAt = now.AddMilliseconds(1) });
                 await db.SaveChangesAsync(ct);
 
                 reflection.Enqueue(new ReflectionJob(userId, AgentKinds.Teacher, null, null, [new(message, reply)], null));

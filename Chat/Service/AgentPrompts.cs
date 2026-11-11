@@ -80,75 +80,171 @@ public static partial class AgentPrompts
             ? "Réponds en anglais : l'apprenant suit le sous-système anglophone (en français s'il t'écrit en français)."
             : "Réponds en français (en anglais si l'élève écrit en anglais).";
 
-    // ─── Cours trop long pour le contexte du modèle ──────────────────────────────
+    // ─── Réglage du modèle selon la matière (H11) ────────────────────────────────
+
+    /// <summary>
+    /// Température du tuteur : 0,2 pour les matières de calcul (une réponse sûre plutôt que variée), 0,4 ailleurs.
+    /// </summary>
+    public static double TemperatureFor(string? subject)
+    {
+        var normalized = new string((subject ?? "").ToLowerInvariant().Normalize(NormalizationForm.FormD)
+            .Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark).ToArray());
+        var words = Word().Matches(normalized).Select(m => m.Value).ToList();
+        return words.Any(w => w.StartsWith("math") || w.StartsWith("physi") || w.StartsWith("chimi") || w.StartsWith("statisti")
+                              || w.StartsWith("algebr") || w.StartsWith("geometr") || w is "pct" or "calculus")
+            ? 0.2
+            : 0.4;
+    }
+
+    // ─── Passages du cours donnés au tuteur (H12) ─────────────────────────────────
+
+    /// <summary>Au-delà, le tuteur reçoit le plan et les passages utiles plutôt que le cours entier.</summary>
+    public const int CourseBudget = 16_000;
+
+    /// <summary>Taille visée d'un passage : une partie plus longue est coupée entre deux paragraphes.</summary>
+    public const int PassageChars = 1_800;
 
     public record CourseExcerpt(string Text, string? Note);
 
-    private record Part(string Title, string Content, int Index);
+    /// <summary>Un passage du cours : sa place, le titre de sa partie, son texte, et son vecteur de sens s'il est connu.</summary>
+    public record CoursePassage(int Position, string Title, string Content, float[]? Embedding = null);
 
     /// <summary>
-    /// Le cours entier s'il tient dans <paramref name="max"/> caractères. Sinon : le plan complet, puis les parties
-    /// les plus proches de la question (dans l'ordre du cours), et une note pour que le tuteur sache ce qui manque.
-    /// Avant, le cours était coupé à 40 000 caractères sans prévenir : sur un long PDF, la fin était invisible.
+    /// Le cours découpé en passages : une partie par titre (#, ##, ###), coupée entre deux paragraphes au-delà de
+    /// <paramref name="size"/> caractères. Un texte sans titre est coupé de la même façon.
     /// </summary>
-    public static CourseExcerpt SelectCourse(string text, string question, int max = 40_000)
+    public static List<CoursePassage> Passages(string text, int size = PassageChars)
     {
-        if (text.Length <= max) return new CourseExcerpt(text, null);
+        var passages = new List<CoursePassage>();
+        foreach (var (title, content) in SplitParts(text))
+        {
+            var piece = new StringBuilder();
+            var continued = false;
+            void Flush()
+            {
+                if (piece.Length == 0) return;
+                passages.Add(new CoursePassage(passages.Count, continued ? title + " (suite)" : title, piece.ToString().Trim()));
+                piece.Clear();
+                continued = true;
+            }
 
-        var parts = SplitParts(text);
-        if (parts.Count <= 1)
-            return new CourseExcerpt(text[..max] + "\n[…]",
-                "Le cours est trop long : seul son début t'est donné. Si la question porte sur la suite, dis-le à l'élève.");
+            foreach (var paragraph in content.Split("\n\n", StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (piece.Length > 0 && piece.Length + paragraph.Length > size) Flush();
+                // Un paragraphe démesuré (texte d'un PDF sans saut de ligne) est coupé net
+                for (var rest = paragraph; rest.Length > 0;)
+                {
+                    var take = Math.Min(rest.Length, size);
+                    piece.Append(rest[..take]).Append("\n\n");
+                    rest = rest[take..];
+                    if (rest.Length > 0) Flush();
+                }
+            }
+            Flush();
+        }
+        return passages;
+    }
 
-        var words = Significant(question);
-        var plan = "Plan complet du cours :\n" + string.Join("\n", parts.Select(p => "- " + p.Title));
+    /// <summary>Cours entier s'il tient dans <paramref name="max"/> caractères ; sinon plan et passages choisis par les mots.</summary>
+    public static CourseExcerpt SelectCourse(string text, string question, int max = CourseBudget) =>
+        text.Length <= max ? new CourseExcerpt(text, null) : SelectPassages(Passages(text), question, null, max);
+
+    /// <summary>
+    /// Plan complet du cours, puis les passages les plus proches de la question, remis dans l'ordre du cours sous le
+    /// titre de leur partie, et une note pour que le tuteur sache ce qui manque. La proximité combine le sens
+    /// (vecteurs, quand le modèle d'embeddings répond) et les mots de la question, les titres comptant davantage.
+    /// </summary>
+    public static CourseExcerpt SelectPassages(IReadOnlyList<CoursePassage> passages, string question, float[]? questionEmbedding, int max = CourseBudget)
+    {
+        if (passages.Count == 0) return new CourseExcerpt("", null);
+
+        var titles = passages.Select(p => BaseTitle(p.Title)).Distinct().ToList();
+        var plan = titles.Count > 1 ? Truncate("Plan complet du cours :\n" + string.Join("\n", titles.Select(t => "- " + t)), 3_000) + "\n\n" : "";
         var budget = max - plan.Length - 200;
 
-        var chosen = new List<Part>();
-        foreach (var part in parts.OrderByDescending(p => Score(p, words)).ThenBy(p => p.Index))
+        var scores = Rank(passages, question, questionEmbedding);
+        var chosen = new List<CoursePassage>();
+        foreach (var passage in passages.OrderByDescending(p => scores[p.Position]).ThenBy(p => p.Position))
         {
-            if (part.Content.Length <= budget)
+            var length = passage.Content.Length + passage.Title.Length + 8;
+            if (length <= budget)
             {
-                chosen.Add(part);
-                budget -= part.Content.Length + 2;
+                chosen.Add(passage);
+                budget -= length;
             }
             else if (chosen.Count == 0)
             {
-                // La partie la plus utile est à elle seule trop longue : son début plutôt que rien
-                // (avant, la première partie du cours était donnée, même si la question portait sur une autre)
-                chosen.Add(part with { Content = part.Content[..Math.Max(1000, budget)] + "\n[…]" });
+                chosen.Add(passage with { Content = passage.Content[..Math.Max(500, budget - passage.Title.Length - 8)] + "\n[…]" });
                 budget = 0;
             }
         }
 
-        var body = string.Join("\n\n", chosen.OrderBy(p => p.Index).Select(p => p.Content));
-        var note = $"Le cours est trop long pour t'être donné en entier : tu as son plan complet et {chosen.Count} partie(s) sur {parts.Count}, "
-            + "choisies d'après la question. Si la réponse se trouve dans une partie absente, dis-le et indique laquelle relire.";
-        return new CourseExcerpt(plan + "\n\n" + body, note);
+        var body = string.Join("\n\n", chosen.OrderBy(p => p.Position).Select(p =>
+            p.Content.StartsWith('#') ? p.Content : $"### {p.Title}\n{p.Content}"));
+        var note = titles.Count > 1
+            ? $"Le cours est trop long pour t'être donné en entier : tu as son plan complet et {chosen.Count} passage(s) sur {passages.Count}, "
+              + "choisis d'après la question. Si la réponse se trouve dans une partie absente, dis-le et indique laquelle relire."
+            : $"Le cours est trop long pour t'être donné en entier : tu as {chosen.Count} passage(s) sur {passages.Count}, choisis d'après la question. "
+              + "Si la réponse n'y est pas, dis-le à l'élève plutôt que de deviner ce que dit le cours.";
+        return new CourseExcerpt(plan + body, note);
     }
 
-    private static List<Part> SplitParts(string text)
+    /// <summary>
+    /// Note de chaque passage (par position) : 65 % le sens, 35 % la part des mots de la question qu'il contient
+    /// (ceux du titre comptent double), ou ces mots seuls sans vecteurs. Les mots comptent en proportion de la question :
+    /// rapportés au meilleur passage, un seul mot commun (« temps ») suffisait à l'emporter sur le sens.
+    /// </summary>
+    public static Dictionary<int, double> Rank(IReadOnlyList<CoursePassage> passages, string question, float[]? questionEmbedding)
     {
-        var parts = new List<Part>();
+        var words = Significant(question);
+        var semantic = questionEmbedding is null ? null
+            : passages.ToDictionary(p => p.Position, p => p.Embedding is { } e && e.Length == questionEmbedding.Length ? Cosine(e, questionEmbedding) : 0);
+        return passages.ToDictionary(p => p.Position, p =>
+        {
+            var lexical = Lexical(p.Title, p.Content, words);
+            return semantic is null ? lexical : 0.65 * semantic[p.Position] + 0.35 * lexical;
+        });
+    }
+
+    public static double Cosine(float[] a, float[] b)
+    {
+        double dot = 0, na = 0, nb = 0;
+        for (var i = 0; i < a.Length; i++)
+        {
+            dot += a[i] * b[i];
+            na += a[i] * a[i];
+            nb += b[i] * b[i];
+        }
+        return na == 0 || nb == 0 ? 0 : dot / (Math.Sqrt(na) * Math.Sqrt(nb));
+    }
+
+    private static string BaseTitle(string title) => title.EndsWith(" (suite)") ? title[..^" (suite)".Length] : title;
+
+    private static string Truncate(string text, int max) => text.Length <= max ? text : text[..max] + "\n- …";
+
+    private static List<(string Title, string Content)> SplitParts(string text)
+    {
+        var parts = new List<(string, string)>();
         var matches = Heading().Matches(text);
-        if (matches.Count == 0) return [new Part("(sans titre)", text, 0)];
+        if (matches.Count == 0) return [("Cours", text)];
 
         if (matches[0].Index > 0 && text[..matches[0].Index].Trim().Length > 0)
-            parts.Add(new Part("Introduction", text[..matches[0].Index].Trim(), 0));
+            parts.Add(("Introduction", text[..matches[0].Index].Trim()));
         for (var i = 0; i < matches.Count; i++)
         {
             var end = i + 1 < matches.Count ? matches[i + 1].Index : text.Length;
-            parts.Add(new Part(matches[i].Groups[1].Value.Trim(), text[matches[i].Index..end].Trim(), parts.Count));
+            parts.Add((matches[i].Groups[1].Value.Trim(), text[matches[i].Index..end].Trim()));
         }
         return parts;
     }
 
-    private static int Score(Part part, HashSet<string> words)
+    /// <summary>Entre 0 et 1 : 0,5 quand tous les mots sont dans le texte, 1 quand ils sont aussi dans le titre.</summary>
+    private static double Lexical(string title, string content, HashSet<string> words)
     {
         if (words.Count == 0) return 0;
-        var content = Significant(part.Content);
-        var title = Significant(part.Title);
-        return words.Count(content.Contains) + 3 * words.Count(title.Contains);
+        var inContent = Significant(content);
+        var inTitle = Significant(title);
+        return Math.Min(1, (words.Count(inContent.Contains) + 2.0 * words.Count(inTitle.Contains)) / (2.0 * words.Count));
     }
 
     private static readonly HashSet<string> StopWords =

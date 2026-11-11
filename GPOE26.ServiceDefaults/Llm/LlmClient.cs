@@ -21,6 +21,15 @@ public record LlmMessage(string Role, string Content, IReadOnlyList<LlmImage>? I
 
 public class LlmUnavailableException(string message, Exception? inner = null) : Exception(message, inner);
 
+/// <summary>
+/// Renseigné par le client après un appel : quel modèle a répondu (la liste est essayée dans l'ordre).
+/// Enregistré avec chaque réponse du tuteur et de l'assistant, pour savoir d'où vient une erreur (H11).
+/// </summary>
+public sealed class LlmCallInfo
+{
+    public string? Model { get; set; }
+}
+
 /// <summary>Aucun fournisseur d'IA n'est configuré : réessayer ne servira à rien.</summary>
 public class LlmNotConfiguredException() : LlmUnavailableException("Aucune clé LLM n'est configurée (LLM__ApiKey).");
 
@@ -57,7 +66,8 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
     /// de jetons de réflexion, dépasse le délai ou la limite de longueur, et la page n'est jamais lue.
     /// </param>
     public async Task<string> CompleteAsync(IReadOnlyList<LlmMessage> messages, int maxTokens = 4000,
-        double temperature = 0.4, CancellationToken ct = default, bool requireComplete = false, bool reasoning = true)
+        double temperature = 0.4, CancellationToken ct = default, bool requireComplete = false, bool reasoning = true,
+        LlmCallInfo? info = null)
     {
         if (!IsConfigured)
             throw new LlmNotConfiguredException();
@@ -74,7 +84,11 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
                 using var attempt = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 attempt.CancelAfter(TimeSpan.FromSeconds(int.TryParse(config["LLM:AttemptTimeoutSeconds"], out var s) ? s : 90));
                 var reply = await CallAsync(model, messages, maxTokens, temperature, requireComplete, reasoning, attempt.Token);
-                if (!string.IsNullOrWhiteSpace(reply)) return reply.Trim();
+                if (!string.IsNullOrWhiteSpace(reply))
+                {
+                    if (info is not null) info.Model = model;
+                    return reply.Trim();
+                }
                 logger.LogWarning("Réponse vide du modèle {Model}, essai du suivant", model);
                 last = new LlmUnavailableException($"Réponse vide de {model}");
             }
@@ -98,7 +112,8 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
     /// au milieu de la réponse lève <see cref="LlmUnavailableException"/> (le début déjà reçu reste à l'appelant).
     /// </summary>
     public async IAsyncEnumerable<string> StreamAsync(IReadOnlyList<LlmMessage> messages, int maxTokens = 4000,
-        double temperature = 0.4, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        double temperature = 0.4, LlmCallInfo? info = null,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
         if (!IsConfigured)
             throw new LlmNotConfiguredException();
@@ -173,6 +188,7 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
                     {
                         wrote = true;
                         attempt.CancelAfter(TimeSpan.FromMinutes(4));
+                        if (info is not null) info.Model = model;
                     }
                     yield return visible;
                 }
@@ -244,24 +260,56 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
         }
     }
 
+    /// <summary>Modèle de vecteurs de sens configuré (LLM:EmbeddingModel), ou null : la recherche se fait alors par les mots.</summary>
+    public string? EmbeddingModel => IsConfigured && config["LLM:EmbeddingModel"] is { Length: > 0 } model ? model : null;
+
     /// <summary>Vecteur de sens d'un texte (réglage LLM:EmbeddingModel). Null si aucun modèle n'est configuré ou en cas d'échec.</summary>
-    public async Task<float[]?> EmbedAsync(string text, CancellationToken ct = default)
+    public async Task<float[]?> EmbedAsync(string text, CancellationToken ct = default) =>
+        (await EmbedManyAsync([text], ct))?[0];
+
+    /// <summary>
+    /// Vecteurs de sens de plusieurs textes, dans l'ordre, par lots de 32 (une requête par lot).
+    /// Null si aucun modèle n'est configuré, ou si un lot échoue.
+    /// </summary>
+    public async Task<float[][]?> EmbedManyAsync(IReadOnlyList<string> texts, CancellationToken ct = default)
     {
-        if (!IsConfigured || config["LLM:EmbeddingModel"] is not { Length: > 0 } model) return null;
+        if (EmbeddingModel is not { } model || texts.Count == 0) return null;
+        var vectors = new float[texts.Count][];
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/embeddings")
+            for (var start = 0; start < texts.Count; start += 32)
             {
-                Content = new StringContent(new JsonObject { ["model"] = model, ["input"] = text }.ToJsonString(), Encoding.UTF8, "application/json")
-            };
-            if (!string.IsNullOrWhiteSpace(ApiKey))
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ApiKey);
-            using var response = await http.SendAsync(request, ct);
-            if (!response.IsSuccessStatusCode) return null;
-            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
-            return doc.RootElement.GetProperty("data")[0].GetProperty("embedding").EnumerateArray().Select(v => v.GetSingle()).ToArray();
+                var batch = texts.Skip(start).Take(32).ToList();
+                // Un seul texte part tel quel (comme avant) : un fournisseur qui refuserait une liste ne casse pas la mémoire
+                JsonNode input = batch.Count == 1
+                    ? JsonValue.Create(batch[0])!
+                    : new JsonArray(batch.Select(t => (JsonNode)JsonValue.Create(t)!).ToArray());
+                using var request = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/embeddings")
+                {
+                    Content = new StringContent(new JsonObject { ["model"] = model, ["input"] = input }.ToJsonString(), Encoding.UTF8, "application/json")
+                };
+                if (!string.IsNullOrWhiteSpace(ApiKey))
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ApiKey);
+                using var response = await http.SendAsync(request, ct);
+                if (!response.IsSuccessStatusCode)
+                {
+                    logger.LogWarning("Embedding indisponible : {Status}", (int)response.StatusCode);
+                    return null;
+                }
+                using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+                var data = doc.RootElement.GetProperty("data").EnumerateArray().ToList();
+                if (data.Count != batch.Count) return null;
+                for (var k = 0; k < data.Count; k++)
+                {
+                    // « index » donne la place du texte dans le lot ; absent, l'ordre de la réponse fait foi
+                    var index = data[k].TryGetProperty("index", out var i) && i.ValueKind == JsonValueKind.Number ? i.GetInt32() : k;
+                    vectors[start + index] = data[k].GetProperty("embedding").EnumerateArray().Select(v => v.GetSingle()).ToArray();
+                }
+            }
+            return vectors.Any(v => v is null) ? null : vectors;
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or KeyNotFoundException or InvalidOperationException)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or KeyNotFoundException
+                                       or InvalidOperationException or IndexOutOfRangeException or ArgumentOutOfRangeException)
         {
             logger.LogWarning("Embedding indisponible : {Error}", ex.Message);
             return null;
