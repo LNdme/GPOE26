@@ -7,11 +7,6 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 
-builder.WebHost.ConfigureKestrel(options =>
-{
-    options.ListenAnyIP(5000);
-});
-
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
@@ -25,13 +20,25 @@ var coursServiceUrl = builder.Configuration["Services:Cours"] ?? "http://localho
 var chatServiceUrl = builder.Configuration["Services:Chat"] ?? "http://localhost:5212";
 var quizServiceUrl = builder.Configuration["Services:Quiz"] ?? "http://localhost:5163";
 
+// Seules les lectures (GET) sont rejouées en cas d'erreur passagère. Un envoi rejoué arrivait deux fois :
+// copie « déjà rendue », inscription « e-mail déjà utilisé », photo en double, IA sollicitée quatre fois de suite.
 builder.Services.AddHttpClient("user", client =>
     client.BaseAddress = new Uri(userServiceUrl))
-    .AddStandardResilienceHandler();
+    .AddStandardResilienceHandler(options => options.Retry.DisableForUnsafeHttpMethods());
 
+// Lire un PDF ou récupérer un cours en ligne prend du temps, et un import ne doit jamais être rejoué
 builder.Services.AddHttpClient("cours", client =>
-    client.BaseAddress = new Uri(coursServiceUrl))
-    .AddStandardResilienceHandler();
+{
+    client.BaseAddress = new Uri(coursServiceUrl);
+    client.Timeout = TimeSpan.FromMinutes(3);
+})
+    .AddStandardResilienceHandler(options =>
+    {
+        options.AttemptTimeout.Timeout = TimeSpan.FromMinutes(3);
+        options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(3);
+        options.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(10);
+        options.Retry.DisableForUnsafeHttpMethods();
+    });
 
 builder.Services.AddHttpClient("chat", client =>
 {
@@ -43,6 +50,7 @@ builder.Services.AddHttpClient("chat", client =>
         options.AttemptTimeout.Timeout = TimeSpan.FromMinutes(3);
         options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(3);
         options.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(10);
+        options.Retry.DisableForUnsafeHttpMethods();
     });
 
 builder.Services.AddHttpClient("quiz", client =>
@@ -55,11 +63,12 @@ builder.Services.AddHttpClient("quiz", client =>
         options.AttemptTimeout.Timeout = TimeSpan.FromMinutes(5);
         options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(5);
         options.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(10);
+        options.Retry.DisableForUnsafeHttpMethods();
     });
 
 builder.Services.AddHttpClient("apiservice", client =>
     client.BaseAddress = new Uri(apiServiceUrl))
-    .AddStandardResilienceHandler();
+    .AddStandardResilienceHandler(options => options.Retry.DisableForUnsafeHttpMethods());
 
 builder.Services.AddScoped<ApiClient>();
 builder.Services.AddScoped<AuthService>();
@@ -77,6 +86,23 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
     app.UseHsts();
 }
+
+// Adresse inconnue : la page « Introuvable » plutôt qu'une page vide du navigateur.
+// Seulement pour les pages : une image ou un fichier absent garde une simple réponse 404.
+app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+app.Use(async (context, next) =>
+{
+    var path = context.Request.Path;
+    var isPage = HttpMethods.IsGet(context.Request.Method)
+                 && !Path.HasExtension(path.Value)
+                 && !path.StartsWithSegments("/uploads")
+                 && !path.StartsWithSegments("/_framework")
+                 && !path.StartsWithSegments("/_content")
+                 && !path.StartsWithSegments("/_blazor");
+    if (!isPage && context.Features.Get<Microsoft.AspNetCore.Diagnostics.IStatusCodePagesFeature>() is { } pages)
+        pages.Enabled = false;
+    await next();
+});
 
 app.UseAntiforgery();
 app.UseOutputCache();
@@ -97,6 +123,15 @@ app.MapGet("/uploads/images/{*path}", async (string path, IHttpClientFactory fac
         return Results.Stream(stream, contentType);
     }
     return Results.NotFound();
+});
+
+// Images extraites des PDF de cours, servies par le service Cours
+app.MapGet("/uploads/cours/{courseId:guid}/{file}", async (Guid courseId, string file, IHttpClientFactory factory) =>
+{
+    if (!System.Text.RegularExpressions.Regex.IsMatch(file, @"^fig-\d+\.(png|jpg|gif|webp)$")) return Results.NotFound();
+    var response = await factory.CreateClient("cours").GetAsync($"/uploads/cours/{courseId}/{file}");
+    if (!response.IsSuccessStatusCode) return Results.NotFound();
+    return Results.Stream(await response.Content.ReadAsStreamAsync(), response.Content.Headers.ContentType?.ToString() ?? "image/png");
 });
 
 app.Run();

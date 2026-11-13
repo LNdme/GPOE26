@@ -55,7 +55,11 @@ namespace Cours.DTOs
         DateTime UpdatedAt,
         CourseStatus Status,
         List<Guid> ClassroomIds,
-        Guid OwnerId
+        Guid OwnerId,
+        string? StructuringStatus = null,
+        string? SourceUrl = null,
+        List<Guid>? LibraryOrganizationIds = null,
+        Guid? SourceCourseId = null
     )
     {
         public CourseDto(Course c) : this(
@@ -74,7 +78,11 @@ namespace Cours.DTOs
             c.UpdatedAt,
             c.Status,
             c.ClassroomIds,
-            c.OwnerId
+            c.OwnerId,
+            c.StructuringStatus,
+            c.SourceUrl,
+            c.LibraryOrganizationIds,
+            c.SourceCourseId
         )
         { }
     }
@@ -86,6 +94,10 @@ namespace Cours.DTOs
         int Order,
         int Level
     );
+
+    public record ImportLinkRequest(string? Url);
+
+    public record LabSuggestionDto(Guid Id, string Anchor, string Title, string Reason, string Block);
 
     /// <summary>
     /// Version allégée pour la liste des cours (sans contenu ni sections)
@@ -99,7 +111,9 @@ namespace Cours.DTOs
         DateTime CreatedAt,
         CourseStatus Status,
         List<Guid> ClassroomIds,
-        Guid OwnerId
+        Guid OwnerId,
+        List<Guid>? LibraryOrganizationIds = null,
+        Guid? SourceCourseId = null
     )
     {
         public CourseSummaryDto(Course c) : this(
@@ -111,11 +125,40 @@ namespace Cours.DTOs
             c.CreatedAt,
             c.Status,
             c.ClassroomIds,
-            c.OwnerId
+            c.OwnerId,
+            c.LibraryOrganizationIds,
+            c.SourceCourseId
         )
         { }
     }
 
     /// <summary>Partage d'un cours : publié pour ces classes, ou repassé en brouillon (Publish = false)</summary>
     public record ShareCourseRequest(bool Publish, List<Guid>? ClassroomIds);
+
+    /// <summary>Avis « utile » : Mine pour le lecteur ; les totaux seulement pour l'auteur (null sinon).</summary>
+    public record CourseFeedbackDto(bool? Mine, int? Useful, int? NotUseful);
+
+    public record CourseFeedbackRequest(bool Useful);
+
+    // ── Bibliothèque d'établissement ──────────────────────────────────────────────
+
+    /// <summary>Dépôt d'un cours : la liste complète des bibliothèques où il doit figurer (vide = retiré partout).</summary>
+    public record LibraryDepositRequest(List<Guid>? OrganizationIds);
+
+    /// <summary>Cours d'une bibliothèque : AuthorName pour « d'après le cours de… », Mine si c'est le mien.</summary>
+    public record LibraryCourseDto(
+        Guid Id,
+        string Title,
+        string Subject,
+        string? Description,
+        ContentType ContentType,
+        DateTime UpdatedAt,
+        Guid OwnerId,
+        string AuthorName,
+        bool Mine,
+        int Copies
+    );
+
+    /// <summary>Bibliothèque d'un établissement : CanManage = le lecteur peut retirer les dépôts des autres.</summary>
+    public record LibraryCoursesDto(Guid OrganizationId, string Name, bool CanManage, List<LibraryCourseDto> Courses);
 }

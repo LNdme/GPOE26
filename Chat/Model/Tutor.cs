@@ -18,7 +18,28 @@ public class TutorConversation
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+    /// <summary>
+    /// Messages déjà relus par la mémoire de l'agent (consolidation par lots, cf. TutorReflectionScheduler) :
+    /// ceux d'après restent à relire. Null : rien n'a encore été relu.
+    /// </summary>
+    public DateTime? ReflectedAt { get; set; }
+
     public List<TutorMessage> Messages { get; set; } = new();
+}
+
+/// <summary>Échange avec l'assistant enseignant, conservé : la conversation continue d'une question à l'autre.</summary>
+public class AssistantMessage
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid UserId { get; set; }
+    /// <summary>Classe dont l'enseignant parlait (suivi anonymisé joint à la question), le cas échéant</summary>
+    public Guid? ClassroomId { get; set; }
+    /// <summary>"user" ou "assistant"</summary>
+    public string Role { get; set; } = "user";
+    public string Content { get; set; } = "";
+    /// <summary>Modèle d'IA qui a écrit la réponse (null pour une question)</summary>
+    public string? Model { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
 public class TutorMessage
@@ -37,6 +58,9 @@ public class TutorMessage
     /// <summary>Explication épinglée par l'élève pour la revoir</summary>
     public bool Pinned { get; set; }
 
+    /// <summary>Modèle d'IA qui a écrit la réponse (null pour une question) : pour savoir d'où vient une erreur</summary>
+    public string? Model { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
@@ -46,6 +70,22 @@ public class TutorImage
     public Guid UserId { get; set; }
     public string ContentType { get; set; } = "image/jpeg";
     public byte[] Data { get; set; } = [];
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
+/// Passage d'un cours indexé pour le tuteur (H12) : texte, titre de sa partie et vecteur de sens.
+/// Refait quand le texte du cours change (TextHash) ou que le modèle d'embeddings change.
+/// </summary>
+public class CourseChunk
+{
+    public Guid CourseId { get; set; }
+    public int Position { get; set; }
+    public string TextHash { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string Content { get; set; } = "";
+    public float[]? Embedding { get; set; }
+    public string? EmbeddingModel { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 

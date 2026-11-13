@@ -1,0 +1,172 @@
+@page "/admin/utilisateurs"
+@layout GPOE26.Web.Components.Layout.AdminLayout
+@using GPOE26.UI.Components
+@using GPOE26.Web.Components.UI
+@inject GPOE26.UI.Services.SessionState Session
+
+<PageTitle>Comptes et accès · Administration – GPOE26</PageTitle>
+
+<AdminOnly>
+    <div class="admin-head">
+        <div>
+            <span class="admin-eyebrow">Plateforme</span>
+            <h1>Comptes et accès</h1>
+            <p>
+                Chaque compte garde son <strong>rôle</strong> (élève, enseignant, parent) : les droits s'y ajoutent.
+                Un <strong>administrateur</strong> gère le site, les abonnements, les licences et les accès.
+                Un <strong>éditeur</strong> publie actualités, événements, activités et équipe.
+            </p>
+        </div>
+    </div>
+
+    <div class="admin-card admin-card--tip">
+        <span class="admin-card__tip-icon"><Icon Name="key" Size="20" /></span>
+        <div>
+            <strong>La personne doit d’abord avoir un compte.</strong>
+            <p>Elle s’inscrit sur la plateforme, puis vous la retrouvez ici par son nom ou son e-mail. L’administration de la plateforme en tient compte aussitôt ; ses menus et le site, dans les 20 minutes.</p>
+        </div>
+    </div>
+
+    @if (_error is not null) { <div class="alert alert-danger" role="alert">@_error</div> }
+    @if (_notice is not null) { <div class="alert alert-success" role="status">@_notice</div> }
+
+    <div class="admin-card admin-card--flush">
+        <div class="admin-toolbar">
+            <div class="admin-tabs" role="group" aria-label="Comptes affichés">
+                <button type="button" class="@(_staffOnly ? "on" : "")" @onclick="() => SetStaff(true)">Équipe du site</button>
+                <button type="button" class="@(!_staffOnly ? "on" : "")" @onclick="() => SetStaff(false)">Tous les comptes</button>
+            </div>
+            <form class="admin-search" role="search" @onsubmit="Search" @onsubmit:preventDefault>
+                <input type="search" class="form-control form-control-sm" placeholder="Nom ou e-mail…" aria-label="Rechercher un compte" @bind="_search" />
+                <button type="submit" class="site-btn site-btn--ghost site-btn--sm">Rechercher</button>
+            </form>
+        </div>
+
+        @if (_loading)
+        {
+            <div class="admin-empty"><span class="spinner-border spinner-border-sm text-brand-dark" role="status"></span> Chargement…</div>
+        }
+        else if (_users.Count == 0)
+        {
+            <div class="admin-empty">
+                <Icon Name="users" Size="28" />
+                <p>@(_staffOnly ? "Aucun éditeur pour l’instant. Cherchez un compte dans « Tous les comptes »." : "Aucun compte ne correspond.")</p>
+            </div>
+        }
+        else
+        {
+            <div class="admin-table-wrap">
+                <table class="admin-table">
+                    <thead>
+                        <tr><th scope="col">Compte</th><th scope="col">Rôle</th><th scope="col">Administrateur</th><th scope="col">Éditeur du site</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var u in _users)
+                        {
+                            var isAdmin = u.IsAdmin;
+                            var isMe = u.Id == Session.Profile?.Id;
+                            <tr>
+                                <td data-label="Compte">
+                                    <div class="admin-cell-main">
+                                        <span class="site-user__avatar">@(u.Username.Length > 0 ? u.Username[..1].ToUpperInvariant() : "?")</span>
+                                        <span><strong>@u.Username @(isMe ? "(vous)" : "")</strong><small>@u.Email</small></span>
+                                    </div>
+                                </td>
+                                <td data-label="Rôle"><span class="admin-chip">@RoleLabel(u.Role)</span></td>
+                                <td data-label="Administrateur">
+                                    <button type="button" class="admin-switch @(isAdmin ? "on" : "")" role="switch" aria-checked="@(isAdmin ? "true" : "false")"
+                                            aria-label="@($"Administrateur : {u.Username}")" disabled="@(_busyId == u.Id || (isMe && isAdmin))"
+                                            title="@(isMe && isAdmin ? "Vous ne pouvez pas retirer vos propres droits" : null)"
+                                            @onclick="() => _confirm = new(u, Admin: !isAdmin, Editor: null)">
+                                        <span></span>@(isAdmin ? "Oui" : "Non")
+                                    </button>
+                                </td>
+                                <td data-label="Éditeur du site">
+                                    @if (isAdmin)
+                                    {
+                                        <span class="admin-muted">Inclus</span>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="admin-switch @(u.SiteEditor ? "on" : "")" role="switch" aria-checked="@(u.SiteEditor ? "true" : "false")"
+                                                aria-label="@($"Éditeur du site : {u.Username}")" disabled="@(_busyId == u.Id)"
+                                                @onclick="() => Apply(u, null, !u.SiteEditor)">
+                                            <span></span>@(u.SiteEditor ? "Oui" : "Non")
+                                        </button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+
+    <ConfirmDialog Open="_confirm is not null" Busy="_busyId is not null"
+                   Title="@(_confirm?.Admin == true ? "Nommer administrateur ?" : "Retirer les droits d’administrateur ?")"
+                   ConfirmLabel="@(_confirm?.Admin == true ? "Nommer" : "Retirer")"
+                   OnCancel="() => _confirm = null" OnConfirm="ConfirmAdmin">
+        @if (_confirm?.Admin == true)
+        {
+            <p><strong>@_confirm.User.Username</strong> pourra modifier tout le site, ses coordonnées et les accès des autres comptes.</p>
+        }
+        else
+        {
+            <p><strong>@_confirm?.User.Username</strong> perdra l’accès à l’administration. Son rôle (@RoleLabel(_confirm?.User.Role ?? "")) ne change pas.</p>
+        }
+    </ConfirmDialog>
+</AdminOnly>
+
+@code {
+    private record Pending(UserAccess User, bool? Admin, bool? Editor);
+
+    private bool _loading = true, _staffOnly = true;
+    private string? _search, _error, _notice;
+    private List<UserAccess> _users = new();
+    private Guid? _busyId;
+    private Pending? _confirm;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.Profile?.IsAdmin != true) return;
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        _loading = true;
+        _users = await Api.GetUserAccessAsync(_search, _staffOnly && string.IsNullOrWhiteSpace(_search));
+        _loading = false;
+    }
+
+    private async Task SetStaff(bool staff) { _staffOnly = staff; _search = null; await Load(); }
+    private async Task Search() { _staffOnly = false; await Load(); }
+
+    private async Task ConfirmAdmin()
+    {
+        if (_confirm is null) return;
+        await Apply(_confirm.User, _confirm.Admin, null);
+        _confirm = null;
+    }
+
+    private async Task Apply(UserAccess user, bool? admin, bool? editor)
+    {
+        _busyId = user.Id; _error = null; _notice = null;
+        var (updated, error) = await Api.UpdateUserAccessAsync(user.Id, admin, editor);
+        _busyId = null;
+        if (updated is null) { _error = error; return; }
+
+        var i = _users.FindIndex(u => u.Id == user.Id);
+        if (i >= 0) _users[i] = updated;
+        _notice = $"Accès de {updated.Username} mis à jour.";
+    }
+
+    private static string RoleLabel(string role) => role switch
+    {
+        "Teacher" => "Enseignant",
+        "Parent" => "Parent",
+        "Student" => "Élève",
+        _ => role
+    };
+}

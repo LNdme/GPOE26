@@ -84,6 +84,9 @@ public class Speech
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
+/// <summary>Compte et accès (page Comptes et accès de l'administration). Role : élève, enseignant ou parent ; IsAdmin s'y ajoute.</summary>
+public record UserAccess(Guid Id, string Username, string Email, string Role, bool IsAdmin, bool SiteEditor, DateTime CreatedAt, DateTime? LastLoginAt);
+
 public class Contact
 {
     public int Id { get; set; }
@@ -205,39 +208,6 @@ public record CourseSummaryDto(
 );
 
 #endregion
-
-#region CHAT SERVICE DTOs
-
-public record ChatMessageRequest(
-    string Message,
-    List<ConversationMessage> History,
-    string? CourseContent = null,
-    string? CourseId = null
-);
-
-public record ChatMessageResponse(
-    string Reply,
-    List<ConversationMessage> UpdatedHistory
-);
-
-public record ConversationMessage(string Role, string Content);
-
-// --- Summary ---
-
-public record CourseSummaryRequest(
-    string? CourseContent = null,
-    string? CourseId = null
-);
-
-public record CourseSummaryResponse(
-    string Title,
-    List<CoursePart> Parts
-);
-
-public record CoursePart(string Title, string Summary);
-
-#endregion
-
 
 #region GPOE26 API QUIZ DTOs
 

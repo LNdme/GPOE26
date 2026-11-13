@@ -3,6 +3,7 @@
 @inherits AppPage
 @inject ICourseApi Courses
 @inject IAssessmentApi Assessments
+@inject IAgentApi Agent
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
@@ -18,8 +19,15 @@ else if (_course is null)
 }
 else
 {
-    <div class="rd @(_tutorOpen ? "with-tutor" : "")">
+    <div class="rd @(_tutorOpen ? "with-tutor" : "") @(_tocOpen ? "" : "no-toc")">
         <article class="rd-article" @ref="_article">
+            <div class="rd-bar">
+                <button type="button" class="ga-btn ghost small" aria-pressed="@Aria.State(_tocOpen)" @onclick="() => _tocOpen = !_tocOpen"><Icon Name="menu" /> Sommaire</button>
+                @if (Session.HasFeature("tutor-ai"))
+                {
+                    <button type="button" class="ga-btn ghost small" aria-pressed="@Aria.State(_tutorOpen)" @onclick="() => _tutorOpen = !_tutorOpen"><Icon Name="spark" /> Tuteur IA</button>
+                }
+            </div>
             <nav aria-label="Fil d'Ariane" class="rd-meta"><a href="/app/cours" style="color:inherit">Mes cours</a> › @_course.Subject</nav>
             <h1>@_course.Title</h1>
             <div class="rd-meta">
@@ -41,6 +49,23 @@ else
                 <p style="font-size:19px; color:var(--ga-muted)">@_course.Description</p>
             }
 
+            <Alert Message="@_error" />
+            <Alert Message="@_info" Kind="success" />
+
+            @if (_course.StructuringStatus == "Pending")
+            {
+                <div class="ga-alert" role="status" style="font-family:var(--ga-font)">L'agent met le cours en forme et cherche où un labo pourrait t'aider. Cela prend quelques minutes, tu peux déjà lire.</div>
+            }
+            else if (_course.OwnerId == Me.Id)
+            {
+                <LabSuggestionsPanel CourseId="_course.Id" Version="_analysisVersion" OnChanged="OnLabsChanged" />
+            }
+
+            @if (_course.SourceUrl is { Length: > 0 } source)
+            {
+                <p class="ga-small ga-muted" style="font-family:var(--ga-font)">Source : <a href="@source" target="_blank" rel="noopener noreferrer">@(new Uri(source).Host)</a></p>
+            }
+
             @if (string.IsNullOrWhiteSpace(_html))
             {
                 <div class="ga-empty" style="font-family:var(--ga-font)">
@@ -60,11 +85,28 @@ else
             }
 
             <div class="ga-row between" style="margin-top:28px; padding-top:18px; border-top:1px solid #ECEAE3; font-family:var(--ga-font)">
-                <span class="ga-small ga-muted">Ce cours vous a-t-il été utile ?</span>
-                <span class="ga-actions">
-                    <button class="ga-btn small @(_vote == 1 ? "" : "secondary")" aria-pressed="@(_vote == 1)" @onclick="() => _vote = 1">Oui</button>
-                    <button class="ga-btn small @(_vote == -1 ? "" : "secondary")" aria-pressed="@(_vote == -1)" @onclick="() => _vote = -1">Non</button>
-                </span>
+                @if (_course.OwnerId == Me.Id)
+                {
+                    @* L'auteur voit ce que ses lecteurs en pensent (sans savoir qui a répondu quoi) *@
+                    <span class="ga-small ga-muted">
+                        @if (_feedback is { Useful: { } yes, NotUseful: { } no } && yes + no > 0)
+                        {
+                            <text>Avis des lecteurs : <strong>@yes</strong> @(yes > 1 ? "l'ont trouvé utile" : "l'a trouvé utile"), <strong>@no</strong> non.</text>
+                        }
+                        else
+                        {
+                            <text>Vos lecteurs pourront dire ici si ce cours leur a été utile.</text>
+                        }
+                    </span>
+                }
+                else
+                {
+                    <span class="ga-small ga-muted">@(_feedbackError ?? (_feedback?.Mine is null ? "Ce cours vous a-t-il été utile ?" : "Merci pour votre avis. Vous pouvez le changer."))</span>
+                    <span class="ga-actions">
+                        <button class="ga-btn small @(_feedback?.Mine == true ? "" : "secondary")" aria-pressed="@Aria.State(_feedback?.Mine == true)" disabled="@_voting" @onclick="() => VoteAsync(true)">Oui</button>
+                        <button class="ga-btn small @(_feedback?.Mine == false ? "" : "secondary")" aria-pressed="@Aria.State(_feedback?.Mine == false)" disabled="@_voting" @onclick="() => VoteAsync(false)">Non</button>
+                    </span>
+                }
             </div>
         </article>
 
@@ -80,6 +122,22 @@ else
                 </nav>
             }
 
+            <div class="ga-actions">
+                <a class="ga-btn secondary small" href="/app/cours/@_course.Id/quiz"><Icon Name="check" /> S'entraîner</a>
+                @if (_course.OwnerId == Me.Id)
+                {
+                    <a class="ga-btn ghost small" href="/app/cours/@_course.Id/modifier">Modifier</a>
+                    @if (_course.ContentType == CourseContentType.Pdf)
+                    {
+                        <button type="button" class="ga-btn ghost small" disabled="@_restructuring" @onclick="RestructureAsync">@(_restructuring ? "Lecture du PDF…" : "Restructurer")</button>
+                    }
+                    else if (IsImported && _course.StructuringStatus != "Pending")
+                    {
+                        <button type="button" class="ga-btn ghost small" disabled="@_restructuring" @onclick="RestructureAsync">Relancer l'agent</button>
+                    }
+                }
+            </div>
+
             @if (_related.Count > 0)
             {
                 <div class="ga-card">
@@ -91,7 +149,7 @@ else
                 </div>
             }
 
-            @if (Session.IsPremium)
+            @if (Session.HasFeature("tutor-ai"))
             {
                 <button class="ga-btn" @onclick="() => _tutorOpen = true"><Icon Name="chat" /> Demander au tuteur IA</button>
                 <span class="ga-small ga-muted">Tes échanges avec le tuteur sont enregistrés : retrouve-les dans « Tuteur IA ».</span>
@@ -105,30 +163,39 @@ else
                 <a class="ga-btn ghost small" href="/app/tuteur/@_course.Id"><Icon Name="history" /> Relire mes discussions</a>
             }
         </aside>
+
+        @if (_tutorOpen)
+        {
+            <div class="tu-drawer" aria-label="Tuteur IA">
+                <TutorPanel CourseId="_course.Id" CourseTitle="@_course.Title" Docked="true" OnClose="() => _tutorOpen = false" />
+            </div>
+        }
     </div>
 
-    @if (_tutorOpen)
-    {
-        <div class="tu-drawer" role="dialog" aria-label="Tuteur IA">
-            <TutorPanel CourseId="_course.Id" CourseTitle="@_course.Title" Docked="true" OnClose="() => _tutorOpen = false" />
-        </div>
-    }
-    else if (Session.IsPremium)
+    @if (!_tutorOpen && Session.HasFeature("tutor-ai"))
     {
         <button class="ga-btn tu-fab" @onclick="() => _tutorOpen = true"><Icon Name="spark" /> Tuteur IA</button>
     }
 }
 
 @code {
+    // Espace d'apprentissage : un parent n'y a rien à faire (il suit ses enfants depuis son accueil)
+    protected override UserRole[]? AllowedRoles => [UserRole.Student, UserRole.Teacher];
+
     [Parameter] public Guid Id { get; set; }
 
     private bool _loading = true;
-    private string? _error, _html;
+    private string? _error, _info, _html;
     private CourseDetail? _course;
     private List<TocEntry> _toc = new();
     private List<StudentAssessment> _related = new();
-    private int _vote;
-    private bool _tutorOpen, _mathPending;
+    private CourseFeedback? _feedback;
+    private string? _feedbackError;
+    private bool _voting;
+    private bool _tutorOpen, _mathPending, _tocOpen = true, _restructuring;
+    private CancellationTokenSource? _poll, _studyClock;
+    private int _analysisVersion;
+    private const int StudyTickMinutes = 2;
     private ElementReference _article;
     private IJSObjectReference? _module;
 
@@ -137,19 +204,133 @@ else
     protected override async Task LoadAsync()
     {
         var result = await Courses.GetAsync(Id);
-        _course = result.Value;
         _error = result.Error;
-        if (_course is not null)
-            (_html, _toc) = MarkdownRenderer.Render(_course.ToMarkdown());
-        _mathPending = true;
+        Show(result.Value);
+        if (result.Ok) _feedback = (await Courses.FeedbackAsync(Id)).Value;
 
         // Évaluations d'entraînement ouvertes : proposées à l'élève à la fin du cours
         if (Session.Role == UserRole.Student)
         {
+            StartStudyClock();
             var mine = await Assessments.MineAsStudentAsync();
             _related = (mine.Value ?? new()).Where(a => a.Kind == AssessmentKind.Practice && a.CanStart(DateTime.UtcNow)).Take(3).ToList();
         }
         _loading = false;
+    }
+
+    /// <summary>Oui ou Non ; cliquer de nouveau sur l'avis déjà donné le retire.</summary>
+    private async Task VoteAsync(bool useful)
+    {
+        _voting = true;
+        _feedbackError = null;
+        if (_feedback?.Mine == useful)
+        {
+            var cleared = await Courses.ClearFeedbackAsync(Id);
+            if (cleared.Ok) _feedback = _feedback with { Mine = null };
+            else _feedbackError = cleared.Error;
+        }
+        else
+        {
+            var saved = await Courses.SetFeedbackAsync(Id, useful);
+            if (saved.Ok) _feedback = saved.Value;
+            else _feedbackError = saved.Error;
+        }
+        _voting = false;
+    }
+
+    /// <summary>
+    /// Temps réellement passé sur le cours : alimente le plan du jour et le tuteur. Une tranche de deux minutes
+    /// ne compte que si la page est visible et que l'élève a agi pendant ce temps (avant, un onglet ouvert
+    /// toute la nuit comptait des heures d'étude).
+    /// </summary>
+    private void StartStudyClock()
+    {
+        _studyClock = new CancellationTokenSource();
+        var token = _studyClock.Token;
+        _ = InvokeAsync(async () =>
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromMinutes(StudyTickMinutes));
+            try
+            {
+                while (await timer.WaitForNextTickAsync(token))
+                {
+                    _module ??= await JS.InvokeAsync<IJSObjectReference>("import", token, "./_content/GPOE26.UI/gpoe-app.js");
+                    if (await _module.InvokeAsync<bool>("activeWithin", token, (int)TimeSpan.FromMinutes(StudyTickMinutes).TotalMilliseconds))
+                        await Agent.RecordStudyAsync(Id, StudyTickMinutes);
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch (JSDisconnectedException) { }
+            catch (JSException) { }
+        });
+    }
+
+    private void Show(CourseDetail? course)
+    {
+        _course = course;
+        if (_course is not null)
+            (_html, _toc) = MarkdownRenderer.Render(_course.ToMarkdown());
+        _mathPending = true;
+        if (_course?.StructuringStatus == "Pending") StartPolling();
+    }
+
+    /// <summary>Le PDF est encore mis en forme par l'IA : la page se met à jour dès que c'est prêt.</summary>
+    private void StartPolling()
+    {
+        if (_poll is not null) return;
+        _poll = new CancellationTokenSource();
+        var token = _poll.Token;
+        _ = InvokeAsync(async () =>
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(10));
+            try
+            {
+                while (await timer.WaitForNextTickAsync(token))
+                {
+                    var latest = (await Courses.GetAsync(Id)).Value;
+                    if (latest?.StructuringStatus == "Pending") continue;
+                    _poll = null;
+                    _analysisVersion++;
+                    Show(latest);
+                    StateHasChanged();
+                    return;
+                }
+            }
+            catch (OperationCanceledException) { }
+        });
+    }
+
+    private void OnLabsChanged((CourseDetail Course, string Message) change)
+    {
+        Show(change.Course);
+        _error = null;
+        _info = change.Message;
+    }
+
+    /// <summary>Cours importé par lien ou par photos : l'agent peut le relire (pages restées en photo, labos).</summary>
+    private bool IsImported => _course is { } c && (c.SourceUrl is not null || c.ToMarkdown().Contains("(scan)](", StringComparison.Ordinal));
+
+    private async Task RestructureAsync()
+    {
+        _restructuring = true;
+        _error = _info = null;
+        var result = await Courses.RestructureAsync(Id);
+        _restructuring = false;
+        if (result.Value is null) { _error = result.Error ?? "Le cours n'a pas pu être relu."; return; }
+        _analysisVersion++;
+        Show(result.Value);
+
+        if (result.Value.ContentType != CourseContentType.Pdf)
+        {
+            _info = "L'agent relit le cours : les pages restées en photo seront retranscrites et des labos proposés si le sujet s'y prête.";
+            return;
+        }
+
+        var markdown = result.Value.ToMarkdown();
+        var figures = System.Text.RegularExpressions.Regex.Count(markdown, @"!\[");
+        var formulas = System.Text.RegularExpressions.Regex.Count(markdown, @"\$\$") / 2;
+        _info = $"PDF relu : {figures} schéma(s) et {formulas} formule(s) détachée(s) reconstruits."
+            + (result.Value.StructuringStatus == "Pending" ? " L'IA affine encore le texte." : "");
     }
 
     /// <summary>Formules KaTeX et coloration du code, une fois le cours affiché</summary>
@@ -167,6 +348,8 @@ else
 
     public async ValueTask DisposeAsync()
     {
+        _poll?.Cancel();
+        _studyClock?.Cancel();
         try { if (_module is not null) await _module.DisposeAsync(); }
         catch (JSDisconnectedException) { }
     }

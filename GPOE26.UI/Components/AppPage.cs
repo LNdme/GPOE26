@@ -17,9 +17,14 @@ public abstract class AppPage : ComponentBase
     /// <summary>Rôles autorisés (null = tout utilisateur connecté)</summary>
     protected virtual UserRole[]? AllowedRoles => null;
 
+    /// <summary>Vrai pour la seule page ouverte à un élève connecté avec le code de sa fiche, qui doit d'abord choisir son mot de passe.</summary>
+    protected virtual bool AllowsPendingPassword => false;
+
     protected bool Ready { get; private set; }
 
-    protected UserProfile Me => Session.Profile!;
+    // Garde le dernier profil connu : un 401 peut fermer la session juste avant la redirection vers /login
+    private UserProfile? _me;
+    protected UserProfile Me => _me = Session.Profile ?? _me!;
 
     protected override async Task OnInitializedAsync()
     {
@@ -30,9 +35,15 @@ public abstract class AppPage : ComponentBase
             Nav.NavigateTo($"/login?retour={Uri.EscapeDataString("/" + back)}");
             return;
         }
+        if (Session.Profile?.MustChangePassword == true && !AllowsPendingPassword)
+        {
+            var back = Nav.ToBaseRelativePath(Nav.Uri);
+            Nav.NavigateTo($"/app/mot-de-passe?retour={Uri.EscapeDataString("/" + back)}");
+            return;
+        }
         if (AllowedRoles is { } roles && !roles.Contains(Session.Role!.Value))
         {
-            Nav.NavigateTo("/app");
+            Nav.NavigateTo(HomeFor(Session.Role));
             return;
         }
         Ready = true;
@@ -41,7 +52,13 @@ public abstract class AppPage : ComponentBase
 
     protected virtual Task LoadAsync() => Task.CompletedTask;
 
-    /// <summary>Adresse de retour sûre (chemin local uniquement, jamais un autre site).</summary>
-    public static string SafeReturnUrl(string? url) =>
-        !string.IsNullOrEmpty(url) && url.StartsWith('/') && !url.StartsWith("//") && !url.StartsWith("/\\") ? url : "/app";
+    /// <summary>
+    /// Accueil d'un rôle : toujours l'espace /app, qui s'adapte au rôle (plan d'études, classes, suivi des enfants).
+    /// Un administrateur garde son rôle et son espace ; il rejoint l'administration par le menu.
+    /// </summary>
+    public static string HomeFor(UserRole? role) => "/app";
+
+    /// <summary>Adresse de retour sûre (chemin local uniquement, jamais un autre site), sinon l'accueil du rôle.</summary>
+    public static string SafeReturnUrl(string? url, UserRole? role = null) =>
+        !string.IsNullOrEmpty(url) && url.StartsWith('/') && !url.StartsWith("//") && !url.StartsWith("/\\") ? url : HomeFor(role);
 }

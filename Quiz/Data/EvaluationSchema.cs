@@ -76,6 +76,8 @@ public static class EvaluationSchema
         )",
         @"CREATE INDEX IF NOT EXISTS ""IX_Submissions_AssessmentId_StudentId"" ON ""Submissions"" (""AssessmentId"", ""StudentId"")",
         @"CREATE INDEX IF NOT EXISTS ""IX_Submissions_StudentId"" ON ""Submissions"" (""StudentId"")",
+        // Brouillon des réponses pendant la composition
+        @"ALTER TABLE ""Submissions"" ADD COLUMN IF NOT EXISTS ""DraftAnswers"" text",
 
         @"CREATE TABLE IF NOT EXISTS ""SubmissionAnswers"" (
             ""Id"" uuid NOT NULL,
@@ -111,6 +113,32 @@ public static class EvaluationSchema
             CONSTRAINT ""PK_AnswerPhotos"" PRIMARY KEY (""Id"")
         )",
         @"CREATE INDEX IF NOT EXISTS ""IX_AnswerPhotos_SubmissionId_QuestionId"" ON ""AnswerPhotos"" (""SubmissionId"", ""QuestionId"")",
+        // Quiz générés par l'IA, comptés par mois pour les formules à quota
+        @"CREATE TABLE IF NOT EXISTS ""QuizGenerationUsage"" (
+            ""UserId"" uuid NOT NULL,
+            ""Month"" text NOT NULL,
+            ""Count"" integer NOT NULL,
+            CONSTRAINT ""PK_QuizGenerationUsage"" PRIMARY KEY (""UserId"", ""Month"")
+        )",
+        // Lecture des photos en arrière-plan
+        @"ALTER TABLE ""AnswerPhotos"" ADD COLUMN IF NOT EXISTS ""TranscriptionPending"" boolean NOT NULL DEFAULT false",
+        // Usage de toutes les fonctions d'IA, par jour : remplace QuizGenerationUsage (quiz seulement, par mois)
+        @"CREATE TABLE IF NOT EXISTS ""AiUsage"" (
+            ""UserId"" uuid NOT NULL,
+            ""Feature"" text NOT NULL,
+            ""Day"" date NOT NULL,
+            ""Count"" integer NOT NULL,
+            CONSTRAINT ""PK_AiUsage"" PRIMARY KEY (""UserId"", ""Feature"", ""Day"")
+        )",
+        // Les générations du mois en cours, comptées dans l'ancienne table, restent décomptées (une seule fois)
+        @"INSERT INTO ""AiUsage"" (""UserId"", ""Feature"", ""Day"", ""Count"")
+          SELECT ""UserId"", 'quiz-ai', date_trunc('month', now() AT TIME ZONE 'UTC')::date, ""Count""
+          FROM ""QuizGenerationUsage"" WHERE ""Month"" = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM')
+          ON CONFLICT DO NOTHING",
+        // Bibliothèque d'établissement (phase 2, lot 8)
+        @"ALTER TABLE ""Assessments"" ADD COLUMN IF NOT EXISTS ""LibraryOrganizationIds"" uuid[] NOT NULL DEFAULT ARRAY[]::uuid[]",
+        @"ALTER TABLE ""Assessments"" ADD COLUMN IF NOT EXISTS ""SourceAssessmentId"" uuid",
+        @"CREATE INDEX IF NOT EXISTS ""IX_Assessments_LibraryOrganizationIds"" ON ""Assessments"" USING gin (""LibraryOrganizationIds"")",
     };
 
     public static async Task EnsureAsync(EvaluationContext db)

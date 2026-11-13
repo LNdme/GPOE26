@@ -1,22 +1,101 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Quiz.Data;
+using Quiz.Endpoints;
 using Quiz.Model;
 using Quiz.Service;
 
 namespace Quiz.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/[controller]")]
 public class QuizController : ControllerBase
 {
     private readonly IQuizGeneratorService _generator;
     private readonly IQuizStore _store;
     private readonly ILogger<QuizController> _logger;
+    private readonly AiQuota _quota;
+    private readonly CourseTextClient _courses;
 
-    public QuizController(IQuizGeneratorService generator, IQuizStore store, ILogger<QuizController> logger)
+    public QuizController(IQuizGeneratorService generator, IQuizStore store, ILogger<QuizController> logger,
+        AiQuota quota, CourseTextClient courses)
     {
+        _quota = quota;
+        _courses = courses;
         _generator = generator;
         _store = store;
         _logger = logger;
+    }
+
+    /// <summary>Le quiz demandé, s'il appartient à l'utilisateur connecté (sinon null : même réponse qu'un quiz inexistant).</summary>
+    private QuizSession? OwnSession(Guid id) =>
+        _store.Get(id) is { } session && session.OwnerId == User.UserId() ? session : null;
+
+    private static string Difficulty(string? value) => value is "exigeant" or "approfondi" ? value : "standard";
+
+    private string? Learner()
+    {
+        var parts = new[] { User.FindFirst("level")?.Value, User.FindFirst("filiere")?.Value }.Where(p => !string.IsNullOrWhiteSpace(p));
+        return string.Join(", ", parts);
+    }
+
+    /// <summary>Quota mensuel de la formule et plafond quotidien, partagés entre quiz et séries d'exercices.</summary>
+    private async Task<IActionResult?> QuotaExceededAsync(CancellationToken ct) =>
+        await _quota.RefusalAsync(User.UserId(), AiFeatures.QuizGeneration, ct) is { } refusal
+            ? StatusCode(403, new { message = refusal })
+            : null;
+
+    private Task CountGenerationAsync(CancellationToken ct) => _quota.RecordAsync(User.UserId(), AiFeatures.QuizGeneration, ct);
+
+    /// <summary>
+    /// Texte à partir duquel générer : celui du cours, lu au service Cours (l'utilisateur doit y avoir accès),
+    /// sinon le texte envoyé, borné. Renvoie un refus (400 / 404) ou le texte.
+    /// </summary>
+    private async Task<(IActionResult? Refused, string Text)> SourceTextAsync(Guid? courseId, string? courseText, CancellationToken ct)
+    {
+        if (courseId is { } id)
+        {
+            var course = await _courses.GetAsync(id, ct);
+            if (course is null) return (NotFound(new { message = "Cours introuvable." }), "");
+            if (string.IsNullOrWhiteSpace(course.Text))
+                return (BadRequest(new { message = "Ce cours n'a pas encore de texte : impossible d'en tirer des exercices." }), "");
+            return (null, course.Text);
+        }
+
+        if (string.IsNullOrWhiteSpace(courseText))
+            return (BadRequest(new { message = "Indiquez le cours dont tirer les exercices." }), "");
+        return (null, CourseTextClient.Limit(courseText));
+    }
+
+    /// <summary>Série d'exercices corrigés : énoncés, indices et solutions détaillées.</summary>
+    [HttpPost("problems")]
+    public async Task<IActionResult> Problems([FromBody] GenerateProblemsRequest request, CancellationToken ct)
+    {
+        if (request.Count is < 1 or > 5)
+            return BadRequest(new { message = "Le nombre d'exercices doit être entre 1 et 5." });
+        var (invalid, text) = await SourceTextAsync(request.CourseId, request.CourseText, ct);
+        if (invalid is not null) return invalid;
+        if (await QuotaExceededAsync(ct) is { } refused) return refused;
+
+        try
+        {
+            var problems = await _generator.GenerateProblemsAsync(text, request.Count, Difficulty(request.Difficulty), Learner(), ct);
+            if (problems.Count == 0)
+                return StatusCode(502, new { message = "L'IA n'a pas pu préparer ces exercices. Réessayez dans un instant." });
+            await CountGenerationAsync(ct);
+            return Ok(new ProblemSetResponse(request.Title, problems));
+        }
+        catch (GPOE26.ServiceDefaults.Llm.LlmNotConfiguredException)
+        {
+            return StatusCode(503, new { message = "Les exercices par l'IA ne sont pas activés sur ce serveur : aucune clé d'IA n'est configurée." });
+        }
+        catch (GPOE26.ServiceDefaults.Llm.LlmUnavailableException ex)
+        {
+            _logger.LogWarning(ex, "Exercices non générés");
+            return StatusCode(502, new { message = "L'IA ne répond pas pour le moment. Réessayez dans un instant." });
+        }
     }
 
     /// <summary>
@@ -27,24 +106,40 @@ public class QuizController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Generate([FromBody] GenerateQuizRequest request, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(request.CourseText))
-            return BadRequest("Le texte du cours est requis.");
-
         if (request.NumberOfQuestions is < 1 or > 20)
-            return BadRequest("Le nombre de questions doit être entre 1 et 20.");
+            return BadRequest(new { message = "Le nombre de questions doit être entre 1 et 20." });
+
+        var (invalid, text) = await SourceTextAsync(request.CourseId, request.CourseText, ct);
+        if (invalid is not null) return invalid;
+        if (await QuotaExceededAsync(ct) is { } refused) return refused;
 
         _logger.LogInformation("Generating quiz '{Title}' with {N} questions.", request.Title, request.NumberOfQuestions);
 
-        var questions = await _generator.GenerateQuestionsAsync(request.CourseText, request.NumberOfQuestions, ct);
+        List<Question> questions;
+        try
+        {
+            questions = await _generator.GenerateQuestionsAsync(text, request.NumberOfQuestions, Difficulty(request.Difficulty), Learner(), ct);
+        }
+        catch (GPOE26.ServiceDefaults.Llm.LlmNotConfiguredException)
+        {
+            return StatusCode(503, new { message = "Les quiz par l'IA ne sont pas activés sur ce serveur : aucune clé d'IA n'est configurée." });
+        }
+        catch (Exception ex) when (ex is GPOE26.ServiceDefaults.Llm.LlmUnavailableException or System.Text.Json.JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            _logger.LogWarning(ex, "Quiz non généré");
+            return StatusCode(502, new { message = "L'IA n'a pas pu préparer ce quiz. Réessayez dans un instant." });
+        }
 
         var session = new QuizSession
         {
+            OwnerId = User.UserId(),
             Title = request.Title,
-            SourceText = request.CourseText,
+            SourceText = text,
             Questions = questions
         };
 
         _store.Save(session);
+        await CountGenerationAsync(ct);
 
         var response = new GenerateQuizResponse(
             session.Id,
@@ -63,7 +158,7 @@ public class QuizController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public IActionResult GetQuiz(Guid id)
     {
-        var session = _store.Get(id);
+        var session = OwnSession(id);
         if (session is null) return NotFound();
 
         var response = new GenerateQuizResponse(
@@ -84,10 +179,13 @@ public class QuizController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public IActionResult Submit(Guid id, [FromBody] SubmitAnswersRequest request)
     {
-        var session = _store.Get(id);
+        var session = OwnSession(id);
         if (session is null) return NotFound();
 
-        var answerMap = request.Answers.ToDictionary(a => a.QuestionId, a => a.SelectedOptionIndex);
+        // Une question répétée dans l'envoi ne doit pas faire échouer la correction : la première réponse compte
+        var answerMap = (request.Answers ?? [])
+            .GroupBy(a => a.QuestionId)
+            .ToDictionary(g => g.Key, g => g.First().SelectedOptionIndex);
         var feedbacks = new List<AnswerFeedback>();
         int score = 0;
 
@@ -130,14 +228,15 @@ public class QuizController : ControllerBase
     }
 
     /// <summary>
-    /// Retourne l'historique et les statistiques globales.
+    /// Retourne l'historique et les statistiques de l'utilisateur connecté.
     /// </summary>
     [HttpGet("stats")]
     [ProducesResponseType<StatsResponse>(StatusCodes.Status200OK)]
     public IActionResult GetStats()
     {
+        var userId = User.UserId();
         var completed = _store.GetAll()
-            .Where(s => s.Result is not null)
+            .Where(s => s.OwnerId == userId && s.Result is not null)
             .ToList();
 
         var history = completed.Select(s => new QuizSummary(

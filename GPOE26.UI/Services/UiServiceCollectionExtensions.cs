@@ -18,6 +18,12 @@ public static class UiServiceCollectionExtensions
         services.AddScoped<IAssessmentApi, AssessmentApi>();
         services.AddScoped<IProgressApi, ProgressApi>();
         services.AddScoped<ITutorApi, TutorApi>();
+        services.AddScoped<IMediaApi, MediaApi>();
+        services.AddScoped<IPlanApi, PlanApi>();
+        services.AddScoped<IAgentApi, AgentApi>();
+        services.AddScoped<IPracticeQuizApi, PracticeQuizApi>();
+        services.AddScoped<IPlatformAdminApi, PlatformAdminApi>();
+        services.AddScoped<ISpaceApi, SpaceApi>();
         return services;
     }
 }

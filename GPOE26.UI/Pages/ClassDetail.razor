@@ -20,13 +20,32 @@
     {
         <div class="ga-head">
             <div>
-                <a class="ga-back" href="/app"><Icon Name="left" /> Mes classes</a>
+                @if (ManagerView)
+                {
+                    <a class="ga-back" href="/app/etablissement/@_class.OrganizationId?onglet=classes"><Icon Name="left" /> Mon établissement</a>
+                }
+                else
+                {
+                    <a class="ga-back" href="/app"><Icon Name="left" /> Mes classes</a>
+                }
                 <h1>@_class.Name</h1>
-                <p>@_members.Count @(_class.Kind == ClassroomKind.Group ? "apprenant(s)" : "élève(s)")@(_class.Subject is { Length: > 0 } ? $" · {_class.Subject}" : "") · code d'invitation <span class="ga-code">@_class.InviteCode</span></p>
+                <p>
+                    @_members.Count @(_class.Kind == ClassroomKind.Group ? "apprenant(s)" : "élève(s)")@(_class.Subject is { Length: > 0 } ? $" · {_class.Subject}" : "")
+                    @if (_class.Teachers is { Count: > 1 } teachers)
+                    {
+                        <br /><span class="ga-small">Enseignants : @string.Join(" · ", teachers.Select(t => t.Subject.Length > 0 ? $"{t.Username} ({t.Subject})" : t.Username))</span>
+                    }
+                </p>
             </div>
             <div class="ga-actions">
-                <button class="ga-btn secondary" @onclick="RegenerateAsync">Nouveau code</button>
-                <a class="ga-btn" href="/app/evaluations/nouvelle">Nouvelle épreuve</a>
+                @if (_class.OrganizationId is { } space && (_class.IsManager || _class.SpaceType == OrganizationType.Independent))
+                {
+                    <a class="ga-btn secondary" href="/app/etablissement/@space?onglet=eleves">Élèves et codes</a>
+                }
+                @if (_class.MyRole != ClassroomRole.Manager)
+                {
+                    <a class="ga-btn" href="/app/evaluations/nouvelle">Nouvelle épreuve</a>
+                }
             </div>
         </div>
         <Alert Message="@_error" />
@@ -42,13 +61,13 @@
             <div class="ga-card-head">
                 <h2 id="h-grid" class="ga-h2">Résultats et maîtrise</h2>
                 <div class="ga-chips" role="tablist">
-                    <button role="tab" class="ga-chip @(!_onlyHelp ? "on" : "")" aria-selected="@(!_onlyHelp)" @onclick="() => _onlyHelp = false">Tous</button>
-                    <button role="tab" class="ga-chip @(_onlyHelp ? "on" : "")" aria-selected="@_onlyHelp" @onclick="() => _onlyHelp = true">À accompagner</button>
+                    <button role="tab" class="ga-chip @(!_onlyHelp ? "on" : "")" aria-selected="@Aria.State(!_onlyHelp)" @onclick="() => _onlyHelp = false">Tous</button>
+                    <button role="tab" class="ga-chip @(_onlyHelp ? "on" : "")" aria-selected="@Aria.State(_onlyHelp)" @onclick="() => _onlyHelp = true">À accompagner</button>
                 </div>
             </div>
             @if (_members.Count == 0)
             {
-                <div class="ga-empty"><span>Aucun élève pour l'instant : partagez le code <strong>@_class.InviteCode</strong>.</span></div>
+                <div class="ga-empty"><span>Aucun élève pour l'instant : chacun arrive en activant son code personnel (« Élèves et codes »).</span></div>
             }
             else
             {
@@ -58,7 +77,7 @@
                             <tr>
                                 <th scope="col">Élève</th>
                                 <th scope="col">Dernière connexion</th>
-                                @foreach (var a in _progress?.Assessments ?? []) { <th scope="col" style="text-align:center" title="@a.Title">@Short(a.Title)</th> }
+                                @foreach (var a in _progress?.Assessments ?? []) { <th scope="col" style="text-align:center" title="@(a.Subject is { Length: > 0 } s ? $"{a.Title} · {s}" : a.Title)">@Short(a.Title)@if (ManagerView && a.Subject is { Length: > 0 } subject) { <br /><small class="ga-muted">@subject</small> }</th> }
                                 @foreach (var c in CourseIds) { <th scope="col" style="text-align:center">Maîtrise · @Short(CourseTitle(c))</th> }
                                 <th scope="col">Moyenne</th>
                             </tr>
@@ -95,6 +114,8 @@
             }
         </section>
 
+        <ClassWeakPointsPanel ClassroomId="Id" />
+
         <section class="ga-card" aria-labelledby="h-members">
             <h2 id="h-members" class="ga-h2">Membres</h2>
             <div class="ga-list">
@@ -113,7 +134,9 @@
 
 @code {
     [Parameter] public Guid Id { get; set; }
-    protected override UserRole[]? AllowedRoles => [UserRole.Teacher];
+    // Gestionnaire d'un établissement (enseignant ou non) : il suit toutes les évaluations de la classe
+    protected override UserRole[]? AllowedRoles => [UserRole.Teacher, UserRole.Parent];
+    private bool ManagerView => _class?.IsManager == true;
 
     private bool _loading = true, _onlyHelp;
     private string? _error;
@@ -151,13 +174,6 @@
         _courseTitles = (courses.Result.Value ?? new()).ToDictionary(c => c.Id, c => c.Title);
         _error = cls.Result.Error ?? progress.Result.Error;
         _loading = false;
-    }
-
-    private async Task RegenerateAsync()
-    {
-        var r = await Classrooms.RegenerateCodeAsync(Id);
-        if (!r.Ok) { _error = r.Error; return; }
-        _class = (await Classrooms.GetAsync(Id)).Value ?? _class;
     }
 
     private async Task RemoveAsync(ClassroomMember m)

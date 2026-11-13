@@ -1,10 +1,13 @@
-﻿namespace Quiz.Model;
+namespace Quiz.Model;
 
 // --- Entités principales ---
 
 public class QuizSession
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+
+    /// <summary>Utilisateur qui a demandé ce quiz : lui seul peut le lire, y répondre et le retrouver dans ses statistiques</summary>
+    public Guid OwnerId { get; set; }
     public string Title { get; set; } = string.Empty;
     public string SourceText { get; set; } = string.Empty;
     public List<Question> Questions { get; set; } = [];
@@ -42,11 +45,24 @@ public class AnswerFeedback
 
 // --- DTOs Requêtes ---
 
+/// <summary>CourseId : le texte est lu au service Cours (accès vérifié). CourseText n'est plus accepté que sans CourseId, borné.</summary>
 public record GenerateQuizRequest(
     string Title,
-    string CourseText,
-    int NumberOfQuestions = 5
+    string? CourseText = null,
+    int NumberOfQuestions = 5,
+    string Difficulty = "standard",
+    Guid? CourseId = null
 );
+
+public record GenerateProblemsRequest(
+    string Title,
+    string? CourseText = null,
+    int Count = 3,
+    string Difficulty = "exigeant",
+    Guid? CourseId = null
+);
+
+public record ProblemSetResponse(string Title, List<Quiz.Service.ProblemItem> Problems);
 
 public record SubmitAnswersRequest(
     List<StudentAnswer> Answers

@@ -2,14 +2,16 @@
 @layout AppLayout
 @inherits AppPage
 @inject IAccountApi Account
+@inject IPlanApi PlanApi
+@inject IFamilyApi Family
 
 <PageTitle>Abonnement — GPOE26</PageTitle>
 
-<div class="ga-page narrow">
+<div class="ga-page">
     <div class="ga-head">
         <div>
             <h1>Abonnement</h1>
-            <p>Les cours partagés par les enseignants restent toujours gratuits. Premium débloque le tuteur IA, les quiz illimités, les épreuves blanches et le suivi détaillé.</p>
+            <p>Les cours partagés par les enseignants restent toujours gratuits. Chaque formule débloque de nouvelles fonctionnalités.</p>
         </div>
     </div>
 
@@ -23,39 +25,116 @@
     else
     {
         <section class="ga-card @(_mine?.Entitlement.IsPremium == true ? "dark" : "")" aria-labelledby="h-status">
-            <span class="ga-tag @(_mine?.Entitlement.IsPremium == true ? "lime" : "grey")" style="align-self:flex-start">@(_mine?.Entitlement.IsPremium == true ? "PREMIUM ACTIF" : "FORMULE GRATUITE")</span>
+            <span class="ga-tag @(_mine?.Entitlement.IsPremium == true ? "lime" : "grey")" style="align-self:flex-start">@(_mine?.Entitlement.IsPremium == true ? "ABONNEMENT ACTIF" : "FORMULE GRATUITE")</span>
             <h2 id="h-status" class="ga-h2">@Labels.Of(_mine?.Entitlement.Plan)</h2>
             @if (_mine?.Entitlement is { IsPremium: true } e)
             {
-                <span style="color:#C9D3EA">@(e.Source switch { "key" => "Accès par clé d'abonnement", "trial" => "Période d'essai", _ => "Abonnement personnel" }) · jusqu'au @Labels.Date(e.Until)</span>
+                @* Toutes les sources de l'accès (lot 11) : abonnement personnel, formule Famille, établissement… *@
+                @if (e.Sources is { Count: > 0 } sources)
+                {
+                    <ul class="ga-stack" style="gap:2px; margin:0; padding:0; list-style:none; color:#C9D3EA" aria-label="D'où vient mon accès">
+                        @foreach (var s in sources)
+                        {
+                            <li>@Labels.Of(s) · jusqu'au @Labels.LongDate(s.Until)</li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <span style="color:#C9D3EA">@(e.Source switch { "key" => "Accès par clé d'abonnement", "trial" => "Période d'essai", "space" => "Accès donné par l'établissement", _ => "Abonnement personnel" }) · jusqu'au @Labels.Date(e.Until)</span>
+                }
+            }
+            @if (_unlocked.Count > 0)
+            {
+                <ul class="pl-unlocked" aria-label="Fonctionnalités débloquées">
+                    @foreach (var feature in _unlocked)
+                    {
+                        <li><Icon Name="tick" Size="16" /> @feature</li>
+                    }
+                </ul>
             }
         </section>
+
+        <CoverageNotice Overlap="_mine?.Entitlement.Overlap" Familiar="@(Session.Role == UserRole.Student)" />
+
+        @if (_covered.Count > 0)
+        {
+            <section class="ga-card" aria-labelledby="h-covered">
+                <h2 id="h-covered" class="ga-h3">Enfants déjà couverts par leur établissement</h2>
+                <ul class="ga-stack" style="margin:0; padding-left:20px">
+                    @foreach (var c in _covered)
+                    {
+                        <li>
+                            <strong>@c.Username</strong> : couvert par @c.CoveredBy jusqu'au @Labels.LongDate(c.CoveredUntil).
+                            @if (c.UsesFamilySeat) { <text>Sa place dans votre formule Famille ne lui sert pas pendant ce temps.</text> }
+                        </li>
+                    }
+                </ul>
+                <span class="ga-small ga-muted">Rien n'est coupé. Si tous vos enfants sont couverts, vous pouvez ne pas renouveler votre formule Famille.</span>
+            </section>
+        }
+
+        @if (_issued is not null)
+        {
+            <section class="ga-card" aria-labelledby="h-issued">
+                <h2 id="h-issued" class="ga-h3"><Icon Name="key" /> Votre clé d'abonnement</h2>
+                <span class="ga-alert">Simulation : aucun paiement réel n'a été effectué (@_issued.Provider).</span>
+                <span class="ga-code" style="font-size:20px; align-self:flex-start">@_issued.Code</span>
+                @if (_issued.Plan == SubscriptionPlan.Family)
+                {
+                    <span class="ga-small ga-muted">Transmettez cette clé à vos enfants (@_issued.Seats place(s)) : chacun la saisit dans son espace.</span>
+                }
+                else if (_issued.Plan == SubscriptionPlan.OrganizationLicense)
+                {
+                    <span class="ga-small ga-muted">Clé à partager avec votre établissement (@_issued.Seats place(s)).</span>
+                }
+                @if (_issued.Plan != SubscriptionPlan.Family)
+                {
+                    <button class="ga-btn" style="align-self:flex-start" @onclick="ActivateIssuedAsync">Activer maintenant</button>
+                }
+            </section>
+        }
 
         @if (Session.Role is UserRole.Student or UserRole.Teacher)
         {
             <form class="ga-card" @onsubmit="RedeemAsync" @onsubmit:preventDefault aria-labelledby="h-key">
                 <h2 id="h-key" class="ga-h3"><Icon Name="key" /> J'ai une clé d'abonnement</h2>
-                <span class="ga-muted ga-small">@(Session.Role == UserRole.Teacher ? "Clé de licence de votre établissement ou de votre institution." : "Clé familiale donnée par ton parent, ou clé de ton établissement.")</span>
+                <span class="ga-muted ga-small">@(Session.Role == UserRole.Teacher ? "Clé enseignant, ou clé de licence de votre établissement." : "Clé Élève, clé familiale donnée par ton parent, ou clé de ton établissement.")</span>
                 <div class="ga-row" style="flex-wrap:nowrap">
                     <label for="key" class="ga-sr">Clé d'abonnement</label>
-                    <input id="key" class="ga-input" placeholder="ex. FAM-7Q2K-9XRM" @bind="_key" />
+                    <input id="key" class="ga-input" placeholder="ex. ELE-7Q2K-9XRM" @bind="_key" />
                     <button class="ga-btn" type="submit" disabled="@string.IsNullOrWhiteSpace(_key)">Activer</button>
                 </div>
             </form>
         }
 
-        <section class="ga-card" aria-labelledby="h-plans">
-            <h2 id="h-plans" class="ga-h3">@(Session.Role == UserRole.Parent ? "Formule familiale" : "Souscrire")</h2>
-            <span class="ga-muted ga-small">@PlanText</span>
-            <div class="ga-row">
-                <button class="ga-btn" disabled="@_busy" @onclick="() => CheckoutAsync(BillingPeriod.Monthly)">Mensuel</button>
-                <button class="ga-btn secondary" disabled="@_busy" @onclick="() => CheckoutAsync(BillingPeriod.Yearly)">Annuel</button>
-                @if (Session.Role == UserRole.Teacher)
-                {
-                    <button class="ga-btn ghost" disabled="@_busy" @onclick="TrialAsync">Démarrer l'essai gratuit</button>
-                }
-            </div>
-            <span class="ga-small ga-muted">Paiement par Mobile Money (Orange Money, MTN MoMo) ou carte bancaire : l'abonnement est activé dès réception du paiement.</span>
+        <section class="ga-stack" aria-labelledby="h-plans">
+            <h2 id="h-plans" class="ga-h2">Les formules</h2>
+            @if (_mine?.PaymentSimulation == true)
+            {
+                <div class="ga-field" style="max-width:320px">
+                    <label for="provider">Moyen de paiement (simulation)</label>
+                    <select id="provider" class="ga-select" @bind="_provider">
+                        <option>Orange Money</option>
+                        <option>MTN Mobile Money</option>
+                        <option>Carte bancaire</option>
+                    </select>
+                </div>
+            }
+            <PlanComparison Plans="_plans" ActiveCode="@ActiveCode">
+                <Action Context="choice">
+                    @if (ToPlan(choice.Plan.Code) is { } plan && CanBuy(plan))
+                    {
+                        <button class="ga-btn small" disabled="@_busy" @onclick="() => BuyAsync(plan, choice.Period)">
+                            @(_mine?.PaymentSimulation == true ? "Payer (simulation)" : "Souscrire")
+                        </button>
+                    }
+                </Action>
+            </PlanComparison>
+            @if (Session.Role == UserRole.Teacher)
+            {
+                <button class="ga-btn ghost" style="align-self:flex-start" disabled="@_busy" @onclick="TrialAsync">Démarrer l'essai gratuit</button>
+            }
         </section>
 
         @if (_mine?.Owned.Count > 0)
@@ -73,7 +152,7 @@
                             @if (s.EndsAt is not null) { <span class="ga-small ga-muted">Jusqu'au @Labels.Date(s.EndsAt)</span> }
                             @foreach (var k in s.Keys)
                             {
-                                <div class="ga-row"><span class="ga-code" style="font-size:16px">@k.Code</span><span class="ga-small ga-muted">@k.UsedCount / @k.MaxUses place(s) utilisée(s) — à transmettre à vos enfants</span></div>
+                                <div class="ga-row"><span class="ga-code" style="font-size:16px">@k.Code</span><span class="ga-small ga-muted">@k.UsedCount / @k.MaxUses place(s) utilisée(s)</span></div>
                             }
                         </div>
                     }
@@ -86,27 +165,53 @@
 @code {
     private bool _loading = true, _busy;
     private string? _error, _info, _key;
+    private string _provider = "Orange Money";
     private MySubscriptions? _mine;
+    private List<PlanInfo> _plans = new();
+    private List<string> _unlocked = new();
+    private List<ChildLink> _covered = new();
+    private SimulatedPayment? _issued;
 
-    private SubscriptionPlan Plan => Session.Role switch
+    private string ActiveCode => _mine?.Entitlement.Plan switch
     {
-        UserRole.Parent => SubscriptionPlan.Family,
-        UserRole.Teacher => SubscriptionPlan.Teacher,
-        _ => SubscriptionPlan.StudentPremium
+        SubscriptionPlan.StudentPremium => "student-premium",
+        SubscriptionPlan.Family => "family",
+        SubscriptionPlan.Teacher => "teacher",
+        SubscriptionPlan.OrganizationLicense => "organization-license",
+        _ => "free"
     };
 
-    private string PlanText => Session.Role switch
+    private static SubscriptionPlan? ToPlan(string code) => code switch
     {
-        UserRole.Parent => "Une clé familiale est générée au paiement : vos enfants la saisissent pour activer Premium (les enfants rattachés la reçoivent automatiquement).",
-        UserRole.Teacher => "Abonnement enseignant individuel, si votre structure n'a pas de licence.",
-        _ => "Premium pour toi, si tu n'as pas de clé d'un parent ou de ton établissement."
+        "student-premium" => SubscriptionPlan.StudentPremium,
+        "family" => SubscriptionPlan.Family,
+        "teacher" => SubscriptionPlan.Teacher,
+        "organization-license" => SubscriptionPlan.OrganizationLicense,
+        _ => null
+    };
+
+    private bool CanBuy(SubscriptionPlan plan) => (plan, Session.Role) switch
+    {
+        (SubscriptionPlan.StudentPremium, UserRole.Student) => true,
+        (SubscriptionPlan.Family, UserRole.Parent) => true,
+        (SubscriptionPlan.Teacher, UserRole.Teacher) => true,
+        (SubscriptionPlan.OrganizationLicense, UserRole.Teacher) => _mine?.PaymentSimulation == true,
+        _ => false
     };
 
     protected override async Task LoadAsync()
     {
-        var r = await Account.MySubscriptionsAsync();
-        _mine = r.Value;
-        _error = r.Error;
+        var mine = await Account.MySubscriptionsAsync();
+        var plans = await PlanApi.ListAsync();
+        _mine = mine.Value;
+        _plans = plans.Value ?? new();
+        _error = mine.Error ?? plans.Error;
+
+        var labels = _plans.SelectMany(p => p.Features).DistinctBy(f => f.Code).ToDictionary(f => f.Code, f => f.Label);
+        _unlocked = (_mine?.Entitlement.Features ?? new()).Select(f => labels.GetValueOrDefault(f.Code, f.Code)).ToList();
+        // Parent payeur : enfants qu'un établissement ou un enseignant couvre déjà (P5)
+        if (Session.Role == UserRole.Parent)
+            _covered = ((await Family.ChildrenAsync()).Value ?? []).Where(c => c.CoveredBy is not null).ToList();
         _loading = false;
     }
 
@@ -116,20 +221,36 @@
         await LoadAsync();
     }
 
-    private async Task RedeemAsync()
+    private Task RedeemAsync() => ActivateAsync(_key!.Trim());
+
+    private Task ActivateIssuedAsync() => ActivateAsync(_issued!.Code);
+
+    private async Task ActivateAsync(string code)
     {
         _error = _info = null;
-        var r = await Account.RedeemKeyAsync(_key!.Trim());
+        var r = await Account.RedeemKeyAsync(code);
         if (!r.Ok) { _error = r.Error; return; }
         _key = null;
-        _info = "Clé activée : Premium est disponible.";
+        _issued = null;
+        _info = "Clé activée : vos nouvelles fonctionnalités sont disponibles.";
         await RefreshProfileAsync();
     }
 
-    private async Task CheckoutAsync(BillingPeriod period)
+    private async Task BuyAsync(SubscriptionPlan plan, BillingPeriod period)
     {
-        _busy = true; _error = _info = null;
-        var r = await Account.CheckoutAsync(Plan, period);
+        _busy = true;
+        _error = _info = null;
+        if (_mine?.PaymentSimulation == true)
+        {
+            var simulated = await Account.SimulatePaymentAsync(plan, period, _provider);
+            _busy = false;
+            _issued = simulated.Value;
+            _error = simulated.Error;
+            if (simulated.Ok && plan == SubscriptionPlan.Family) await RefreshProfileAsync();
+            return;
+        }
+
+        var r = await Account.CheckoutAsync(plan, period);
         _busy = false;
         if (!r.Ok) { _error = r.Error; return; }
         _info = "Votre demande d'abonnement est enregistrée. Elle sera activée dès réception du paiement.";
@@ -138,7 +259,8 @@
 
     private async Task TrialAsync()
     {
-        _busy = true; _error = _info = null;
+        _busy = true;
+        _error = _info = null;
         var r = await Account.StartTrialAsync();
         _busy = false;
         if (!r.Ok) { _error = r.Error; return; }

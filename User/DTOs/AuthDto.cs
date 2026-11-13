@@ -17,7 +17,7 @@ namespace User.DTOs;
 //  UserProfileDto       = profil complet exposé par GET /auth/me
 //                         → lu par le LLM pour personnaliser ses réponses
 //
-//  UpdateProfileRequest = données acceptées par PATCH /auth/me
+//  EditProfileRequest   = données acceptées par PUT /auth/me/profile (Endpoints/ProfileEndpoints.cs)
 // ══════════════════════════════════════════════════════════════════════════════
 
 /// <summary>
@@ -47,11 +47,17 @@ public record RegisterRequest(
     List<string>? InitialClasses = null,
     bool StartTrial = false,
     // ── Élève ou enseignant : clé familiale / d'établissement / d'institution ──
-    string? SubscriptionKey = null
+    string? SubscriptionKey = null,
+    // ── Secondaire (élève) ou supérieur (étudiant) ──
+    EducationStage? Stage = null
 );
 
+/// <summary>
+/// Email : l'adresse e-mail OU le nom d'utilisateur (un élève entré par son code n'a pas toujours d'adresse).
+/// Le champ garde son nom pour les clients existants et pour la limite d'essais de connexion.
+/// </summary>
 public record LoginRequest(
-    [Required, EmailAddress] string Email,
+    [Required, MaxLength(256)] string Email,
     [Required] string Password
 );
 
@@ -63,7 +69,7 @@ public record AuthResponse(
 
 public record UserProfileDto(
     Guid Id,
-    string Email,
+    string? Email,
     string Username,
     UserRole Role,
     string? Level,
@@ -83,7 +89,12 @@ public record UserProfileDto(
     string? OrganizationName,
     bool IsPremium,
     SubscriptionPlan? Plan,
-    DateTime? PremiumUntil
+    DateTime? PremiumUntil,
+    List<EntitledFeature>? Features = null,
+    EducationStage? Stage = null,
+    bool SiteEditor = false,
+    bool IsAdmin = false,
+    bool MustChangePassword = false
 )
 {
     public UserProfileDto(AppUser user, Entitlement? entitlement = null) : this(
@@ -108,39 +119,12 @@ public record UserProfileDto(
         user.OrganizationName,
         entitlement?.IsPremium ?? false,
         entitlement?.Plan,
-        entitlement?.Until
+        entitlement?.Until,
+        entitlement?.Features,
+        user.Stage,
+        user.SiteEditor,
+        user.IsAdmin,
+        user.MustChangePassword
     )
     { }
-}
-
-// ⚠️ BUG CRITIQUE CORRIGÉ
-// UpdateProfileRequest était un "record positionnel" ce qui génère des propriétés
-// init-only ({ get; init; }). JsonPatch utilise la réflexion pour SET les valeurs
-// APRÈS construction → impossible sur des init-only → le patch s'appliquait sur
-// un objet figé, les modifications étaient silencieusement ignorées.
-//
-// SOLUTION : classe normale avec { get; set; }
-// On garde la même interface publique, seule l'implémentation change.
-public class UpdateProfileRequest
-{
-    public string? Username { get; set; }
-    public string? Level { get; set; }
-    public string? Specialite { get; set; }
-    public string? Filiere { get; set; }
-    public string? Language { get; set; }
-
-    // Constructeur utilisé dans le controller pour initialiser depuis l'entité
-    public UpdateProfileRequest(
-        string? username,
-        string? level,
-        string? specialite,
-        string? filiere,
-        string? language)
-    {
-        Username = username;
-        Level = level;
-        Specialite = specialite;
-        Filiere = filiere;
-        Language = language;
-    }
 }

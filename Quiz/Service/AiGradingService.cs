@@ -16,7 +16,7 @@ public record AiSuggestion(decimal Points, string Feedback);
 public class AiGradingService(LlmClient llm, ILogger<AiGradingService> logger)
 {
     private const string GradingPrompt = """
-        Tu es un correcteur d'examens bienveillant et rigoureux pour l'enseignement secondaire camerounais.
+        Tu es un correcteur bienveillant et rigoureux (secondaire, supérieur ou formation : adapte-toi à la question).
         Tu notes la réponse d'un élève UNIQUEMENT selon les critères de correction fournis par l'enseignant.
         La réponse peut être rédigée et/ou photographiée (copie manuscrite) : lis attentivement les photos,
         vérifie la démarche (calculs, unités, justification), pas seulement le résultat final.
@@ -102,20 +102,49 @@ public class AiGradingService(LlmClient llm, ILogger<AiGradingService> logger)
                 """, photos.Count > 0 ? photos : null)
         ], ct: ct);
 
-    /// <summary>Extrait le JSON de la réponse du modèle ; note bornée à [0, max] et arrondie au quart de point.</summary>
+    /// <summary>
+    /// Extrait le JSON de la réponse du modèle ; note bornée à [0, max] et arrondie au quart de point.
+    /// Un commentaire contenant du LaTeX (« \frac », « \sqrt ») cassait la lecture du JSON : les barres sont
+    /// réparées, et à défaut la note et le commentaire sont relevés directement dans le texte.
+    /// </summary>
     public static AiSuggestion Parse(string content, decimal maxPoints, ILogger? logger = null)
     {
         var match = Regex.Match(content, @"\{[\s\S]*\}");
         if (!match.Success)
             throw new FormatException("La réponse de l'IA ne contient pas de JSON.");
 
-        using var json = JsonDocument.Parse(match.Value);
-        var root = json.RootElement;
-        var raw = root.TryGetProperty("points", out var p) && p.ValueKind == JsonValueKind.Number ? p.GetDecimal() : 0m;
-        var feedback = root.TryGetProperty("feedback", out var f) ? f.GetString() ?? "" : "";
+        var (raw, feedback) = ReadSuggestion(match.Value);
 
         var points = Math.Round(Math.Clamp(raw, 0, maxPoints) * 4, MidpointRounding.AwayFromZero) / 4;
         if (points != raw) logger?.LogInformation("Note IA ajustée de {Raw} à {Points}", raw, points);
         return new AiSuggestion(points, feedback.Trim());
+    }
+
+    private static (decimal Points, string Feedback) ReadSuggestion(string json)
+    {
+        foreach (var candidate in new[] { json, ProblemSetParser.RepairLatexEscapes(json) })
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(candidate);
+                var root = doc.RootElement;
+                // Sans note lisible, on le dit : proposer 0 aurait fait passer une erreur de l'IA pour une vraie note
+                var raw = root.TryGetProperty("points", out var p) ? p.ValueKind switch
+                {
+                    JsonValueKind.Number => p.GetDecimal(),
+                    JsonValueKind.String when decimal.TryParse(p.GetString()?.Replace(',', '.'), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var d) => d,
+                    _ => throw new FormatException("La note proposée par l'IA est illisible.")
+                } : throw new FormatException("La note proposée par l'IA est illisible.");
+                return (raw, root.TryGetProperty("feedback", out var f) && f.ValueKind == JsonValueKind.String ? f.GetString() ?? "" : "");
+            }
+            catch (JsonException) { }
+        }
+
+        // Dernier recours : JSON irréparable, on relève la note et le commentaire tels qu'ils sont écrits
+        var points = Regex.Match(json, @"""points""\s*:\s*""?(\d+(?:[.,]\d+)?)");
+        if (!points.Success) throw new FormatException("La note proposée par l'IA est illisible.");
+        var comment = Regex.Match(json, @"""feedback""\s*:\s*""([\s\S]*?)""\s*[,}]");
+        return (decimal.Parse(points.Groups[1].Value.Replace(',', '.'), System.Globalization.CultureInfo.InvariantCulture),
+            comment.Success ? comment.Groups[1].Value.Replace("\\n", "\n").Replace("\\\"", "\"") : "");
     }
 }

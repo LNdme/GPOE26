@@ -1,0 +1,184 @@
+@page "/admin"
+@layout GPOE26.Web.Components.Layout.AdminLayout
+@using GPOE26.UI.Components
+@inject GPOE26.UI.Services.SessionState Session
+@inject GPOE26.UI.Services.IPlatformAdminApi Platform
+
+<PageTitle>Administration – GPOE26</PageTitle>
+
+<div class="admin-head">
+    <div>
+        <span class="admin-eyebrow">Tableau de bord</span>
+        <h1>Le contenu du site</h1>
+        <p>Publiez les nouvelles, annoncez les événements et tenez à jour les informations de l’établissement.</p>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="admin-empty"><span class="spinner-border spinner-border-sm text-brand-dark" role="status"></span> Chargement…</div>
+}
+else
+{
+    <div class="admin-stats">
+        <a class="admin-stat" href="/admin/actualites">
+            <span class="admin-stat__icon"><Icon Name="news" Size="20" /></span>
+            <strong>@_newsTotal</strong>
+            <span>Actualités</span>
+            <small>@(_drafts > 0 ? $"{_drafts} brouillon{(_drafts > 1 ? "s" : "")}" : "Tout est publié")</small>
+        </a>
+        <a class="admin-stat" href="/admin/evenements">
+            <span class="admin-stat__icon"><Icon Name="calendar" Size="20" /></span>
+            <strong>@_events.Count</strong>
+            <span>Événements</span>
+            <small>@_upcoming à venir</small>
+        </a>
+        <a class="admin-stat" href="/admin/activites">
+            <span class="admin-stat__icon"><Icon Name="activity" Size="20" /></span>
+            <strong>@_activities.Count</strong>
+            <span>Activités</span>
+            <small>@_activities.Count(a => a.IsActive) visibles sur le site</small>
+        </a>
+        <a class="admin-stat" href="/admin/equipe">
+            <span class="admin-stat__icon"><Icon Name="users" Size="20" /></span>
+            <strong>@_teamCount</strong>
+            <span>Membres de l’équipe</span>
+            <small>Page « L’établissement »</small>
+        </a>
+    </div>
+
+    <div class="admin-grid-2">
+        <section class="admin-card">
+            <div class="admin-card__head">
+                <h2>Créer du contenu</h2>
+            </div>
+            <div class="admin-quick">
+                <a href="/admin/actualites/nouveau"><Icon Name="news" Size="20" /><span><strong>Rédiger un article</strong><small>Une nouvelle pour la page d’accueil</small></span><Icon Name="plus" Size="18" /></a>
+                <a href="/admin/evenements/nouveau"><Icon Name="calendar" Size="20" /><span><strong>Annoncer un événement</strong><small>Date, lieu et description</small></span><Icon Name="plus" Size="18" /></a>
+                <a href="/admin/activites/nouveau"><Icon Name="activity" Size="20" /><span><strong>Ajouter une activité</strong><small>Club, sport, atelier…</small></span><Icon Name="plus" Size="18" /></a>
+                <a href="/admin/equipe/nouveau"><Icon Name="user" Size="20" /><span><strong>Ajouter un membre</strong><small>Direction, enseignants, personnel</small></span><Icon Name="plus" Size="18" /></a>
+            </div>
+        </section>
+
+        <section class="admin-card">
+            <div class="admin-card__head">
+                <h2>Derniers articles</h2>
+                <a href="/admin/actualites" class="admin-link">Tout voir</a>
+            </div>
+            @if (_recent.Count == 0)
+            {
+                <p class="admin-muted">Aucun article pour l’instant.</p>
+            }
+            else
+            {
+                <ul class="admin-list">
+                    @foreach (var a in _recent)
+                    {
+                        <li>
+                            <a href="@($"/admin/actualites/{a.Id}")">
+                                <strong>@a.Title</strong>
+                                <small>@a.Category · @a.UpdatedAt.ToLocalTime().ToString("dd MMM yyyy")</small>
+                            </a>
+                            <span class="admin-badge @(a.IsPublished ? "is-ok" : "is-draft")">@(a.IsPublished ? "Publié" : "Brouillon")</span>
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+    </div>
+
+    @if (Session.Profile?.IsAdmin == true && _pending is { Count: > 0 } pending)
+    {
+        <section class="admin-card admin-card--tip">
+            <span class="admin-card__tip-icon"><Icon Name="card" Size="20" /></span>
+            <div class="admin-demo">
+                <div>
+                    <strong>@pending.Count abonnement@(pending.Count > 1 ? "s" : "") en attente de paiement</strong>
+                    <p>Activez-les une fois le paiement reçu : tant que le paiement en ligne n’est pas branché, rien ne se fait sans vous.</p>
+                </div>
+                <a class="site-btn site-btn--primary" href="/admin/abonnements">Voir les abonnements</a>
+            </div>
+        </section>
+    }
+
+    @if (Session.Profile?.IsAdmin == true)
+    {
+        <section class="admin-card admin-card--tip">
+            <span class="admin-card__tip-icon"><Icon Name="spark" Size="20" /></span>
+            <div class="admin-demo">
+                <div>
+                    <strong>Compléter le site avec du contenu de démonstration</strong>
+                    <p>Ajoute une équipe éducative, des actualités, des événements (dont des rendez-vous en ligne) et des activités fictifs. Rien n’est remplacé : seuls les éléments absents sont ajoutés, et vous pouvez ensuite les modifier ou les supprimer.</p>
+                    @if (_demoMessage is not null)
+                    {
+                        <p class="admin-demo__result" role="status">@_demoMessage</p>
+                    }
+                </div>
+                <button type="button" class="site-btn site-btn--primary" disabled="@_demoBusy" @onclick="AddDemoContentAsync">
+                    @(_demoBusy ? "Ajout en cours…" : "Compléter le site")
+                </button>
+            </div>
+        </section>
+    }
+
+    <section class="admin-card admin-card--tip">
+        <span class="admin-card__tip-icon"><Icon Name="shield" Size="20" /></span>
+        <div>
+            <strong>Seuls les administrateurs et les éditeurs peuvent modifier le site.</strong>
+            <p>Les visiteurs, élèves, enseignants et parents voient le contenu publié ; toute création, modification ou suppression est refusée par le serveur sans ces droits. Les administrateurs attribuent les accès depuis « Accès et rôles ».</p>
+        </div>
+    </section>
+}
+
+@code {
+    private bool _loading = true;
+    private int _newsTotal, _drafts, _upcoming, _teamCount;
+    private List<NewArticle> _recent = new();
+    private List<SchoolEvent> _events = new();
+    private List<SchoolActivity> _activities = new();
+
+    private bool _demoBusy;
+    private string? _demoMessage;
+
+    private List<GPOE26.UI.Models.AdminSubscription>? _pending;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        if (Session.Profile?.IsAdmin == true)
+            _pending = (await Platform.SubscriptionsAsync(GPOE26.UI.Models.SubscriptionStatus.PendingPayment)).Value;
+    }
+
+    private async Task AddDemoContentAsync()
+    {
+        _demoBusy = true;
+        _demoMessage = null;
+        var result = await Api.AddDemoContentAsync();
+        _demoBusy = false;
+        _demoMessage = result switch
+        {
+            null => "L’ajout a échoué. Vérifiez que vous êtes connecté avec un compte administrateur, puis réessayez.",
+            { Total: 0 } => "Le contenu de démonstration est déjà présent : rien à ajouter.",
+            _ => $"Ajouté : {result.Team} membre(s) de l’équipe, {result.News} actualité(s), {result.Events} événement(s) et {result.Activities} activité(s)."
+        };
+        if (result is { Total: > 0 }) await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var all = Api.GetNewsAsync(pageSize: 5);
+        var drafts = Api.GetNewsAsync(published: false, pageSize: 1);
+        var events = Api.GetAllEventsAsync();
+        var activities = Api.GetAllActivitiesAsync();
+        var team = Api.GetHierarchyAsync();
+        await Task.WhenAll(all, drafts, events, activities, team);
+
+        (_newsTotal, _recent) = await all;
+        _drafts = (await drafts).total;
+        _events = await events;
+        _upcoming = _events.Count(e => e.StartDate >= DateTime.UtcNow);
+        _activities = await activities;
+        _teamCount = (await team).Count;
+        _loading = false;
+    }
+}

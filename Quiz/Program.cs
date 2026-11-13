@@ -19,17 +19,7 @@ builder.Services.AddOpenApi();
 builder.Services.AddSingleton<IQuizStore, InMemoryQuizStore>();
 
 // Service de génération via LLM
-builder.Services.AddHttpClient<IQuizGeneratorService, OpenAiQuizGeneratorService>(client =>
-{
-    client.Timeout = TimeSpan.FromMinutes(5);
-})
-    .AddStandardResilienceHandler(options =>
-    {
-        options.AttemptTimeout.Timeout = TimeSpan.FromMinutes(5);
-        options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(5);
-        options.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(10);
-        options.Retry.MaxRetryAttempts = 1;
-    });
+builder.Services.AddScoped<IQuizGeneratorService, OpenAiQuizGeneratorService>();
 
 // ─── Évaluations des enseignants (base PostgreSQL) ────────────────────────────
 var quizConnStr = builder.Configuration.GetConnectionString("QuizDB")
@@ -41,6 +31,17 @@ builder.Services.AddScoped<ProgressService>();
 // Correction assistée et lecture des copies photographiées (LLM compatible OpenAI, section "LLM")
 builder.AddLlmClient();
 builder.Services.AddScoped<AiGradingService>();
+builder.Services.AddScoped<AiQuota>();
+builder.Services.AddSingleton<TranscriptionQueue>();
+builder.Services.AddHostedService<TranscriptionWorker>();
+builder.Services.AddHostedService<ExpiredAttemptsWorker>();   // copies abandonnées rendues après l'heure limite (A8)
+
+// Service Cours : texte du cours dont on génère les exercices (JWT de l'utilisateur transmis)
+builder.Services.AddHttpClient<CourseTextClient>(client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Services:Cours"] ?? "http://localhost:5188");
+    client.Timeout = TimeSpan.FromSeconds(15);
+});
 
 // Service User : classes, élèves et rattachements (le JWT de l'appelant est transmis)
 var userServiceUrl = builder.Configuration["Services:User"] ?? "http://localhost:5197";
@@ -53,8 +54,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 builder.Services.AddValidation();
 
 // ─── JWT (émis par le service User) ───────────────────────────────────────────
-var jwtKey = builder.Configuration["Jwt:Key"]
-    ?? throw new InvalidOperationException("La configuration Jwt:Key est manquante.");
+var jwtKey = GPOE26.ServiceDefaults.JwtSigningKey.Require(builder.Configuration, builder.Environment);
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -98,20 +98,24 @@ app.Use(async (context, next) =>
     {
         await next();
     }
-    catch (UserServiceUnavailableException ex)
+    catch (Exception ex) when (ex is UserServiceUnavailableException or CoursServiceUnavailableException && !context.Response.HasStarted)
     {
-        app.Logger.LogError(ex.InnerException, "Service User indisponible");
+        app.Logger.LogError(ex.InnerException, "{Message}", ex.Message);
         context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-        await context.Response.WriteAsJsonAsync(new { message = ex.Message });
+        await context.Response.WriteAsJsonAsync(new { message = ex.Message + " Réessayez dans un instant." });
     }
 });
 
-app.UseHttpsRedirection();
+// En développement, les services s'appellent en HTTP avec un JWT : une redirection vers HTTPS
+// ferait retirer l'en-tête Authorization par HttpClient, et chaque appel finirait en 401.
+if (!app.Environment.IsDevelopment())
+    app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
 app.MapAssessmentEndpoints();
+app.MapLibraryEndpoints();
 app.MapSubmissionEndpoints();
 app.MapProgressEndpoints();
 

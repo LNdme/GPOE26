@@ -1,0 +1,179 @@
+@page "/code"
+@layout FocusLayout
+@using System.Globalization
+@using System.Text
+@inject ISpaceApi Spaces
+@inject IAccountApi Account
+@inject SessionState Session
+@inject NavigationManager Nav
+
+<PageTitle>J'ai un code — GPOE26</PageTitle>
+
+<div class="ob" style="background:#fff">
+    <div class="ob-panel" style="justify-content:center; gap:20px; max-width:480px">
+        <div class="ga-row" style="justify-content:center">
+            <span class="ga-avatar" style="background:var(--ga-navy); color:#fff; border-radius:12px; width:42px; height:42px"><Icon Name="key" Size="24" Stroke="2" /></span>
+            <span style="font-family:var(--ga-display); font-weight:600; font-size:30px">J'ai un code</span>
+        </div>
+
+        <Alert Message="@_error" />
+
+        @if (_info is null)
+        {
+            <form class="ga-stack" @onsubmit="CheckAsync" @onsubmit:preventDefault>
+                <p style="margin:0">Ton établissement ou ton enseignant t'a remis un code personnel (il commence par <span class="ga-code">GP-</span>). Il crée ton compte et te place dans ta classe.</p>
+                <div class="ga-field">
+                    <label for="code">Ton code</label>
+                    <input id="code" class="ga-input big" style="font-family:var(--ga-mono); letter-spacing:.1em; text-transform:uppercase" autocomplete="off" autocapitalize="characters" spellcheck="false"
+                           placeholder="GP-XXXX-XXXX" @bind="_code" @bind:event="oninput" />
+                </div>
+                <button type="submit" class="ga-btn big block" disabled="@(_busy || string.IsNullOrWhiteSpace(_code))">@(_busy ? "Vérification…" : "Continuer")</button>
+            </form>
+        }
+        else
+        {
+            <div class="ga-card" style="background:var(--ga-blue-pale)">
+                <span class="ga-small ga-muted">@(_info.Kind switch { AccessCodeKind.Teacher => "Code enseignant", AccessCodeKind.Owner => "Code responsable", _ => "Code élève" })</span>
+                @if (_info.StudentName is { } name)
+                {
+                    <strong style="font-size:20px">@name</strong>
+                    <span>@(_info.ClassName is { } c ? $"{c} · " : "")@_info.OrganizationName@(_info.Matricule is { } m ? $" · matricule {m}" : "")</span>
+                    <span class="ga-small">C'est bien toi ? Sinon, ne va pas plus loin et préviens ton établissement.</span>
+                }
+                else
+                {
+                    <strong style="font-size:18px">@_info.OrganizationName</strong>
+                    @if (_info.ClassName is { } c) { <span>@c</span> }
+                }
+            </div>
+
+            @if (Session.IsAuthenticated && Session.Profile is { } me)
+            {
+                <div class="ga-stack">
+                    <p style="margin:0">Tu es connecté en tant que <strong>@me.Username</strong>. Le code peut être rattaché à ce compte.</p>
+                    <button class="ga-btn big block" disabled="@_busy" @onclick="RedeemAsync">Rattacher mon compte</button>
+                    <button class="ga-btn ghost block" @onclick="SignOutAsync">Ce n'est pas mon compte : me déconnecter</button>
+                </div>
+            }
+            else
+            {
+                <form class="ga-stack" @onsubmit="ActivateAsync" @onsubmit:preventDefault>
+                    @if (_info.NeedsName)
+                    {
+                        <div class="ga-form-grid">
+                            <div class="ga-field"><label for="last">Nom</label><input id="last" class="ga-input" autocomplete="family-name" @bind="_last" @bind:event="oninput" @bind:after="Suggest" /></div>
+                            <div class="ga-field"><label for="first">Prénom(s)</label><input id="first" class="ga-input" autocomplete="given-name" @bind="_first" @bind:event="oninput" @bind:after="Suggest" /></div>
+                        </div>
+                    }
+                    <div class="ga-field">
+                        <label for="username">Nom d'utilisateur</label>
+                        <input id="username" class="ga-input big" autocomplete="username" autocapitalize="none" spellcheck="false" @bind="_username" @bind:event="oninput" @bind:after="() => _usernameTouched = true" />
+                        <span class="ga-small ga-muted">C'est avec lui que tu te connecteras. Note-le.</span>
+                    </div>
+                    <div class="ga-field">
+                        <label for="password">Mot de passe (8 caractères au moins)</label>
+                        <input id="password" class="ga-input big" type="password" autocomplete="new-password" @bind="_password" @bind:event="oninput" />
+                    </div>
+                    <div class="ga-field">
+                        <label for="email">E-mail (facultatif)</label>
+                        <input id="email" class="ga-input" type="email" autocomplete="email" placeholder="si tu en as un" @bind="_email" />
+                    </div>
+                    <button type="submit" class="ga-btn big block" disabled="@(_busy || !CanActivate)">@(_busy ? "Création…" : "Créer mon compte")</button>
+                    <p class="ga-small" style="text-align:center; margin:0">Tu as déjà un compte ? <a href="/login?retour=@Uri.EscapeDataString("/code?c=" + _code)">Connecte-toi</a> pour y rattacher le code.</p>
+                </form>
+            }
+            <button class="ga-btn ghost" @onclick="Reset">Saisir un autre code</button>
+        }
+
+        <hr class="ga-divider" />
+        <p style="text-align:center; margin:0" class="ga-small"><a href="/login">Se connecter</a> · <a href="/">Retour au site</a></p>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "c")] public string? InitialCode { get; set; }
+
+    private string _code = "", _username = "", _password = "", _email = "", _last = "", _first = "";
+    private string? _error;
+    private bool _busy, _usernameTouched;
+    private CodeInfo? _info;
+
+    private bool CanActivate => _username.Trim().Length >= 3 && _password.Length >= 8 && (!_info!.NeedsName || _last.Trim().Length > 0);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.RestoreAsync();
+        if (!string.IsNullOrWhiteSpace(InitialCode))
+        {
+            _code = InitialCode;
+            await CheckAsync();
+        }
+    }
+
+    private async Task CheckAsync()
+    {
+        _busy = true;
+        _error = null;
+        var r = await Spaces.CheckCodeAsync(_code.Trim());
+        _busy = false;
+        if (!r.Ok) { _error = r.Error; return; }
+        _info = r.Value;
+        if (_info?.StudentName is { } name) _username = Suggestion(name);
+    }
+
+    /// <summary>Le nom d'utilisateur suit le nom saisi, tant que la personne ne l'a pas choisi elle-même.</summary>
+    private void Suggest()
+    {
+        if (!_usernameTouched) _username = Suggestion($"{_last} {_first}");
+    }
+
+    /// <summary>
+    /// Proposition de nom d'utilisateur à partir de « NOM Prénom(s) » : premier prénom puis nom,
+    /// « MBALLA Jean Paul » → « jean.mballa » (sans accents ni espaces).
+    /// </summary>
+    private static string Suggestion(string fullName)
+    {
+        var parts = fullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return "";
+        var ordered = parts.Length > 1 ? new[] { parts[1], parts[0] } : parts;
+        var text = string.Join('.', ordered).ToLowerInvariant().Normalize(NormalizationForm.FormD);
+        var clean = new string(text.Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark && (char.IsLetterOrDigit(c) || c == '.')).ToArray());
+        return clean.Length > 40 ? clean[..40] : clean;
+    }
+
+    private async Task ActivateAsync()
+    {
+        _busy = true;
+        _error = null;
+        var r = await Spaces.ActivateCodeAsync(new ActivateCodeRequest(_code.Trim(), _username.Trim(), _password,
+            string.IsNullOrWhiteSpace(_email) ? null : _email.Trim(),
+            _info!.NeedsName ? _last.Trim() : null, _info.NeedsName ? _first.Trim() : null));
+        _busy = false;
+        if (!r.Ok || r.Value is null) { _error = r.Error; return; }
+        await Session.SignInAsync(r.Value);
+        Nav.NavigateTo("/app");
+    }
+
+    private async Task RedeemAsync()
+    {
+        _busy = true;
+        _error = null;
+        var r = await Spaces.RedeemCodeAsync(_code.Trim());
+        if (r.Ok && (await Account.MeAsync()).Value is { } profile)
+            await Session.UpdateProfileAsync(profile);
+        _busy = false;
+        if (!r.Ok) { _error = r.Error; return; }
+        // Abonnement payé que l'établissement rend inutile (lot 11) : la page « Abonnement » l'explique
+        Nav.NavigateTo(_info?.Kind is AccessCodeKind.Owner ? "/app/etablissement" : r.Value?.Overlap is not null ? "/app/abonnement" : "/app");
+    }
+
+    private async Task SignOutAsync() => await Session.SignOutAsync();
+
+    private void Reset()
+    {
+        _info = null;
+        _code = "";
+        _error = null;
+        _usernameTouched = false;
+    }
+}

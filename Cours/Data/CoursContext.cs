@@ -7,6 +7,8 @@ namespace Cours.Data
     {
         public DbSet<Course> Courses => Set<Course>();
         public DbSet<CourseSection> CourseSections => Set<CourseSection>();
+        public DbSet<CourseLabSuggestion> LabSuggestions => Set<CourseLabSuggestion>();
+        public DbSet<CourseFeedback> Feedback => Set<CourseFeedback>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -30,6 +32,19 @@ namespace Cours.Data
                       .WithOne(s => s.Course)
                       .HasForeignKey(s => s.CourseId)
                       .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<CourseLabSuggestion>(entity =>
+            {
+                entity.ToTable("CourseLabSuggestions");
+                entity.Property(s => s.Id).ValueGeneratedNever();
+                entity.HasIndex(s => new { s.CourseId, s.Status });
+            });
+
+            modelBuilder.Entity<CourseFeedback>(entity =>
+            {
+                entity.ToTable("CourseFeedback");
+                entity.HasKey(f => new { f.CourseId, f.UserId });
             });
 
             modelBuilder.Entity<CourseSection>(entity =>

@@ -1,0 +1,162 @@
+@page "/admin/abonnements"
+@layout GPOE26.Web.Components.Layout.AdminLayout
+@using GPOE26.UI.Components
+@using GPOE26.UI.Services
+@using GPOE26.Web.Components.UI
+@using M = GPOE26.UI.Models
+@inject SessionState Session
+@inject IPlatformAdminApi Platform
+
+<PageTitle>Abonnements · Administration – GPOE26</PageTitle>
+
+<AdminOnly>
+    <div class="admin-head">
+        <div>
+            <span class="admin-eyebrow">Plateforme</span>
+            <h1>Abonnements</h1>
+            <p>
+                Tant que le paiement en ligne n’est pas branché, une souscription reste <strong>en attente</strong> :
+                activez-la quand vous avez reçu le paiement (Mobile Money, espèces…). Une formule familiale reçoit alors sa clé, à transmettre au parent.
+            </p>
+        </div>
+    </div>
+
+    @if (_error is not null) { <div class="alert alert-danger" role="alert">@_error</div> }
+    @if (_notice is not null) { <div class="alert alert-success" role="status">@_notice</div> }
+
+    <div class="admin-card admin-card--flush">
+        <div class="admin-toolbar">
+            <div class="admin-tabs" role="group" aria-label="Abonnements affichés">
+                @foreach (var (status, label) in Tabs)
+                {
+                    <button type="button" class="@(_status == status ? "on" : "")" aria-pressed="@(_status == status ? "true" : "false")" @onclick="() => ShowAsync(status)">@label</button>
+                }
+            </div>
+            <span class="admin-muted">@_items.Count abonnement@(_items.Count > 1 ? "s" : "")</span>
+        </div>
+
+        @if (_loading)
+        {
+            <div class="admin-empty"><span class="spinner-border spinner-border-sm text-brand-dark" role="status"></span> Chargement…</div>
+        }
+        else if (_items.Count == 0)
+        {
+            <div class="admin-empty">
+                <Icon Name="card" Size="28" />
+                <p>@(_status == M.SubscriptionStatus.PendingPayment ? "Aucune souscription en attente de paiement." : "Aucun abonnement dans cette catégorie.")</p>
+            </div>
+        }
+        else
+        {
+            <div class="admin-table-wrap">
+                <table class="admin-table">
+                    <thead>
+                        <tr><th scope="col">Titulaire</th><th scope="col">Formule</th><th scope="col">Demandé le</th><th scope="col">@(_status == M.SubscriptionStatus.PendingPayment ? "Action" : "Validité")</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in _items)
+                        {
+                            var s = item.Subscription;
+                            <tr>
+                                <td data-label="Titulaire">
+                                    <div class="admin-cell-main">
+                                        <span class="site-user__avatar">@Labels.Initial(item.OwnerName)</span>
+                                        <span><strong>@(item.OwnerName ?? "Compte supprimé")</strong><small>@item.OwnerEmail@(item.OwnerRole is { } role ? $" · {Labels.Of(role)}" : "")</small></span>
+                                    </div>
+                                </td>
+                                <td data-label="Formule">
+                                    <strong>@Labels.Of(s.Plan)</strong>
+                                    <small class="admin-muted" style="display:block">@Period(s.Period)@(s.Seats > 1 ? $" · {s.Seats} places" : "")</small>
+                                    @foreach (var key in s.Keys)
+                                    {
+                                        <small style="display:block">Clé <code>@key.Code</code> · @key.UsedCount / @key.MaxUses</small>
+                                    }
+                                </td>
+                                <td data-label="Demandé le">@item.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                                <td data-label="@(_status == M.SubscriptionStatus.PendingPayment ? "Action" : "Validité")">
+                                    @if (_status == M.SubscriptionStatus.PendingPayment)
+                                    {
+                                        <button type="button" class="site-btn site-btn--primary site-btn--sm" disabled="@(_busyId is not null)" @onclick="() => _confirm = item">Activer</button>
+                                    }
+                                    else
+                                    {
+                                        <span>@(s.EndsAt is { } end ? $"jusqu’au {end.ToLocalTime():dd/MM/yyyy}" : "—")</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+
+    <ConfirmDialog Open="_confirm is not null" Busy="_busyId is not null" Title="Activer cet abonnement ?" ConfirmLabel="Activer"
+                   OnCancel="() => _confirm = null" OnConfirm="ActivateAsync">
+        @if (_confirm is { } c)
+        {
+            <p>
+                <strong>@Labels.Of(c.Subscription.Plan)</strong> pour <strong>@(c.OwnerName ?? "ce compte")</strong>,
+                pendant @(c.Subscription.Period == M.BillingPeriod.Yearly ? "12 mois" : "1 mois") à partir d’aujourd’hui.
+            </p>
+            <p>Ne l’activez qu’après avoir reçu le paiement : l’accès Premium est ouvert immédiatement.</p>
+        }
+    </ConfirmDialog>
+</AdminOnly>
+
+@code {
+    private static readonly (M.SubscriptionStatus Status, string Label)[] Tabs =
+    [
+        (M.SubscriptionStatus.PendingPayment, "En attente"),
+        (M.SubscriptionStatus.Active, "Actifs"),
+        (M.SubscriptionStatus.Trial, "Essais"),
+        (M.SubscriptionStatus.Expired, "Expirés"),
+    ];
+
+    private M.SubscriptionStatus _status = M.SubscriptionStatus.PendingPayment;
+    private List<M.AdminSubscription> _items = new();
+    private M.AdminSubscription? _confirm;
+    private Guid? _busyId;
+    private bool _loading = true;
+    private string? _error, _notice;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.Profile?.IsAdmin != true) return;
+        await LoadAsync();
+    }
+
+    private async Task ShowAsync(M.SubscriptionStatus status)
+    {
+        _status = status;
+        _notice = null;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        var result = await Platform.SubscriptionsAsync(_status);
+        _items = result.Value ?? new();
+        _error = result.Error;
+        _loading = false;
+    }
+
+    private async Task ActivateAsync()
+    {
+        if (_confirm is not { } item) return;
+        _busyId = item.Subscription.Id;
+        _error = _notice = null;
+        var result = await Platform.ActivateAsync(item.Subscription.Id, null);
+        _busyId = null;
+        _confirm = null;
+        if (!result.Ok) { _error = result.Error; return; }
+
+        var key = result.Value!.Keys.FirstOrDefault()?.Code;
+        _notice = $"Abonnement activé : {Labels.Of(result.Value.Plan)} pour {item.OwnerName}."
+            + (key is null ? "" : $" Clé à lui transmettre : {key}.");
+        await LoadAsync();
+    }
+
+    private static string Period(M.BillingPeriod period) => period == M.BillingPeriod.Yearly ? "Annuel" : "Mensuel";
+}

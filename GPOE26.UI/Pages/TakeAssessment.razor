@@ -3,6 +3,7 @@
 @inherits AppPage
 @implements IDisposable
 @inject IAssessmentApi Api
+@inject IAccountApi Account
 
 <PageTitle>@(_attempt?.Title ?? "Évaluation") — GPOE26</PageTitle>
 
@@ -52,6 +53,10 @@ else
         <div class="grow">
             <strong>@_attempt.Title</strong><br />
             <span class="ga-small ga-muted">Tentative @_attempt.AttemptNumber · @Answered / @_attempt.Questions.Count réponses</span>
+            @if (_draftStatus is not null)
+            {
+                <br /><span class="ga-small @(_draftFailed ? "" : "ga-muted")" role="status" style="@(_draftFailed ? "color:var(--ga-amber-ink)" : null)">@_draftStatus</span>
+            }
         </div>
         <div class="ex-progress" role="progressbar" aria-label="Questions répondues" aria-valuenow="@Answered" aria-valuemin="0" aria-valuemax="@_attempt.Questions.Count">
             <span style="width:@(Answered * 100 / Math.Max(1, _attempt.Questions.Count))%"></span>
@@ -85,7 +90,7 @@ else
                 var answered = IsAnswered(_attempt.Questions[index]);
                 var css = (answered ? "answered " : "") + (index == _current ? "current" : "");
                 var label = $"Question {index + 1}" + (answered ? ", répondue" : "");
-                <button class="@css" aria-label="@label" aria-current="@(index == _current)" @onclick="() => _current = index">@(index + 1)</button>
+                <button class="@css" aria-label="@label" aria-current="@Aria.Current(index == _current)" @onclick="() => _current = index">@(index + 1)</button>
             }
         </nav>
 
@@ -103,7 +108,7 @@ else
                         {
                             var opt = q.Options[i];
                             var on = answer.SelectedOptions.Contains(opt.Index);
-                            <button type="button" class="ex-opt @(on ? "on" : "")" aria-pressed="@on" @onclick="() => Choose(q, answer, opt.Index)">
+                            <button type="button" class="ex-opt @(on ? "on" : "")" aria-pressed="@Aria.State(on)" @onclick="() => Choose(q, answer, opt.Index)">
                                 <span class="letter">@((char)('A' + i))</span><span>@opt.Text</span>
                             </button>
                         }
@@ -112,8 +117,8 @@ else
 
                 case QuestionType.TrueFalse:
                     <div class="ga-grid tight" role="group" aria-labelledby="q-title">
-                        <button type="button" class="ex-opt @(answer.TrueFalse == true ? "on" : "")" aria-pressed="@(answer.TrueFalse == true)" @onclick="() => answer.TrueFalse = true"><span class="letter">V</span>Vrai</button>
-                        <button type="button" class="ex-opt @(answer.TrueFalse == false ? "on" : "")" aria-pressed="@(answer.TrueFalse == false)" @onclick="() => answer.TrueFalse = false"><span class="letter">F</span>Faux</button>
+                        <button type="button" class="ex-opt @(answer.TrueFalse == true ? "on" : "")" aria-pressed="@Aria.State(answer.TrueFalse == true)" @onclick="() => answer.TrueFalse = true"><span class="letter">V</span>Vrai</button>
+                        <button type="button" class="ex-opt @(answer.TrueFalse == false ? "on" : "")" aria-pressed="@Aria.State(answer.TrueFalse == false)" @onclick="() => answer.TrueFalse = false"><span class="letter">F</span>Faux</button>
                     </div>
                     break;
 
@@ -144,13 +149,13 @@ else
                                     OnDelete="p => DeletePhotoAsync(q, p)" OpenTranscription="true" />
                         @if (_uploading)
                         {
-                            <Loading Text="Envoi et lecture de ta copie par l'IA…" />
+                            <Loading Text="Envoi de ta photo…" />
                         }
                         else if (photos.Count < 4)
                         {
                             <PhotoPicker Label="@(photos.Count == 0 ? "Photographier ma copie" : "Ajouter une page")" Css="secondary small"
                                          OnPicked="p => UploadPhotoAsync(q, p)" OnError="e => _error = e" />
-                            <span class="ga-small ga-muted">Pose ta feuille à plat, bien éclairée. Vérifie ensuite ce que l'IA a lu : reprends la photo si c'est flou.</span>
+                            <span class="ga-small ga-muted">Pose ta feuille à plat, bien éclairée. L'IA la lit pendant que tu continues : vérifie ensuite ce qu'elle a lu, et reprends la photo si c'est flou.</span>
                         }
                     </div>
                     break;
@@ -186,6 +191,14 @@ else
     private bool _uploading;
     private Timer? _timer;
 
+    // Brouillon : les réponses sont enregistrées côté serveur pendant la composition.
+    // Une coupure de réseau, un rechargement ou une fermeture d'onglet ne fait plus perdre la copie.
+    private static readonly TimeSpan DraftInterval = TimeSpan.FromSeconds(5);
+    private CancellationTokenSource? _draftLoop;
+    private string _savedDraft = "";
+    private string? _draftStatus;
+    private bool _draftFailed;
+
     private int Answered => _attempt?.Questions.Count(IsAnswered) ?? 0;
     private int Unanswered => (_attempt?.Questions.Count ?? 0) - Answered;
 
@@ -215,6 +228,19 @@ else
         if (_attempt is not null)
         {
             foreach (var q in _attempt.Questions) _answers[q.Id] = new AnswerDraft { QuestionId = q.Id };
+            // Tentative reprise : les réponses déjà saisies sont retrouvées
+            var restored = 0;
+            foreach (var saved in _attempt.Draft ?? [])
+            {
+                if (!_answers.TryGetValue(saved.QuestionId, out var answer)) continue;
+                answer.SelectedOptions = saved.SelectedOptions ?? [];
+                answer.TrueFalse = saved.TrueFalse;
+                answer.Text = saved.Text;
+                restored++;
+            }
+            _savedDraft = Snapshot();
+            if (restored > 0 && Answered > 0) _draftStatus = "Tes réponses ont été retrouvées.";
+            StartDraftLoop();
             // Tentative reprise : les photos déjà envoyées sont conservées
             foreach (var group in (_attempt.Photos ?? []).GroupBy(p => p.QuestionId))
                 _photos[group.Key] = group.OrderBy(p => p.Page).ToList();
@@ -224,14 +250,111 @@ else
         _loading = false;
     }
 
+    private string Snapshot() => System.Text.Json.JsonSerializer.Serialize(_answers.Values);
+
+    /// <summary>
+    /// Toutes les quelques secondes : enregistre le brouillon s'il a changé, et prolonge la session
+    /// (on peut réfléchir longtemps sans rien envoyer). Un échec est signalé puis retenté au tour suivant.
+    /// </summary>
+    private void StartDraftLoop()
+    {
+        _draftLoop = new CancellationTokenSource();
+        var token = _draftLoop.Token;
+        _ = InvokeAsync(async () =>
+        {
+            using var timer = new PeriodicTimer(DraftInterval);
+            try
+            {
+                while (await timer.WaitForNextTickAsync(token))
+                {
+                    if (_result is not null) return;
+                    await Account.KeepSessionAliveAsync();
+                    if (!_busy) await SaveDraftAsync();
+                    if (!_busy) await RefreshPendingPhotosAsync();
+                }
+            }
+            catch (OperationCanceledException) { }
+        });
+    }
+
+    /// <summary>Lecture des photos par l'IA, faite en arrière-plan : la page la récupère dès qu'elle est prête.</summary>
+    private async Task RefreshPendingPhotosAsync()
+    {
+        if (_attempt is null || !_photos.Values.Any(list => list.Any(p => p.Pending))) return;
+        var result = await Api.AttemptPhotosAsync(Id, _attempt.SubmissionId);
+        if (result.Value is not { } photos || _result is not null) return;
+
+        _photos.Clear();
+        foreach (var group in photos.GroupBy(p => p.QuestionId))
+            _photos[group.Key] = group.OrderBy(p => p.Page).ToList();
+        StateHasChanged();
+    }
+
+    private async Task SaveDraftAsync()
+    {
+        var snapshot = Snapshot();
+        if (snapshot == _savedDraft || _attempt is null) return;
+
+        var result = await Api.SaveDraftAsync(Id, _attempt.SubmissionId, _answers.Values.ToList());
+        if (_result is not null) return;   // la copie a été rendue entre-temps
+        _draftFailed = !result.Ok;
+        if (result.Ok)
+        {
+            _savedDraft = snapshot;
+            _draftStatus = $"Brouillon enregistré à {AppTime.Now:HH:mm}";
+        }
+        else if (result.Status == System.Net.HttpStatusCode.Conflict)
+        {
+            // La copie a déjà été rendue (depuis un autre onglet, par exemple) : inutile d'insister
+            _draftStatus = result.Error;
+            _draftLoop?.Cancel();
+        }
+        else
+        {
+            _draftStatus = "Brouillon non enregistré : vérifie ta connexion. Nouvel essai dans quelques secondes.";
+        }
+        StateHasChanged();
+    }
+
+    // Envoi automatique à la fin du temps : retenté jusqu'au succès (réseau coupé, service redémarré…)
+    private DateTime _nextAutoSubmit = DateTime.MinValue;
+    private int _autoSubmitFailures;
+
+    /// <summary>Délai avant le prochain essai : 5 s, 10 s, 20 s, puis 30 s au plus.</summary>
+    public static TimeSpan AutoSubmitRetryDelay(int failures) =>
+        TimeSpan.FromSeconds(Math.Min(30, 5 * Math.Pow(2, Math.Max(0, failures - 1))));
+
     private async Task TickAsync()
     {
-        if (_attempt?.Deadline is { } deadline && DateTime.UtcNow >= deadline && _result is null && !_busy)
+        if (_attempt?.Deadline is { } deadline && DateTime.UtcNow >= deadline && _result is null && !_busy
+            && DateTime.UtcNow >= _nextAutoSubmit)
         {
             // Temps écoulé : la copie est rendue automatiquement pour ne rien perdre
-            _timer?.Dispose();
-            _error = "Le temps est écoulé : ta copie a été rendue automatiquement.";
+            _error = "Le temps est écoulé : envoi de ta copie…";
             await SubmitAsync();
+            if (_result is not null)
+            {
+                _error = "Le temps est écoulé : ta copie a été rendue automatiquement.";
+            }
+            else if (_lastSubmitStatus == System.Net.HttpStatusCode.Conflict)
+            {
+                // Déjà rendue par le serveur (copie abandonnée, autre onglet, envoi arrivé malgré l'erreur) : on l'affiche
+                _timer?.Dispose();
+                _draftLoop?.Cancel();
+                var copy = await Api.GetSubmissionAsync(Id, _attempt.SubmissionId);
+                if (copy.Ok)
+                {
+                    _result = copy.Value;
+                    _error = "Le temps est écoulé : ta copie a été rendue avec les réponses enregistrées.";
+                }
+            }
+            else
+            {
+                _autoSubmitFailures++;
+                var delay = AutoSubmitRetryDelay(_autoSubmitFailures);
+                _nextAutoSubmit = DateTime.UtcNow + delay;
+                _error = $"Le temps est écoulé, mais ta copie n'a pas encore pu être envoyée ({_error}). Nouvel essai dans {delay.TotalSeconds:0} s : garde cette page ouverte.";
+            }
         }
         StateHasChanged();
     }
@@ -264,14 +387,18 @@ else
         for (var i = 0; i < list.Count; i++) list[i] = list[i] with { Page = i + 1 };
     }
 
+    private System.Net.HttpStatusCode _lastSubmitStatus;
+
     private async Task SubmitAsync()
     {
         _busy = true;
         var result = await Api.SubmitAsync(Id, _attempt!.SubmissionId, _answers.Values.ToList());
         _busy = false;
         _confirm = false;
+        _lastSubmitStatus = result.Status;
         if (!result.Ok) { _error = result.Error; return; }
         _timer?.Dispose();
+        _draftLoop?.Cancel();
         _result = result.Value;
     }
 
@@ -285,5 +412,10 @@ else
             ? "Consulte ta copie pour voir la correction de chaque question."
             : "Ta note et la correction seront visibles après la date limite.";
 
-    public void Dispose() => _timer?.Dispose();
+    public void Dispose()
+    {
+        _timer?.Dispose();
+        _draftLoop?.Cancel();
+        _draftLoop?.Dispose();
+    }
 }

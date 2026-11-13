@@ -4,8 +4,11 @@
     {
         public Guid Id { get; set; } = Guid.NewGuid();
 
-        /// <summary>Adresse email unique — sert d'identifiant de connexion</summary>
-        public required string Email { get; set; }
+        /// <summary>
+        /// Adresse e-mail unique. Facultative pour un élève entré par son code personnel :
+        /// il se connecte alors avec son nom d'utilisateur.
+        /// </summary>
+        public string? Email { get; set; }
 
         public required string Username { get; set; }
 
@@ -23,8 +26,15 @@
         // Ces champs seront embarqués dans le JWT (claims) → les autres services
         // (chat, quiz) les liront directement sans appeler la DB User.
 
-        /// <summary>Élève, Enseignant, Parent ou Admin</summary>
+        /// <summary>Élève, Enseignant ou Parent : ce que la personne fait sur la plateforme.</summary>
         public UserRole Role { get; set; } = UserRole.Student;
+
+        /// <summary>
+        /// Administrateur : gère le site, la plateforme (abonnements, licences) et les accès.
+        /// C'est un droit ajouté au compte, comme SiteEditor : un enseignant nommé administrateur reste enseignant
+        /// et garde ses classes, ses cours et ses évaluations.
+        /// </summary>
+        public bool IsAdmin { get; set; }
 
         /// <summary>
         /// Niveau scolaire de l'élève (ex: "3ème", "Terminale", "Licence 1").
@@ -36,6 +46,9 @@
         public string? Level { get; set; }
         public string? Specialite { get; set; }
         public string? Filiere { get; set; }
+
+        /// <summary>Secondaire ou supérieur : règle le niveau d'exigence du tuteur et des exercices.</summary>
+        public EducationStage? Stage { get; set; }
 
 
 
@@ -79,16 +92,38 @@
         /// <summary>Nom déclaré à l'inscription (non vérifié) quand il n'y a pas de clé</summary>
         public string? OrganizationName { get; set; }
 
+        /// <summary>
+        /// Éditeur du site de l'établissement : peut publier actualités, événements, activités et équipe,
+        /// sans être administrateur. Indépendant du rôle (un enseignant peut être éditeur).
+        /// </summary>
+        public bool SiteEditor { get; set; }
+
+        /// <summary>
+        /// Connecté avec un code personnel (première connexion par matricule, ou code de reconnexion donné par
+        /// l'établissement) : l'élève doit choisir son mot de passe avant d'aller plus loin.
+        /// </summary>
+        public bool MustChangePassword { get; set; }
+
         // ─── Métadonnées ──────────────────────────────────────────────────────────
         public DateTime? LastLoginAt { get; set; }
     }
 
+    /// <summary>Enseignement secondaire (élève) ou supérieur (étudiant).</summary>
+    public enum EducationStage
+    {
+        Secondary,
+        Higher
+    }
+
+    /// <summary>
+    /// Rôle sur la plateforme. L'administration n'en fait pas partie : c'est le droit AppUser.IsAdmin.
+    /// (Une ancienne valeur « Admin » en base est convertie au démarrage, cf. UserSchema.)
+    /// </summary>
     public enum UserRole
     {
         Student,
         Teacher,
-        Parent,
-        Admin
+        Parent
     }
 
     public enum SchoolSubSystem

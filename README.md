@@ -68,6 +68,8 @@ bash start.sh
 
 Le script lance les 5 services backend, attend 30 s, puis démarre le frontend sur le port 5000. Voir `replit.md` pour les détails propres à Replit.
 
+Il démarre en **Production** : aucun compte de démonstration n'est créé. Inscrivez votre compte sur le site, puis relancez avec `ADMIN_EMAILS="vous@exemple.cm"` pour en faire le premier administrateur. Pour une démonstration privée avec les comptes de test : `APP_ENV=Development bash start.sh`.
+
 ---
 
 ## Configuration
@@ -76,11 +78,18 @@ Aucun secret ne doit être commité. Copiez `.env.example` en `.env` (ignoré pa
 
 | Variable | Service(s) | Description |
 |---|---|---|
-| `LLM_API_KEY` | Chat, Quiz | Clé OpenRouter (transmise en `LLM__ApiKey`) ; `DEEPSEEK_API_KEY` reste accepté par `start.sh` |
-| `LLM__BaseUrl`, `LLM__Models`, `LLM__VisionModels` | Chat, Quiz | Fournisseur compatible OpenAI (OpenRouter par défaut) et listes de modèles **essayés dans l'ordre** : si un modèle gratuit est saturé (429) ou muet, le suivant prend le relais. Les modèles de vision servent dès qu'une photo est jointe. `LLM__AttemptTimeoutSeconds` (90 par défaut) borne chaque essai |
-| `LlmProvider` | Chat | Anciens écrans `/learning` : `OpenRouter` (défaut, même client que le tuteur), `DeepSeek`, `Claude`, `Gpt`, `Foundry` |
+| `LLM_API_KEY` ou `OPENROUTER_API_KEY` | Chat, Quiz, Cours | Clé OpenRouter (transmise en `LLM__ApiKey`), lue par `start.sh` et par l'AppHost Aspire (à défaut du secret `Parameters:llm-apikey`) ; `DEEPSEEK_API_KEY` reste accepté par `start.sh` |
+| `LLM__BaseUrl`, `LLM__Models`, `LLM__VisionModels` | Chat, Quiz | Fournisseur compatible OpenAI (OpenRouter par défaut) et listes de modèles **essayés dans l'ordre** : si un modèle gratuit est saturé (429) ou muet, le suivant prend le relais. Les modèles de vision servent dès qu'une photo est jointe. `LLM__AttemptTimeoutSeconds` (90 par défaut) borne chaque essai ; pour une réponse en continu (tuteur), il borne l'attente du premier mot, puis la réponse a quatre minutes pour se terminer |
+| Modèles par défaut | Chat, Quiz, Cours | Gratuits sur OpenRouter (aucun coût) : **Nemotron 3.5 Super VL** en premier, texte et photos — le seul juste et rapide sur toutes les tâches à l'essai du 10 nov. 2026 (tuteur, copie photographiée, correction, quiz, mémoire) ; Nemotron 3 Ultra, Gemma 4 et `openrouter/free` en secours. Inkling 2 Small gratuit n'est pas utilisable : OpenRouter le réserve aux agents de programmation (refus 403). Les modèles gratuits peuvent être saturés aux heures de pointe : le suivant de la liste prend alors le relais |
+| `LLM__EmbeddingModel` | Chat | Modèle d'embeddings de la mémoire des agents (recherche par le sens, avec pgvector) et des passages des longs cours donnés au tuteur (table `CourseChunks`, refaite quand le cours change) : `liquid/lfm-2.5-embedding-350m:free` par défaut. Vide : recherche par le texte seulement. Changer de modèle est sans risque : les souvenirs déjà enregistrés avec l'ancien restent trouvés par le texte |
+| `LLM__DailyLimitPerUser` | Chat, Quiz | Plafond quotidien de demandes à l'IA par utilisateur et par service (150 par défaut, `0` le désactive), en plus du quota mensuel de la formule. Les demandes servies sont comptées dans la table `AiUsage` ; la lecture d'une copie photographiée pendant une épreuve n'est jamais bloquée |
+| `RateLimits__Enabled` | tous les services | `false` désactive les limites de débit (pile de test). Par défaut : 5 mots de passe faux par compte en 15 min, 10 codes refusés en 15 min, 20 demandes à l'IA par minute et par compte ; au-delà, réponse 429 avec un message et `Retry-After` |
+| `Services__TimeoutSeconds` | Chat | Délai des appels du tuteur vers Cours, User et Quiz (10 s par défaut) ; un service qui ne répond pas donne 503 et un message, pas un refus d'abonnement |
+| `Agents__ReflectionBatch`, `Agents__ReflectionQuietMinutes` | Chat | Mémoire du tuteur consolidée par lots : après 4 questions, ou 10 minutes sans message (un appel au modèle pour plusieurs questions). L'état est en base : rien ne se perd au redémarrage |
 | `ConnectionStrings__ChatDB` | Chat | Base des discussions du tuteur (fournie par Aspire) |
-| `Jwt__Key` / `Jwt__Issuer` / `Jwt__Audience` | User, Cours | Clé de signature JWT (≥ 256 bits). **La valeur par défaut est un exemple : à changer en production.** |
+| `Jwt__Key` / `Jwt__Issuer` / `Jwt__Audience` | tous les services | Clé de signature JWT (32 caractères au moins). Aucune valeur par défaut hors développement : les services **refusent de démarrer** sans clé, ou avec la clé d'exemple des fichiers `appsettings.Development.json`. Avec Aspire : `dotnet user-secrets set "Parameters:jwt-key" "<clé>" --project GPOE26.AppHost` |
+| `Jwt__MaxSessionHours` | User | Durée maximale d'une session prolongée sans ressaisir le mot de passe (12 h par défaut). Le jeton dure 60 min et se renouvelle seul tant que l'utilisateur est actif (`POST /auth/refresh`) |
+| `JWT_KEY`, `APP_ENV`, `ADMIN_EMAILS` | `start.sh` | `JWT_KEY` : clé de signature (à défaut, une clé aléatoire est créée dans `.secrets/jwt-key`, hors du dépôt). `APP_ENV` : `Production` par défaut ; `Development` active les comptes de démonstration, le paiement simulé et Swagger — **jamais sur un site public**. `ADMIN_EMAILS` : comptes déjà inscrits à promouvoir administrateurs |
 | `ConnectionStrings__UserDB` / `__CoursDB` / `__LyceeDB` | User, Cours, ApiService | Chaînes de connexion PostgreSQL (fournies automatiquement par Aspire) |
 | `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` | `start.sh` | Utilisées pour construire les chaînes de connexion |
 
@@ -129,7 +138,7 @@ L'interface des élèves, enseignants et parents est une **bibliothèque Razor**
 | `/app/tuteur` | Tuteur IA : toutes les discussions (une par cours) et les explications épinglées |
 | `/app/tuteur/{coursId}` | Relecture d'une discussion en pleine page (lisible même sans abonnement) |
 
-- **Architecture** : les pages consomment des interfaces (`IAccountApi`, `IClassroomApi`, `IFamilyApi`, `ICourseApi`, `IAssessmentApi`, `IProgressApi`) implémentées en HTTP ; l'application Windows pourra les décorer d'un cache hors ligne.
+- **Architecture** : les pages consomment des interfaces (`IAccountApi`, `IClassroomApi`, `ISpaceApi`, `IFamilyApi`, `ICourseApi`, `IAssessmentApi`, `IProgressApi`) implémentées en HTTP ; l'application Windows pourra les décorer d'un cache hors ligne.
 - **Session** : `SessionState` (une par circuit), persistée par l'hôte via `ISessionStore` — côté Web, dans le `localStorage` du navigateur, chiffrée par la protection des données ASP.NET. Le site fonctionne en un seul circuit interactif sans prérendu (`App.razor`), si bien que la connexion survit à la navigation et au rechargement.
 - **Fuseau horaire** : les dates sont affichées et saisies dans le fuseau `App:TimeZone` (`Africa/Douala` par défaut), pas celui du serveur.
 - **Sécurité** : le Markdown des cours est rendu sans HTML brut (un cours ne peut pas injecter de script chez les élèves).
@@ -143,11 +152,17 @@ L'interface des élèves, enseignants et parents est une **bibliothèque Razor**
 
 | Domaine | Endpoints |
 |---|---|
-| Authentification | `POST /auth/register` (inscription guidée : profil, classes initiales, clé d'abonnement, code de classe, essai), `POST /auth/login`, `GET/PUT/PATCH /auth/me` |
-| Classes et groupes | `POST /classrooms`, `GET /classrooms/mine`, `GET /classrooms/{id}`, `GET /classrooms/{id}/members`, `POST /classrooms/join`, `POST /classrooms/{id}/invite-code`, `DELETE /classrooms/{id}`, `DELETE /classrooms/{id}/members/{studentId}` |
+| Authentification | `POST /auth/register` (inscription guidée : profil, classes initiales, clé d'abonnement familiale ou individuelle, essai), `POST /auth/login` (e-mail **ou nom d'utilisateur**), `POST /auth/refresh` (prolonger la session), `GET /auth/me`, `PUT /auth/me/profile` (champs selon le rôle), `POST /auth/me/password` |
+| Codes personnels | `POST /auth/codes/check` (sans compte : à qui est ce code), `POST /auth/codes/activate` (crée le compte élève ou enseignant ; e-mail facultatif), `POST /access-codes/redeem` (compte existant) |
+| Espaces (établissement, enseignant indépendant) | `GET /organizations/mine` ; responsable et gestionnaires : `GET /organizations/{id}` (tableau de bord), `…/members`, `…/teachers`, `…/managers` (responsable seulement), `…/years`, `…/classes` et `…/classes/{cid}/teachers` (affectation par matière), `…/students` (liste, `…/import` CSV avec aperçu, `…/{sid}/status`), `…/codes` (élève, classe, `…/blank`, `…/teacher`) |
+| Classes et groupes | `POST /classrooms` (groupe personnel de l'enseignant), `GET /classrooms/mine` (avec `myRole`, `mySubjects`, `teachers`), `GET /classrooms/{id}`, `GET /classrooms/{id}/members`, `DELETE /classrooms/{id}`, `DELETE /classrooms/{id}/members/{studentId}` |
 | Parents | `POST /parents/children/link` (code de l'élève), `POST /parents/children` (créer le compte de l'enfant), `GET /parents/children`, `DELETE /parents/children/{linkId}` ; côté élève `GET /me/parents`, `POST /me/parents/{linkId}/approve` ou `/reject` |
 | Abonnements | `GET /subscriptions/me`, `POST /subscriptions/redeem`, `POST /subscriptions/checkout`, `POST /subscriptions/trial` |
-| Administration | `POST/GET /admin/organizations`, `POST /admin/organizations/{id}/licenses`, `POST /admin/subscriptions/{id}/activate` |
+| Administration (droit d'administrateur, vérifié en base à chaque appel) | `GET /admin/users`, `PUT /admin/users/{id}/access` (administrateur, éditeur du site), `GET /admin/subscriptions?status=…` (en attente de paiement par défaut), `POST /admin/subscriptions/{id}/activate`, `POST/GET /admin/organizations`, `POST /admin/organizations/{id}/licenses`, `PUT/DELETE /admin/organizations/{id}/owners` (responsable), `POST /admin/organizations/{id}/owner-code` |
+
+**Établissements et codes personnels** (détail : `docs/PLAN-ETABLISSEMENT.md`) : un établissement a un **responsable** (désigné par l'administration) et des **gestionnaires**. Ils créent les années scolaires et les classes, y affectent les enseignants (un par matière), importent la liste des élèves (matricule, nom, classe) et remettent à chacun un **code personnel** `GP-XXXX-XXXX` à usage unique : en l'activant sur la page « J'ai un code » (`/code`), l'élève crée son compte, sans e-mail s'il n'en a pas, et entre dans sa classe ; une place de licence est alors prise. Un **enseignant indépendant** a le même espace en petit (« Mes élèves et codes », 30 places, matricules générés, codes « en blanc »). Il n'y a plus de code de classe commun ni de clé d'établissement partagée.
+
+**Rôles et droits** : chaque compte a un **rôle** — élève, enseignant ou parent — qui détermine son espace. Deux **droits** peuvent s'y ajouter sans le remplacer : *administrateur* (site, abonnements, licences, accès ; claim `admin` du jeton) et *éditeur du site* (actualités, événements, activités, équipe ; claim `site_editor`). Un enseignant nommé administrateur garde ses classes, ses cours et ses évaluations. Dans l'interface, l'administration se trouve sur `/admin` : « Contenu » pour les éditeurs, « Établissement » et « Plateforme » (abonnements, licences, comptes et accès) pour les administrateurs.
 
 ### Tuteur IA (service Chat)
 
@@ -156,22 +171,30 @@ L'interface des élèves, enseignants et parents est une **bibliothèque Razor**
 | `GET /tutor/conversations` | Mes discussions (une par cours), avec aperçu et nombre d'explications épinglées |
 | `GET /tutor/courses/{courseId}` | Discussion complète sur un cours |
 | `POST /tutor/courses/{courseId}/messages` | Poser une question (Premium), éventuellement avec `imageId` ; le contenu du cours est lu dans le service Cours avec le jeton de l'élève (il n'accède qu'à ses cours) |
+| `POST /tutor/courses/{courseId}/messages/stream` | La même question, réponse affichée pendant que le modèle l'écrit. Réponse en NDJSON : `{"type":"start"}`, des `{"type":"delta","text":…}`, puis `{"type":"done","question":…,"answer":…}` ou `{"type":"error","message":…}` (rien n'est alors enregistré ni décompté). C'est la route utilisée par le panneau du tuteur |
 | `POST /tutor/images`, `GET /tutor/images/{id}` | Photo d'un exercice (JPEG/PNG/WebP, 6 Mo max), visible de son seul auteur |
 | `PUT /tutor/messages/{id}/pin`, `GET /tutor/pinned` | Épingler une explication, liste des explications épinglées |
-| `DELETE /tutor/courses/{courseId}` | Effacer la discussion d'un cours |
+| `DELETE /tutor/courses/{courseId}` | Effacer la discussion d'un cours (les difficultés notées pour ce cours partent avec elle ; les préférences restent) |
+| `GET /agent/memories`, `DELETE /agent/memories`, `GET/PUT /agent/memory-settings` | Ce que les agents retiennent (tuteur et assistant), « Tout oublier », couper la mémoire |
+| `POST /teacher-agent/ask`, `GET/DELETE /teacher-agent/conversation` | Assistant enseignant : question (les 12 derniers messages sont relus), conversation conservée, effacement |
+| `POST /teacher-agent/compose` | Plan, rédaction ou réécriture dans le ton de l'enseignant ; `courseText` : le cours déjà rédigé, pour continuer sans répéter |
 
-Premium est lu dans le JWT, puis vérifié auprès du service User s'il dit non (clé activée après la connexion).
+Le tuteur reçoit le profil de l'apprenant (classe, sous-système, filière, examen visé et sa date, matières à renforcer, temps d'étude) et répond en anglais à un élève anglophone. Un cours trop long pour le modèle est réduit à son plan et aux parties les plus proches de la question, et le tuteur en est averti. Il doit dire quand une réponse n'est pas dans le cours.
+
+L'accès aux fonctions d'IA est vérifié auprès du service User (formule et quota), à chaque demande.
 
 ### Évaluations (service Quiz) et partage des cours (service Cours)
 
 | Qui | Endpoints |
 |---|---|
 | Enseignant | `POST /assessments`, `PUT /assessments/{id}` (tant qu'aucun élève n'a composé), `POST /assessments/{id}/publish`, `POST /assessments/{id}/close`, `DELETE /assessments/{id}`, `GET /assessments/{id}/submissions`, `PUT /assessments/{id}/submissions/{sid}/answers/{qid}/grade`, `POST …/ai-suggestion`, `GET /progress/classrooms/{classroomId}` ; Cours : `PUT /cours/{id}/sharing` |
-| Élève | `GET /assessments/mine`, `POST /assessments/{id}/attempts` (démarrer ou reprendre), `POST /assessments/{id}/attempts/{sid}/questions/{qid}/photos` (photo de copie, transcrite par l'IA), `DELETE …/attempts/{sid}/photos/{pid}`, `POST /assessments/{id}/submissions/{sid}/answers/{qid}/ai-feedback` (analyse après publication), `POST /assessments/{id}/attempts/{sid}/submit`, `GET /assessments/{id}/submissions/{sid}`, `GET /progress/me` ; Cours : `GET /cours/shared`, `GET /cours/{id}` |
+| Lecteur d'un cours | `GET /cours/{id}/feedback` (mon avis « Ce cours vous a-t-il été utile ? » ; l'auteur reçoit aussi les totaux), `PUT /cours/{id}/feedback` (`{"useful": true}`), `DELETE /cours/{id}/feedback` |
+| Élève | `GET /assessments/mine`, `POST /assessments/{id}/attempts` (démarrer ou reprendre, avec le brouillon des réponses déjà saisies), `PUT /assessments/{id}/attempts/{sid}/draft` (enregistrer le brouillon pendant la composition), `POST /assessments/{id}/attempts/{sid}/questions/{qid}/photos` (photo de copie, enregistrée tout de suite puis lue par l'IA en arrière-plan), `GET /assessments/{id}/attempts/{sid}/photos` (photos et leur lecture), `DELETE …/attempts/{sid}/photos/{pid}`, `POST /assessments/{id}/submissions/{sid}/answers/{qid}/ai-feedback` (analyse après publication), `POST /assessments/{id}/attempts/{sid}/submit`, `GET /assessments/{id}/submissions/{sid}`, `GET /progress/me` ; Cours : `GET /cours/shared`, `GET /cours/{id}` |
 | Parent | `GET /progress/students/{studentId}` (enfant rattaché) |
 
 - **Types de questions** : QCM, choix multiples (tout ou rien), vrai/faux, réponse courte (casse, accents et ponctuation ignorés), numérique (virgule, espaces, unité et tolérance acceptés), réponse ouverte (texte ou photo de copie, corrigée par l'enseignant).
 - **Correction assistée** : sur demande, l'IA propose une note (arrondie au quart de point) et un commentaire selon les critères de l'enseignant ; rien n'est appliqué sans sa validation.
+- **Heure limite** : la plus proche de l'échéance et de la fin de la durée, plus 2 minutes de marge, imposée par le serveur. Au-delà, ou après la clôture, la copie ne change plus : elle est rendue avec le dernier brouillon enregistré (par la page, à la clôture, ou par un travail de fond pour une copie abandonnée).
 - **Publication des résultats** : immédiate pour un entraînement ; sinon après la date limite ou la clôture. La vue élève ne contient jamais les bonnes réponses avant.
 - **Suivi** : note de la meilleure tentative ramenée sur 20, moyenne, et maîtrise par cours (points obtenus sur les questions liées au cours).
 - Le service Quiz interroge le service User avec le jeton de l'utilisateur (classes, élèves, rattachements) : il a besoin de `Services__User` et de la même configuration `Jwt`.
@@ -181,22 +204,24 @@ Le JWT contient désormais `premium` (`true`/`false`) et `plan` : les services C
 Tant que le paiement n'est pas branché (phase 5), un abonnement souscrit reste `PendingPayment` jusqu'à ce qu'un administrateur l'active.
 
 **Données de démonstration (environnement Development uniquement)** — mot de passe `Test1234!` :
-`admin@gpoe26.cm` (Admin), `prof@gpoe26.cm` (Enseignant), `eleve@gpoe26.cm` (Élève), `parent@gpoe26.cm` (Parent, rattaché à l'élève), classe « Terminale C » (code `DEM-TLC`), licence du « Lycée de démonstration » (clé `ETB-DEMO-PROF`, 50 places).
+`admin@gpoe26.cm` (Enseignant + administrateur, responsable du « Lycée de démonstration »), `prof@gpoe26.cm` (Enseignant, professeur principal de la « Terminale C »), `eleve@gpoe26.cm` (Élève de cette classe), `parent@gpoe26.cm` (Parent, rattaché à l'élève), licence du « Lycée de démonstration » (50 places). Pour un nouvel élève de démonstration : « Mon établissement » → « Élèves et codes », puis la page `/code`.
 
-En production, aucun compte Admin n'est créé automatiquement : promouvoir un compte existant avec
-`UPDATE "AppUsers" SET "Role" = 'Admin' WHERE "Email" = '...';`
+En production, aucun compte administrateur n'est créé automatiquement : inscrivez le compte, puis ajoutez son e-mail à `Admin__Emails` (ou `ADMIN_EMAILS` avec `start.sh`) et redémarrez le service User. Les administrateurs nomment ensuite les autres depuis `/admin/utilisateurs`.
+Les anciens comptes de rôle « Admin » sont convertis au démarrage : ils gardent le droit d'administration et deviennent enseignants (rôle modifiable en base).
 
 ---
 
 ## Tests
 
 ```bash
-dotnet test GPOE26.slnx
+dotnet test --project Quiz.Tests/Quiz.Tests.csproj
+dotnet test --project GPOE26.Logic.Tests/GPOE26.Logic.Tests.csproj
+dotnet test --solution GPOE26.slnx   # tout, y compris le test d'intégration (Docker requis)
 ```
 
-Le test existant démarre l'AppHost complet (Docker requis) et vérifie que la page d'accueil répond.
+Le `global.json` choisit le lanceur Microsoft.Testing.Platform, le seul accepté par le SDK .NET 10 et suivants (sans lui, `dotnet test` échoue). Si l'AppHost tourne déjà (Visual Studio, Aspire), ses binaires sont verrouillés : ajoutez `--artifacts-path <dossier>` pour compiler les tests ailleurs.
 
-`Quiz.Tests` contient les tests unitaires de la correction automatique (`dotnet test Quiz.Tests`). Le script `scripts/test-evaluations.sh` rejoue les parcours de la phase 1 bis (63 vérifications : partage des cours, création et publication, droits d'accès, tentatives, correction manuelle et assistée, publication des résultats, suivi enseignant/élève/parent).
+`GPOE26.Tests` démarre l'AppHost complet (Docker requis) et vérifie que la page d'accueil répond. `Quiz.Tests` contient les tests unitaires de la correction automatique et des brouillons de copie ; `GPOE26.Logic.Tests` ceux des règles des autres services (rôles, droits, quotas d'IA, rendu Markdown, mémoire des agents…). Le script `scripts/test-evaluations.sh` rejoue les parcours de la phase 1 bis (63 vérifications : partage des cours, création et publication, droits d'accès, tentatives, correction manuelle et assistée, publication des résultats, suivi enseignant/élève/parent).
 
 Le script `scripts/ui-e2e.js` (Playwright) rejoue dans un navigateur le parcours complet : inscription d'un enseignant, partage d'un cours, création et publication d'un devoir, inscription d'un élève sur mobile, lecture, composition, correction assistée, clôture, rattachement d'un parent et suivi — `node scripts/ui-e2e.js <dossier-captures>` sur une pile démarrée avec des bases neuves.
 
@@ -211,7 +236,7 @@ Le script `scripts/test-user-api.sh` rejoue les parcours de la phase 1 sur le se
 | Phase | Contenu | État |
 |---|---|---|
 | 0 | Nettoyage du dépôt, secrets hors du code, README | ✅ |
-| 1 | ✅ (API) **Comptes et rôles** : Élève, Enseignant, Parent, Admin ; structures (établissement scolaire, autre institution : entreprise, startup, centre de formation…) ; classes et groupes avec code d'invitation ; lien parent ↔ enfant ; abonnements et **clés d'abonnement** (familiale, établissement/institution) ; plan d'études et progression : à faire | Backend fait, interface en phase 3 |
+| 1 | ✅ (API) **Comptes et rôles** : Élève, Enseignant, Parent, avec les droits administrateur et éditeur du site ; structures (établissement scolaire, autre institution : entreprise, startup, centre de formation…) ; classes et groupes avec code d'invitation ; lien parent ↔ enfant ; abonnements et **clés d'abonnement** (familiale, établissement/institution) ; plan d'études et progression : à faire | Backend fait, interface en phase 3 |
 | 1 bis | ✅ (API) **Évaluations enseignant** : cours, devoirs et épreuves (quiz d'entraînement, devoir, épreuve notée, épreuve blanche) avec questions QCM, choix multiples, vrai/faux, réponse courte, numérique et réponse ouverte (correction manuelle assistée par IA) ; suivi de la maîtrise par élève et par chapitre ; partage des cours avec les classes | Backend fait, interface en phase 3 |
 | 2 | **Maquettes** : inscription guidée en questions-réponses (système scolaire camerounais bilingue : classes, séries, BEPC/Probatoire/BAC, GCE O/A Level) ; tableaux de bord par rôle ; lecture de cours à 3 colonnes | À faire |
 | 3 | ✅ Intégration Blazor : bibliothèque partagée `GPOE26.UI` (pages, API derrière des interfaces, session persistante), inscription guidée, tableaux de bord élève / enseignant / parent, lecture des cours, composition, éditeur d'épreuve, correction assistée, suivi de classe, abonnement, version mobile ; **tuteur IA avec discussions conservées et explications épinglées, copies photographiées lues par l'IA** (OpenRouter, modèles gratuits avec repli) | Fait (web) |

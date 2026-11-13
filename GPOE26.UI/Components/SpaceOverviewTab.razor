@@ -1,0 +1,134 @@
+@* Vue d'ensemble d'un espace : places, chiffres, années scolaires *@
+@inject ISpaceApi Spaces
+
+@if (Overview is { } o)
+{
+    @if (o.ShortCode is { } school)
+    {
+        <p style="margin:0">Code de l'établissement : <span class="ga-code">@school</span>
+            <span class="ga-small ga-muted">— avec leur matricule, vos élèves s'en servent pour se connecter (il figure sur leurs fiches).</span></p>
+    }
+    <div class="ga-grid tight">
+        <div class="ga-stat"><span class="lbl">Élèves inscrits (compte activé)</span><span class="val">@o.StudentsActive<small>@(o.Seats is { } s ? $"/{s} places" : "")</small></span></div>
+        <div class="ga-stat amber"><span class="lbl">En attente de leur code</span><span class="val">@o.StudentsPending</span></div>
+        <div class="ga-stat purple"><span class="lbl">Enseignants</span><span class="val">@o.TeacherCount<small>@(o.TeacherSeats is { } t ? $"/{t}" : "")</small></span></div>
+        <div class="ga-stat green"><span class="lbl">Classes cette année</span><span class="val">@o.ClassCount</span></div>
+    </div>
+
+    @if (o.Type == OrganizationType.Independent)
+    {
+        @if (o.StudentsPremium)
+        {
+            <p class="ga-small ga-muted">Votre formule Enseignant est en cours : vos élèves activés ont l'accès Premium (tuteur, quiz…), dans la limite de @o.Seats élèves.</p>
+        }
+        else
+        {
+            <div class="ga-card" style="background:var(--ga-amber-soft)">
+                <span>Vos élèves peuvent déjà activer leur code et suivre vos classes (@o.Seats places). Avec la formule Enseignant, ils ont aussi l'accès Premium : tuteur IA, quiz illimités…</span>
+                <a class="ga-btn small" href="/app/abonnement">Voir la formule Enseignant</a>
+            </div>
+        }
+    }
+    else
+    {
+        @if (o.Seats is 0 or null)
+        {
+            <Alert Message="L'établissement n'a pas de licence en cours : ses élèves ne peuvent pas activer leur code. Prévenez l'administration de la plateforme." />
+        }
+        else if (o.LicenseEndsAt is { } end)
+        {
+            <p class="ga-small ga-muted">Licence en cours jusqu'au @Labels.LongDate(end).</p>
+        }
+    }
+}
+
+<section class="ga-card" aria-labelledby="h-steps">
+    <h2 id="h-steps" class="ga-h2">Pour bien démarrer</h2>
+    <ol class="ga-stack" style="margin:0; padding-left:20px">
+        <li>Préparez l'<strong>année scolaire</strong> (ci-dessous), puis créez les <a href="#" @onclick='() => GoTo.InvokeAsync("classes")' @onclick:preventDefault>classes</a>.</li>
+        <li>Ajoutez les <a href="#" @onclick='() => GoTo.InvokeAsync("enseignants")' @onclick:preventDefault>enseignants</a> et affectez-les aux classes, une matière chacun.</li>
+        <li>Inscrivez les <a href="#" @onclick='() => GoTo.InvokeAsync("eleves")' @onclick:preventDefault>élèves</a> (à la main ou depuis un fichier), puis imprimez leurs codes.</li>
+        <li>Chaque élève va sur la page <strong>J'ai un code</strong>, crée son compte et se retrouve dans sa classe.</li>
+    </ol>
+</section>
+
+<section class="ga-card" aria-labelledby="h-years">
+    <div class="ga-card-head">
+        <h2 id="h-years" class="ga-h2">Années scolaires</h2>
+    </div>
+    <Alert Message="@_error" />
+    @if (_years.Count == 0)
+    {
+        <div class="ga-empty"><span>Aucune année pour l'instant : créez l'année en cours pour pouvoir créer des classes.</span></div>
+    }
+    else
+    {
+        <div class="ga-list">
+            @foreach (var y in _years)
+            {
+                <div class="ga-item">
+                    <span class="grow"><strong>@y.Label</strong><span class="ga-small ga-muted">du @y.StartsOn.ToString("d MMMM yyyy", Fr) au @y.EndsOn.ToString("d MMMM yyyy", Fr)</span></span>
+                    @if (y.IsCurrent)
+                    {
+                        <span class="ga-tag green">EN COURS</span>
+                    }
+                    else
+                    {
+                        <button class="ga-btn ghost small" @onclick="() => SetCurrentAsync(y)">Passer à cette année</button>
+                    }
+                </div>
+            }
+        </div>
+    }
+    <form class="ga-row" style="gap:10px; flex-wrap:wrap; align-items:flex-end" @onsubmit="CreateYearAsync" @onsubmit:preventDefault>
+        <div class="ga-field" style="margin:0">
+            <label for="year-label">Nouvelle année</label>
+            <input id="year-label" class="ga-input" placeholder="ex. @NextLabel" @bind="_label" @bind:event="oninput" />
+        </div>
+        <button type="submit" class="ga-btn secondary" disabled="@string.IsNullOrWhiteSpace(_label)"><Icon Name="plus" /> Préparer</button>
+    </form>
+    <p class="ga-small ga-muted">Passer à une nouvelle année ne déplace personne : créez ses classes, puis changez les élèves de classe dans « Élèves et codes ».</p>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public MySpace Space { get; set; } = default!;
+    [Parameter] public SpaceOverview? Overview { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public EventCallback<string> GoTo { get; set; }
+
+    private static readonly System.Globalization.CultureInfo Fr = new("fr-FR");
+    private List<SchoolYear> _years = [];
+    private string _label = "";
+    private string? _error;
+
+    private string NextLabel => _years.Count == 0
+        ? $"{(DateTime.Today.Month >= 8 ? DateTime.Today.Year : DateTime.Today.Year - 1)}-{(DateTime.Today.Month >= 8 ? DateTime.Today.Year + 1 : DateTime.Today.Year)}"
+        : $"{_years.Max(y => y.StartsOn.Year) + 1}-{_years.Max(y => y.StartsOn.Year) + 2}";
+
+    protected override async Task OnParametersSetAsync() => await LoadYearsAsync();
+
+    private async Task LoadYearsAsync()
+    {
+        var r = await Spaces.YearsAsync(Space.Id);
+        _years = r.Value ?? [];
+        _error = r.Error;
+    }
+
+    private async Task CreateYearAsync()
+    {
+        var r = await Spaces.CreateYearAsync(Space.Id, _label.Trim());
+        if (!r.Ok) { _error = r.Error; return; }
+        _label = "";
+        _error = null;
+        await LoadYearsAsync();
+        await Changed.InvokeAsync();
+    }
+
+    private async Task SetCurrentAsync(SchoolYear y)
+    {
+        var r = await Spaces.SetCurrentYearAsync(Space.Id, y.Id);
+        if (!r.Ok) { _error = r.Error; return; }
+        await LoadYearsAsync();
+        await Changed.InvokeAsync();
+    }
+}

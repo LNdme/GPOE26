@@ -59,13 +59,16 @@ builder.Services.AddSwaggerGen(c =>
 
 builder.Services.AddScoped<Jwtservice>();
 builder.Services.AddScoped<SubscriptionService>();
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient<PlanCatalogClient>(client =>
+    client.BaseAddress = new Uri(builder.Configuration["Services:ApiService"] ?? "http://localhost:5455"));
 builder.Services.AddScoped<ClassroomService>();
+builder.Services.AddScoped<SpaceService>();
+builder.Services.AddScoped<AccessCodeService>();
 
 // Applique les [Required], [MinLength]… des DTOs aux Minimal APIs (sinon ils sont ignorés)
 builder.Services.AddValidation();
 
-// Nécessaire pour le PatchController uniquement
-builder.Services.AddControllers().AddNewtonsoftJson();
 
 
 
@@ -73,8 +76,7 @@ builder.Services.AddControllers().AddNewtonsoftJson();
 
 
 // ─── JWT ──────────────────────────────────────────────────────────────────────
-var jwtKey = builder.Configuration["Jwt:Key"]
-    ?? throw new InvalidOperationException("La configuration Jwt:Key est manquante. Définissez-la dans appsettings ou les variables d'environnement.");
+var jwtKey = GPOE26.ServiceDefaults.JwtSigningKey.Require(builder.Configuration, builder.Environment);
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -115,6 +117,9 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<UserContext>();
     await UserSchema.EnsureAsync(db);
     await UserSeeder.SeedAsync(db, app.Environment.IsDevelopment());
+    await AdminBootstrap.PromoteConfiguredAdminsAsync(db, app.Configuration, app.Logger);
+    // Après le jeu de démonstration, pour qu'il soit repris comme le reste
+    await UserDataMigrations.RunAsync(db, app.Logger);
 }
 
 if (app.Environment.IsDevelopment())
@@ -131,7 +136,10 @@ if (app.Environment.IsDevelopment())
 
 
 
-app.UseHttpsRedirection();
+// En développement, les services s'appellent en HTTP avec un JWT : une redirection vers HTTPS
+// ferait retirer l'en-tête Authorization par HttpClient, et chaque appel finirait en 401.
+if (!app.Environment.IsDevelopment())
+    app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -149,10 +157,12 @@ var auth = app.MapGroup("/auth").WithTags("Auth");
 // Inscription guidée (élève, enseignant ou parent). Les clés et codes sont vérifiés
 // AVANT la création du compte : une clé invalide ne laisse pas de compte à moitié créé.
 auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice jwt,
-    SubscriptionService subs, ClassroomService classrooms) =>
+    SubscriptionService subs, ClassroomService classrooms, SpaceService spaces) =>
 {
-    if (req.Role == UserRole.Admin)
-        return Results.BadRequest(new { message = "Un compte administrateur ne peut pas être créé par inscription." });
+    // L'administration est un droit donné par un administrateur, jamais un rôle choisi à l'inscription.
+    // Un rôle inconnu (ancien « Admin » envoyé en nombre, par exemple) est refusé.
+    if (!Enum.IsDefined(req.Role))
+        return Results.BadRequest(new { message = "Rôle inconnu : choisissez élève, enseignant ou parent." });
 
     // Vérifications unicité
     if (await db.AppUsers.AnyAsync(u => u.Email == req.Email.ToLower()))
@@ -168,25 +178,22 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
     if (req.Role == UserRole.Teacher && req.Filiere is not null)
         return Results.BadRequest(new { message = "Un enseignant ne peut pas avoir de filière." });
 
-    if (req.InviteCode is not null && req.Role != UserRole.Student)
-        return Results.BadRequest(new { message = "Seul un élève peut rejoindre une classe." });
+    // Les classes se rejoignent avec un code personnel (page « J'ai un code »), plus avec un code de classe commun
+    if (!string.IsNullOrWhiteSpace(req.InviteCode))
+        return Results.BadRequest(new { message = "Les codes de classe ne servent plus : entrez avec le code personnel (GP-…) que vous a donné votre établissement ou votre enseignant, sur la page « J'ai un code »." });
 
     if (req.StartTrial && req.Role != UserRole.Teacher)
         return Results.BadRequest(new { message = "L'essai gratuit est réservé aux enseignants." });
 
+    Guid? keyOrganizationId = null;
     if (req.SubscriptionKey is not null)
     {
-        var (error, _) = await subs.CheckKeyAsync(req.SubscriptionKey, req.Role);
+        var (error, key) = await subs.CheckKeyAsync(req.SubscriptionKey, req.Role);
         if (error != RedeemError.None)
             return Results.BadRequest(new { message = SubscriptionService.Message(error) });
+        keyOrganizationId = key?.Subscription.OrganizationId;
     }
 
-    if (req.InviteCode is not null)
-    {
-        var code = CodeGenerator.Normalize(req.InviteCode);
-        if (!await db.Classrooms.AnyAsync(c => c.InviteCode == code && !c.IsArchived))
-            return Results.BadRequest(new { message = "Code d'invitation de classe invalide." });
-    }
 
     var teachingSubjects = req.TeachingSubjects ?? new();
     var user = new AppUser
@@ -199,6 +206,7 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
         // La spécialité (claim JWT lu par le LLM) reprend les matières enseignées
         Specialite = req.Specialite ?? (teachingSubjects.Count > 0 ? string.Join(", ", teachingSubjects) : null),
         Filiere = req.Filiere,
+        Stage = req.Role == UserRole.Student ? req.Stage ?? EducationStage.Secondary : null,
         Language = req.Language,
         SubSystem = req.SubSystem,
         ExamTarget = req.ExamTarget,
@@ -208,10 +216,16 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
         TeachingSubjects = teachingSubjects,
         TeachingContext = req.TeachingContext,
         OrganizationName = req.TeachingContext == TeachingContext.Independent ? null : req.OrganizationName,
+        // Établissement de la clé, connu dès maintenant (la clé est activée plus bas)
+        OrganizationId = keyOrganizationId,
         LinkCode = req.Role == UserRole.Student ? await ParentEndpoints.UniqueLinkCodeAsync(db) : null,
         LastLoginAt = DateTime.UtcNow   // l'inscription ouvre la première session
     };
     db.AppUsers.Add(user);
+
+    // Enseignant indépendant : son espace existe dès l'inscription (« Mes élèves et codes »), même sans classe
+    if (req.Role == UserRole.Teacher && req.TeachingContext == TeachingContext.Independent)
+        await spaces.PersonalSpaceAsync(user);
 
     // Enseignant : une classe (ou un groupe) par niveau choisi pendant l'inscription
     if (req.Role == UserRole.Teacher && req.InitialClasses is { Count: > 0 })
@@ -225,9 +239,6 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
             await classrooms.CreateAsync(user, name, isSchool ? name.Trim() : null, subSystem);
         }
     }
-
-    if (req.InviteCode is not null)
-        await classrooms.JoinAsync(user, req.InviteCode);
 
     await db.SaveChangesAsync();
 
@@ -249,7 +260,17 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
 // ── POST /auth/login ──────────────────────────────────────────────────────────
 auth.MapPost("/login", async (LoginRequest req, UserContext db, Jwtservice jwt, SubscriptionService subs) =>
 {
-    var user = await db.AppUsers.FirstOrDefaultAsync(u => u.Email == req.Email.ToLower());
+    // Adresse e-mail ou nom d'utilisateur (élève entré par son code, sans adresse)
+    var login = req.Email.Trim();
+    // Le nom d'utilisateur est retrouvé tel quel, sinon sans tenir compte des majuscules s'il n'y a qu'un compte possible.
+    var user = login.Contains('@')
+        ? await db.AppUsers.FirstOrDefaultAsync(u => u.Email == login.ToLower())
+        : await db.AppUsers.FirstOrDefaultAsync(u => u.Username == login)
+          ?? (await db.AppUsers.Where(u => u.Username.ToLower() == login.ToLower()).Take(2).ToListAsync()) switch
+             {
+                 [var only] => only,
+                 _ => null
+             };
 
     // Message identique que l'email soit inconnu ou que le mdp soit faux
     // → ne pas indiquer à un attaquant lequel des deux est incorrect
@@ -264,6 +285,29 @@ auth.MapPost("/login", async (LoginRequest req, UserContext db, Jwtservice jwt, 
     return Results.Ok(new AuthResponse(token, expiresAt, new UserProfileDto(user, entitlement)));
 })
 .WithSummary("Se connecter")
+.Produces<AuthResponse>()
+.Produces(401);
+
+// ── POST /auth/refresh ────────────────────────────────────────────────────────
+// Prolonge la session : un jeton encore valide est échangé contre un neuf, sans ressaisir le mot de passe.
+// Sans cela, la session tombait 60 minutes après la connexion, même en pleine épreuve.
+// Le rôle, les droits et la formule sont relus en base : un changement s'applique au renouvellement suivant.
+// La session reste bornée (Jwt:MaxSessionHours) : au-delà, il faut se reconnecter.
+auth.MapPost("/refresh", async (ClaimsPrincipal principal, UserContext db, Jwtservice jwt, SubscriptionService subs) =>
+{
+    var user = await db.CurrentUserAsync(principal);
+    if (user is null) return Results.Unauthorized();
+
+    var signedInAt = Jwtservice.SignedInAt(principal) ?? DateTime.UtcNow;
+    if (!Jwtservice.CanRenew(signedInAt, DateTime.UtcNow, jwt.MaxSession))
+        return Results.Unauthorized();
+
+    var entitlement = await subs.GetEntitlementAsync(user.Id);
+    var (token, expiresAt) = jwt.GenerateToken(user, entitlement, signedInAt);
+    return Results.Ok(new AuthResponse(token, expiresAt, new UserProfileDto(user, entitlement)));
+})
+.RequireAuthorization()
+.WithSummary("Prolonger la session (jeton neuf, profil à jour)")
 .Produces<AuthResponse>()
 .Produces(401);
 
@@ -282,47 +326,15 @@ auth.MapGet("/me", async (ClaimsPrincipal principal, UserContext db, Subscriptio
 .Produces<UserProfileDto>()
 .Produces(401);
 
-// ── PUT /auth/me ──────────────────────────────────────────────────────────────
-// Remplacement COMPLET du profil.
-// Tous les champs doivent être envoyés — les champs omis seront mis à null.
-// Différence avec PATCH : PATCH = modification partielle, PUT = remplacement total.
-auth.MapPut("/me", async (UpdateProfileRequest req, ClaimsPrincipal principal, UserContext db, SubscriptionService subs) =>
-{
-    var user = await db.CurrentUserAsync(principal);
-    if (user is null) return Results.NotFound();
-
-    // Cohérence métier : vérifier la combinaison Role/Specialite/Filiere
-    if (user.Role == UserRole.Student && req.Specialite is not null)
-        return Results.BadRequest(new { message = "Un élève ne peut pas avoir de spécialité." });
-
-    if (user.Role == UserRole.Teacher && req.Filiere is not null)
-        return Results.BadRequest(new { message = "Un enseignant ne peut pas avoir de filière." });
-
-    // PUT remplace tout — même les valeurs null
-    user.Username = req.Username ?? user.Username;
-    user.Level = req.Level;
-    user.Specialite = req.Specialite;
-    user.Filiere = req.Filiere;
-    user.Language = req.Language ?? user.Language;
-
-    await db.SaveChangesAsync();
-    return Results.Ok(new UserProfileDto(user, await subs.GetEntitlementAsync(user.Id)));
-})
-.RequireAuthorization()
-.WithSummary("Remplacer le profil complet (PUT)")
-.Produces<UserProfileDto>()
-.Produces(400)
-.Produces(401);
-
-// PATCH /auth/me → voir Controllers/UsersController.cs
-
 // ─── Classes, parents, abonnements, administration ────────────────────────────
 app.MapClassroomEndpoints();
 app.MapParentEndpoints();
 app.MapSubscriptionEndpoints();
 app.MapAdminEndpoints();
-
-app.MapControllers();
+app.MapProfileEndpoints();
+app.MapOrganizationEndpoints();
+app.MapStudentEndpoints();
+app.MapAccessCodeEndpoints();
 
 
 

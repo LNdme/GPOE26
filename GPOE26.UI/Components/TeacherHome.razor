@@ -1,6 +1,7 @@
 @inject SessionState Session
 @inject IClassroomApi Classrooms
 @inject IAssessmentApi Assessments
+@inject ISpaceApi Spaces
 
 <div class="ga-page">
     <div class="ga-head">
@@ -11,7 +12,7 @@
     </div>
 
     <section class="ga-grid" aria-label="Créer">
-        <a class="ga-card dark" style="flex-direction:row; align-items:center; text-decoration:none" href="/cours/create">
+        <a class="ga-card dark" style="flex-direction:row; align-items:center; text-decoration:none" href="/app/cours/nouveau">
             <span class="ga-avatar" style="border-radius:12px; width:44px; height:44px; background:var(--ga-navy-3); color:var(--ga-lime)"><Icon Name="book" /></span>
             <span><strong style="font-size:16px">Nouveau cours</strong><br /><span class="ga-small" style="color:#C9D3EA">Éditeur, import PDF ou Word</span></span>
         </a>
@@ -42,17 +43,27 @@
                                 <h3 class="ga-h3">@c.Name</h3>
                                 <span class="ga-muted ga-small">@c.MemberCount @(c.Kind == ClassroomKind.Group ? "apprenant(s)" : "élève(s)")@(c.Subject is { Length: > 0 } ? $" · {c.Subject}" : "")</span>
                             </div>
-                            <span class="ga-code" title="Code d'invitation">@c.InviteCode</span>
                         </div>
                         <div class="ga-row between">
-                            <span class="ga-small ga-muted">Code à partager avec les élèves</span>
+                            @if (c.SpaceType == OrganizationType.Independent && c.OrganizationId is { } space)
+                            {
+                                <a class="ga-small" href="/app/etablissement/@space?onglet=eleves">Élèves et codes</a>
+                            }
+                            else
+                            {
+                                <span class="ga-small ga-muted">@(c.Teachers?.Count > 1 ? $"{c.Teachers.Count} enseignants · {string.Join(", ", c.MySubjects ?? [])}" : "Élèves inscrits par l'établissement")</span>
+                            }
                             <a class="ga-btn small secondary" href="/app/classes/@c.Id">Voir le suivi</a>
                         </div>
                     </article>
                 }
 
                 <form class="ga-card" style="border-style:dashed" @onsubmit="CreateClassAsync" @onsubmit:preventDefault>
-                    <h3 class="ga-h3">Créer une classe ou un groupe</h3>
+                    <h3 class="ga-h3">@(_schools.Count > 0 ? "Créer un groupe personnel" : "Créer une classe ou un groupe")</h3>
+                    @if (_schools.Count > 0)
+                    {
+                        <p class="ga-small ga-muted" style="margin:0">Les classes de @string.Join(", ", _schools) sont créées par leur direction, qui vous y affecte. Ce groupe-ci est à vous (cours particuliers, soutien).</p>
+                    }
                     <div class="ga-field">
                         <label for="class-name">Nom</label>
                         <input id="class-name" class="ga-input" placeholder="ex. Terminale C2" @bind="_newClass" />
@@ -116,18 +127,26 @@
 </div>
 
 @code {
-    private UserProfile Me => Session.Profile!;
+    // Garde le dernier profil connu : un 401 peut fermer la session juste avant la redirection vers /login
+    private UserProfile? _me;
+    private UserProfile Me => _me = Session.Profile ?? _me!;
     private bool _loading = true;
     private List<Classroom> _classes = new();
     private List<Assessment> _assessments = new();
     private List<(Assessment, int)> _toGrade = new();
     private string? _newClass, _classError;
+    // Établissements où la personne enseigne : leurs classes viennent de la direction, pas de ce formulaire
+    private List<string> _schools = new();
 
     protected override async Task OnInitializedAsync()
     {
         var classes = Classrooms.MineAsync();
         var assessments = Assessments.MineAsTeacherAsync();
-        await Task.WhenAll(classes, assessments);
+        var spaces = Spaces.MineAsync();
+        await Task.WhenAll(classes, assessments, spaces);
+        _schools = (spaces.Result.Value ?? [])
+            .Where(s => s.Type != OrganizationType.Independent && s.Roles.Contains(OrganizationRole.Teacher))
+            .Select(s => s.Name).ToList();
         _classes = classes.Result.Value ?? new();
         _assessments = assessments.Result.Value ?? new();
 

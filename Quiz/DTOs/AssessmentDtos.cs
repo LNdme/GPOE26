@@ -72,16 +72,30 @@ public record AssessmentDto(
     DateTime? OpensAt, DateTime? DueAt, int? DurationMinutes, int MaxAttempts,
     bool Shuffle, bool ShowCorrection, bool AllowOffline, bool AiAssistedGrading, int ScaleTo,
     decimal MaxScore, int QuestionCount, DateTime CreatedAt, DateTime UpdatedAt, DateTime? PublishedAt,
-    List<AssessmentQuestionDto>? Questions)
+    List<AssessmentQuestionDto>? Questions, List<Guid>? LibraryOrganizationIds = null, Guid? SourceAssessmentId = null)
 {
     public AssessmentDto(Assessment a, bool withQuestions) : this(
         a.Id, a.Title, a.Description, a.Kind, a.Status, a.Subject, a.CourseId, a.ClassroomIds,
         a.OpensAt, a.DueAt, a.DurationMinutes, a.MaxAttempts,
         a.Shuffle, a.ShowCorrection, a.AllowOffline, a.AiAssistedGrading, a.ScaleTo,
         a.MaxScore, a.Questions.Count, a.CreatedAt, a.UpdatedAt, a.PublishedAt,
-        withQuestions ? a.Questions.OrderBy(q => q.Order).Select(q => new AssessmentQuestionDto(q)).ToList() : null)
+        withQuestions ? a.Questions.OrderBy(q => q.Order).Select(q => new AssessmentQuestionDto(q)).ToList() : null,
+        a.LibraryOrganizationIds, a.SourceAssessmentId)
     { }
 }
+
+// ─── Bibliothèque d'établissement ─────────────────────────────────────────────
+
+/// <summary>Dépôt d'une évaluation : la liste complète des bibliothèques où elle doit figurer (vide = retirée partout).</summary>
+public record LibraryDepositRequest(List<Guid>? OrganizationIds);
+
+/// <summary>Évaluation d'une bibliothèque : AuthorName pour « d'après… », Mine si c'est la mienne.</summary>
+public record LibraryAssessmentDto(
+    Guid Id, string Title, string? Description, AssessmentKind Kind, string? Subject, int QuestionCount,
+    decimal MaxScore, DateTime UpdatedAt, Guid AuthorId, string AuthorName, bool Mine, int Copies);
+
+/// <summary>Bibliothèque d'un établissement : CanManage = le lecteur peut retirer les dépôts des autres.</summary>
+public record LibraryAssessmentsDto(Guid OrganizationId, string Name, bool CanManage, List<LibraryAssessmentDto> Assessments);
 
 /// <summary>Ligne du tableau des copies (vue enseignant)</summary>
 public record SubmissionRowDto(
@@ -102,14 +116,18 @@ public record StudentAssessmentDto(
     bool HasAttemptInProgress, int QuestionCount, decimal MaxScore, bool AllowOffline,
     decimal? BestScoreScaled, int ScaleTo, Guid? LastSubmissionId);
 
+/// <summary>Draft : réponses déjà saisies lors d'une tentative reprise (vide pour une tentative neuve).</summary>
 public record AttemptDto(
     Guid SubmissionId, Guid AssessmentId, string Title, int AttemptNumber, DateTime StartedAt,
-    DateTime? Deadline, List<StudentQuestionDto> Questions, List<AnswerPhotoDto> Photos);
+    DateTime? Deadline, List<StudentQuestionDto> Questions, List<AnswerPhotoDto> Photos, List<AnswerInput> Draft);
 
-/// <summary>Photo d'une copie (l'image se télécharge à part : GET …/submissions/{sid}/photos/{id})</summary>
-public record AnswerPhotoDto(Guid Id, Guid QuestionId, int Page, string? Transcription)
+/// <summary>
+/// Photo d'une copie (l'image se télécharge à part : GET …/submissions/{sid}/photos/{id}).
+/// Pending : l'IA ne l'a pas encore lue ; Transcription null et Pending faux : elle n'a pas pu la lire.
+/// </summary>
+public record AnswerPhotoDto(Guid Id, Guid QuestionId, int Page, string? Transcription, bool Pending = false)
 {
-    public AnswerPhotoDto(AnswerPhoto p) : this(p.Id, p.QuestionId, p.Page, p.Transcription) { }
+    public AnswerPhotoDto(AnswerPhoto p) : this(p.Id, p.QuestionId, p.Page, p.Transcription, p.TranscriptionPending) { }
 }
 
 /// <summary>Analyse de la démarche par l'IA, demandée par l'élève une fois les résultats publiés</summary>
@@ -146,7 +164,8 @@ public record StudentProgressDto(
     Guid StudentId, string? Username, DateTime? LastLoginAt, double? AverageOn20,
     List<AssessmentResultDto> Results, List<CourseMasteryDto> Mastery);
 
-public record AssessmentHeaderDto(Guid Id, string Title, AssessmentKind Kind, DateTime? DueAt, Guid? CourseId);
+/// <summary>Subject : matière de l'évaluation (utile au gestionnaire, qui voit celles de tous les enseignants).</summary>
+public record AssessmentHeaderDto(Guid Id, string Title, AssessmentKind Kind, DateTime? DueAt, Guid? CourseId, string? Subject = null);
 
 public record ClassroomProgressDto(Guid ClassroomId, List<AssessmentHeaderDto> Assessments, List<StudentProgressDto> Students);
 

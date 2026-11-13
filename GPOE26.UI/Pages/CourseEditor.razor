@@ -1,0 +1,500 @@
+@page "/app/cours/nouveau"
+@page "/app/cours/{Id:guid}/modifier"
+@layout AppLayout
+@inherits AppPage
+@inject ICourseApi Courses
+@inject IMediaApi Media
+@inject ITutorApi Tutor
+@inject IAgentApi Agent
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<PageTitle>@(IsEdit ? "Modifier le cours" : "Nouveau cours") — GPOE26</PageTitle>
+
+<div class="ga-page">
+    <a class="ga-back" href="/app/cours"><Icon Name="left" /> Mes cours</a>
+
+    <div class="ga-head">
+        <div>
+            <h1>@(IsEdit ? "Modifier le cours" : "Nouveau cours")</h1>
+            <p>@(IsEdit ? "Vos changements sont visibles dès l'enregistrement." : "Donnez un lien, un PDF ou des photos : l'agent s'occupe du reste. Vous pouvez aussi rédiger vous-même.")</p>
+        </div>
+    </div>
+
+    <Alert Message="@_error" />
+
+    @if (!Ready || _loading)
+    {
+        <Loading />
+    }
+    else if (IsEdit && _course is null)
+    {
+        <Alert Message="Cours introuvable." />
+    }
+    else
+    {
+        @if (!IsEdit)
+        {
+            <div class="ga-tabs" role="tablist" aria-label="Source du cours">
+                @foreach (var (mode, label) in Modes)
+                {
+                    <button type="button" role="tab" class="@(_mode == mode ? "on" : "")" aria-selected="@Aria.State(_mode == mode)" @onclick="() => _mode = mode">@label</button>
+                }
+            </div>
+        }
+
+        @if (!IsEdit && _mode == "link")
+        {
+            <CourseImportLink />
+        }
+        else if (!IsEdit && _mode == "photos")
+        {
+            <section class="ga-card">
+                <div class="ce-upload">
+                    <Icon Name="camera" Size="28" />
+                    <label for="ce-photos" class="ga-label">Photos des pages du cours (@MaxPhotos au maximum)</label>
+                    <InputFile id="ce-photos" OnChange="OnPhotosPicked" accept="image/*" multiple disabled="@_saving" />
+                    <span class="ga-small ga-muted">@(_readingPhotos ? "Préparation des photos…" : _photos.Count > 0 ? $"{_photos.Count} photo(s) prête(s)" : "Prenez chaque page bien à plat, dans l'ordre : l'agent retranscrit le texte et les formules.")</span>
+                </div>
+                <button type="button" class="ga-btn" style="align-self:flex-start" disabled="@(_saving || _readingPhotos || _photos.Count == 0)" @onclick="ImportPhotosAsync">@(_saving ? "Envoi…" : "Créer le cours")</button>
+            </section>
+        }
+        else
+        {
+        <form class="ga-card" @onsubmit="SaveAsync" @onsubmit:preventDefault>
+            @if (!_pdfMode)
+            {
+            <div class="ga-field">
+                <label for="ce-title">Titre</label>
+                <input id="ce-title" class="ga-input" maxlength="200" placeholder="ex. Introduction à l'algorithmique" @bind="_title" />
+            </div>
+            <div class="ga-field">
+                <label for="ce-subject">Matière</label>
+                <input id="ce-subject" class="ga-input" maxlength="100" placeholder="ex. Mathématiques, Informatique…" @bind="_subject" />
+            </div>
+            <div class="ga-field">
+                <label for="ce-description">Description</label>
+                <textarea id="ce-description" class="ga-textarea" rows="2" @bind="_description"></textarea>
+            </div>
+            }
+
+            @if (_pdfMode)
+            {
+                <div class="ce-upload">
+                    <Icon Name="file" Size="28" />
+                    <label for="ce-pdf" class="ga-label">Fichier PDF (10 Mo au maximum)</label>
+                    <InputFile id="ce-pdf" OnChange="OnPdfPicked" accept=".pdf,application/pdf" />
+                    @if (_pdfName is not null) { <span class="ga-small ga-muted">@_pdfName</span> }
+                </div>
+            }
+            else if (CanEditContent)
+            {
+                <div class="ga-card-head">
+                    <span class="ga-label">Contenu du cours</span>
+                    <span class="ga-actions">
+                        @if (!IsEdit && !Session.HasFeature("teacher-agent"))
+                        {
+                            <button type="button" class="ga-btn secondary small" disabled="@_drafting" @onclick="DraftAsync"><Icon Name="spark" /> @(_drafting ? "Rédaction…" : "Proposer un plan")</button>
+                        }
+                        <button type="button" class="ga-btn secondary small" aria-expanded="@Aria.State(_simulationOpen)" @onclick="() => _simulationOpen = !_simulationOpen"><Icon Name="chart" /> Insérer une simulation</button>
+                        <label class="ga-btn secondary small">
+                            <Icon Name="camera" /> @(_uploadingImage ? "Envoi…" : "Insérer une image")
+                            <InputFile OnChange="OnImagePicked" accept="image/*" class="ga-sr-only" aria-label="Choisir une image à insérer" />
+                        </label>
+                    </span>
+                </div>
+
+                @if (_simulationOpen)
+                {
+                    <SimulationBuilder OnInsert="InsertSimulationAsync" OnClose="() => _simulationOpen = false" />
+                }
+
+                @if (Session.HasFeature("teacher-agent"))
+                {
+                    <div class="ga-card sunk">
+                        <span class="ga-label"><Icon Name="spark" Size="16" /> Votre assistant, dans votre ton</span>
+                        <label for="ce-instructions" class="ga-sr">Consignes pour l'assistant</label>
+                        <textarea id="ce-instructions" class="ga-textarea" rows="2" placeholder="ex. Rédige l'introduction avec un exemple tiré du marché local" @bind="_instructions"></textarea>
+                        <span class="ga-actions">
+                            <button type="button" class="ga-btn secondary small" disabled="@_composing" @onclick='() => ComposeAsync("plan")'>Proposer un plan</button>
+                            <button type="button" class="ga-btn secondary small" disabled="@_composing" @onclick='() => ComposeAsync("write")'>Rédiger une partie</button>
+                            <button type="button" class="ga-btn secondary small" disabled="@_composing" @onclick='() => ComposeAsync("rewrite")'>Réécrire la sélection</button>
+                            @if (_composing) { <span class="ga-small ga-muted" role="status">Rédaction…</span> }
+                        </span>
+                    </div>
+                }
+
+                <div class="ce-editor">
+                    <div class="ce-pane">
+                        <div class="ce-toolbar" role="toolbar" aria-label="Mise en forme">
+                            @foreach (var t in Tools)
+                            {
+                                <button type="button" class="ce-tool" title="@t.Title" aria-label="@t.Title" @onclick="() => InsertAsync(t.Before, t.After)">@t.Label</button>
+                            }
+                        </div>
+                        <textarea id="ce-markdown" class="ce-text" aria-label="Contenu du cours en Markdown" placeholder="## Titre de la partie&#10;&#10;Commencez à rédiger votre cours ici…"
+                                  @bind="_markdown" @bind:event="oninput" @bind:after="RefreshPreview"></textarea>
+                    </div>
+                    <div class="ce-pane ce-preview rd-content" @ref="_preview">
+                        @if (string.IsNullOrWhiteSpace(_markdown))
+                        {
+                            <span class="ga-muted">L'aperçu de votre cours s'affichera ici.</span>
+                        }
+                        else
+                        {
+                            @((MarkupString)_previewHtml)
+                        }
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="ga-alert">Ce cours provient d'un PDF : son contenu est extrait automatiquement.</div>
+            }
+
+            <div class="ga-row between">
+                <span class="ga-actions">
+                    <button type="submit" class="ga-btn" disabled="@_saving">@(_saving ? "Enregistrement…" : IsEdit ? "Enregistrer" : "Créer le cours")</button>
+                    <a class="ga-btn ghost" href="@(IsEdit ? $"/app/cours/{Id}" : "/app/cours")">Annuler</a>
+                </span>
+                @if (IsEdit)
+                {
+                    @if (_confirmDelete)
+                    {
+                        <span class="ga-actions">
+                            <button type="button" class="ga-btn danger small" @onclick="DeleteAsync">Confirmer la suppression</button>
+                            <button type="button" class="ga-btn ghost small" @onclick="() => _confirmDelete = false">Garder</button>
+                        </span>
+                    }
+                    else
+                    {
+                        <button type="button" class="ga-btn danger small" @onclick="() => _confirmDelete = true"><Icon Name="trash" /> Supprimer</button>
+                    }
+                }
+            </div>
+        </form>
+        }
+    }
+</div>
+
+@code {
+    // Espace d'apprentissage : un parent n'y a rien à faire (il suit ses enfants depuis son accueil)
+    protected override UserRole[]? AllowedRoles => [UserRole.Student, UserRole.Teacher];
+
+    private const long MaxPdfBytes = 10 * 1024 * 1024;
+    private const long MaxImageBytes = 5 * 1024 * 1024;
+
+    private record Tool(string Label, string Title, string Before, string After);
+
+    private static readonly Tool[] Tools =
+    [
+        new("T1", "Titre de partie", "## ", ""),
+        new("T2", "Sous-titre", "### ", ""),
+        new("G", "Gras", "**", "**"),
+        new("I", "Italique", "_", "_"),
+        new("•", "Liste à puces", "- ", ""),
+        new("</>", "Bloc de code", "```\n", "\n```"),
+        new("∑", "Formule", "$$ ", " $$"),
+        new("⊞", "Tableau", "\n| Titre 1 | Titre 2 |\n|---|---|\n| Ligne 1 | Ligne 1 |\n", ""),
+    ];
+
+    [Parameter] public Guid? Id { get; set; }
+
+    private bool IsEdit => Id is not null;
+    private bool CanEditContent => !IsEdit || _course?.ContentType == CourseContentType.Text || _course?.Sections is { Count: > 0 };
+
+    private CourseDetail? _course;
+    private string _title = "", _subject = "", _markdown = "", _previewHtml = "";
+    private string? _description, _error, _pdfName, _instructions;
+    private bool _composing, _simulationOpen;
+    private ImageUpload? _pdf;
+    private const string UnclassifiedSubject = "À classer";
+    private const int MaxPhotos = 30;
+    private const long MaxPhotoBytes = 8 * 1024 * 1024;
+
+    private static readonly (string Mode, string Label)[] Modes =
+        [("link", "Depuis un lien"), ("pdf", "Importer un PDF"), ("photos", "Depuis des photos"), ("write", "Rédiger moi-même")];
+
+    private string _mode = "write";
+    private bool _pdfMode => !IsEdit && _mode == "pdf";
+    private readonly List<ImageUpload> _photos = new();
+    private bool _readingPhotos;
+    private bool _loading = true, _saving, _drafting, _uploadingImage, _confirmDelete, _mathPending;
+    private ElementReference _preview;
+    private IJSObjectReference? _module;
+
+    protected override async Task LoadAsync()
+    {
+        // Un apprenant part le plus souvent d'un cours existant ; un enseignant rédige plus volontiers le sien
+        if (Session.Role == UserRole.Student) _mode = "link";
+
+        if (IsEdit)
+        {
+            var result = await Courses.GetAsync(Id!.Value);
+            _course = result.Value;
+            _error = result.Error;
+            if (_course is not null)
+            {
+                _title = _course.Title;
+                _subject = _course.Subject;
+                _description = _course.Description;
+                _markdown = _course.Sections is { Count: > 0 } || _course.ContentType == CourseContentType.Text ? _course.ToMarkdown() : "";
+                RefreshPreview();
+            }
+        }
+        _loading = false;
+    }
+
+    private void RefreshPreview()
+    {
+        _previewHtml = MarkdownRenderer.Render(_markdown).Html;
+        _mathPending = true;
+    }
+
+    private async Task<IJSObjectReference> ModuleAsync() =>
+        _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./_content/GPOE26.UI/gpoe-app.js");
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_mathPending || _preview.Context is null) return;
+        _mathPending = false;
+        try { await (await ModuleAsync()).InvokeVoidAsync("renderMath", _preview); }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task InsertAsync(string before, string after)
+    {
+        _markdown = await (await ModuleAsync()).InvokeAsync<string>("insertAtCursor", "ce-markdown", before, after);
+        RefreshPreview();
+    }
+
+    private async Task InsertSimulationAsync(string block)
+    {
+        await InsertAsync(block, "");
+        _simulationOpen = false;
+    }
+
+    private async Task OnPdfPicked(InputFileChangeEventArgs e)
+    {
+        _error = null;
+        _pdf = null;
+        _pdfName = null;
+        if (e.File.Size > MaxPdfBytes)
+        {
+            _error = "Le PDF dépasse la taille maximale de 10 Mo.";
+            return;
+        }
+        _pdf = new ImageUpload(e.File.Name, "application/pdf", await ReadAsync(e.File, MaxPdfBytes));
+        _pdfName = e.File.Name;
+    }
+
+    private async Task OnImagePicked(InputFileChangeEventArgs e)
+    {
+        _error = null;
+        if (e.File.Size > MaxImageBytes)
+        {
+            _error = "L'image est trop volumineuse (5 Mo au maximum).";
+            return;
+        }
+        _uploadingImage = true;
+        var result = await Media.UploadImageAsync(new ImageUpload(e.File.Name, e.File.ContentType, await ReadAsync(e.File, MaxImageBytes)));
+        _uploadingImage = false;
+        if (result.Value is null)
+        {
+            _error = result.Error ?? "L'image n'a pas pu être envoyée.";
+            return;
+        }
+        _markdown += $"\n![{e.File.Name}]({result.Value.Url})\n";
+        RefreshPreview();
+    }
+
+    private static async Task<byte[]> ReadAsync(IBrowserFile file, long max)
+    {
+        using var stream = file.OpenReadStream(max);
+        using var memory = new MemoryStream();
+        await stream.CopyToAsync(memory);
+        return memory.ToArray();
+    }
+
+    private async Task DraftAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_title) || string.IsNullOrWhiteSpace(_subject))
+        {
+            _error = "Indiquez d'abord le titre et la matière du cours.";
+            return;
+        }
+        _drafting = true;
+        _error = null;
+        var result = await Tutor.DraftCourseAsync(_subject.Trim(), $"Le nom du cours est précisément : {_title.Trim()}");
+        _drafting = false;
+        if (string.IsNullOrWhiteSpace(result.Value))
+        {
+            _error = result.Error ?? "La rédaction du plan a échoué. Réessayez.";
+            return;
+        }
+        _markdown = string.IsNullOrWhiteSpace(_markdown) ? result.Value : $"{_markdown}\n\n---\n\n{result.Value}";
+        RefreshPreview();
+    }
+
+    private async Task ComposeAsync(string mode)
+    {
+        _error = null;
+        if (mode != "rewrite" && (string.IsNullOrWhiteSpace(_title) || string.IsNullOrWhiteSpace(_subject)))
+        {
+            _error = "Indiquez d'abord le titre et la matière du cours.";
+            return;
+        }
+
+        var module = await ModuleAsync();
+        string? selection = null;
+        if (mode == "rewrite")
+        {
+            selection = await module.InvokeAsync<string>("selectionText", "ce-markdown");
+            if (string.IsNullOrWhiteSpace(selection))
+            {
+                _error = "Sélectionnez d'abord le passage à réécrire.";
+                return;
+            }
+        }
+
+        _composing = true;
+        // Le cours déjà écrit accompagne la demande : « Rédiger une partie » continue au lieu de recommencer
+        var result = await Agent.ComposeAsync(new ComposeRequest(mode, _subject.Trim(), _title.Trim(), _instructions, selection,
+            mode == "rewrite" ? null : _markdown));
+        _composing = false;
+        if (result.Value is null)
+        {
+            _error = result.Error;
+            return;
+        }
+
+        _markdown = mode == "rewrite"
+            ? await module.InvokeAsync<string>("replaceSelection", "ce-markdown", result.Value.Markdown)
+            : string.IsNullOrWhiteSpace(_markdown) ? result.Value.Markdown : $"{_markdown}\n\n{result.Value.Markdown}";
+        RefreshPreview();
+    }
+
+    private async Task OnPhotosPicked(InputFileChangeEventArgs e)
+    {
+        _error = null;
+        _photos.Clear();
+        _readingPhotos = true;
+        try
+        {
+            foreach (var file in e.GetMultipleFiles(MaxPhotos).OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                // Recompressée par le navigateur : une photo de téléphone de 5 Mo passe sous 1 Mo
+                var resized = await file.RequestImageFileAsync("image/jpeg", 2000, 2800);
+                _photos.Add(new ImageUpload(Path.ChangeExtension(file.Name, ".jpg"), "image/jpeg", await ReadAsync(resized, MaxPhotoBytes)));
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            _photos.Clear();
+            _error = $"{MaxPhotos} photos au maximum par cours.";
+        }
+        catch (IOException)
+        {
+            _photos.Clear();
+            _error = "Une photo est trop lourde (8 Mo au maximum).";
+        }
+        _readingPhotos = false;
+    }
+
+    private async Task ImportPhotosAsync()
+    {
+        _saving = true;
+        _error = null;
+        var result = await Courses.ImportPhotosAsync(_photos);
+        _saving = false;
+        if (result.Value is null)
+        {
+            _error = result.Error ?? "Les photos n'ont pas pu être importées.";
+            return;
+        }
+        Nav.NavigateTo($"/app/cours/{result.Value.Id}");
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+
+        // Un PDF n'a besoin que du fichier : son titre vient du nom, l'agent trouve la matière
+        if (_pdfMode)
+        {
+            if (_pdf is null)
+            {
+                _error = "Choisissez un fichier PDF.";
+                return;
+            }
+            _title = Path.GetFileNameWithoutExtension(_pdfName ?? "Document importé").Replace('_', ' ').Replace('-', ' ').Trim();
+            _subject = UnclassifiedSubject;
+        }
+
+        if (string.IsNullOrWhiteSpace(_title) || string.IsNullOrWhiteSpace(_subject))
+        {
+            _error = "Le titre et la matière sont obligatoires.";
+            return;
+        }
+        if (!_pdfMode && CanEditContent && string.IsNullOrWhiteSpace(_markdown))
+        {
+            _error = "Le contenu du cours est vide.";
+            return;
+        }
+        if (_pdfMode && _pdf is null)
+        {
+            _error = "Choisissez un fichier PDF.";
+            return;
+        }
+
+        _saving = true;
+        List<CourseSectionInput>? sections = !_pdfMode && CanEditContent
+            ? [new CourseSectionInput(CourseSectionType.Paragraph, _markdown, 0)]
+            : null;
+        var input = new CourseInput(_title.Trim(), _subject.Trim(), _description, sections);
+
+        Guid courseId;
+        if (IsEdit)
+        {
+            var updated = await Courses.UpdateAsync(Id!.Value, input);
+            if (!updated.Ok) { _saving = false; _error = updated.Error; return; }
+            courseId = Id.Value;
+        }
+        else
+        {
+            var created = await Courses.CreateAsync(input);
+            if (created.Value is null) { _saving = false; _error = created.Error ?? "Le cours n'a pas pu être créé."; return; }
+            courseId = created.Value.Id;
+
+            if (_pdfMode)
+            {
+                var uploaded = await Courses.UploadPdfAsync(courseId, _pdf!);
+                if (!uploaded.Ok)
+                {
+                    await Courses.DeleteAsync(courseId);
+                    _saving = false;
+                    _error = uploaded.Error ?? "Le PDF n'a pas pu être importé.";
+                    return;
+                }
+            }
+        }
+
+        _saving = false;
+        // L'assistant apprend le style de l'enseignant à partir de ce qu'il écrit lui-même
+        if (Session.HasFeature("teacher-agent") && sections is not null) await Agent.LearnStyleAsync(_markdown);
+        Nav.NavigateTo($"/app/cours/{courseId}");
+    }
+
+    private async Task DeleteAsync()
+    {
+        var result = await Courses.DeleteAsync(Id!.Value);
+        if (!result.Ok) { _error = result.Error; _confirmDelete = false; return; }
+        Nav.NavigateTo("/app/cours");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { if (_module is not null) await _module.DisposeAsync(); }
+        catch (JSDisconnectedException) { }
+    }
+}

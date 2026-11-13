@@ -1,8 +1,8 @@
 namespace User.Model
 {
     /// <summary>
-    /// Une classe (établissement scolaire) ou un groupe (autre institution) animé par un enseignant.
-    /// Les élèves la rejoignent avec son code d'invitation.
+    /// Une classe (établissement scolaire) ou un groupe (autre institution) d'un espace.
+    /// Les élèves y entrent avec leur code personnel.
     /// </summary>
     public class Classroom
     {
@@ -12,9 +12,15 @@ namespace User.Model
 
         public ClassroomKind Kind { get; set; } = ClassroomKind.Class;
 
-        public Guid TeacherId { get; set; }
+        /// <summary>
+        /// Professeur principal, gardé pendant la transition vers ClassroomTeachers (plusieurs enseignants par classe).
+        /// Vide si son compte a été supprimé : la classe, elle, est conservée.
+        /// </summary>
+        public Guid? TeacherId { get; set; }
 
         public Guid? OrganizationId { get; set; }
+
+        public Guid? SchoolYearId { get; set; }
 
         /// <summary>Niveau (ex: "Terminale", "Upper Sixth") — null pour un groupe hors scolaire</summary>
         public string? Level { get; set; }
@@ -23,8 +29,11 @@ namespace User.Model
 
         public string? Subject { get; set; }
 
-        /// <summary>Code partagé aux élèves pour rejoindre la classe (ex: "K7P-Q2M")</summary>
-        public required string InviteCode { get; set; }
+        /// <summary>
+        /// Ancien code de classe commun (ex : « K7P-Q2M »), qui ne sert plus : un élève entre par son code personnel
+        /// (docs/PLAN-ETABLISSEMENT.md, lot 7). Gardé pour les classes qui en avaient un ; vide pour les nouvelles.
+        /// </summary>
+        public string? InviteCode { get; set; }
 
         public bool IsArchived { get; set; }
 
@@ -47,5 +56,15 @@ namespace User.Model
     {
         Class,
         Group
+    }
+
+    /// <summary>Place de l'utilisateur connecté dans une classe (renvoyée aux autres services par /classrooms).</summary>
+    public enum ClassroomRole
+    {
+        /// <summary>Enseignant affecté à la classe (une matière au moins).</summary>
+        Teacher,
+        /// <summary>Responsable ou gestionnaire de l'espace de la classe.</summary>
+        Manager,
+        Student
     }
 }

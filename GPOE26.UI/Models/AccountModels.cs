@@ -4,8 +4,10 @@ namespace GPOE26.UI.Models;
 // Contrats du service User (enums sérialisés en texte, propriétés en camelCase).
 // ══════════════════════════════════════════════════════════════════════════════
 
-public enum UserRole { Student, Teacher, Parent, Admin }
+/// <summary>Rôle sur la plateforme. Administrer est un droit à part (UserProfile.IsAdmin), qui ne remplace pas le rôle.</summary>
+public enum UserRole { Student, Teacher, Parent }
 public enum SchoolSubSystem { Francophone, Anglophone }
+public enum EducationStage { Secondary, Higher }
 public enum TeachingContext { School, Institution, Independent }
 public enum ClassroomKind { Class, Group }
 public enum LinkStatus { Pending, Active, Rejected }
@@ -27,18 +29,35 @@ public record RegisterRequest
     public string? ExamTarget { get; init; }
     public List<string>? FocusSubjects { get; init; }
     public int? DailyStudyMinutes { get; init; }
-    public string? InviteCode { get; init; }
     public List<string>? TeachingSubjects { get; init; }
     public TeachingContext? TeachingContext { get; init; }
     public string? OrganizationName { get; init; }
     public List<string>? InitialClasses { get; init; }
     public bool StartTrial { get; init; }
     public string? SubscriptionKey { get; init; }
+    public EducationStage? Stage { get; init; }
+}
+
+/// <summary>Modification du profil (page « Mon profil ») : null = valeur inchangée, chaîne vide = valeur effacée.</summary>
+public record EditProfileRequest
+{
+    public string? Username { get; init; }
+    public string? Language { get; init; }
+    public string? Level { get; init; }
+    public string? Filiere { get; init; }
+    public SchoolSubSystem? SubSystem { get; init; }
+    public string? ExamTarget { get; init; }
+    public DateOnly? ExamDate { get; init; }
+    public List<string>? FocusSubjects { get; init; }
+    public int? DailyStudyMinutes { get; init; }
+    public string? Specialite { get; init; }
+    public List<string>? TeachingSubjects { get; init; }
+    public TeachingContext? TeachingContext { get; init; }
 }
 
 public record UserProfile(
     Guid Id,
-    string Email,
+    string? Email,
     string Username,
     UserRole Role,
     string? Level,
@@ -58,16 +77,31 @@ public record UserProfile(
     string? OrganizationName,
     bool IsPremium,
     SubscriptionPlan? Plan,
-    DateTime? PremiumUntil
-);
+    DateTime? PremiumUntil,
+    List<EntitledFeature>? Features = null,
+    EducationStage? Stage = null,
+    bool SiteEditor = false,
+    bool IsAdmin = false,
+    bool MustChangePassword = false
+)
+{
+    /// <summary>Peut gérer le contenu du site de l'établissement (administrateur ou éditeur).</summary>
+    public bool CanEditSite => IsAdmin || SiteEditor;
+}
 
 public record AuthResponse(string Token, DateTime ExpiresAt, UserProfile Profile);
 
 // ─── Classes ──────────────────────────────────────────────────────────────────
 
+/// <summary>
+/// Classe vue par l'utilisateur. Une classe peut avoir plusieurs enseignants (Teachers) ; TeacherName est le professeur
+/// principal. Les élèves y entrent avec leur code personnel. SpaceType : établissement ou enseignant indépendant.
+/// </summary>
 public record Classroom(
     Guid Id, string Name, ClassroomKind Kind, string? Level, SchoolSubSystem? SubSystem, string? Subject,
-    string? InviteCode, Guid TeacherId, string TeacherName, int MemberCount, DateTime CreatedAt);
+    Guid TeacherId, string TeacherName, int MemberCount, DateTime CreatedAt,
+    ClassroomRole? MyRole = null, List<string>? MySubjects = null, List<ClassTeacher>? Teachers = null,
+    Guid? OrganizationId = null, Guid? SchoolYearId = null, OrganizationType? SpaceType = null, bool IsManager = false);
 
 public record ClassroomMember(Guid Id, string Username, string? Level, string? Filiere, DateTime JoinedAt, DateTime? LastLoginAt);
 
@@ -75,8 +109,9 @@ public record CreateClassroomRequest(string Name, string? Level = null, SchoolSu
 
 // ─── Parents ──────────────────────────────────────────────────────────────────
 
+/// <summary>CoveredBy / CoveredUntil : établissement ou enseignant qui couvre déjà l'enfant ; UsesFamilySeat : il a une place de la formule Famille.</summary>
 public record ChildLink(Guid LinkId, LinkStatus Status, Guid ChildId, string Username, string? Level, string? Filiere,
-    string? ExamTarget, bool IsPremium);
+    string? ExamTarget, bool IsPremium, string? CoveredBy = null, DateTime? CoveredUntil = null, bool UsesFamilySeat = false);
 
 public record ParentLink(Guid LinkId, LinkStatus Status, Guid ParentId, string ParentName, DateTime CreatedAt);
 
@@ -85,13 +120,40 @@ public record CreateChildRequest(string Email, string Username, string Password,
 
 // ─── Abonnements ──────────────────────────────────────────────────────────────
 
-public record Entitlement(bool IsPremium, SubscriptionPlan? Plan, DateTime? Until, string? Source);
+public record EntitledFeature(string Code, int? Limit);
+
+public record Entitlement(bool IsPremium, SubscriptionPlan? Plan, DateTime? Until, string? Source, List<EntitledFeature>? Features = null,
+    List<EntitlementSource>? Sources = null, CoverageOverlap? Overlap = null);
+
+/// <summary>Origine d'un accès Premium (service User).</summary>
+public enum EntitlementSourceKind { Trial, Personal, Family, School, Teacher }
+
+/// <summary>Label : établissement, espace de l'enseignant ou parent payeur.</summary>
+public record EntitlementSource(EntitlementSourceKind Kind, SubscriptionPlan Plan, DateTime Until, string? Label);
+
+/// <summary>Abonnement payé alors qu'un établissement ou un enseignant couvre déjà la personne (P5). PaidBy : parent payeur.</summary>
+public record CoverageOverlap(string CoveredBy, DateTime CoveredUntil, EntitlementSourceKind PaidKind, DateTime PaidUntil, string? PaidBy);
+
+/// <summary>Code personnel accepté ; Overlap si un abonnement payé devient inutile.</summary>
+public record RedeemCodeResult(CoverageOverlap? Overlap);
+
+public record PlanFeature(string Code, string Label, int? Limit);
+
+/// <summary>Formule d'abonnement (catalogue géré par le service du site).</summary>
+public record PlanInfo(int Id, string Code, string Name, string Category, string? Description, int? PriceMonthly, int? PriceYearly,
+    string Currency, int Seats, int DisplayOrder, List<PlanFeature> Features);
+
+public record PlanChoice(PlanInfo Plan, BillingPeriod Period);
+
+public record SimulatePaymentRequest(SubscriptionPlan Plan, BillingPeriod Period, string Provider);
+
+public record SimulatedPayment(string Code, SubscriptionPlan Plan, BillingPeriod Period, string Provider, int Seats, DateTime? EndsAt);
 
 public record SubscriptionKeyInfo(string Code, int UsedCount, int MaxUses, bool IsRevoked);
 
 public record SubscriptionInfo(Guid Id, SubscriptionPlan Plan, BillingPeriod Period, SubscriptionStatus Status, int Seats,
     DateTime? StartsAt, DateTime? EndsAt, Guid? OrganizationId, List<SubscriptionKeyInfo> Keys);
 
-public record MySubscriptions(Entitlement Entitlement, List<SubscriptionInfo> Owned);
+public record MySubscriptions(Entitlement Entitlement, List<SubscriptionInfo> Owned, bool PaymentSimulation = false);
 
 public record CheckoutRequest(SubscriptionPlan Plan, BillingPeriod Period);

@@ -79,8 +79,47 @@ public static class Labels
         UserRole.Student => "Élève",
         UserRole.Teacher => "Enseignant",
         UserRole.Parent => "Parent",
-        UserRole.Admin => "Administrateur",
         _ => ""
+    };
+
+    public static string Of(OrganizationRole r) => r switch
+    {
+        OrganizationRole.Owner => "Responsable",
+        OrganizationRole.Manager => "Gestionnaire",
+        _ => "Enseignant"
+    };
+
+    public static string Of(StudentStatus s) => s switch
+    {
+        StudentStatus.Pending => "En attente",
+        StudentStatus.Active => "Compte activé",
+        StudentStatus.Revoked => "Retiré",
+        _ => "Parti"
+    };
+
+    public static string Tone(StudentStatus s) => s switch
+    {
+        StudentStatus.Active => "green",
+        StudentStatus.Pending => "amber",
+        _ => "grey"
+    };
+
+    public static string LongDate(DateTime? d) => d is null ? "—" : AppTime.ToLocal(d.Value).ToString("d MMMM yyyy", Fr);
+
+    /// <summary>
+    /// Dernier jour de validité d'un code : il expire en fin de journée UTC, ce qui tombe déjà le lendemain
+    /// à Douala (UTC+1). On affiche donc le jour UTC, celui qu'a fixé l'établissement (fin de l'année scolaire).
+    /// </summary>
+    public static string ValidUntil(DateTime utc) => utc.ToString("d MMMM yyyy", Fr);
+
+    /// <summary>D'où vient un accès Premium, en clair (Label : établissement, espace de l'enseignant ou parent payeur).</summary>
+    public static string Of(EntitlementSource s) => s.Kind switch
+    {
+        EntitlementSourceKind.Trial => "Période d'essai",
+        EntitlementSourceKind.Personal => "Abonnement personnel",
+        EntitlementSourceKind.Family => s.Label is { Length: > 0 } payer ? $"Formule Famille de {payer}" : "Formule Famille",
+        EntitlementSourceKind.School => s.Label is { Length: > 0 } school ? $"Licence de {school}" : "Licence de l'établissement",
+        _ => s.Label is { Length: > 0 } space ? $"Offert par l'enseignant ({space})" : "Offert par l'enseignant"
     };
 
     public static string Date(DateTime? d) => d is null ? "—" : AppTime.ToLocal(d.Value).ToString("ddd d MMM", Fr);

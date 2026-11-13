@@ -2,11 +2,12 @@
 @implements IDisposable
 @inject SessionState Session
 @inject NavigationManager Nav
+@inject ISpaceApi Spaces
 
 <div class="ga-app">
-    <div class="ga-shell">
+    <div class="ga-shell @(_reading ? "reading" : "") @(_railOpen ? "rail-open" : "")">
         <header class="ga-topbar">
-            <button type="button" class="ga-icon-btn" aria-label="Ouvrir le menu" aria-expanded="@_open" @onclick="() => _open = true">
+            <button type="button" class="ga-icon-btn" aria-label="Ouvrir le menu" aria-expanded="@Aria.State(_open)" @onclick="() => _open = true">
                 <Icon Name="menu" Size="24" Stroke="2" />
             </button>
             <a class="ga-brand" href="/app"><Icon Name="logo" Size="22" Stroke="2" /><span>GPOE26</span></a>
@@ -16,21 +17,28 @@
         <button type="button" class="ga-scrim @(_open ? "open" : "")" aria-label="Fermer le menu" tabindex="-1" @onclick="() => _open = false"></button>
 
         <nav class="ga-sidebar @(_open ? "open" : "")" aria-label="Navigation principale">
-            <a class="ga-brand" href="/app"><Icon Name="logo" Size="26" Stroke="2" /><span>GPOE26</span></a>
+            <a class="ga-brand" href="/app" aria-label="GPOE26, accueil de mon espace"><Icon Name="logo" Size="26" Stroke="2" /><span>GPOE26</span></a>
+
+            @if (_reading)
+            {
+                <button type="button" class="ga-icon-btn ga-rail-toggle" aria-label="@(_railOpen ? "Réduire le menu" : "Ouvrir le menu")" aria-expanded="@Aria.State(_railOpen)" @onclick="() => _railOpen = !_railOpen">
+                    <Icon Name="menu" />
+                </button>
+            }
 
             @if (Session.Profile is { } me)
             {
                 <div class="ga-badge-box">
-                    @SpaceLabel(me.Role)
+                    @(me.Stage == EducationStage.Higher ? "Espace étudiant" : SpaceLabel(me.Role))
                     <small>@(me.IsPremium ? Labels.Of(me.Plan) : "Formule gratuite")</small>
                 </div>
 
                 <div class="ga-nav">
-                    @foreach (var item in Items(me.Role))
+                    @foreach (var item in Items(me.Role).Concat(SpaceItems()))
                     {
-                        <NavLink href="@item.Href" Match="@(item.Href == "/app" ? NavLinkMatch.All : NavLinkMatch.Prefix)">
+                        <NavLink href="@item.Href" title="@item.Label" aria-label="@item.Label" Match="@(item.Href == "/app" ? NavLinkMatch.All : NavLinkMatch.Prefix)">
                             <Icon Name="@item.Icon" /> <span>@item.Label</span>
-                            @if (item.Premium && !me.IsPremium)
+                            @if (item.Feature is { } feature && !Session.HasFeature(feature))
                             {
                                 <span class="ga-tag lime">PREMIUM</span>
                             }
@@ -40,15 +48,20 @@
 
                 <div class="ga-nav-title">SITE</div>
                 <div class="ga-nav">
-                    <a href="/"><Icon Name="home" /> <span>Site de l'établissement</span></a>
+                    <a href="/" title="Site de l'établissement" aria-label="Site de l'établissement"><Icon Name="home" /> <span>Site de l'établissement</span></a>
+                    @if (me.CanEditSite)
+                    {
+                        @* Droit ajouté au rôle : un enseignant administrateur garde ses classes et gère aussi le site *@
+                        <a href="/admin" title="@(me.IsAdmin ? "Administration" : "Gérer le site")" aria-label="@(me.IsAdmin ? "Administration" : "Gérer le site")"><Icon Name="shield" /> <span>@(me.IsAdmin ? "Administration" : "Gérer le site")</span></a>
+                    }
                 </div>
 
                 <div class="ga-me">
                     <span class="ga-avatar">@Labels.Initial(me.Username)</span>
-                    <span style="min-width:0">
+                    <a href="/app/profil" class="ga-me__profile" title="Mon profil" aria-label="Mon profil : @me.Username">
                         <strong>@me.Username</strong>
-                        <small>@Labels.Of(me.Role)@(me.Level is { Length: > 0 } ? $" · {me.Level}" : "")</small>
-                    </span>
+                        <small>@(me.Stage == EducationStage.Higher ? "Étudiant" : Labels.Of(me.Role))@(me.Level is { Length: > 0 } ? $" · {me.Level}" : "")</small>
+                    </a>
                     <button type="button" class="ga-icon-btn" aria-label="Se déconnecter" title="Se déconnecter" @onclick="SignOutAsync">
                         <Icon Name="logout" />
                     </button>
@@ -57,15 +70,20 @@
         </nav>
 
         <main class="ga-main" id="contenu">
-            @Body
+            <PageErrorBoundary HomeHref="/app">@Body</PageErrorBoundary>
         </main>
+        <SessionNotice />
     </div>
 </div>
 
 @code {
-    private bool _open;
+    private bool _open, _reading, _railOpen;
 
-    private record NavItem(string Href, string Label, string Icon, bool Premium = false);
+    // Lecture d'un cours : le menu se réduit à un rail d'icônes pour laisser l'écran au texte
+    private static readonly System.Text.RegularExpressions.Regex ReaderPath =
+        new(@"/app/cours/[0-9a-fA-F-]{36}/?($|[?#])", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private record NavItem(string Href, string Label, string Icon, string? Feature = null);
 
     private static IEnumerable<NavItem> Items(UserRole role) => role switch
     {
@@ -74,6 +92,7 @@
             new("/app", "Mes classes", "users"),
             new("/app/evaluations", "Épreuves et devoirs", "file"),
             new("/app/cours", "Mes cours", "book"),
+            new("/app/assistant", "Assistant IA", "spark", "teacher-agent"),
             new("/app/abonnement", "Abonnement", "card"),
         ],
         UserRole.Parent =>
@@ -86,16 +105,41 @@
             new("/app", "Plan d'études", "compass"),
             new("/app/cours", "Mes cours", "book"),
             new("/app/evaluations", "Évaluations", "check"),
-            new("/app/tuteur", "Tuteur IA", "spark", Premium: true),
+            new("/app/emploi-du-temps", "Emploi du temps", "calendar"),
+            new("/app/tuteur", "Tuteur IA", "spark", "tutor-ai"),
             new("/app/abonnement", "Abonnement", "card"),
         ]
     };
+
+    // Espaces que la personne gère (responsable, gestionnaire, enseignant indépendant) : lien « Mon établissement »
+    private List<MySpace> _managed = [];
+    // Établissements où la personne enseigne ou qu'elle gère : lien « Bibliothèque » (lot 8)
+    private bool _inSchool;
+    private Guid? _spacesLoadedFor;
+
+    private IEnumerable<NavItem> SpaceItems()
+    {
+        if (_inSchool) yield return new NavItem("/app/bibliotheque", "Bibliothèque", "book");
+        if (_managed.Count == 0) yield break;
+        var label = _managed.All(s => s.Type == OrganizationType.Independent) ? "Mes élèves et codes" : "Mon établissement";
+        yield return new NavItem("/app/etablissement", label, "building");
+    }
+
+    private async Task LoadSpacesAsync()
+    {
+        var me = Session.Profile;
+        if (!Session.IsAuthenticated || me is null || me.Role == UserRole.Student || _spacesLoadedFor == me.Id) return;
+        _spacesLoadedFor = me.Id;
+        var spaces = (await Spaces.MineAsync()).Value ?? [];
+        _managed = spaces.Where(s => s.CanManage).ToList();
+        _inSchool = spaces.Any(s => s.Type != OrganizationType.Independent);
+        await InvokeAsync(StateHasChanged);
+    }
 
     private static string SpaceLabel(UserRole role) => role switch
     {
         UserRole.Teacher => "Espace enseignant",
         UserRole.Parent => "Espace parent",
-        UserRole.Admin => "Administration",
         _ => "Espace élève"
     };
 
@@ -103,20 +147,31 @@
     {
         Session.Changed += OnSessionChanged;
         Nav.LocationChanged += OnLocationChanged;
+        _reading = ReaderPath.IsMatch(Nav.Uri);
         await Session.RestoreAsync();
+        await LoadSpacesAsync();
     }
 
     private void OnSessionChanged()
     {
         if (!Session.IsAuthenticated)
+        {
+            _managed = [];
+            _spacesLoadedFor = null;
             Nav.NavigateTo("/login");
+        }
+        else
+            _ = LoadSpacesAsync();
         InvokeAsync(StateHasChanged);
     }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
-        if (!_open) return;
+        var reading = ReaderPath.IsMatch(e.Location);
+        if (!_open && reading == _reading) return;
         _open = false;
+        _reading = reading;
+        _railOpen = false;
         InvokeAsync(StateHasChanged);
     }
 

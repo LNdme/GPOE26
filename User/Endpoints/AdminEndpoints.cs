@@ -1,5 +1,7 @@
+using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using User.Data;
+using User.Helper;
 using User.DTOs;
 using User.Model;
 using User.Service;
@@ -14,34 +16,156 @@ public static class AdminEndpoints
 {
     public static void MapAdminEndpoints(this IEndpointRouteBuilder app)
     {
-        var admin = app.MapGroup("/admin").WithTags("Administration").RequireAuthorization(Policies.Admin);
+        var admin = app.MapGroup("/admin").WithTags("Administration").RequireAdmin();
+
+        // ── GET /admin/users ──────────────────────────────────────────────────────
+        // Comptes à qui donner un accès d'administration ou d'édition du site.
+        admin.MapGet("/users", async (UserContext db, string? search, bool staffOnly = false) =>
+        {
+            var query = db.AppUsers.AsNoTracking();
+            if (staffOnly)
+                query = query.Where(u => u.IsAdmin || u.SiteEditor);
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var s = $"%{search.Trim()}%";
+                query = query.Where(u => EF.Functions.ILike(u.Email, s) || EF.Functions.ILike(u.Username, s));
+            }
+            var users = await query
+                .OrderByDescending(u => u.IsAdmin)
+                .ThenByDescending(u => u.SiteEditor)
+                .ThenBy(u => u.Username)
+                .Take(50)
+                .Select(u => new UserAccessDto(u.Id, u.Username, u.Email, u.Role, u.IsAdmin, u.SiteEditor, u.CreatedAt, u.LastLoginAt))
+                .ToListAsync();
+            return Results.Ok(users);
+        })
+        .WithSummary("Comptes et accès au site (50 au plus, recherche par nom ou e-mail)")
+        .Produces<List<UserAccessDto>>();
+
+        // ── PUT /admin/users/{id}/access ──────────────────────────────────────────
+        // Nommer / retirer un administrateur, donner / retirer le droit d'éditer le site. Le rôle (enseignant, parent…)
+        // ne change pas. L'administration de la plateforme en tient compte aussitôt (vérifiée en base) ;
+        // le site et les menus, au renouvellement du jeton (20 minutes au plus).
+
+        admin.MapPut("/users/{id:guid}/access", async (Guid id, UpdateAccessRequest req, ClaimsPrincipal me, UserContext db) =>
+        {
+            var user = await db.AppUsers.FindAsync(id);
+            if (user is null) return Results.NotFound();
+
+            if (req.Admin is { } makeAdmin && makeAdmin != user.IsAdmin)
+            {
+                if (!makeAdmin)
+                {
+                    if (user.Id == me.GetUserId())
+                        return Results.Conflict(new { message = "Vous ne pouvez pas retirer vos propres droits d'administrateur." });
+                    if (await db.AppUsers.CountAsync(u => u.IsAdmin) <= 1)
+                        return Results.Conflict(new { message = "Il doit rester au moins un administrateur." });
+                }
+                user.IsAdmin = makeAdmin;
+            }
+            if (req.SiteEditor is { } editor)
+                user.SiteEditor = editor;
+
+            await db.SaveChangesAsync();
+            return Results.Ok(new UserAccessDto(user.Id, user.Username, user.Email, user.Role, user.IsAdmin, user.SiteEditor, user.CreatedAt, user.LastLoginAt));
+        })
+        .WithSummary("Nommer un administrateur ou un éditeur du site")
+        .Produces<UserAccessDto>()
+        .Produces(404)
+        .Produces(409);
 
         // ── POST /admin/organizations ─────────────────────────────────────────────
-        admin.MapPost("/organizations", async (CreateOrganizationRequest req, UserContext db) =>
+        admin.MapPost("/organizations", async (CreateOrganizationRequest req, UserContext db, SpaceService spaces) =>
         {
-            var org = new Organization { Name = req.Name.Trim(), Type = req.Type, City = req.City };
+            var org = new Organization { Name = req.Name.Trim(), Type = req.Type, City = req.City, ShortCode = await spaces.UniqueShortCodeAsync(req.Name) };
             db.Organizations.Add(org);
             await db.SaveChangesAsync();
-            return Results.Created($"/admin/organizations/{org.Id}", new OrganizationDto(org.Id, org.Name, org.Type, org.City, []));
+            return Results.Created($"/admin/organizations/{org.Id}", new OrganizationDto(org.Id, org.Name, org.Type, org.City, [], ShortCode: org.ShortCode));
         })
         .WithSummary("Créer un établissement ou une institution")
         .Produces<OrganizationDto>(201);
 
         // ── GET /admin/organizations ──────────────────────────────────────────────
+        // Les espaces d'enseignants indépendants n'y figurent pas : ils se gèrent seuls.
         admin.MapGet("/organizations", async (UserContext db) =>
         {
-            var orgs = await db.Organizations.OrderBy(o => o.Name).ToListAsync();
+            var orgs = await db.Organizations.Where(o => o.Type != OrganizationType.Independent).OrderBy(o => o.Name).ToListAsync();
             var licenses = await db.Subscriptions.Where(s => s.OrganizationId != null).ToListAsync();
             var ids = licenses.Select(l => l.Id).ToList();
             var keys = await db.SubscriptionKeys.Where(k => ids.Contains(k.SubscriptionId)).ToListAsync();
+            var owners = await db.OrganizationMembers
+                .Where(m => m.Role == OrganizationRole.Owner && m.Status == MemberStatus.Active)
+                .Join(db.AppUsers, m => m.UserId, u => u.Id, (m, u) => new { m.OrganizationId, Owner = new SpaceOwnerDto(u.Id, u.Username, u.Email) })
+                .ToListAsync();
 
             return Results.Ok(orgs.Select(o => new OrganizationDto(o.Id, o.Name, o.Type, o.City,
                 licenses.Where(l => l.OrganizationId == o.Id)
                     .Select(l => new SubscriptionDto(l, keys.Where(k => k.SubscriptionId == l.Id)))
-                    .ToList())));
+                    .ToList(),
+                owners.Where(x => x.OrganizationId == o.Id).Select(x => x.Owner).ToList(), o.ShortCode)));
         })
-        .WithSummary("Établissements, institutions et leurs licences")
+        .WithSummary("Établissements, institutions, leurs licences et leurs responsables")
         .Produces<List<OrganizationDto>>();
+
+        // ── PUT /admin/organizations/{id}/owners ──────────────────────────────────
+        // Désigne le responsable du compte d'un établissement (compte existant ; le code responsable arrive au lot 3).
+        admin.MapPut("/organizations/{id:guid}/owners", async (Guid id, AddSpaceMemberRequest req, UserContext db, SpaceService spaces) =>
+        {
+            if (!await db.Organizations.AnyAsync(o => o.Id == id && o.Type != OrganizationType.Independent)) return Results.NotFound();
+            var user = await db.AppUsers.FirstOrDefaultAsync(u => u.Email == req.Email.Trim().ToLower());
+            if (user is null)
+                return Results.NotFound(new { message = "Aucun compte avec cette adresse : la personne doit d'abord s'inscrire." });
+            if (user.Role == UserRole.Student)
+                return Results.BadRequest(new { message = "Un compte élève ne peut pas être responsable d'un établissement." });
+
+            await spaces.GrantRoleAsync(id, user.Id, OrganizationRole.Owner);
+            await db.SaveChangesAsync();
+            return Results.Ok(new SpaceOwnerDto(user.Id, user.Username, user.Email));
+        })
+        .WithSummary("Désigner le responsable d'un établissement")
+        .Produces<SpaceOwnerDto>()
+        .Produces(404);
+
+        // ── PUT /admin/organizations/{id}/short-code ──────────────────────────────
+        // Code de l'établissement pour la connexion par matricule (Q10). Le changer oblige à réimprimer les fiches.
+        admin.MapPut("/organizations/{id:guid}/short-code", async (Guid id, ShortCodeRequest req, UserContext db) =>
+        {
+            var org = await db.Organizations.FindAsync(id);
+            if (org is null) return Results.NotFound();
+            var code = req.Code.Trim().ToUpperInvariant();
+            if (!SpaceRules.IsValidShortCode(code))
+                return Results.BadRequest(new { message = "Le code d'établissement compte 4 à 10 lettres (sans accents) ou chiffres." });
+            if (await db.Organizations.AnyAsync(o => o.ShortCode == code && o.Id != id))
+                return Results.Conflict(new { message = $"Le code {code} est déjà pris par un autre établissement." });
+            org.ShortCode = code;
+            await db.SaveChangesAsync();
+            return Results.Ok(new { org.ShortCode });
+        })
+        .WithSummary("Changer le code de l'établissement (connexion par matricule)");
+
+        // ── POST /admin/organizations/{id}/owner-code ─────────────────────────────
+        // Code responsable à transmettre quand la personne n'a pas encore de compte : elle le crée avec ce code.
+        admin.MapPost("/organizations/{id:guid}/owner-code", async (Guid id, ClaimsPrincipal me, UserContext db, AccessCodeService codes) =>
+        {
+            var org = await db.Organizations.FirstOrDefaultAsync(o => o.Id == id && o.Type != OrganizationType.Independent);
+            if (org is null) return Results.NotFound();
+            var code = await codes.IssueAsync(id, AccessCodeKind.Owner, me.GetUserId());
+            await db.SaveChangesAsync();
+            return Results.Ok(new AccessCodeDto(code.Id, code.Code, code.Kind, code.Status, code.ExpiresAt, null, null, null, null, code.CreatedAt));
+        })
+        .WithSummary("Code responsable (usage unique) pour un établissement")
+        .Produces<AccessCodeDto>()
+        .Produces(404);
+
+        // ── DELETE /admin/organizations/{id}/owners/{userId} ──────────────────────
+        admin.MapDelete("/organizations/{id:guid}/owners/{userId:guid}", async (Guid id, Guid userId, UserContext db, SpaceService spaces) =>
+        {
+            if (!await db.Organizations.AnyAsync(o => o.Id == id && o.Type != OrganizationType.Independent)) return Results.NotFound();
+            if (!await spaces.RevokeRoleAsync(id, userId, OrganizationRole.Owner)) return Results.NotFound();
+            await db.SaveChangesAsync();
+            return Results.NoContent();
+        })
+        .WithSummary("Retirer un responsable d'établissement");
 
         // ── POST /admin/organizations/{id}/licenses ───────────────────────────────
         // Licence active immédiatement ; la clé (ETB-… / ORG-…) est à transmettre à la structure.
@@ -64,6 +188,34 @@ public static class AdminEndpoints
         .Produces<SubscriptionDto>(201)
         .Produces(404);
 
+        // ── GET /admin/subscriptions ──────────────────────────────────────────────
+        // Abonnements individuels et familiaux, avec leur titulaire. Sans filtre : ceux en attente de paiement,
+        // que personne ne pouvait retrouver tant que le paiement n'est pas branché.
+        admin.MapGet("/subscriptions", async (UserContext db, SubscriptionStatus? status) =>
+        {
+            var wanted = status ?? SubscriptionStatus.PendingPayment;
+            var subscriptions = await db.Subscriptions.AsNoTracking()
+                .Where(s => s.Status == wanted && s.OrganizationId == null)
+                .OrderBy(s => s.CreatedAt)
+                .Take(200)
+                .ToListAsync();
+
+            var ownerIds = subscriptions.Where(s => s.OwnerUserId != null).Select(s => s.OwnerUserId!.Value).Distinct().ToList();
+            var owners = await db.AppUsers.AsNoTracking().Where(u => ownerIds.Contains(u.Id))
+                .ToDictionaryAsync(u => u.Id, u => new { u.Username, u.Email, u.Role });
+            var ids = subscriptions.Select(s => s.Id).ToList();
+            var keys = await db.SubscriptionKeys.AsNoTracking().Where(k => ids.Contains(k.SubscriptionId)).ToListAsync();
+
+            return Results.Ok(subscriptions.Select(s =>
+            {
+                var owner = s.OwnerUserId is { } id ? owners.GetValueOrDefault(id) : null;
+                return new AdminSubscriptionDto(new SubscriptionDto(s, keys.Where(k => k.SubscriptionId == s.Id)),
+                    s.CreatedAt, owner?.Username, owner?.Email, owner?.Role);
+            }));
+        })
+        .WithSummary("Abonnements à traiter (par défaut : en attente de paiement)")
+        .Produces<List<AdminSubscriptionDto>>();
+
         // ── POST /admin/subscriptions/{id}/activate ───────────────────────────────
         // Remplacé par le webhook de paiement en phase 5.
         admin.MapPost("/subscriptions/{id:guid}/activate", async (Guid id, ActivateSubscriptionRequest req, UserContext db, SubscriptionService subs) =>
@@ -83,3 +235,12 @@ public static class AdminEndpoints
         .Produces(409);
     }
 }
+
+/// <summary>Compte et accès au site, pour la page Comptes et accès de l'administration.</summary>
+public record UserAccessDto(Guid Id, string Username, string Email, UserRole Role, bool IsAdmin, bool SiteEditor, DateTime CreatedAt, DateTime? LastLoginAt);
+
+/// <summary>Champs absents = inchangés. Le rôle du compte n'est jamais modifié.</summary>
+public record UpdateAccessRequest(bool? Admin, bool? SiteEditor);
+
+/// <summary>Abonnement vu par l'administration, avec son titulaire.</summary>
+public record AdminSubscriptionDto(SubscriptionDto Subscription, DateTime CreatedAt, string? OwnerName, string? OwnerEmail, UserRole? OwnerRole);

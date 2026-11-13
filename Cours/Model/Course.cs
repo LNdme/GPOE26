@@ -6,6 +6,12 @@ namespace Cours.Model
     /// </summary>
     public class Course
     {
+        /// <summary>Matière d'un cours importé, en attendant que l'agent la détermine.</summary>
+        public const string UnclassifiedSubject = "À classer";
+
+        /// <summary>Début du titre d'un cours créé à partir de photos, remplacé ensuite par l'agent.</summary>
+        public const string PhotosTitlePrefix = "Photos de cours";
+
         public Guid Id { get; set; } = Guid.NewGuid();
 
         public required string Title { get; set; }
@@ -34,6 +40,12 @@ namespace Cours.Model
         /// </summary>
         public string? ExtractedText { get; set; }
 
+        /// <summary>Mise en forme d'un PDF par l'IA : Pending, Done ou Failed (vide pour un cours rédigé).</summary>
+        public string? StructuringStatus { get; set; }
+
+        /// <summary>Adresse d'origine d'un cours importé par lien : elle reste affichée dans le lecteur.</summary>
+        public string? SourceUrl { get; set; }
+
         /// <summary>
         /// Sections ordonnées du cours (titres H1/H2/H3, paragraphes, images).
         /// Uniquement pour ContentType = Text.
@@ -57,6 +69,14 @@ namespace Cours.Model
 
         public DateTime? PublishedAt { get; set; }
 
+        // ─── Bibliothèque d'établissement ─────────────────────────────────────────
+
+        /// <summary>Établissements (service User) dans la bibliothèque desquels l'auteur a déposé ce cours.</summary>
+        public List<Guid> LibraryOrganizationIds { get; set; } = new();
+
+        /// <summary>Cours d'origine d'une copie faite depuis une bibliothèque : simple souvenir, la copie n'en dépend pas.</summary>
+        public Guid? SourceCourseId { get; set; }
+
         // ─── Métadonnées ──────────────────────────────────────────────────────────
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
@@ -72,7 +92,8 @@ namespace Cours.Model
             foreach (var s in Sections.OrderBy(s => s.Order))
             {
                 if (s.Type == SectionType.Image) continue; // les images ne sont pas du texte
-                sb.AppendLine(s.Content);
+                // Le texte donné à l'IA n'a besoin ni des descriptions de labos ni des adresses d'images
+                sb.AppendLine(System.Text.RegularExpressions.Regex.Replace(s.Content, @"```simulation[\s\S]*?```|!\[[^\]]*\]\([^)]+\)", ""));
                 sb.AppendLine();
             }
             ExtractedText = sb.ToString().Trim();
@@ -105,6 +126,37 @@ namespace Cours.Model
         /// 0 pour les paragraphes et images.
         /// </summary>
         public int Level { get; set; } = 0;
+    }
+
+    /// <summary>Labo proposé par l'agent, en attente de la décision du propriétaire du cours.</summary>
+    public class CourseLabSuggestion
+    {
+        public const string Pending = "Pending";
+        public const string Accepted = "Accepted";
+        public const string Refused = "Refused";
+
+        public Guid Id { get; set; } = Guid.NewGuid();
+        public Guid CourseId { get; set; }
+        public string Anchor { get; set; } = "";
+        public string Title { get; set; } = "";
+        public string Reason { get; set; } = "";
+
+        /// <summary>Bloc Markdown du labo, construit et contrôlé par LabProposalRules.</summary>
+        public string Block { get; set; } = "";
+        public string Status { get; set; } = Pending;
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// « Ce cours vous a-t-il été utile ? » : un avis par lecteur et par cours, qu'il peut changer ou retirer.
+    /// L'auteur du cours voit le total ; personne ne voit qui a répondu quoi.
+    /// </summary>
+    public class CourseFeedback
+    {
+        public Guid CourseId { get; set; }
+        public Guid UserId { get; set; }
+        public bool Useful { get; set; }
+        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     }
 
     public enum CourseStatus

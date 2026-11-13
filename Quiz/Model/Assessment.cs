@@ -26,6 +26,12 @@ public class Assessment
     /// <summary>Classes ou groupes concernés (service User)</summary>
     public List<Guid> ClassroomIds { get; set; } = new();
 
+    /// <summary>Établissements (service User) dans la bibliothèque desquels l'auteur a déposé l'évaluation.</summary>
+    public List<Guid> LibraryOrganizationIds { get; set; } = new();
+
+    /// <summary>Évaluation d'origine d'une copie faite depuis une bibliothèque : simple souvenir, la copie n'en dépend pas.</summary>
+    public Guid? SourceAssessmentId { get; set; }
+
     public DateTime? OpensAt { get; set; }
     public DateTime? DueAt { get; set; }
 
@@ -131,6 +137,12 @@ public class Submission
     public decimal MaxScore { get; set; }
 
     public DateTime? GradedAt { get; set; }
+
+    /// <summary>
+    /// Réponses en cours de saisie (JSON), enregistrées au fil de la composition et effacées quand la copie est rendue.
+    /// Sans ce brouillon, une coupure de réseau ou un rechargement de la page faisait perdre toute la copie.
+    /// </summary>
+    public string? DraftAnswers { get; set; }
 
     public List<SubmissionAnswer> Answers { get; set; } = new();
 }

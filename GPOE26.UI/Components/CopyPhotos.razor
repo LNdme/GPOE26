@@ -19,7 +19,11 @@
                 <SecureImage Load="() => Api.PhotoAsync(AssessmentId, SubmissionId, p.Id)" Key="p.Id" Alt="@($"Copie, page {p.Page}")" />
                 @if (ShowTranscription)
                 {
-                    @if (p.Transcription is null)
+                    @if (p.Pending)
+                    {
+                        <span class="ga-small ga-muted" role="status">L'IA lit cette page…@(OnDelete.HasDelegate ? " Tu peux continuer à composer." : "")</span>
+                    }
+                    else if (p.Transcription is null)
                     {
                         <span class="ga-small ga-muted">L'IA n'a pas pu lire cette photo pour le moment@(OnDelete.HasDelegate ? " : ta copie sera tout de même transmise." : ".")</span>
                     }

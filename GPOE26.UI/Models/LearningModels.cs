@@ -13,13 +13,18 @@ public enum CourseSectionType { Heading, Paragraph, Image }
 public enum CourseStatus { Draft, Published }
 
 public record CourseSummary(Guid Id, string Title, string Subject, string? Description, CourseContentType ContentType,
-    DateTime CreatedAt, CourseStatus Status, List<Guid>? ClassroomIds, Guid OwnerId);
+    DateTime CreatedAt, CourseStatus Status, List<Guid>? ClassroomIds, Guid OwnerId,
+    List<Guid>? LibraryOrganizationIds = null, Guid? SourceCourseId = null);
 
 public record CourseSection(Guid Id, CourseSectionType Type, string Content, int Order, int Level);
 
+/// <summary>Avis « Ce cours vous a-t-il été utile ? » : le mien, et les totaux (pour l'auteur seulement).</summary>
+public record CourseFeedback(bool? Mine, int? Useful, int? NotUseful);
+
 public record CourseDetail(Guid Id, string Title, string Subject, string? Description, CourseContentType ContentType,
     string? ExtractedText, string? PdfPath, List<CourseSection>? Sections, DateTime CreatedAt, DateTime UpdatedAt,
-    CourseStatus Status, List<Guid>? ClassroomIds, Guid OwnerId)
+    CourseStatus Status, List<Guid>? ClassroomIds, Guid OwnerId, string? StructuringStatus = null, string? SourceUrl = null,
+    List<Guid>? LibraryOrganizationIds = null, Guid? SourceCourseId = null)
 {
     /// <summary>Contenu Markdown du cours, reconstitué à partir de ses sections.</summary>
     public string ToMarkdown()
@@ -47,6 +52,43 @@ public record CourseDetail(Guid Id, string Title, string Subject, string? Descri
 }
 
 public record ShareCourseRequest(bool Publish, List<Guid> ClassroomIds);
+
+public record CourseSectionInput(CourseSectionType Type, string Content, int Order, int Level = 0);
+
+/// <summary>Création ou modification d'un cours (le contenu rédigé tient dans une section Markdown).</summary>
+public record CourseInput(string Title, string Subject, string? Description, List<CourseSectionInput>? Sections);
+
+public record UploadedFile(string Url);
+
+// ─── Bibliothèque d'établissement (Cours et Quiz) ─────────────────────────────
+
+/// <summary>Cours déposé dans une bibliothèque : Mine si c'est le mien, Copies = copies déjà faites.</summary>
+public record LibraryCourse(Guid Id, string Title, string Subject, string? Description, CourseContentType ContentType,
+    DateTime UpdatedAt, Guid OwnerId, string AuthorName, bool Mine, int Copies);
+
+/// <summary>CanManage : le lecteur (responsable, gestionnaire) peut retirer les dépôts des autres.</summary>
+public record LibraryCourses(Guid OrganizationId, string Name, bool CanManage, List<LibraryCourse> Courses);
+
+public record LibraryAssessment(Guid Id, string Title, string? Description, AssessmentKind Kind, string? Subject,
+    int QuestionCount, decimal MaxScore, DateTime UpdatedAt, Guid AuthorId, string AuthorName, bool Mine, int Copies);
+
+public record LibraryAssessments(Guid OrganizationId, string Name, bool CanManage, List<LibraryAssessment> Assessments);
+
+/// <summary>Labo proposé par l'agent. Block : le bloc Markdown, affichable pour un essai.</summary>
+public record LabSuggestion(Guid Id, string Anchor, string Title, string Reason, string Block);
+
+// ─── Quiz d'entraînement généré à partir d'un cours ───────────────────────────
+
+/// <summary>Le service Quiz lit lui-même le texte du cours (CourseId) : le navigateur n'envoie plus le texte.</summary>
+public record GeneratePracticeQuizRequest(string Title, Guid CourseId, int NumberOfQuestions, string Difficulty);
+public record GeneratePracticeProblemsRequest(string Title, Guid CourseId, int Count, string Difficulty);
+public record PracticeProblem(string Statement, List<string> Hints, string Solution);
+public record PracticeProblemSet(string Title, List<PracticeProblem> Problems);
+public record PracticeQuestion(Guid Id, string Text, List<string> Options);
+public record PracticeQuiz(Guid QuizId, string Title, List<PracticeQuestion> Questions);
+public record PracticeAnswer(Guid QuestionId, int SelectedOptionIndex);
+public record PracticeFeedback(Guid QuestionId, string QuestionText, int SelectedOptionIndex, int CorrectOptionIndex, bool IsCorrect, string Explanation);
+public record PracticeResult(Guid QuizId, int Score, int Total, double Percentage, List<PracticeFeedback> Feedbacks);
 
 // ─── Évaluations ──────────────────────────────────────────────────────────────
 
@@ -106,7 +148,7 @@ public record Assessment(
     DateTime? OpensAt, DateTime? DueAt, int? DurationMinutes, int MaxAttempts,
     bool Shuffle, bool ShowCorrection, bool AllowOffline, bool AiAssistedGrading, int ScaleTo,
     decimal MaxScore, int QuestionCount, DateTime CreatedAt, DateTime UpdatedAt, DateTime? PublishedAt,
-    List<AssessmentQuestion>? Questions)
+    List<AssessmentQuestion>? Questions, List<Guid>? LibraryOrganizationIds = null, Guid? SourceAssessmentId = null)
 {
     public AssessmentDraft ToDraft() => new()
     {
@@ -140,10 +182,10 @@ public record StudentAssessment(
 public record AttemptOption(int Index, string Text);
 public record AttemptQuestion(Guid Id, QuestionType Type, string Text, decimal Points, List<AttemptOption> Options, string? Unit);
 public record Attempt(Guid SubmissionId, Guid AssessmentId, string Title, int AttemptNumber, DateTime StartedAt,
-    DateTime? Deadline, List<AttemptQuestion> Questions, List<AnswerPhoto>? Photos = null);
+    DateTime? Deadline, List<AttemptQuestion> Questions, List<AnswerPhoto>? Photos = null, List<AnswerDraft>? Draft = null);
 
 /// <summary>Photo d'une copie traitée sur papier ; Transcription = lecture par l'IA (null si elle n'a pas pu la lire).</summary>
-public record AnswerPhoto(Guid Id, Guid QuestionId, int Page, string? Transcription);
+public record AnswerPhoto(Guid Id, Guid QuestionId, int Page, string? Transcription, bool Pending = false);
 
 public record AiFeedback(Guid QuestionId, string Feedback);
 
@@ -189,7 +231,7 @@ public record CourseMastery(Guid CourseId, decimal Earned, decimal Max, double P
 public record StudentProgress(Guid StudentId, string? Username, DateTime? LastLoginAt, double? AverageOn20,
     List<AssessmentResult> Results, List<CourseMastery> Mastery);
 
-public record AssessmentHeader(Guid Id, string Title, AssessmentKind Kind, DateTime? DueAt, Guid? CourseId);
+public record AssessmentHeader(Guid Id, string Title, AssessmentKind Kind, DateTime? DueAt, Guid? CourseId, string? Subject = null);
 
 public record ClassroomProgress(Guid ClassroomId, List<AssessmentHeader> Assessments, List<StudentProgress> Students);
 
@@ -214,3 +256,18 @@ public record UploadedImage(Guid Id);
 
 /// <summary>Image prête à envoyer (déjà redimensionnée par le navigateur).</summary>
 public record ImageUpload(string FileName, string ContentType, byte[] Data);
+
+// ─── Notions fragiles relevées par le tuteur (lot 12) ─────────────────────────
+
+public record NotionCount(string Notion, int Students);
+
+public record StudentWeakPoints(Guid StudentId, string Username, List<string> Notions);
+
+/// <summary>Concerned : élèves chez qui le tuteur a relevé une notion fragile ; ByStudent vide pour un gestionnaire.</summary>
+public record CourseWeakPoints(Guid CourseId, string Title, string Subject, int Students, int Concerned,
+    List<NotionCount> TopNotions, List<StudentWeakPoints> ByStudent);
+
+/// <summary>Named : noms des élèves visibles (enseignant de la classe).</summary>
+public record ClassWeakPoints(Guid ClassroomId, bool Named, List<CourseWeakPoints> Courses);
+
+public record ChildCourseWeakPoints(Guid CourseId, string Title, string? Subject, List<string> Notions, DateTime LastStudiedAt);

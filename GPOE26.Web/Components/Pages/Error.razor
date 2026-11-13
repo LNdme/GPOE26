@@ -1,0 +1,26 @@
+@page "/Error"
+@layout Layout.BareLayout
+@attribute [ExcludeFromInteractiveRouting]
+
+
+@* Affichée par UseExceptionHandler quand le serveur échoue avant que la page ne s'affiche. *@
+<PageTitle>Erreur – GPOE26</PageTitle>
+
+<div class="gpoe-crash" role="alert">
+    <h2>Le site a rencontré un problème</h2>
+    <p>Nous n'avons pas pu afficher cette page. Réessayez dans un instant ; si le problème continue, signalez-le en donnant le code ci-dessous.</p>
+    @if (!string.IsNullOrEmpty(RequestId))
+    {
+        <p><small>Code de l'erreur : <code>@RequestId</code></small></p>
+    }
+    <div class="gpoe-crash__actions">
+        <a class="ga-btn" href="/">Retour à l'accueil</a>
+        <a class="ga-btn secondary" href="/app">Mon espace</a>
+    </div>
+</div>
+
+@code {
+    [CascadingParameter] private HttpContext? HttpContext { get; set; }
+
+    private string? RequestId => System.Diagnostics.Activity.Current?.Id ?? HttpContext?.TraceIdentifier;
+}

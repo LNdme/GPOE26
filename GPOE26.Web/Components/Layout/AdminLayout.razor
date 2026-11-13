@@ -1,0 +1,129 @@
+@inherits LayoutComponentBase
+@using GPOE26.UI.Components
+@using GPOE26.UI.Models
+@inject GPOE26.UI.Services.SessionState Session
+@inject NavigationManager Nav
+@implements IDisposable
+
+@* Espace d'administration du site : réservé au rôle Admin.
+   Les pages ne sont rendues (et donc ne chargent rien) qu'une fois le rôle vérifié ;
+   l'API refuse de toute façon les écritures sans jeton administrateur. *@
+<PageTitle>Administration – GPOE26</PageTitle>
+
+<div class="admin-app">
+    @if (!_ready)
+    {
+        <div class="admin-gate"><span class="spinner-border text-brand-dark" role="status"></span></div>
+    }
+    else if (!Session.IsAuthenticated)
+    {
+        <div class="admin-gate">
+            <div class="admin-gate__card">
+                <span class="admin-gate__icon"><Icon Name="shield" Size="28" /></span>
+                <h1>Espace réservé</h1>
+                <p>Connectez-vous avec un compte administrateur pour gérer le contenu du site.</p>
+                <a class="site-btn site-btn--primary" href="@LoginUrl">Se connecter</a>
+                <a class="site-btn site-btn--quiet" href="/">Retour au site</a>
+            </div>
+        </div>
+    }
+    else if (Session.Profile?.CanEditSite != true)
+    {
+        <div class="admin-gate">
+            <div class="admin-gate__card">
+                <span class="admin-gate__icon is-warn"><Icon Name="shield" Size="28" /></span>
+                <h1>Accès refusé</h1>
+                <p>Seuls les administrateurs et les éditeurs du site peuvent modifier son contenu. Demandez l’accès à un administrateur.</p>
+                <a class="site-btn site-btn--primary" href="/app">Aller à mon espace</a>
+                <a class="site-btn site-btn--quiet" href="/">Retour au site</a>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="admin-shell @(_open ? "is-open" : "")">
+            <aside class="admin-side" aria-label="Administration">
+                <a class="admin-brand" href="/admin">
+                    <span class="site-brand__mark">LT</span>
+                    <span><strong>Administration</strong><small>Contenu du site</small></span>
+                </a>
+
+                <nav class="admin-nav">
+                    <NavLink href="/admin" Match="NavLinkMatch.All"><Icon Name="grid" Size="18" /> Tableau de bord</NavLink>
+                    <span class="admin-nav__title">Contenu</span>
+                    <NavLink href="/admin/actualites"><Icon Name="news" Size="18" /> Actualités</NavLink>
+                    <NavLink href="/admin/evenements"><Icon Name="calendar" Size="18" /> Événements</NavLink>
+                    <NavLink href="/admin/activites"><Icon Name="activity" Size="18" /> Activités</NavLink>
+                    <NavLink href="/admin/equipe"><Icon Name="users" Size="18" /> Équipe</NavLink>
+                    @if (IsAdmin)
+                    {
+                        <span class="admin-nav__title">Établissement</span>
+                        <NavLink href="/admin/etablissement"><Icon Name="building" Size="18" /> Coordonnées</NavLink>
+                        @* La plateforme d'apprentissage : comptes, abonnements, licences des établissements *@
+                        <span class="admin-nav__title">Plateforme</span>
+                        <NavLink href="/admin/abonnements"><Icon Name="card" Size="18" /> Abonnements</NavLink>
+                        <NavLink href="/admin/licences"><Icon Name="building" Size="18" /> Licences</NavLink>
+                        <NavLink href="/admin/utilisateurs"><Icon Name="key" Size="18" /> Comptes et accès</NavLink>
+                    }
+                </nav>
+
+                <div class="admin-side__foot">
+                    <a href="/" target="_blank" rel="noopener"><Icon Name="external" Size="16" /> Voir le site</a>
+                    <a href="/app"><Icon Name="left" Size="16" /> Mon espace</a>
+                    <div class="admin-me">
+                        <span class="site-user__avatar">@(Session.Profile?.Username is { Length: > 0 } u ? u[..1].ToUpperInvariant() : "A")</span>
+                        <span><strong>@Session.Profile?.Username</strong><small>@(IsAdmin ? "Administrateur" : "Éditeur du site")</small></span>
+                    </div>
+                </div>
+            </aside>
+
+            <button type="button" class="admin-scrim" tabindex="-1" aria-label="Fermer le menu" @onclick="() => _open = false"></button>
+
+            <div class="admin-content">
+                <header class="admin-topbar">
+                    <button type="button" class="admin-topbar__menu" aria-label="Ouvrir le menu" aria-expanded="@(_open ? "true" : "false")" @onclick="() => _open = true">
+                        <Icon Name="menu" Size="22" Stroke="2" />
+                    </button>
+                    <span class="admin-topbar__title"><Icon Name="shield" Size="18" /> Administration du site</span>
+                    <a class="site-btn site-btn--ghost site-btn--sm" href="/" target="_blank" rel="noopener">Voir le site <Icon Name="external" Size="14" /></a>
+                </header>
+                <main class="admin-main">
+                    <PageErrorBoundary HomeHref="/admin">@Body</PageErrorBoundary>
+                </main>
+                <SessionNotice />
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private bool _ready;
+    private bool _open;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += Refresh;
+        Nav.LocationChanged += OnLocationChanged;
+        await Session.RestoreAsync();
+        _ready = true;
+    }
+
+    public void Dispose()
+    {
+        Session.Changed -= Refresh;
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+
+    private void Refresh() => InvokeAsync(StateHasChanged);
+
+    private bool IsAdmin => Session.IsAuthenticated && Session.Profile?.IsAdmin == true;
+
+    // Retour sur la page d'administration demandée après la connexion
+    private string LoginUrl => "/login?retour=" + Uri.EscapeDataString("/" + Nav.ToBaseRelativePath(Nav.Uri));
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        _open = false;
+        Refresh();
+    }
+}

@@ -14,9 +14,15 @@ namespace GPOE26.ApiService.Data
         public DbSet<SchoolActivity> Activities { get; set; }
         public DbSet<Hierarchy> Hierarchies { get; set; } 
         public DbSet<Contact> Contacts { get; set; }
+        public DbSet<SubscriptionPlan> SubscriptionPlans { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
+            modelBuilder.Entity<SubscriptionPlan>(plan =>
+            {
+                plan.HasIndex(p => p.Code).IsUnique();
+                plan.OwnsMany(p => p.Features, features => features.ToJson());
+            });
         }
     }
 }
