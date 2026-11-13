@@ -2,6 +2,7 @@
 @inject IFamilyApi Family
 @inject IProgressApi Progress
 @inject IAccountApi Account
+@inject IAgentApi Agent
 
 <div class="ga-page">
     <div class="ga-head">
@@ -74,6 +75,19 @@
                             else
                             {
                                 <span class="ga-muted ga-small">Pas encore de résultat publié.</span>
+                            }
+                            @* Lot 12 (P6) : notions fragiles relevées par le tuteur ; jamais ses discussions avec l'enfant *@
+                            @if (_weak.TryGetValue(child.ChildId, out var weak) && weak.Count > 0)
+                            {
+                                <div class="ga-stack" style="gap:4px">
+                                    <strong class="ga-small">Notions à revoir, d'après le tuteur</strong>
+                                    <ul class="ga-stack" style="gap:2px; margin:0; padding-left:20px">
+                                        @foreach (var w in weak.Take(5))
+                                        {
+                                            <li class="ga-small"><strong>@w.Title</strong> : @string.Join(", ", w.Notions)</li>
+                                        }
+                                    </ul>
+                                </div>
                             }
                         }
                         else if (child.Status == LinkStatus.Pending)
@@ -150,6 +164,7 @@
     private bool _loading = true;
     private List<ChildLink> _children = new();
     private readonly Dictionary<Guid, StudentProgress> _progress = new();
+    private readonly Dictionary<Guid, List<ChildCourseWeakPoints>> _weak = new();
     private SubscriptionInfo? _family;
     private string? _code, _linkMessage, _createMessage;
     private bool _linkOk, _createOk;
@@ -169,6 +184,10 @@
             .Select(async c => (c.ChildId, await Progress.ChildAsync(c.ChildId))));
         foreach (var (id, result) in progress)
             if (result.Value is { } p) _progress[id] = p;
+        var weak = await Task.WhenAll(_children.Where(c => c.Status == LinkStatus.Active)
+            .Select(async c => (c.ChildId, await Agent.ChildWeakPointsAsync(c.ChildId))));
+        foreach (var (id, result) in weak)
+            if (result.Value is { } w) _weak[id] = w;
         _loading = false;
     }
 

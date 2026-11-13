@@ -2,7 +2,7 @@
 
 Rédigé le 11 novembre 2026, sur la branche `feat/site-admin-navbar`, après la phase 1 (`docs/PLAN-ETABLISSEMENT.md`, lots 1 à 7, poussée dans la PR #6). Décisions P1 à P6 et questions Q10 à Q15 validées le même jour.
 
-> **Avancement :** lot 9 commité (`56015f4`), lot 10 commité (`2617802`) ; lot 8 commité (`192d1f6`) ; lot 11 fait le 11 novembre 2026 (non commité) — voir « Lot 8 à 11 : ce qui a été fait ». Lots 12 et 13 à faire.
+> **Avancement :** lots 9 (`56015f4`), 10 (`2617802`), 8 (`192d1f6`) et 11 (`2fae49b`) commités ; lot 12 commité — voir « Lot 8 à 12 : ce qui a été fait ». Reste le lot 13.
 
 ## Ce que l'utilisateur a demandé
 
@@ -82,6 +82,18 @@ Rien de nouveau à stocker : `CourseMastery.WeakPoints` (par élève et par cour
 Ordre conseillé : 9 et 10 d'abord (les élèves entrent plus simplement), puis 8, 11, 12, 13.
 
 ---
+
+## Lot 12 : ce qui a été fait (11 novembre 2026)
+
+- **Tuteur** : son contexte cite maintenant l'établissement avec la classe (« Classe : Terminale C (Lycée de démonstration) », `ClassroomDto.OrganizationName` ajouté côté User), les **épreuves à venir** (14 jours, pas encore rendues, avec matière, type et date locale) et les **derniers résultats publiés**, lus dans Quiz (`/assessments/mine`, déjà lu pour le plan du jour). Règles dans `InsightRules` (Chat).
+- **Notions fragiles d'une classe** : `GET /insights/classrooms/{id}/weak-points` (Chat). **Enseignant de la classe** : notions les plus fréquentes et détail par élève, nommé. **Responsable ou gestionnaire** qui n'y enseigne pas : mêmes chiffres, **sans aucun nom**. Autres enseignants, élèves, parents : rien (404). Seulement sur les **cours publiés pour la classe** (nouvelle route Cours `GET /cours/classrooms/{id}`, pour ses enseignants et gestionnaires) : le travail personnel des élèves n'y apparaît pas.
+- **Parent** : `GET /insights/children/{id}/weak-points`, lien accepté seulement ; toutes les notions de l'enfant, y compris sur ses cours personnels (P6 : le parent voit le travail personnel).
+- **Discussions avec le tuteur** : aucune route nouvelle ne les expose ; seules les notions fragiles sortent. Un élève qui a **coupé la mémoire** du tuteur n'apparaît nulle part.
+- **Droits lus sans cache** : Chat garde une minute les lectures de contexte ; pour ces routes, qui enseigne, qui est élève et qui est parent sont relus à chaque fois (un élève parti disparaît aussitôt).
+- **Élève parti** : il sort de la classe, donc des notions de la classe ; ses notes restent dans Quiz (copies et résultats), comme avant. Pas d'écran d'archive pour l'établissement : à faire si besoin.
+- **Écrans** : section « Notions fragiles relevées par le tuteur » dans le suivi d'une classe (enseignant et gestionnaire), « Notions à revoir, d'après le tuteur » sous chaque enfant sur l'accueil du parent.
+
+**Vérifications :** tests Logic 450 / 450 (qui voit quoi, découpage et regroupement des notions sans tenir compte des accents, lignes du tuteur) ; scénario avec les quatre services sur une base neuve, 27 contrôles (enseignant, gestionnaire, autre enseignant, élève, parent, autre parent, mémoire coupée, cours personnel exclu, élève parti) ; dans le navigateur : suivi de classe de l'enseignant et accueil du parent. Corrigé pendant l'essai : un élève parti restait visible jusqu'à une minute (cache).
 
 ## Lot 11 : ce qui a été fait (11 novembre 2026)
 

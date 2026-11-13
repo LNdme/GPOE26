@@ -256,3 +256,18 @@ public record UploadedImage(Guid Id);
 
 /// <summary>Image prête à envoyer (déjà redimensionnée par le navigateur).</summary>
 public record ImageUpload(string FileName, string ContentType, byte[] Data);
+
+// ─── Notions fragiles relevées par le tuteur (lot 12) ─────────────────────────
+
+public record NotionCount(string Notion, int Students);
+
+public record StudentWeakPoints(Guid StudentId, string Username, List<string> Notions);
+
+/// <summary>Concerned : élèves chez qui le tuteur a relevé une notion fragile ; ByStudent vide pour un gestionnaire.</summary>
+public record CourseWeakPoints(Guid CourseId, string Title, string Subject, int Students, int Concerned,
+    List<NotionCount> TopNotions, List<StudentWeakPoints> ByStudent);
+
+/// <summary>Named : noms des élèves visibles (enseignant de la classe).</summary>
+public record ClassWeakPoints(Guid ClassroomId, bool Named, List<CourseWeakPoints> Courses);
+
+public record ChildCourseWeakPoints(Guid CourseId, string Title, string? Subject, List<string> Notions, DateTime LastStudiedAt);

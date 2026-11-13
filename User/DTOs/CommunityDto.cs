@@ -43,7 +43,8 @@ public record ClassroomDto(
     Guid? OrganizationId = null,
     Guid? SchoolYearId = null,
     OrganizationType? SpaceType = null,
-    bool IsManager = false
+    bool IsManager = false,
+    string? OrganizationName = null
 );
 
 public record ClassroomMemberDto(

@@ -227,6 +227,27 @@ cours.MapGet("/shared", async (CoursContext db, UserDirectoryClient users, strin
 .WithSummary("Cours partagés avec mes classes")
 .Produces<List<CourseSummaryDto>>();
 
+// ── GET /cours/classrooms/{classroomId} ───────────────────────────────────────
+// Cours publiés pour une classe, quel qu'en soit l'enseignant : pour ses enseignants et les gestionnaires de
+// l'établissement (lot 12 : notions fragiles relevées par le tuteur sur les cours de la classe, jamais sur le
+// travail personnel des élèves).
+cours.MapGet("/classrooms/{classroomId:guid}", async (Guid classroomId, CoursContext db, UserDirectoryClient users) =>
+{
+    var classroom = await users.ClassroomAsync(classroomId);
+    if (classroom is null || !(classroom.MyRole == "Teacher" || classroom.IsManager))
+        return Results.NotFound(new { message = "Classe introuvable." });
+
+    var results = await db.Courses
+        .Where(c => c.Status == CourseStatus.Published && c.ClassroomIds.Contains(classroomId))
+        .OrderBy(c => c.Subject).ThenBy(c => c.Title)
+        .Select(c => new CourseSummaryDto(c))
+        .ToListAsync();
+    return Results.Ok(results);
+})
+.WithSummary("Cours publiés pour une classe (ses enseignants et gestionnaires)")
+.Produces<List<CourseSummaryDto>>()
+.Produces(404);
+
 // ── GET /cours/{id} ───────────────────────────────────────────────────────────
 // L'auteur, ou un membre d'une classe avec laquelle le cours est publié.
 cours.MapGet("/{id:guid}", async (Guid id, ClaimsPrincipal principal, CoursContext db, UserDirectoryClient users) =>

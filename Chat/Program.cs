@@ -121,5 +121,6 @@ app.UseAuthorization();
 app.MapControllers();
 app.MapTutorEndpoints();
 app.MapAgentEndpoints();
+app.MapInsightEndpoints();
 
 app.Run();

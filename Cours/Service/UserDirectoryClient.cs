@@ -6,7 +6,7 @@ namespace Cours.Service;
 /// Classe renvoyée par le service User. TeacherId : son professeur principal ; MyRole : place de l'utilisateur
 /// dans la classe (« Teacher », « Manager », « Student ») — une classe peut avoir plusieurs enseignants.
 /// </summary>
-public record ClassroomRef(Guid Id, Guid TeacherId, string? MyRole = null);
+public record ClassroomRef(Guid Id, Guid TeacherId, string? MyRole = null, bool IsManager = false);
 
 /// <summary>Enseignant actif d'un établissement (service User), auteur possible d'un dépôt en bibliothèque.</summary>
 public record LibraryAuthorRef(Guid UserId, string Username);
@@ -41,6 +41,18 @@ public class UserDirectoryClient(HttpClient http, IHttpContextAccessor context)
     /// <summary>Sans MyRole (service User antérieur au lot 2), on retombe sur le professeur principal.</summary>
     public static HashSet<Guid> OwnedBy(IEnumerable<ClassroomRef> classrooms, Guid userId) =>
         classrooms.Where(c => c.MyRole is { } role ? role == "Teacher" : c.TeacherId == userId).Select(c => c.Id).ToHashSet();
+
+    /// <summary>Une classe vue par l'utilisateur (sa place, gestionnaire ou non), ou null s'il n'y a pas accès.</summary>
+    public async Task<ClassroomRef?> ClassroomAsync(Guid classroomId)
+    {
+        using var request = Authorized(HttpMethod.Get, $"/classrooms/{classroomId}");
+        using var response = await http.SendAsync(request);
+        if (response.StatusCode is System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.NotFound
+            or System.Net.HttpStatusCode.Unauthorized)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ClassroomRef>();
+    }
 
     /// <summary>
     /// Bibliothèque d'un établissement, ou null si l'utilisateur n'y est ni enseignant ni gestionnaire

@@ -34,6 +34,10 @@ public interface IAccountApi
 /// <summary>Agents : emploi du temps, plan du jour, mémoire et assistant enseignant.</summary>
 public interface IAgentApi
 {
+    /// <summary>Notions fragiles relevées par le tuteur dans une classe (lot 12) : nommées pour un enseignant, chiffres pour un gestionnaire.</summary>
+    Task<ApiResult<ClassWeakPoints>> ClassWeakPointsAsync(Guid classroomId);
+    /// <summary>Notions fragiles d'un enfant (parent, lien accepté).</summary>
+    Task<ApiResult<List<ChildCourseWeakPoints>>> ChildWeakPointsAsync(Guid childId);
     Task<ApiResult<List<StudySlot>>> ScheduleAsync();
     Task<ApiResult<bool>> SaveScheduleAsync(List<StudySlot> slots);
     Task<ApiResult<DayPlan>> TodayPlanAsync();
@@ -198,6 +202,10 @@ public class AccountApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, Ap
 
 public class AgentApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.Chat), IAgentApi
 {
+    public Task<ApiResult<ClassWeakPoints>> ClassWeakPointsAsync(Guid classroomId) =>
+        GetAsync<ClassWeakPoints>($"/insights/classrooms/{classroomId}/weak-points");
+    public Task<ApiResult<List<ChildCourseWeakPoints>>> ChildWeakPointsAsync(Guid childId) =>
+        GetAsync<List<ChildCourseWeakPoints>>($"/insights/children/{childId}/weak-points");
     public Task<ApiResult<List<StudySlot>>> ScheduleAsync() => GetAsync<List<StudySlot>>("/agent/schedule");
     public Task<ApiResult<bool>> SaveScheduleAsync(List<StudySlot> slots) => PutAsync<bool>("/agent/schedule", slots);
     public Task<ApiResult<DayPlan>> TodayPlanAsync() => GetAsync<DayPlan>("/agent/plan/today");

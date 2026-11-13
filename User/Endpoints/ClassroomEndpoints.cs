@@ -143,7 +143,7 @@ public static class ClassroomEndpoints
     {
         var teachers = await OrganizationEndpoints.TeachersOfAsync(db, rows.Select(r => r.Classroom.Id).ToList());
         var orgIds = rows.Select(r => r.Classroom.OrganizationId).OfType<Guid>().Distinct().ToList();
-        var types = await db.Organizations.Where(o => orgIds.Contains(o.Id)).ToDictionaryAsync(o => o.Id, o => o.Type);
+        var spaces = await db.Organizations.Where(o => orgIds.Contains(o.Id)).ToDictionaryAsync(o => o.Id, o => new { o.Type, o.Name });
         return rows.Select(r =>
         {
             var c = r.Classroom;
@@ -155,7 +155,9 @@ public static class ClassroomEndpoints
                 role,
                 list.Where(t => t.TeacherId == userId).Select(t => t.Subject).ToList(),
                 list, c.OrganizationId, c.SchoolYearId,
-                c.OrganizationId is { } orgId && types.TryGetValue(orgId, out var type) ? type : null);
+                c.OrganizationId is { } orgId && spaces.TryGetValue(orgId, out var space) ? space.Type : null,
+                // Nom de l'établissement ou de l'espace : le tuteur le cite dans son contexte (lot 12)
+                OrganizationName: c.OrganizationId is { } id && spaces.TryGetValue(id, out var named) ? named.Name : null);
         }).ToList();
     }
 }

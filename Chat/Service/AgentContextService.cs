@@ -9,11 +9,10 @@ public record TodayPlan(List<TimeWindow> Windows, List<PlanBlock> Blocks, bool H
 /// <summary>Rassemble, avant chaque réponse, ce que l'agent doit savoir de l'élève.</summary>
 public class AgentContextService(TutorContext db, PlatformClients platform, AgentMemoryStore memories, IConfiguration config)
 {
-    private record ClassroomRef(string Name);
+    private record ClassroomRef(string Name, string? OrganizationName = null);
     private record MasteryRef(Guid CourseId, double Percent);
     private record ProgressRef(List<MasteryRef>? Mastery);
     private record SharedCourseRef(Guid Id, string Title);
-    private record AssessmentRef(Guid Id, string Title, string? Status, DateTime? DueAt, int AttemptsUsed, bool HasAttemptInProgress);
 
     private TimeZoneInfo Zone
     {
@@ -61,7 +60,7 @@ public class AgentContextService(TutorContext db, PlatformClients platform, Agen
         var now = LocalNow;
 
         // Les quatre services sont interrogés en même temps (ils l'étaient l'un après l'autre)
-        var assessmentsTask = platform.GetJsonAsync<List<AssessmentRef>>("quiz", "/assessments/mine", ct);
+        var assessmentsTask = platform.GetJsonAsync<List<StudentAssessmentRef>>("quiz", "/assessments/mine", ct);
         var progressTask = platform.GetJsonAsync<ProgressRef>("quiz", "/progress/me", ct);
         var sharedTask = platform.GetJsonAsync<List<SharedCourseRef>>("cours", "/cours/shared", ct);
         var mineTask = platform.GetJsonAsync<List<SharedCourseRef>>("cours", "/cours", ct);
@@ -108,8 +107,9 @@ public class AgentContextService(TutorContext db, PlatformClients platform, Agen
         var states = await db.CourseMastery.AsNoTracking().Where(m => m.UserId == userId).OrderByDescending(m => m.LastStudiedAt).Take(12).ToListAsync(ct);
         var current = states.FirstOrDefault(s => s.CourseId == courseId);
 
+        // Classe et établissement (lot 12) : « Classe : Terminale C (Lycée de démonstration) »
         var classes = await classesTask;
-        if (classes is { Count: > 0 }) lines.Add($"Classe : {string.Join(", ", classes.Select(c => c.Name))}");
+        if (InsightRules.ClassLine((classes ?? []).Select(c => (c.Name, c.OrganizationName))) is { } classLine) lines.Add(classLine);
         if (current?.WeakPoints is { Length: > 0 } weak) lines.Add($"Notions fragiles dans ce cours : {weak}");
 
         var progress = await progressTask;
@@ -129,6 +129,10 @@ public class AgentContextService(TutorContext db, PlatformClients platform, Agen
                 lines.Add($"Maîtrise de {Title(named[0].CourseId)} : {named[0].Percent:0} %");
             }
         }
+
+        // Épreuves à venir et derniers résultats (lot 12) ; la liste vient du cache d'une minute partagé avec le plan du jour
+        var assessments = await platform.GetJsonAsync<List<StudentAssessmentRef>>("quiz", "/assessments/mine", ct);
+        lines.AddRange(InsightRules.AssessmentLines(assessments ?? [], DateTime.UtcNow, Zone));
 
         var plan = await TodayPlanAsync(userId, ct);
         var minutes = plan.Windows.Sum(w => w.Minutes);

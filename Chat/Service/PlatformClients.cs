@@ -70,11 +70,12 @@ public class PlatformClients(IHttpClientFactory factory, IHttpContextAccessor co
     /// <summary>
     /// Lecture JSON avec le JWT de l'appelant, gardée une minute pour cet utilisateur.
     /// Un service absent ne doit jamais empêcher l'agent de répondre : renvoie null.
+    /// useCache = false pour une lecture de droits (qui enseigne, qui est parti) : elle doit valoir tout de suite.
     /// </summary>
-    public async Task<T?> GetJsonAsync<T>(string client, string path, CancellationToken ct) where T : class
+    public async Task<T?> GetJsonAsync<T>(string client, string path, CancellationToken ct, bool useCache = true) where T : class
     {
         var key = $"{UserKey()}|{client}|{path}|{typeof(T).FullName}";
-        if (cache.TryGetValue(key, out T? cached)) return cached;
+        if (useCache && cache.TryGetValue(key, out T? cached)) return cached;
 
         try
         {
