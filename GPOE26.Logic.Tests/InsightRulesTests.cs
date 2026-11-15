@@ -76,4 +76,14 @@ public class InsightRulesTests
         Assert.Equal("Classe : Groupe du soir", InsightRules.ClassLine([("Groupe du soir", null)]));
         Assert.Null(InsightRules.ClassLine([]));
     }
+
+    [Fact]
+    public void L_assistant_sait_de_quel_espace_releve_la_classe()
+    {
+        Assert.Contains("relève de Lycée de démonstration", InsightRules.SpaceLine("Terminale C", "School", "Lycée de démonstration"));
+        Assert.Contains("espace personnel", InsightRules.SpaceLine("Soutien du soir", "Independent", "Espace de Prof"));
+        Assert.DoesNotContain("Espace de Prof", InsightRules.SpaceLine("Soutien du soir", "Independent", "Espace de Prof"));
+        Assert.Contains("son établissement", InsightRules.SpaceLine("BTS 1", "Institution", null));
+        Assert.Equal("Classe concernée : « Groupe ».", InsightRules.SpaceLine("Groupe", null, null));
+    }
 }

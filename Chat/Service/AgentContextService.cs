@@ -153,6 +153,14 @@ public class AgentContextService(TutorContext db, PlatformClients platform, Agen
     public Task<LearnerProfileRef?> ProfileAsync(CancellationToken ct) =>
         platform.GetJsonAsync<LearnerProfileRef>("user", "/auth/me", ct);
 
+    private record ClassroomSpaceRef(string Name, string? SpaceType, string? OrganizationName);
+
+    /// <summary>Phrase qui situe une classe dans son espace (établissement ou espace personnel), ou null.</summary>
+    public async Task<string?> ClassroomSpaceLineAsync(Guid classroomId, CancellationToken ct) =>
+        await platform.GetJsonAsync<ClassroomSpaceRef>("user", $"/classrooms/{classroomId}", ct) is { } c
+            ? InsightRules.SpaceLine(c.Name, c.SpaceType, c.OrganizationName)
+            : null;
+
     public Task<ClassProgressRef?> ClassProgressAsync(Guid classroomId, CancellationToken ct) =>
         platform.GetJsonAsync<ClassProgressRef>("quiz", $"/progress/classrooms/{classroomId}", ct);
 

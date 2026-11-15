@@ -34,8 +34,15 @@
     {
         <section class="ga-stack" aria-labelledby="h-classes">
             <h2 id="h-classes" class="ga-h2">Mes classes</h2>
+            @* Lot 13 : enseignant aux deux espaces, les classes sont groupées par espace (« Lycée X », « Mon espace ») *@
+            @foreach (var group in SpaceGroups)
+            {
+            @if (SpaceGroups.Count > 1)
+            {
+                <h3 class="ga-h3" style="margin-top:8px">@group.Key</h3>
+            }
             <div class="ga-grid">
-                @foreach (var c in _classes)
+                @foreach (var c in group)
                 {
                     <article class="ga-card">
                         <div class="ga-row between" style="align-items:flex-start">
@@ -57,7 +64,9 @@
                         </div>
                     </article>
                 }
-
+            </div>
+            }
+            <div class="ga-grid">
                 <form class="ga-card" style="border-style:dashed" @onsubmit="CreateClassAsync" @onsubmit:preventDefault>
                     <h3 class="ga-h3">@(_schools.Count > 0 ? "Créer un groupe personnel" : "Créer une classe ou un groupe")</h3>
                     @if (_schools.Count > 0)
@@ -132,6 +141,11 @@
     private UserProfile Me => _me = Session.Profile ?? _me!;
     private bool _loading = true;
     private List<Classroom> _classes = new();
+
+    private List<IGrouping<string, Classroom>> SpaceGroups => _classes
+        .OrderBy(c => c.SpaceOrder).ThenBy(c => c.SpaceLabel, StringComparer.CurrentCultureIgnoreCase)
+        .GroupBy(c => c.SpaceLabel)
+        .ToList();
     private List<Assessment> _assessments = new();
     private List<(Assessment, int)> _toGrade = new();
     private string? _newClass, _classError;

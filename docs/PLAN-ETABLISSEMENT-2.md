@@ -2,7 +2,7 @@
 
 Rédigé le 11 novembre 2026, sur la branche `feat/site-admin-navbar`, après la phase 1 (`docs/PLAN-ETABLISSEMENT.md`, lots 1 à 7, poussée dans la PR #6). Décisions P1 à P6 et questions Q10 à Q15 validées le même jour.
 
-> **Avancement :** lots 9 (`56015f4`), 10 (`2617802`), 8 (`192d1f6`) et 11 (`2fae49b`) commités ; lot 12 commité — voir « Lot 8 à 12 : ce qui a été fait ». Reste le lot 13.
+> **Avancement :** lots 8 à 13 faits ; lots 9 (`56015f4`), 10 (`2617802`), 8 (`192d1f6`), 11 (`2fae49b`), 12 (`f1e21e5`) et 13 commités — voir « Lot 8 à 13 : ce qui a été fait ». La phase 2 est terminée.
 
 ## Ce que l'utilisateur a demandé
 
@@ -82,6 +82,14 @@ Rien de nouveau à stocker : `CourseMastery.WeakPoints` (par élève et par cour
 Ordre conseillé : 9 et 10 d'abord (les élèves entrent plus simplement), puis 8, 11, 12, 13.
 
 ---
+
+## Lot 13 : ce qui a été fait (16 novembre 2026)
+
+- **Accueil enseignant groupé par espace** : quand un enseignant a des classes dans plusieurs espaces, « Mes classes » les range sous le nom de chaque établissement, puis « Mon espace » (ses groupes personnels), puis « Autres classes ». Une seule espace : rien ne change. `Classroom.SpaceLabel` côté écran, à partir de `OrganizationName` (lot 12).
+- **Assistant enseignant** : quand la question porte sur une classe, il reçoit une phrase qui la situe (« relève de Lycée de démonstration… » ou « groupe de son espace personnel… »), `InsightRules.SpaceLine`.
+- **« Mes cours » et « Épreuves et devoirs »** : sous chaque contenu déposé, « Bibliothèque : » et le nom des établissements.
+
+**Vérifications :** compilation de User, Chat, de l'interface et du site ; tests Logic 465 / 465 (dont la phrase de l'espace). **Pas d'essai dans le navigateur ni de scénario** : Docker n'était pas lancé (pas de base d'essai), et le crédit d'utilisation était presque épuisé. À vérifier à l'écran : accueil d'un enseignant qui a une classe au lycée et un groupe personnel ; mention « Bibliothèque » dans « Mes cours ».
 
 ## Lot 12 : ce qui a été fait (11 novembre 2026)
 

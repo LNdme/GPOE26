@@ -292,6 +292,8 @@ public static class AgentEndpoints
             {
                 var progress = await context.ClassProgressAsync(classroomId, ct);
                 if (progress is null) return Results.NotFound(new { message = "Classe introuvable." });
+                // Lot 13 : l'assistant sait de quel espace relève la classe (établissement ou espace personnel)
+                if (await context.ClassroomSpaceLineAsync(classroomId, ct) is { } space) system += "\n\n" + space;
                 system += Anonymized(ClassInsightsCalculator.Compute(progress, DateTime.UtcNow, await context.CourseTitlesAsync(ct)));
             }
 

@@ -3,6 +3,7 @@
 @inherits AppPage
 @inject ICourseApi CourseApi
 @inject IClassroomApi Classrooms
+@inject ISpaceApi Spaces
 
 <PageTitle>Mes cours — GPOE26</PageTitle>
 
@@ -85,6 +86,11 @@
                     {
                         <span class="ga-small ga-muted">Partagé avec : @string.Join(", ", (c.ClassroomIds ?? []).Select(ClassName))</span>
                     }
+                    @if (IsTeacher && c.LibraryOrganizationIds is { Count: > 0 } libs)
+                    {
+                        @* Lot 13 : bibliothèques d'établissement où le cours est déposé *@
+                        <span class="ga-small ga-muted">Bibliothèque : @string.Join(", ", libs.Select(id => _spaceNames.GetValueOrDefault(id, "un établissement")))</span>
+                    }
                     <div class="ga-row" style="margin-top:auto">
                         <a class="ga-btn secondary small" href="/app/cours/@c.Id">Lire</a>
                         @if (IsTeacher)
@@ -124,6 +130,7 @@
     private List<CourseSummary> _courses = new();
     private List<CourseSummary> _documents = new();
     private List<Classroom> _classes = new();
+    private Dictionary<Guid, string> _spaceNames = new();
     private CourseSummary? _sharing;
     private HashSet<Guid> _selected = new();
 
@@ -132,7 +139,11 @@
         var courses = IsTeacher ? await CourseApi.MineAsync() : await CourseApi.SharedWithMeAsync();
         _error = courses.Error;
         _courses = courses.Value ?? new();
-        if (IsTeacher) _classes = (await Classrooms.MineAsync()).Value ?? new();
+        if (IsTeacher)
+        {
+            _classes = (await Classrooms.MineAsync()).Value ?? new();
+            _spaceNames = ((await Spaces.MineAsync()).Value ?? []).ToDictionary(s => s.Id, s => s.Name);
+        }
         else _documents = (await CourseApi.MineAsync()).Value ?? new();
         _loading = false;
     }

@@ -99,6 +99,19 @@ public static class InsightRules
         return schools.Count == 0 ? $"Classe : {names}" : $"Classe : {names} ({string.Join(", ", schools)})";
     }
 
+    /// <summary>
+    /// Espace de la classe dont parle l'enseignant (lot 13) : un enseignant peut enseigner dans un établissement et
+    /// avoir aussi ses groupes personnels ; l'assistant doit savoir de quel espace relève la classe.
+    /// </summary>
+    public static string SpaceLine(string className, string? spaceType, string? organizationName) => spaceType switch
+    {
+        "Independent" => $"La classe « {className} » est un groupe de son espace personnel (cours particuliers, soutien) : "
+                         + "ni un établissement ni sa direction n'y interviennent.",
+        "School" or "Institution" => $"La classe « {className} » relève de {organizationName ?? "son établissement"} : "
+                                     + "ses programmes, sa direction et ses collègues comptent ; ne la confonds pas avec ses groupes personnels.",
+        _ => $"Classe concernée : « {className} »."
+    };
+
     private static string KindLabel(string? kind) => kind switch
     {
         "GradedExam" => "épreuve notée",

@@ -101,7 +101,19 @@ public record Classroom(
     Guid Id, string Name, ClassroomKind Kind, string? Level, SchoolSubSystem? SubSystem, string? Subject,
     Guid TeacherId, string TeacherName, int MemberCount, DateTime CreatedAt,
     ClassroomRole? MyRole = null, List<string>? MySubjects = null, List<ClassTeacher>? Teachers = null,
-    Guid? OrganizationId = null, Guid? SchoolYearId = null, OrganizationType? SpaceType = null, bool IsManager = false);
+    Guid? OrganizationId = null, Guid? SchoolYearId = null, OrganizationType? SpaceType = null, bool IsManager = false,
+    string? OrganizationName = null)
+{
+    /// <summary>
+    /// Espace de la classe, tel que l'enseignant le lit (lot 13) : le nom de l'établissement, « Mon espace » pour son
+    /// espace d'enseignant indépendant, « Autres classes » sans espace.
+    /// </summary>
+    public string SpaceLabel => SpaceType == OrganizationType.Independent ? "Mon espace"
+        : OrganizationName is { Length: > 0 } name ? name : "Autres classes";
+
+    /// <summary>Ordre des groupes : établissements, puis l'espace personnel, puis le reste.</summary>
+    public int SpaceOrder => SpaceType switch { OrganizationType.Independent => 1, null => 2, _ => 0 };
+}
 
 public record ClassroomMember(Guid Id, string Username, string? Level, string? Filiere, DateTime JoinedAt, DateTime? LastLoginAt);
 
