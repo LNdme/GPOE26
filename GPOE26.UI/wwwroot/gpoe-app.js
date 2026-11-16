@@ -12,24 +12,35 @@ export function activeWithin(ms) {
 }
 
 /** Rend les formules produites par Markdig (.math : \( … \) ou \[ … \]) et colore le code. */
+/**
+ * Rend les formules KaTeX et le code. `element` : nœud DOM (ElementReference) ou sélecteur CSS.
+ * Le fragment peut ne pas exister au premier appel (espace de travail) : on réessaie quelques fois, sans jamais lever d'erreur.
+ */
 export function renderMath(element) {
-    if (!element) return;
-    const run = (tries) => {
-        if (!window.katex) { if (tries > 0) setTimeout(() => run(tries - 1), 150); return; }
-        element.querySelectorAll('.math:not([data-rendered])').forEach(el => {
-            let tex = el.textContent.trim();
+    let tries = 20;
+    const resolve = () => (typeof element === 'string' ? document.querySelector(element) : element);
+    const run = () => {
+        const el = resolve();
+        if (!el || typeof el.querySelectorAll !== 'function') {
+            if (tries-- > 0) setTimeout(run, 100);
+            return;
+        }
+        if (!window.katex) { if (tries > 0) setTimeout(run, 150); return; }
+        el.querySelectorAll('.math:not([data-rendered])').forEach(m => {
+            let tex = m.textContent.trim();
             if ((tex.startsWith('\\(') && tex.endsWith('\\)')) || (tex.startsWith('\\[') && tex.endsWith('\\]')))
                 tex = tex.substring(2, tex.length - 2);
             try {
-                window.katex.render(tex, el, { displayMode: el.tagName === 'DIV', throwOnError: false });
-                el.setAttribute('data-rendered', '1');
+                window.katex.render(tex, m, { displayMode: m.tagName === 'DIV', throwOnError: false });
+                m.setAttribute('data-rendered', '1');
             } catch { /* formule laissée en texte */ }
         });
     };
-    run(20);
-    if (element.querySelector('code.language-simulation'))
-        import('./gpoe-labs.js').then(labs => labs.mountLabs(element));
-    if (window.Prism) window.Prism.highlightAllUnder(element);
+    run();
+    const root = resolve();
+    if (root && typeof root.querySelector === 'function' && root.querySelector('code.language-simulation'))
+        import('./gpoe-labs.js').then(labs => labs.mountLabs(root));
+    if (window.Prism && root && typeof root.querySelectorAll === 'function') window.Prism.highlightAllUnder(root);
 }
 
 /** Entoure la sélection d'un champ de texte (barre d'outils Markdown) et renvoie le nouveau contenu. */

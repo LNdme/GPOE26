@@ -3,9 +3,10 @@
 @inject SessionState Session
 @inject NavigationManager Nav
 @inject ISpaceApi Spaces
+@inject IJSRuntime JS
 
 <div class="ga-app">
-    <div class="ga-shell @(_reading ? "reading" : "") @(_railOpen ? "rail-open" : "")">
+    <div class="ga-shell @(Compact ? "side-compact" : "")" style="--ga-side-w: @(_sideWidth)px">
         <header class="ga-topbar">
             <button type="button" class="ga-icon-btn" aria-label="Ouvrir le menu" aria-expanded="@Aria.State(_open)" @onclick="() => _open = true">
                 <Icon Name="menu" Size="24" Stroke="2" />
@@ -19,12 +20,10 @@
         <nav class="ga-sidebar @(_open ? "open" : "")" aria-label="Navigation principale">
             <a class="ga-brand" href="/app" aria-label="GPOE26, accueil de mon espace"><Icon Name="logo" Size="26" Stroke="2" /><span>GPOE26</span></a>
 
-            @if (_reading)
-            {
-                <button type="button" class="ga-icon-btn ga-rail-toggle" aria-label="@(_railOpen ? "Réduire le menu" : "Ouvrir le menu")" aria-expanded="@Aria.State(_railOpen)" @onclick="() => _railOpen = !_railOpen">
-                    <Icon Name="menu" />
-                </button>
-            }
+            <button type="button" class="ga-icon-btn ga-rail-toggle" title="@(Compact ? "Déplier le menu" : "Réduire le menu")"
+                    aria-label="@(Compact ? "Déplier le menu" : "Réduire le menu")" aria-expanded="@Aria.State(!Compact)" @onclick="ToggleCompactAsync">
+                <Icon Name="sidebar" />
+            </button>
 
             @if (Session.Profile is { } me)
             {
@@ -68,6 +67,10 @@
                 </div>
             }
         </nav>
+        @* Poignée de la barre latérale : glisser pour élargir ou réduire ; en dessous de 140 px elle se replie en rail *@
+        <div class="ga-side-resizer" @ref="_resizer" role="separator" aria-orientation="vertical" tabindex="0"
+             aria-label="Largeur du menu" aria-valuemin="@CompactWidth" aria-valuemax="@MaxWidth" aria-valuenow="@(Compact ? CompactWidth : _sideWidth)"
+             @onkeydown="OnResizerKeyAsync" @ondblclick="ToggleCompactAsync"></div>
 
         <main class="ga-main" id="contenu">
             <PageErrorBoundary HomeHref="/app">@Body</PageErrorBoundary>
@@ -77,11 +80,91 @@
 </div>
 
 @code {
-    private bool _open, _reading, _railOpen;
+    private bool _open, _reading;
+
+    // Largeur de la barre latérale (bureau) : réglée à la souris ou au clavier, retenue dans le navigateur.
+    // Sans préférence enregistrée, la lecture et la rédaction d'un cours démarrent en rail pour laisser la place au contenu.
+    private const int CompactWidth = 68, MinWidth = 200, MaxWidth = 360, DefaultWidth = 256;
+    private int _sideWidth = DefaultWidth;
+    private bool? _compactPref;
+    private bool Compact => _compactPref ?? _reading;
+    private ElementReference _resizer;
+    private IJSObjectReference? _sideModule;
+    private DotNetObjectReference<AppLayout>? _sideRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            _sideModule = await JS.InvokeAsync<IJSObjectReference>("import", "./_content/GPOE26.UI/workspace.js");
+            var saved = await _sideModule.InvokeAsync<SidebarPref?>("loadSidebar");
+            if (saved is not null)
+            {
+                _sideWidth = Math.Clamp(saved.Width, MinWidth, MaxWidth);
+                _compactPref = saved.Compact;
+                StateHasChanged();
+            }
+            _sideRef = DotNetObjectReference.Create(this);
+            await _sideModule.InvokeVoidAsync("attachSideResizer", _resizer, _sideRef, CompactWidth, MinWidth, MaxWidth);
+        }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { }
+    }
+
+    public sealed record SidebarPref(int Width, bool Compact);
+
+    /// <summary>Fin du glissement (appelé par workspace.js) : en dessous de 140 px, la barre se replie en rail.</summary>
+    [JSInvokable]
+    public async Task CommitSidebarAsync(double width)
+    {
+        if (width < 140) _compactPref = true;
+        else
+        {
+            _compactPref = false;
+            _sideWidth = (int)Math.Clamp(width, MinWidth, MaxWidth);
+        }
+        await SaveSidebarAsync();
+        StateHasChanged();
+    }
+
+    private async Task ToggleCompactAsync()
+    {
+        _compactPref = !Compact;
+        await SaveSidebarAsync();
+    }
+
+    private async Task OnResizerKeyAsync(KeyboardEventArgs e)
+    {
+        var step = e.ShiftKey ? 48 : 16;
+        if (e.Key == "ArrowLeft")
+        {
+            if (Compact) return;
+            if (_sideWidth - step < MinWidth) _compactPref = true; else _sideWidth -= step;
+        }
+        else if (e.Key == "ArrowRight")
+        {
+            if (Compact) { _compactPref = false; }
+            else _sideWidth = Math.Min(MaxWidth, _sideWidth + step);
+        }
+        else return;
+        await SaveSidebarAsync();
+    }
+
+    private async Task SaveSidebarAsync()
+    {
+        try
+        {
+            if (_sideModule is not null)
+                await _sideModule.InvokeVoidAsync("saveSidebar", new SidebarPref(_sideWidth, Compact));
+        }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { }
+    }
 
     // Lecture d'un cours : le menu se réduit à un rail d'icônes pour laisser l'écran au texte
     private static readonly System.Text.RegularExpressions.Regex ReaderPath =
-        new(@"/app/cours/[0-9a-fA-F-]{36}/?($|[?#])", System.Text.RegularExpressions.RegexOptions.Compiled);
+        new(@"/app/cours/([0-9a-fA-F-]{36}(/modifier)?|nouveau)/?($|[?#])", System.Text.RegularExpressions.RegexOptions.Compiled);   // lecture et rédaction d'un cours : rail compact
 
     private record NavItem(string Href, string Label, string Icon, string? Feature = null);
 
@@ -171,7 +254,6 @@
         if (!_open && reading == _reading) return;
         _open = false;
         _reading = reading;
-        _railOpen = false;
         InvokeAsync(StateHasChanged);
     }
 
@@ -181,5 +263,6 @@
     {
         Session.Changed -= OnSessionChanged;
         Nav.LocationChanged -= OnLocationChanged;
+        _sideRef?.Dispose();
     }
 }

@@ -55,7 +55,7 @@ async function waitReply(page, before) {
 
   await step('ouverture du tuteur (accueil ou discussion enregistrée)', async () => {
     await student.click('button:has-text("Demander au tuteur IA")');
-    await student.waitForSelector('.tu-drawer .tu-scroll');
+    await student.waitForSelector('.ws-panel[data-panel="tuteur"] .tu-scroll');
     await student.waitForSelector('.tu-intro, .tu-saved', { timeout: 15000 });
   });
   await shot(student, '02-tuteur-historique', false);
@@ -170,8 +170,8 @@ async function waitReply(page, before) {
   await step('tuteur sur mobile (plein écran)', async () => {
     await login(phone, 'eleve@gpoe26.cm');
     await phone.goto(`${WEB}/app/cours/${course}`);
-    await phone.click('button.tu-fab');
-    await phone.waitForSelector('.tu-drawer .tu-saved');
+    await phone.click('button:has-text("Demander au tuteur IA")');
+    await phone.waitForSelector('.ws-panel[data-panel="tuteur"] .tu-saved');
   });
   await shot(phone, '12-mobile-tuteur', false);
   await step('composition sur mobile : bouton photo', async () => {

@@ -1,0 +1,103 @@
+@* Panneau de l'espace d'étude : visible dans la grille, repliable en rail, agrandissable, fermable.
+   Se rend en fragment : la poignée (si elle a lieu d'être) puis la section, pour occuper deux cellules de la grille. *@
+@using GPOE26.UI.Components.Workspace
+@inherits ComponentBase
+
+@* Un panneau fermé n'occupe aucune cellule de la grille : il rouvre depuis la barre de pastilles. *@
+@if (IsOpen)
+{
+@if (ShowSplitter)
+{
+    <div class="ws-splitter" data-gap="@Gap" role="separator" aria-orientation="vertical" tabindex="0"
+         aria-label="Redimensionner les panneaux" aria-valuenow="@Percent" aria-valuemin="0" aria-valuemax="100"
+         @onkeydown="OnKeyDownAsync"></div>
+}
+<section class="ws-panel @(Collapsed ? "collapsed" : null) @(HiddenWhenMax ? "ws-hidden" : null)"
+         data-panel="@Id" role="region" aria-label="@Title">
+    <header class="ws-panel-head">
+        <Icon Name="@Icon" Size="18" />
+        <strong class="ws-panel-title">@Title</strong>
+        @if (StatusText is { Length: > 0 } status)
+        {
+            <span class="ws-status" role="status" title="Une tâche d'agent est en cours"><span class="ws-status-dot" aria-hidden="true"></span>@status</span>
+        }
+        <span class="grow"></span>
+        <button type="button" class="ga-icon-btn small" aria-pressed="@Aria.State(Collapsed)"
+                title="@(Collapsed ? ExpandTitle : CollapseTitle)" aria-label="@(Collapsed ? "Étendre le panneau" : "Réduire le panneau") @Title"
+                disabled="@(!Collapsed && IsOnlyExpanded)" @onclick="() => Ctx.ToggleCollapseAsync(Id)">
+            <Icon Name="@(Collapsed ? "expand" : "minus")" Size="18" />
+        </button>
+        <button type="button" class="ga-icon-btn small" aria-pressed="@Aria.State(IsMaximized)"
+                title="@(IsMaximized ? "Restaurer" : "Agrandir")" aria-label="@(IsMaximized ? "Restaurer le panneau" : "Agrandir le panneau") @Title"
+                @onclick="() => Ctx.ToggleMaximizeAsync(Id)">
+            <Icon Name="@(IsMaximized ? "collapse" : "expand")" Size="18" />
+        </button>
+        <button type="button" class="ga-icon-btn small" title="Fermer" aria-label="Fermer le panneau @Title"
+                disabled="@IsLastOpen" @onclick="() => Ctx.CloseAsync(Id)">
+            <Icon Name="x" Size="18" />
+        </button>
+    </header>
+    <button type="button" class="ws-rail" aria-label="Agrandir le panneau @Title" tabindex="@(Collapsed ? 0 : -1)" @onclick="() => Ctx.ToggleCollapseAsync(Id)">
+        <Icon Name="@Icon" Size="20" />
+        <span class="ws-rail-title">@Title</span>
+    </button>
+    <div class="ws-panel-body">@ChildContent</div>
+</section>
+}
+
+@code {
+    [CascadingParameter] private WorkspaceContext Ctx { get; set; } = default!;
+
+    [Parameter, EditorRequired] public string Id { get; set; } = "";
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter, EditorRequired] public string Icon { get; set; } = "book";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>Pastille d'état d'agent affichée dans l'en-tête (ex. « L'agent met le cours en forme… »).</summary>
+    [Parameter] public string? StatusText { get; set; }
+
+    /// <summary>Le panneau démarre en rail (52 px) quand rien n'a encore été enregistré pour lui.</summary>
+    [Parameter] public bool StartCollapsed { get; set; }
+
+    /// <summary>Le panneau démarre fermé tant que rien n'a été enregistré pour lui (ouvert ensuite à la demande).</summary>
+    [Parameter] public bool StartClosed { get; set; }
+
+    /// <summary>Raccourci global (ex. « S » → Alt+S) : ajoute l'indice dans le title des boutons.</summary>
+    [Parameter] public string? ShortcutKey { get; set; }
+
+    protected override void OnInitialized() => Ctx.Register(Id, Title, Icon, StartCollapsed, ShortcutKey, StartClosed);
+
+    private WsPanelState? Current => Ctx.State.Panels.TryGetValue(Id, out var s) ? s : null;
+
+    private bool IsOpen => Current?.Open ?? true;
+    private bool Collapsed => Ctx.EffectiveCollapsed(Id);
+    private bool IsMaximized => Ctx.State.MaximizedId == Id;
+    private bool HiddenWhenMax => Ctx.State.MaximizedId is { } m && m != Id;
+
+    private int AllIndex => Ctx.AllIndexOf(Id);
+    private bool IsLastOpen => Ctx.OpenIds.Count <= 1;
+    private bool IsOnlyExpanded => Ctx.ExpandedIds.Count <= 1 && !Collapsed;
+
+    // La poignée précède ce panneau quand les deux voisins sont dépliés : elle relie la paire.
+    // Aucune poignée en mode agrandissement (les autres panneaux sont masqués) ni entre deux rails.
+    private bool ShowSplitter => Ctx.State.MaximizedId is null && IsOpen && !Collapsed && AllIndex > 0
+        && !Ctx.EffectiveCollapsed(Ctx.OpenIds[AllIndex - 1]);
+
+    private int Gap => AllIndex - 1;
+
+    private string CollapseTitle => ShortcutKey is { } k ? $"Réduire (Alt+{k.ToUpper()})" : "Réduire";
+    private string ExpandTitle => ShortcutKey is { } k ? $"Étendre (Alt+{k.ToUpper()})" : "Étendre";
+    private int Percent
+    {
+        get
+        {
+            var open = Ctx.OpenIds;
+            if (AllIndex <= 0 || AllIndex >= open.Count) return 50;
+            var left = Ctx.State.Panels[open[AllIndex - 1]].Part;
+            var right = Ctx.State.Panels[open[AllIndex]].Part;
+            return WorkspaceSizing.PairPercent(left, right);
+        }
+    }
+
+    private Task OnKeyDownAsync(KeyboardEventArgs e) => Ctx.OnSplitterKeyAsync(Gap, e);
+}

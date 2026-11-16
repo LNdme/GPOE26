@@ -19,14 +19,68 @@ else if (_course is null)
 }
 else
 {
-    <div class="rd @(_tutorOpen ? "with-tutor" : "") @(_tocOpen ? "" : "no-toc")">
-        <article class="rd-article" @ref="_article">
-            <div class="rd-bar">
-                <button type="button" class="ga-btn ghost small" aria-pressed="@Aria.State(_tocOpen)" @onclick="() => _tocOpen = !_tocOpen"><Icon Name="menu" /> Sommaire</button>
-                @if (Session.HasFeature("tutor-ai"))
+    <Workspace @ref="_ws">
+    <WorkspacePanel Id="sommaire" Title="Sommaire" Icon="menu" StartCollapsed="true" ShortcutKey="s">
+        <nav class="ws-toc" aria-label="Sur cette page">
+            <h2 class="ws-toc-title">Sur cette page</h2>
+            @if (_toc.Count == 0)
+            {
+                <span class="ga-small ga-muted">Ce cours n'a pas encore de sections.</span>
+            }
+            @foreach (var t in _toc)
+            {
+                <a class="ws-toc-link @(t.Level == 3 ? "l3" : "")" href="@($"{Nav.ToBaseRelativePath(Nav.Uri).Split('#')[0]}#{t.Id}")">@t.Title</a>
+            }
+        </nav>
+        <div class="ws-toc-actions">
+            <div class="ga-actions">
+                <a class="ga-btn secondary small" href="/app/cours/@_course.Id/quiz"><Icon Name="check" /> S'entraîner</a>
+                @if (_course.OwnerId == Me.Id)
                 {
-                    <button type="button" class="ga-btn ghost small" aria-pressed="@Aria.State(_tutorOpen)" @onclick="() => _tutorOpen = !_tutorOpen"><Icon Name="spark" /> Tuteur IA</button>
+                    <a class="ga-btn ghost small" href="/app/cours/@_course.Id/modifier">Modifier</a>
+                    @if (_course.ContentType == CourseContentType.Pdf)
+                    {
+                        <button type="button" class="ga-btn ghost small" disabled="@_restructuring" @onclick="RestructureAsync">@(_restructuring ? "Lecture du PDF…" : "Restructurer")</button>
+                    }
+                    else if (IsImported && _course.StructuringStatus != "Pending")
+                    {
+                        <button type="button" class="ga-btn ghost small" disabled="@_restructuring" @onclick="RestructureAsync">Relancer l'agent</button>
+                    }
                 }
+            </div>
+
+            @if (_related.Count > 0)
+            {
+                <div class="ga-card">
+                    <h2 class="ga-h3">S'entraîner sur ce cours</h2>
+                    @foreach (var a in _related)
+                    {
+                        <a class="ga-btn secondary small" href="/app/evaluations/@a.Id/composer">@a.Title</a>
+                    }
+                </div>
+            }
+
+            @if (Session.HasFeature("tutor-ai"))
+            {
+                <button class="ga-btn" @onclick="OpenTutorAsync"><Icon Name="chat" /> Demander au tuteur IA</button>
+                <span class="ga-small ga-muted">Tes échanges avec le tuteur sont enregistrés : retrouve-les dans « Tuteur IA ».</span>
+            }
+            else
+            {
+                <a class="ga-premium-lock" href="/app/abonnement">
+                    <Icon Name="chat" Size="24" />
+                    <span><strong>Tuteur IA</strong><br /><span class="ga-small" style="color:#C9D3EA">Pose tes questions sur ce cours avec Premium.</span></span>
+                </a>
+                <a class="ga-btn ghost small" href="/app/tuteur/@_course.Id"><Icon Name="history" /> Relire mes discussions</a>
+            }
+        </div>
+    </WorkspacePanel>
+    <WorkspacePanel Id="lecture" Title="Lecture" Icon="book" ShortcutKey="c" StatusText="@LectureStatus">
+    <div class="rd">
+        <article class="rd-article">
+            <div class="rd-bar">
+                <button type="button" class="ga-btn ghost small" @onclick="ToggleSommaireAsync" title="Alt+S"><Icon Name="menu" /> Sommaire</button>
+                <button type="button" class="ga-btn ghost small" @onclick="OpenTutorAsync" title="Alt+T"><Icon Name="spark" /> Tuteur IA</button>
             </div>
             <nav aria-label="Fil d'Ariane" class="rd-meta"><a href="/app/cours" style="color:inherit">Mes cours</a> › @_course.Subject</nav>
             <h1>@_course.Title</h1>
@@ -35,14 +89,6 @@ else
                 <span>@ReadingMinutes min de lecture</span><span aria-hidden="true">·</span>
                 <span>Mis à jour @Labels.Date(_course.UpdatedAt)</span>
             </div>
-
-            @if (_toc.Count > 0)
-            {
-                <details class="rd-toc-mobile" open>
-                    <summary>Sur cette page</summary>
-                    @foreach (var t in _toc) { <a href="@($"{Nav.ToBaseRelativePath(Nav.Uri).Split('#')[0]}#{t.Id}")">@t.Title</a> }
-                </details>
-            }
 
             @if (_course.Description is { Length: > 0 })
             {
@@ -109,73 +155,26 @@ else
                 }
             </div>
         </article>
+    </div>
+    </WorkspacePanel>
 
-        <aside class="rd-side">
-            @if (_toc.Count > 0)
-            {
-                <nav class="rd-toc" aria-labelledby="toc-title">
-                    <h2 id="toc-title" style="font-size:14px; font-weight:700; margin:0 0 6px">Sur cette page</h2>
-                    @foreach (var t in _toc)
-                    {
-                        <a class="@(t.Level == 3 ? "l3" : "")" href="@($"{Nav.ToBaseRelativePath(Nav.Uri).Split('#')[0]}#{t.Id}")">@t.Title</a>
-                    }
-                </nav>
-            }
-
-            <div class="ga-actions">
-                <a class="ga-btn secondary small" href="/app/cours/@_course.Id/quiz"><Icon Name="check" /> S'entraîner</a>
-                @if (_course.OwnerId == Me.Id)
-                {
-                    <a class="ga-btn ghost small" href="/app/cours/@_course.Id/modifier">Modifier</a>
-                    @if (_course.ContentType == CourseContentType.Pdf)
-                    {
-                        <button type="button" class="ga-btn ghost small" disabled="@_restructuring" @onclick="RestructureAsync">@(_restructuring ? "Lecture du PDF…" : "Restructurer")</button>
-                    }
-                    else if (IsImported && _course.StructuringStatus != "Pending")
-                    {
-                        <button type="button" class="ga-btn ghost small" disabled="@_restructuring" @onclick="RestructureAsync">Relancer l'agent</button>
-                    }
-                }
-            </div>
-
-            @if (_related.Count > 0)
-            {
-                <div class="ga-card">
-                    <h2 class="ga-h3">S'entraîner sur ce cours</h2>
-                    @foreach (var a in _related)
-                    {
-                        <a class="ga-btn secondary small" href="/app/evaluations/@a.Id/composer">@a.Title</a>
-                    }
-                </div>
-            }
-
-            @if (Session.HasFeature("tutor-ai"))
-            {
-                <button class="ga-btn" @onclick="() => _tutorOpen = true"><Icon Name="chat" /> Demander au tuteur IA</button>
-                <span class="ga-small ga-muted">Tes échanges avec le tuteur sont enregistrés : retrouve-les dans « Tuteur IA ».</span>
-            }
-            else
-            {
+    <WorkspacePanel Id="tuteur" Title="Tuteur IA" Icon="spark" ShortcutKey="t">
+        @if (Session.HasFeature("tutor-ai"))
+        {
+            <TutorPanel CourseId="_course.Id" CourseTitle="@_course.Title" Docked="true" />
+        }
+        else
+        {
+            <div class="tu-lock">
                 <a class="ga-premium-lock" href="/app/abonnement">
                     <Icon Name="chat" Size="24" />
                     <span><strong>Tuteur IA</strong><br /><span class="ga-small" style="color:#C9D3EA">Pose tes questions sur ce cours avec Premium.</span></span>
                 </a>
                 <a class="ga-btn ghost small" href="/app/tuteur/@_course.Id"><Icon Name="history" /> Relire mes discussions</a>
-            }
-        </aside>
-
-        @if (_tutorOpen)
-        {
-            <div class="tu-drawer" aria-label="Tuteur IA">
-                <TutorPanel CourseId="_course.Id" CourseTitle="@_course.Title" Docked="true" OnClose="() => _tutorOpen = false" />
             </div>
         }
-    </div>
-
-    @if (!_tutorOpen && Session.HasFeature("tutor-ai"))
-    {
-        <button class="ga-btn tu-fab" @onclick="() => _tutorOpen = true"><Icon Name="spark" /> Tuteur IA</button>
-    }
+    </WorkspacePanel>
+    </Workspace>
 }
 
 @code {
@@ -192,11 +191,19 @@ else
     private CourseFeedback? _feedback;
     private string? _feedbackError;
     private bool _voting;
-    private bool _tutorOpen, _mathPending, _tocOpen = true, _restructuring;
+    private bool _mathPending, _restructuring;
+    private Workspace? _ws;
+
+    private string? LectureStatus =>
+        _course?.StructuringStatus == "Pending" ? "L'agent met le cours en forme…"
+        : _restructuring ? "L'agent relit le cours…"
+        : null;
+
+    private Task ToggleSommaireAsync() => _ws?.TogglePanelAsync("sommaire") ?? Task.CompletedTask;
+    private Task OpenTutorAsync() => _ws?.OpenPanelAsync("tuteur") ?? Task.CompletedTask;
     private CancellationTokenSource? _poll, _studyClock;
     private int _analysisVersion;
     private const int StudyTickMinutes = 2;
-    private ElementReference _article;
     private IJSObjectReference? _module;
 
     private int ReadingMinutes => Math.Max(1, (_course?.ToMarkdown().Split(' ', StringSplitOptions.RemoveEmptyEntries).Length ?? 0) / 200);
@@ -341,7 +348,7 @@ else
         try
         {
             _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./_content/GPOE26.UI/gpoe-app.js");
-            await _module.InvokeVoidAsync("renderMath", _article);
+            await _module.InvokeVoidAsync("renderMath", ".rd-article");
         }
         catch (JSDisconnectedException) { }
     }

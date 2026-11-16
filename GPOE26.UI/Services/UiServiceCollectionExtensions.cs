@@ -24,6 +24,7 @@ public static class UiServiceCollectionExtensions
         services.AddScoped<IPracticeQuizApi, PracticeQuizApi>();
         services.AddScoped<IPlatformAdminApi, PlatformAdminApi>();
         services.AddScoped<ISpaceApi, SpaceApi>();
+        services.AddScoped<Components.Workspace.IWorkspaceStore, Components.Workspace.BrowserWorkspaceStore>();
         return services;
     }
 }

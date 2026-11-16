@@ -12,6 +12,10 @@
             <strong>Tuteur IA</strong>
             <span class="ga-small ga-muted tu-course">@(CourseTitle ?? _conversation?.CourseTitle ?? "Cours")</span>
         </div>
+        @if (_busy)
+        {
+            <span class="tu-status" role="status"><span class="tu-dot" aria-hidden="true"></span>Le tuteur écrit…</span>
+        }
         @if (_messages.Count > 0)
         {
             @if (_confirmClear)

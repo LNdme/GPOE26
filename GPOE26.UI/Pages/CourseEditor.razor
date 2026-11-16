@@ -11,6 +11,145 @@
 
 <PageTitle>@(IsEdit ? "Modifier le cours" : "Nouveau cours") — GPOE26</PageTitle>
 
+@if (!Ready || _loading)
+{
+    <div class="ga-page"><Loading /></div>
+}
+else if (IsEdit && _course is null)
+{
+    <div class="ga-page">
+        <a class="ga-back" href="/app/cours"><Icon Name="left" /> Mes cours</a>
+        <Alert Message="@(_error ?? "Cours introuvable.")" />
+    </div>
+}
+else if (UsesWorkspace)
+{
+    @* Rédaction en panneaux réglables : assistant à gauche, rédaction au centre, aperçu à droite *@
+    <Workspace LayoutKey="editeur">
+        <WorkspacePanel Id="assistant" Title="Assistant" Icon="spark" ShortcutKey="a" StatusText="@AssistantStatus">
+            <div class="ce-assist">
+                @if (Session.HasFeature("teacher-agent"))
+                {
+                    <p class="ga-small ga-muted">Votre assistant rédige dans votre ton, à partir du titre, de la matière et de ce qui est déjà écrit.</p>
+                    <label for="ce-instructions" class="ga-label">Consignes</label>
+                    <textarea id="ce-instructions" class="ga-textarea" rows="4" placeholder="ex. Rédige l'introduction avec un exemple tiré du marché local" @bind="_instructions"></textarea>
+                    <div class="ce-assist-actions">
+                        <button type="button" class="ga-btn secondary small" disabled="@_composing" @onclick='() => ComposeAsync("plan")'><Icon Name="menu" /> Proposer un plan</button>
+                        <button type="button" class="ga-btn secondary small" disabled="@_composing" @onclick='() => ComposeAsync("write")'><Icon Name="edit" /> Rédiger une partie</button>
+                        <button type="button" class="ga-btn secondary small" disabled="@_composing" @onclick='() => ComposeAsync("rewrite")'><Icon Name="history" /> Réécrire la sélection</button>
+                    </div>
+                    <p class="ga-small ga-muted">Pour réécrire, sélectionnez d'abord le passage dans « Rédaction ». Le texte proposé s'ajoute à la fin du cours (ou remplace la sélection).</p>
+                }
+                else if (!IsEdit)
+                {
+                    <p class="ga-small ga-muted">Indiquez le titre et la matière : l'assistant propose un plan que vous complétez ensuite.</p>
+                    <button type="button" class="ga-btn secondary small" disabled="@_drafting" @onclick="DraftAsync"><Icon Name="spark" /> @(_drafting ? "Rédaction…" : "Proposer un plan")</button>
+                }
+                else
+                {
+                    <p class="ga-small ga-muted">L'assistant de rédaction fait partie de la formule Enseignant.</p>
+                    <a class="ga-btn ghost small" href="/app/abonnement">Voir les formules</a>
+                }
+
+                <div class="ce-assist-tools">
+                    <span class="ga-label">Insérer</span>
+                    <button type="button" class="ga-btn ghost small" aria-expanded="@Aria.State(_simulationOpen)" @onclick="() => _simulationOpen = !_simulationOpen"><Icon Name="chart" /> Une simulation</button>
+                    <label class="ga-btn ghost small">
+                        <Icon Name="camera" /> @(_uploadingImage ? "Envoi…" : "Une image")
+                        <InputFile OnChange="OnImagePicked" accept="image/*" class="ga-sr-only" aria-label="Choisir une image à insérer" />
+                    </label>
+                </div>
+                @if (_simulationOpen)
+                {
+                    <SimulationBuilder OnInsert="InsertSimulationAsync" OnClose="() => _simulationOpen = false" />
+                }
+            </div>
+        </WorkspacePanel>
+
+        <WorkspacePanel Id="redaction" Title="@(IsEdit ? "Modifier le cours" : "Nouveau cours")" Icon="edit" ShortcutKey="r">
+            <div class="ce-ws">
+                <div class="ce-ws-head">
+                    <a class="ga-back" href="@(IsEdit ? $"/app/cours/{Id}" : "/app/cours")"><Icon Name="left" /> @(IsEdit ? "Retour au cours" : "Mes cours")</a>
+                    @if (!IsEdit)
+                    {
+                        <div class="ga-tabs" role="tablist" aria-label="Source du cours">
+                            @foreach (var (mode, label) in Modes)
+                            {
+                                <button type="button" role="tab" class="@(_mode == mode ? "on" : "")" aria-selected="@Aria.State(_mode == mode)" @onclick="() => _mode = mode">@label</button>
+                            }
+                        </div>
+                    }
+                    <Alert Message="@_error" />
+                    <div class="ce-ws-meta">
+                        <div class="ga-field">
+                            <label for="ce-title">Titre</label>
+                            <input id="ce-title" class="ga-input" maxlength="200" placeholder="ex. Introduction à l'algorithmique" @bind="_title" />
+                        </div>
+                        <div class="ga-field">
+                            <label for="ce-subject">Matière</label>
+                            <input id="ce-subject" class="ga-input" maxlength="100" placeholder="ex. Mathématiques, Informatique…" @bind="_subject" />
+                        </div>
+                    </div>
+                    <div class="ga-field">
+                        <label for="ce-description">Description</label>
+                        <textarea id="ce-description" class="ga-textarea" rows="2" @bind="_description"></textarea>
+                    </div>
+                </div>
+
+                <div class="ce-ws-editor">
+                    <div class="ce-toolbar" role="toolbar" aria-label="Mise en forme">
+                        @foreach (var t in Tools)
+                        {
+                            <button type="button" class="ce-tool" title="@t.Title" aria-label="@t.Title" @onclick="() => InsertAsync(t.Before, t.After)">@t.Label</button>
+                        }
+                    </div>
+                    <textarea id="ce-markdown" class="ce-text" aria-label="Contenu du cours en Markdown" placeholder="@MarkdownPlaceholder"
+                              @bind="_markdown" @bind:event="oninput" @bind:after="RefreshPreview"></textarea>
+                </div>
+
+                <div class="ce-ws-foot">
+                    <span class="ga-actions">
+                        <button type="button" class="ga-btn" disabled="@_saving" @onclick="SaveAsync">@(_saving ? "Enregistrement…" : IsEdit ? "Enregistrer" : "Créer le cours")</button>
+                        <a class="ga-btn ghost" href="@(IsEdit ? $"/app/cours/{Id}" : "/app/cours")">Annuler</a>
+                    </span>
+                    @if (IsEdit)
+                    {
+                        @if (_confirmDelete)
+                        {
+                            <span class="ga-actions">
+                                <button type="button" class="ga-btn danger small" @onclick="DeleteAsync">Confirmer la suppression</button>
+                                <button type="button" class="ga-btn ghost small" @onclick="() => _confirmDelete = false">Garder</button>
+                            </span>
+                        }
+                        else
+                        {
+                            <button type="button" class="ga-btn danger small" @onclick="() => _confirmDelete = true"><Icon Name="trash" /> Supprimer</button>
+                        }
+                    }
+                </div>
+            </div>
+        </WorkspacePanel>
+
+        <WorkspacePanel Id="apercu" Title="Aperçu" Icon="eye" ShortcutKey="p">
+            <div class="rd-article ce-ws-preview" @ref="_preview">
+                @if (!string.IsNullOrWhiteSpace(_title))
+                {
+                    <h1>@_title</h1>
+                }
+                @if (string.IsNullOrWhiteSpace(_markdown))
+                {
+                    <span class="ga-muted">L'aperçu de votre cours s'affichera ici, tel que vos élèves le liront.</span>
+                }
+                else
+                {
+                    @((MarkupString)_previewHtml)
+                }
+            </div>
+        </WorkspacePanel>
+    </Workspace>
+}
+else
+{
 <div class="ga-page">
     <a class="ga-back" href="/app/cours"><Icon Name="left" /> Mes cours</a>
 
@@ -23,61 +162,36 @@
 
     <Alert Message="@_error" />
 
-    @if (!Ready || _loading)
+    @if (!IsEdit)
     {
-        <Loading />
+        <div class="ga-tabs" role="tablist" aria-label="Source du cours">
+            @foreach (var (mode, label) in Modes)
+            {
+                <button type="button" role="tab" class="@(_mode == mode ? "on" : "")" aria-selected="@Aria.State(_mode == mode)" @onclick="() => _mode = mode">@label</button>
+            }
+        </div>
     }
-    else if (IsEdit && _course is null)
+
+    @if (!IsEdit && _mode == "link")
     {
-        <Alert Message="Cours introuvable." />
+        <CourseImportLink />
+    }
+    else if (!IsEdit && _mode == "photos")
+    {
+        <section class="ga-card">
+            <div class="ce-upload">
+                <Icon Name="camera" Size="28" />
+                <label for="ce-photos" class="ga-label">Photos des pages du cours (@MaxPhotos au maximum)</label>
+                <InputFile id="ce-photos" OnChange="OnPhotosPicked" accept="image/*" multiple disabled="@_saving" />
+                <span class="ga-small ga-muted">@(_readingPhotos ? "Préparation des photos…" : _photos.Count > 0 ? $"{_photos.Count} photo(s) prête(s)" : "Prenez chaque page bien à plat, dans l'ordre : l'agent retranscrit le texte et les formules.")</span>
+            </div>
+            <button type="button" class="ga-btn" style="align-self:flex-start" disabled="@(_saving || _readingPhotos || _photos.Count == 0)" @onclick="ImportPhotosAsync">@(_saving ? "Envoi…" : "Créer le cours")</button>
+        </section>
     }
     else
     {
-        @if (!IsEdit)
-        {
-            <div class="ga-tabs" role="tablist" aria-label="Source du cours">
-                @foreach (var (mode, label) in Modes)
-                {
-                    <button type="button" role="tab" class="@(_mode == mode ? "on" : "")" aria-selected="@Aria.State(_mode == mode)" @onclick="() => _mode = mode">@label</button>
-                }
-            </div>
-        }
-
-        @if (!IsEdit && _mode == "link")
-        {
-            <CourseImportLink />
-        }
-        else if (!IsEdit && _mode == "photos")
-        {
-            <section class="ga-card">
-                <div class="ce-upload">
-                    <Icon Name="camera" Size="28" />
-                    <label for="ce-photos" class="ga-label">Photos des pages du cours (@MaxPhotos au maximum)</label>
-                    <InputFile id="ce-photos" OnChange="OnPhotosPicked" accept="image/*" multiple disabled="@_saving" />
-                    <span class="ga-small ga-muted">@(_readingPhotos ? "Préparation des photos…" : _photos.Count > 0 ? $"{_photos.Count} photo(s) prête(s)" : "Prenez chaque page bien à plat, dans l'ordre : l'agent retranscrit le texte et les formules.")</span>
-                </div>
-                <button type="button" class="ga-btn" style="align-self:flex-start" disabled="@(_saving || _readingPhotos || _photos.Count == 0)" @onclick="ImportPhotosAsync">@(_saving ? "Envoi…" : "Créer le cours")</button>
-            </section>
-        }
-        else
-        {
+        @* Import d'un PDF, ou modification d'un cours issu d'un PDF (contenu extrait automatiquement) *@
         <form class="ga-card" @onsubmit="SaveAsync" @onsubmit:preventDefault>
-            @if (!_pdfMode)
-            {
-            <div class="ga-field">
-                <label for="ce-title">Titre</label>
-                <input id="ce-title" class="ga-input" maxlength="200" placeholder="ex. Introduction à l'algorithmique" @bind="_title" />
-            </div>
-            <div class="ga-field">
-                <label for="ce-subject">Matière</label>
-                <input id="ce-subject" class="ga-input" maxlength="100" placeholder="ex. Mathématiques, Informatique…" @bind="_subject" />
-            </div>
-            <div class="ga-field">
-                <label for="ce-description">Description</label>
-                <textarea id="ce-description" class="ga-textarea" rows="2" @bind="_description"></textarea>
-            </div>
-            }
-
             @if (_pdfMode)
             {
                 <div class="ce-upload">
@@ -87,68 +201,20 @@
                     @if (_pdfName is not null) { <span class="ga-small ga-muted">@_pdfName</span> }
                 </div>
             }
-            else if (CanEditContent)
-            {
-                <div class="ga-card-head">
-                    <span class="ga-label">Contenu du cours</span>
-                    <span class="ga-actions">
-                        @if (!IsEdit && !Session.HasFeature("teacher-agent"))
-                        {
-                            <button type="button" class="ga-btn secondary small" disabled="@_drafting" @onclick="DraftAsync"><Icon Name="spark" /> @(_drafting ? "Rédaction…" : "Proposer un plan")</button>
-                        }
-                        <button type="button" class="ga-btn secondary small" aria-expanded="@Aria.State(_simulationOpen)" @onclick="() => _simulationOpen = !_simulationOpen"><Icon Name="chart" /> Insérer une simulation</button>
-                        <label class="ga-btn secondary small">
-                            <Icon Name="camera" /> @(_uploadingImage ? "Envoi…" : "Insérer une image")
-                            <InputFile OnChange="OnImagePicked" accept="image/*" class="ga-sr-only" aria-label="Choisir une image à insérer" />
-                        </label>
-                    </span>
-                </div>
-
-                @if (_simulationOpen)
-                {
-                    <SimulationBuilder OnInsert="InsertSimulationAsync" OnClose="() => _simulationOpen = false" />
-                }
-
-                @if (Session.HasFeature("teacher-agent"))
-                {
-                    <div class="ga-card sunk">
-                        <span class="ga-label"><Icon Name="spark" Size="16" /> Votre assistant, dans votre ton</span>
-                        <label for="ce-instructions" class="ga-sr">Consignes pour l'assistant</label>
-                        <textarea id="ce-instructions" class="ga-textarea" rows="2" placeholder="ex. Rédige l'introduction avec un exemple tiré du marché local" @bind="_instructions"></textarea>
-                        <span class="ga-actions">
-                            <button type="button" class="ga-btn secondary small" disabled="@_composing" @onclick='() => ComposeAsync("plan")'>Proposer un plan</button>
-                            <button type="button" class="ga-btn secondary small" disabled="@_composing" @onclick='() => ComposeAsync("write")'>Rédiger une partie</button>
-                            <button type="button" class="ga-btn secondary small" disabled="@_composing" @onclick='() => ComposeAsync("rewrite")'>Réécrire la sélection</button>
-                            @if (_composing) { <span class="ga-small ga-muted" role="status">Rédaction…</span> }
-                        </span>
-                    </div>
-                }
-
-                <div class="ce-editor">
-                    <div class="ce-pane">
-                        <div class="ce-toolbar" role="toolbar" aria-label="Mise en forme">
-                            @foreach (var t in Tools)
-                            {
-                                <button type="button" class="ce-tool" title="@t.Title" aria-label="@t.Title" @onclick="() => InsertAsync(t.Before, t.After)">@t.Label</button>
-                            }
-                        </div>
-                        <textarea id="ce-markdown" class="ce-text" aria-label="Contenu du cours en Markdown" placeholder="## Titre de la partie&#10;&#10;Commencez à rédiger votre cours ici…"
-                                  @bind="_markdown" @bind:event="oninput" @bind:after="RefreshPreview"></textarea>
-                    </div>
-                    <div class="ce-pane ce-preview rd-content" @ref="_preview">
-                        @if (string.IsNullOrWhiteSpace(_markdown))
-                        {
-                            <span class="ga-muted">L'aperçu de votre cours s'affichera ici.</span>
-                        }
-                        else
-                        {
-                            @((MarkupString)_previewHtml)
-                        }
-                    </div>
-                </div>
-            }
             else
             {
+                <div class="ga-field">
+                    <label for="ce-title">Titre</label>
+                    <input id="ce-title" class="ga-input" maxlength="200" @bind="_title" />
+                </div>
+                <div class="ga-field">
+                    <label for="ce-subject">Matière</label>
+                    <input id="ce-subject" class="ga-input" maxlength="100" @bind="_subject" />
+                </div>
+                <div class="ga-field">
+                    <label for="ce-description">Description</label>
+                    <textarea id="ce-description" class="ga-textarea" rows="2" @bind="_description"></textarea>
+                </div>
                 <div class="ga-alert">Ce cours provient d'un PDF : son contenu est extrait automatiquement.</div>
             }
 
@@ -173,9 +239,9 @@
                 }
             </div>
         </form>
-        }
     }
 </div>
+}
 
 @code {
     // Espace d'apprentissage : un parent n'y a rien à faire (il suit ses enfants depuis son accueil)
@@ -201,7 +267,14 @@
     [Parameter] public Guid? Id { get; set; }
 
     private bool IsEdit => Id is not null;
+    private const string MarkdownPlaceholder = "## Titre de la partie\n\nCommencez à rédiger votre cours ici…";
     private bool CanEditContent => !IsEdit || _course?.ContentType == CourseContentType.Text || _course?.Sections is { Count: > 0 };
+
+    // Rédaction (création « Rédiger moi-même » ou modification d'un cours texte) : espace à panneaux réglables
+    private bool UsesWorkspace => CanEditContent && !_pdfMode && (IsEdit || _mode == "write");
+
+    private string? AssistantStatus =>
+        _composing ? "L'assistant rédige…" : _drafting ? "L'assistant prépare un plan…" : _uploadingImage ? "Envoi de l'image…" : null;
 
     private CourseDetail? _course;
     private string _title = "", _subject = "", _markdown = "", _previewHtml = "";
