@@ -1,5 +1,7 @@
 @page "/admin/activites"
 @layout GPOE26.Web.Components.Layout.AdminLayout
+@inject AdminContentEvents ContentEvents
+@implements IDisposable
 @using GPOE26.UI.Components
 @using GPOE26.Web.Components.UI
 
@@ -72,6 +74,17 @@
 </ConfirmDialog>
 
 @code {
+    // Une action confirmée dans le panneau de l'agent change le contenu : la page se recharge d'elle-même
+    protected override void OnInitialized() => ContentEvents.Changed += OnContentChanged;
+
+    public void Dispose() => ContentEvents.Changed -= OnContentChanged;
+
+    private void OnContentChanged(string kind)
+    {
+        if (kind != "activity") return;
+        _ = InvokeAsync(async () => { await Load(); StateHasChanged(); });
+    }
+
     private bool _loading = true, _deleting;
     private List<SchoolActivity> _items = new();
     private SchoolActivity? _toDelete;

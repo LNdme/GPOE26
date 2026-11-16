@@ -3,6 +3,9 @@
 @using GPOE26.UI.Models
 @inject GPOE26.UI.Services.SessionState Session
 @inject NavigationManager Nav
+@inject IJSRuntime JS
+@using GPOE26.UI.Components.Workspace
+@using GPOE26.Web.Components.UI
 @implements IDisposable
 
 @* Espace d'administration du site : réservé au rôle Admin.
@@ -41,64 +44,115 @@
     }
     else
     {
-        <div class="admin-shell @(_open ? "is-open" : "")">
-            <aside class="admin-side" aria-label="Administration">
-                <a class="admin-brand" href="/admin">
-                    <span class="site-brand__mark">LT</span>
-                    <span><strong>Administration</strong><small>Contenu du site</small></span>
-                </a>
+        @* Administration à panneaux : l'outil choisi occupe tout l'écran ; l'agent s'ouvre à sa gauche, à la demande.
+           La barre d'outils est à droite, réductible en icônes (comme le menu de l'espace d'apprentissage). *@
+        <div class="adm @(_toolsCompact ? "tools-compact" : "") @(_open ? "is-open" : "")">
+            <header class="adm-topbar">
+                <span class="adm-topbar__title"><Icon Name="@Current.Icon" Size="18" /> @Current.Label</span>
+                <button type="button" class="adm-agent-btn @(AgentOpen ? "on" : "")" aria-pressed="@(AgentOpen ? "true" : "false")" @onclick="ToggleAgentAsync">
+                    <Icon Name="spark" Size="18" /> Agent
+                </button>
+                <button type="button" class="adm-icon" aria-label="Ouvrir les outils" aria-expanded="@(_open ? "true" : "false")" @onclick="() => _open = true">
+                    <Icon Name="menu" Size="22" Stroke="2" />
+                </button>
+            </header>
 
-                <nav class="admin-nav">
-                    <NavLink href="/admin" Match="NavLinkMatch.All"><Icon Name="grid" Size="18" /> Tableau de bord</NavLink>
-                    <span class="admin-nav__title">Contenu</span>
-                    <NavLink href="/admin/actualites"><Icon Name="news" Size="18" /> Actualités</NavLink>
-                    <NavLink href="/admin/evenements"><Icon Name="calendar" Size="18" /> Événements</NavLink>
-                    <NavLink href="/admin/activites"><Icon Name="activity" Size="18" /> Activités</NavLink>
-                    <NavLink href="/admin/equipe"><Icon Name="users" Size="18" /> Équipe</NavLink>
-                    @if (IsAdmin)
+            <div class="adm-work">
+                <Workspace @ref="_ws" LayoutKey="admin" ShowReopenBar="false" LayoutChanged="Refresh">
+                    <WorkspacePanel Id="agent" Title="Agent du site" Icon="spark" ShortcutKey="g" StartClosed="true"
+                                    StatusText="@(_agentBusy ? "L'agent rédige…" : null)">
+                        <SiteAgentPanel BusyChanged="OnAgentBusy" />
+                    </WorkspacePanel>
+                    <WorkspacePanel Id="outil" Title="@Current.Label" Icon="@Current.Icon" ShortcutKey="o">
+                        <main class="admin-main" id="contenu">
+                            <PageErrorBoundary HomeHref="/admin">@Body</PageErrorBoundary>
+                        </main>
+                    </WorkspacePanel>
+                </Workspace>
+            </div>
+
+            <button type="button" class="adm-scrim" tabindex="-1" aria-label="Fermer les outils" @onclick="() => _open = false"></button>
+
+            <aside class="adm-tools" aria-label="Outils d'administration">
+                <div class="adm-tools__head">
+                    <a class="adm-brand" href="/admin" title="Administration du site">
+                        <span class="site-brand__mark">LT</span>
+                        <span class="adm-label"><strong>Administration</strong><small>@(IsAdmin ? "Administrateur" : "Éditeur du site")</small></span>
+                    </a>
+                    <button type="button" class="adm-icon adm-collapse" title="@(_toolsCompact ? "Déplier les outils" : "Réduire les outils")"
+                            aria-label="@(_toolsCompact ? "Déplier les outils" : "Réduire les outils")" aria-expanded="@(_toolsCompact ? "false" : "true")"
+                            @onclick="ToggleToolsAsync">
+                        <Icon Name="sidebar" Size="18" />
+                    </button>
+                </div>
+
+                <button type="button" class="adm-tool adm-tool--agent @(AgentOpen ? "on" : "")" aria-pressed="@(AgentOpen ? "true" : "false")"
+                        title="Agent du site (Alt+G)" @onclick="ToggleAgentAsync">
+                    <Icon Name="spark" Size="18" /> <span class="adm-label">@(AgentOpen ? "Fermer l'agent" : "Demander à l'agent")</span>
+                </button>
+
+                <nav class="adm-nav">
+                    @foreach (var group in Tools.Where(t => !t.AdminOnly || IsAdmin).GroupBy(t => t.Group))
                     {
-                        <span class="admin-nav__title">Établissement</span>
-                        <NavLink href="/admin/etablissement"><Icon Name="building" Size="18" /> Coordonnées</NavLink>
-                        @* La plateforme d'apprentissage : comptes, abonnements, licences des établissements *@
-                        <span class="admin-nav__title">Plateforme</span>
-                        <NavLink href="/admin/abonnements"><Icon Name="card" Size="18" /> Abonnements</NavLink>
-                        <NavLink href="/admin/licences"><Icon Name="building" Size="18" /> Licences</NavLink>
-                        <NavLink href="/admin/utilisateurs"><Icon Name="key" Size="18" /> Comptes et accès</NavLink>
+                        @if (group.Key is { Length: > 0 } title)
+                        {
+                            <span class="adm-nav__title adm-label">@title</span>
+                        }
+                        @foreach (var tool in group)
+                        {
+                            <NavLink class="adm-tool" href="@tool.Href" title="@tool.Label" Match="@(tool.Href == "/admin" ? NavLinkMatch.All : NavLinkMatch.Prefix)">
+                                <Icon Name="@tool.Icon" Size="18" /> <span class="adm-label">@tool.Label</span>
+                            </NavLink>
+                        }
                     }
                 </nav>
 
-                <div class="admin-side__foot">
-                    <a href="/" target="_blank" rel="noopener"><Icon Name="external" Size="16" /> Voir le site</a>
-                    <a href="/app"><Icon Name="left" Size="16" /> Mon espace</a>
-                    <div class="admin-me">
+                <div class="adm-tools__foot">
+                    <a class="adm-tool" href="/" target="_blank" rel="noopener" title="Voir le site"><Icon Name="external" Size="18" /> <span class="adm-label">Voir le site</span></a>
+                    <a class="adm-tool" href="/app" title="Mon espace"><Icon Name="left" Size="18" /> <span class="adm-label">Mon espace</span></a>
+                    <div class="adm-me" title="@Session.Profile?.Username">
                         <span class="site-user__avatar">@(Session.Profile?.Username is { Length: > 0 } u ? u[..1].ToUpperInvariant() : "A")</span>
-                        <span><strong>@Session.Profile?.Username</strong><small>@(IsAdmin ? "Administrateur" : "Éditeur du site")</small></span>
+                        <span class="adm-label"><strong>@Session.Profile?.Username</strong><small>@(IsAdmin ? "Administrateur" : "Éditeur du site")</small></span>
                     </div>
                 </div>
             </aside>
-
-            <button type="button" class="admin-scrim" tabindex="-1" aria-label="Fermer le menu" @onclick="() => _open = false"></button>
-
-            <div class="admin-content">
-                <header class="admin-topbar">
-                    <button type="button" class="admin-topbar__menu" aria-label="Ouvrir le menu" aria-expanded="@(_open ? "true" : "false")" @onclick="() => _open = true">
-                        <Icon Name="menu" Size="22" Stroke="2" />
-                    </button>
-                    <span class="admin-topbar__title"><Icon Name="shield" Size="18" /> Administration du site</span>
-                    <a class="site-btn site-btn--ghost site-btn--sm" href="/" target="_blank" rel="noopener">Voir le site <Icon Name="external" Size="14" /></a>
-                </header>
-                <main class="admin-main">
-                    <PageErrorBoundary HomeHref="/admin">@Body</PageErrorBoundary>
-                </main>
-                <SessionNotice />
-            </div>
+            <SessionNotice />
         </div>
     }
 </div>
 
 @code {
     private bool _ready;
-    private bool _open;
+    private bool _open, _toolsCompact, _agentBusy;
+    private Workspace? _ws;
+
+    private record Tool(string Href, string Label, string Icon, string Group, bool AdminOnly = false);
+
+    // Outils de la barre de droite. L'outil courant donne son titre au panneau principal.
+    private static readonly Tool[] Tools =
+    [
+        new("/admin", "Tableau de bord", "grid", ""),
+        new("/admin/actualites", "Actualités", "news", "Contenu"),
+        new("/admin/evenements", "Événements", "calendar", "Contenu"),
+        new("/admin/activites", "Activités", "activity", "Contenu"),
+        new("/admin/equipe", "Équipe", "users", "Contenu"),
+        new("/admin/etablissement", "Coordonnées", "building", "Établissement", AdminOnly: true),
+        new("/admin/abonnements", "Abonnements", "card", "Plateforme", AdminOnly: true),
+        new("/admin/licences", "Licences", "building", "Plateforme", AdminOnly: true),
+        new("/admin/utilisateurs", "Comptes et accès", "key", "Plateforme", AdminOnly: true),
+    ];
+
+    private Tool Current
+    {
+        get
+        {
+            var path = "/" + Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimEnd('/');
+            return Tools.Where(t => t.Href != "/admin" && (path == t.Href || path.StartsWith(t.Href + "/")))
+                       .OrderByDescending(t => t.Href.Length).FirstOrDefault() ?? Tools[0];
+        }
+    }
+
+    private bool AgentOpen => _ws?.IsOpen("agent") == true;
 
     protected override async Task OnInitializedAsync()
     {
@@ -107,6 +161,37 @@
         await Session.RestoreAsync();
         _ready = true;
     }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            _prefs = await JS.InvokeAsync<IJSObjectReference>("import", "./_content/GPOE26.UI/workspace.js");
+            _toolsCompact = await _prefs.InvokeAsync<string?>("loadPref", "admin-tools") == "compact";
+            StateHasChanged();
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
+
+    private IJSObjectReference? _prefs;
+
+    private async Task ToggleToolsAsync()
+    {
+        _toolsCompact = !_toolsCompact;
+        try { if (_prefs is not null) await _prefs.InvokeVoidAsync("savePref", "admin-tools", _toolsCompact ? "compact" : "wide"); }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task ToggleAgentAsync()
+    {
+        _open = false;
+        if (_ws is not null) await _ws.ToggleOpenAsync("agent");
+    }
+
+    private void OnAgentBusy(bool busy) => _agentBusy = busy;
 
     public void Dispose()
     {
@@ -124,6 +209,8 @@
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
         _open = false;
+        // Choisir un outil le remet à l'écran, même si son panneau avait été fermé
+        if (_ws is not null && !_ws.IsOpen("outil")) _ = InvokeAsync(() => _ws.OpenPanelAsync("outil"));
         Refresh();
     }
 }

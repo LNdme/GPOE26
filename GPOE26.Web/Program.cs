@@ -71,6 +71,9 @@ builder.Services.AddHttpClient("apiservice", client =>
     .AddStandardResilienceHandler(options => options.Retry.DisableForUnsafeHttpMethods());
 
 builder.Services.AddScoped<ApiClient>();
+// Agent de l'administration : exécution des actions confirmées et rafraîchissement des pages ouvertes
+builder.Services.AddScoped<AdminContentEvents>();
+builder.Services.AddScoped<SiteAgentExecutor>();
 builder.Services.AddScoped<AuthService>();
 
 // ─── Espace d'apprentissage (bibliothèque GPOE26.UI, partagée avec l'application Windows) ──

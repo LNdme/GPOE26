@@ -638,6 +638,31 @@ namespace GPOE26.Web.Services
             }
         }
 
+        /// <summary>
+        /// Agent du site (administration) : lecture seule du contenu, rédaction de textes.
+        /// La conversation est gardée par la page ; l'historique récent accompagne chaque question.
+        /// </summary>
+        public async Task<(SiteAgentAnswer? answer, string? error)> AskSiteAgentAsync(string message, IReadOnlyList<SiteAgentTurn> history)
+        {
+            try
+            {
+                var resp = await CreateAuthClient("chat").PostAsJsonAsync("/site-agent/ask", new { message, history });
+                if (resp.IsSuccessStatusCode)
+                {
+                    var body = await resp.Content.ReadFromJsonAsync<SiteAgentAnswer>();
+                    return body is null ? (null, "L'agent n'a pas pu répondre.") : (body, null);
+                }
+                var problem = await resp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement?>();
+                var text = problem?.ValueKind == System.Text.Json.JsonValueKind.Object && problem.Value.TryGetProperty("message", out var m) ? m.GetString() : null;
+                return (null, text ?? "L'agent n'a pas pu répondre. Réessayez dans un instant.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error asking the site agent");
+                return (null, "L'agent ne répond pas pour le moment.");
+            }
+        }
+
         /// <summary>Change les accès d'un compte ; renvoie le message d'erreur du serveur en cas de refus.</summary>
         public async Task<(UserAccess? user, string? error)> UpdateUserAccessAsync(Guid id, bool? admin, bool? siteEditor)
         {

@@ -73,6 +73,7 @@ var chatService = builder.AddProject<Projects.Chat>("chat")
     .WithEnvironment("Jwt__Issuer", jwtIssuer)
     .WithEnvironment("Jwt__Audience", jwtAudience)
     .WithEnvironment("Services__User", userService.GetEndpoint("http"))    // abonnement Premium
+    .WithEnvironment("Services__ApiService", apiService.GetEndpoint("http"))   // contenu du site, pour l'agent de l'administration
     .WithEnvironment("Services__Cours", coursService.GetEndpoint("http"))  // contenu du cours étudié
     .WithReference(chatDb)
     .WaitFor(chatDb);

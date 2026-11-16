@@ -45,6 +45,8 @@ var platformTimeout = TimeSpan.FromSeconds(builder.Configuration.GetValue("Servi
 builder.Services.AddHttpClient("cours", c => { c.BaseAddress = new Uri(builder.Configuration["Services:Cours"] ?? "http://localhost:5188"); c.Timeout = platformTimeout; });
 builder.Services.AddHttpClient("user", c => { c.BaseAddress = new Uri(builder.Configuration["Services:User"] ?? "http://localhost:5197"); c.Timeout = platformTimeout; });
 builder.Services.AddHttpClient("quiz", c => { c.BaseAddress = new Uri(builder.Configuration["Services:Quiz"] ?? "http://localhost:5163"); c.Timeout = platformTimeout; });
+// Site de l'établissement (actualités, événements…) : lu par l'agent de l'administration avec le jeton de la personne
+builder.Services.AddHttpClient("site", c => { c.BaseAddress = new Uri(builder.Configuration["Services:ApiService"] ?? "http://localhost:5455"); c.Timeout = platformTimeout; });
 builder.Services.AddScoped<PlatformClients>();
 builder.Services.AddScoped<AiQuota>();
 builder.Services.AddHostedService<TutorImageCleanup>();
@@ -122,5 +124,6 @@ app.MapControllers();
 app.MapTutorEndpoints();
 app.MapAgentEndpoints();
 app.MapInsightEndpoints();
+app.MapSiteAgentEndpoints();
 
 app.Run();

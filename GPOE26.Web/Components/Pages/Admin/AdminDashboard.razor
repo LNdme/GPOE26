@@ -1,5 +1,7 @@
 @page "/admin"
 @layout GPOE26.Web.Components.Layout.AdminLayout
+@inject AdminContentEvents ContentEvents
+@implements IDisposable
 @using GPOE26.UI.Components
 @inject GPOE26.UI.Services.SessionState Session
 @inject GPOE26.UI.Services.IPlatformAdminApi Platform
@@ -131,6 +133,17 @@ else
 }
 
 @code {
+    // Une action confirmée dans le panneau de l'agent change le contenu : la page se recharge d'elle-même
+    protected override void OnInitialized() => ContentEvents.Changed += OnContentChanged;
+
+    public void Dispose() => ContentEvents.Changed -= OnContentChanged;
+
+    private void OnContentChanged(string kind)
+    {
+        if (kind is null) return;
+        _ = InvokeAsync(async () => { await LoadAsync(); StateHasChanged(); });
+    }
+
     private bool _loading = true;
     private int _newsTotal, _drafts, _upcoming, _teamCount;
     private List<NewArticle> _recent = new();

@@ -1,5 +1,7 @@
 @page "/admin/equipe"
 @layout GPOE26.Web.Components.Layout.AdminLayout
+@inject AdminContentEvents ContentEvents
+@implements IDisposable
 @using GPOE26.UI.Components
 @using GPOE26.Web.Components.UI
 
@@ -58,6 +60,17 @@ else
 </ConfirmDialog>
 
 @code {
+    // Une action confirmée dans le panneau de l'agent change le contenu : la page se recharge d'elle-même
+    protected override void OnInitialized() => ContentEvents.Changed += OnContentChanged;
+
+    public void Dispose() => ContentEvents.Changed -= OnContentChanged;
+
+    private void OnContentChanged(string kind)
+    {
+        if (kind != "team") return;
+        _ = InvokeAsync(async () => { await Load(); StateHasChanged(); });
+    }
+
     private bool _loading = true, _deleting;
     private List<Hierarchy> _items = new();
     private Hierarchy? _toDelete;

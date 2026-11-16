@@ -84,6 +84,15 @@ public class Speech
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
+/// <summary>Un message de la conversation avec l'agent du site (role : "user" ou "assistant").</summary>
+public record SiteAgentTurn(string Role, string Content);
+
+/// <summary>Modification proposée par l'agent, vérifiée par le serveur, exécutée seulement après confirmation.</summary>
+public record SiteAgentAction(string Type, string Summary, Dictionary<string, System.Text.Json.JsonElement> Data, bool Destructive);
+
+/// <summary>Réponse de l'agent du site : texte, propositions à confirmer, propositions écartées (et pourquoi).</summary>
+public record SiteAgentAnswer(string Reply, List<SiteAgentAction>? Actions, List<string>? Rejected, List<string>? Missing);
+
 /// <summary>Compte et accès (page Comptes et accès de l'administration). Role : élève, enseignant ou parent ; IsAdmin s'y ajoute.</summary>
 public record UserAccess(Guid Id, string Username, string Email, string Role, bool IsAdmin, bool SiteEditor, DateTime CreatedAt, DateTime? LastLoginAt);
 
