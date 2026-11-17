@@ -673,6 +673,9 @@ pre.lab-host > code { display: none; }
 .pf-facts dt { color: var(--ga-muted, #6b7280); font-weight: 500; }
 .pf-facts dd { margin: 0; overflow-wrap: anywhere; }
 .pf-two { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.pf-context { min-width: 0; margin: 0; padding: 14px 0 0; border: 0; border-top: 1px solid var(--ga-line, #e5e7eb); }
+.pf-context > legend { float: left; width: 100%; padding: 0; margin: 0 0 4px; }
+.pf-context > legend + * { clear: left; }
 @media (max-width: 560px) {
     .pf-identity { flex-direction: column; }
     .pf-facts > div { grid-template-columns: 1fr; gap: 2px; }

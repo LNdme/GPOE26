@@ -94,7 +94,8 @@ public record UserProfileDto(
     EducationStage? Stage = null,
     bool SiteEditor = false,
     bool IsAdmin = false,
-    bool MustChangePassword = false
+    bool MustChangePassword = false,
+    LearningContextDto? LearningContext = null
 )
 {
     public UserProfileDto(AppUser user, Entitlement? entitlement = null) : this(
@@ -124,7 +125,8 @@ public record UserProfileDto(
         user.Stage,
         user.SiteEditor,
         user.IsAdmin,
-        user.MustChangePassword
+        user.MustChangePassword,
+        LearningContextRules.Resolve(user)
     )
     { }
 }

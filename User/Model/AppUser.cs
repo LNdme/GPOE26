@@ -76,6 +76,22 @@
         /// </summary>
         public string? LinkCode { get; set; }
 
+        // ─── Contexte d'apprentissage (lot B1) ─────────────────────────────────────
+        // Null = pas encore choisi : la valeur est alors déduite des champs ci-dessus (cf. LearningContextRules.Resolve).
+
+        /// <summary>Pays (ISO 3166-1, deux lettres), « ZZ » pour un pays sans préréglage.</summary>
+        public string? Country { get; set; }
+
+        /// <summary>Système ou filière d'enseignement, en texte libre et facultatif (ex. « Sous-système anglophone »).</summary>
+        public string? EducationSystem { get; set; }
+
+        public LevelBand? LevelBand { get; set; }
+        public LearningGoal? LearningGoal { get; set; }
+        public GradeScale? GradeScale { get; set; }
+
+        /// <summary>Fuseau IANA de la personne (ex. « America/Mexico_City »).</summary>
+        public string? TimeZone { get; set; }
+
         // ─── Profil enseignant ────────────────────────────────────────────────────
 
         public List<string> TeachingSubjects { get; set; } = new();

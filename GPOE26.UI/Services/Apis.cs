@@ -17,6 +17,8 @@ public interface IAccountApi
     Task<ApiResult<AuthResponse>> RegisterAsync(RegisterRequest request);
     Task<ApiResult<UserProfile>> MeAsync();
     Task<ApiResult<UserProfile>> UpdateProfileAsync(EditProfileRequest request);
+    /// <summary>Pays proposés pour le contexte d'apprentissage (échelle de notes, fuseau, systèmes, examens).</summary>
+    Task<ApiResult<List<CountryPreset>>> CountryPresetsAsync();
     Task<ApiResult<bool>> ChangePasswordAsync(string currentPassword, string newPassword);
     Task<ApiResult<MySubscriptions>> MySubscriptionsAsync();
     Task<ApiResult<Entitlement>> RedeemKeyAsync(string code);
@@ -188,6 +190,7 @@ public class AccountApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, Ap
     public Task<ApiResult<AuthResponse>> RegisterAsync(RegisterRequest request) => PostAsync<AuthResponse>("/auth/register", request);
     public Task<ApiResult<UserProfile>> MeAsync() => GetAsync<UserProfile>("/auth/me");
     public Task<ApiResult<UserProfile>> UpdateProfileAsync(EditProfileRequest request) => PutAsync<UserProfile>("/auth/me/profile", request);
+    public Task<ApiResult<List<CountryPreset>>> CountryPresetsAsync() => GetAsync<List<CountryPreset>>("/auth/learning-context/presets");
     public Task<ApiResult<bool>> ChangePasswordAsync(string currentPassword, string newPassword) =>
         PostAsync<bool>("/auth/me/password", new { currentPassword, newPassword });
     public Task<ApiResult<MySubscriptions>> MySubscriptionsAsync() => GetAsync<MySubscriptions>("/subscriptions/me");

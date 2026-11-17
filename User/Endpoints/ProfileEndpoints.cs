@@ -26,7 +26,14 @@ public record EditProfileRequest(
     // Enseignant
     string? Specialite = null,
     List<string>? TeachingSubjects = null,
-    TeachingContext? TeachingContext = null);
+    TeachingContext? TeachingContext = null,
+    // Contexte d'apprentissage (lot B1) : pays, fuseau, échelle et système pour tous ; tranche et objectif pour l'élève
+    string? Country = null,
+    string? EducationSystem = null,
+    string? TimeZone = null,
+    GradeScale? GradeScale = null,
+    LevelBand? LevelBand = null,
+    LearningGoal? Goal = null);
 
 public record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 
@@ -52,7 +59,20 @@ public static class ProfileRules
             req.Filiere?.Trim().Length > 64 || req.Specialite?.Trim().Length > 64)
             return "Un des champs est trop long.";
 
+        var country = req.Country?.Trim().ToUpperInvariant();
+        if (country is { Length: > 0 } && !LearningContextRules.IsCountryCode(country))
+            return "Pays inconnu : choisissez-le dans la liste.";
+        var timeZone = req.TimeZone?.Trim();
+        if (timeZone is { Length: > 0 } && !LearningContextRules.IsTimeZone(timeZone))
+            return "Fuseau horaire inconnu.";
+        if (req.EducationSystem?.Trim().Length > 100)
+            return "Un des champs est trop long.";
+
         if (username is { Length: > 0 }) user.Username = username;
+        if (country is not null) user.Country = country.Length > 0 ? country : null;
+        if (timeZone is not null) user.TimeZone = timeZone.Length > 0 ? timeZone : null;
+        if (req.EducationSystem is not null) user.EducationSystem = Clean(req.EducationSystem);
+        if (req.GradeScale is { } scale) user.GradeScale = scale;
         if (req.Language is { } language) user.Language = language;
 
         switch (user.Role)
@@ -65,6 +85,8 @@ public static class ProfileRules
                 if (req.ExamDate is { } examDate) user.ExamDate = examDate;
                 if (req.FocusSubjects is not null) user.FocusSubjects = CleanList(req.FocusSubjects);
                 if (req.DailyStudyMinutes is { } minutes) user.DailyStudyMinutes = minutes;
+                if (req.LevelBand is { } band) user.LevelBand = band;
+                if (req.Goal is { } goal) user.LearningGoal = goal;
                 break;
             case UserRole.Teacher:
                 if (req.Specialite is not null) user.Specialite = Clean(req.Specialite);
@@ -103,6 +125,14 @@ public static class ProfileEndpoints
     public static void MapProfileEndpoints(this IEndpointRouteBuilder app)
     {
         var me = app.MapGroup("/auth/me").WithTags("Profil").RequireAuthorization();
+
+        // ── GET /auth/learning-context/presets ───────────────────────────────────
+        // Pays proposés (échelle de notes, fuseau, systèmes et examens par défaut) : public, l'inscription en a besoin
+        app.MapGet("/auth/learning-context/presets", () => Results.Ok(LearningContextRules.Presets))
+            .WithTags("Profil")
+            .AllowAnonymous()
+            .WithSummary("Préréglages du contexte d'apprentissage, par pays")
+            .Produces<IReadOnlyList<CountryPreset>>();
 
         // ── PUT /auth/me/profile ──────────────────────────────────────────────────
         me.MapPut("/profile", async (EditProfileRequest req, ClaimsPrincipal principal, UserContext db, SubscriptionService subs) =>

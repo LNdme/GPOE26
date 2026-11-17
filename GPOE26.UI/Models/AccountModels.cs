@@ -9,6 +9,9 @@ public enum UserRole { Student, Teacher, Parent }
 public enum SchoolSubSystem { Francophone, Anglophone }
 public enum EducationStage { Secondary, Higher }
 public enum TeachingContext { School, Institution, Independent }
+public enum LevelBand { Primary, LowerSecondary, UpperSecondary, Higher, Adult }
+public enum LearningGoal { Exam, Skill, Curiosity }
+public enum GradeScale { Over20, Over10, Over100, Letters }
 public enum ClassroomKind { Class, Group }
 public enum LinkStatus { Pending, Active, Rejected }
 public enum SubscriptionPlan { StudentPremium, Family, Teacher, OrganizationLicense }
@@ -53,7 +56,26 @@ public record EditProfileRequest
     public string? Specialite { get; init; }
     public List<string>? TeachingSubjects { get; init; }
     public TeachingContext? TeachingContext { get; init; }
+    // Contexte d'apprentissage : null = inchangé, chaîne vide = effacé (la valeur redevient déduite)
+    public string? Country { get; init; }
+    public string? EducationSystem { get; init; }
+    public string? TimeZone { get; init; }
+    public GradeScale? GradeScale { get; init; }
+    public LevelBand? LevelBand { get; init; }
+    public LearningGoal? Goal { get; init; }
 }
+
+/// <summary>
+/// Contexte d'apprentissage effectif (pays, système, tranche de niveau, objectif, échelle de notes, fuseau).
+/// <see cref="Inferred"/> nomme les champs déduits de l'ancien profil plutôt que choisis.
+/// </summary>
+public record LearningContext(
+    string? Country, string? EducationSystem, string? Level, LevelBand? LevelBand, LearningGoal? Goal,
+    string? ExamTarget, DateOnly? ExamDate, GradeScale GradeScale, string? TimeZone, List<string>? Inferred);
+
+/// <summary>Préréglage d'un pays (service User) : valeurs proposées par défaut, toutes modifiables.</summary>
+public record CountryPreset(string Code, string Name, string Language, GradeScale GradeScale, string TimeZone,
+    List<string> Systems, List<string> Exams);
 
 public record UserProfile(
     Guid Id,
@@ -82,7 +104,8 @@ public record UserProfile(
     EducationStage? Stage = null,
     bool SiteEditor = false,
     bool IsAdmin = false,
-    bool MustChangePassword = false
+    bool MustChangePassword = false,
+    LearningContext? LearningContext = null
 )
 {
     /// <summary>Peut gérer le contenu du site de l'établissement (administrateur ou éditeur).</summary>

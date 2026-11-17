@@ -38,6 +38,12 @@ namespace User.Data
                 entity.Property(u => u.SubSystem).HasConversion<string>();
                 entity.Property(u => u.Stage).HasConversion<string>();
                 entity.Property(u => u.TeachingContext).HasConversion<string>();
+                entity.Property(u => u.Country).HasMaxLength(2);
+                entity.Property(u => u.EducationSystem).HasMaxLength(100);
+                entity.Property(u => u.LevelBand).HasConversion<string>();
+                entity.Property(u => u.LearningGoal).HasConversion<string>();
+                entity.Property(u => u.GradeScale).HasConversion<string>();
+                entity.Property(u => u.TimeZone).HasMaxLength(64);
             });
 
             modelBuilder.Entity<Organization>(entity =>

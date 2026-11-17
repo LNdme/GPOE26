@@ -899,3 +899,15 @@ Un quatrième échec venait d'une règle trop stricte (`dur-long-depistage` exig
 **Reste dans A1** :
 - **Le tuteur** (`TutorEndpoints.cs`) : une autre session y a des modifications non commitées (choix du modèle pour l'application Windows). Ses consignes passeront dans `Chat/Agents/Prompts/tutor*.md` une fois ce travail commité, pour ne pas le mélanger.
 - **`AiQuota` en double (Chat et Quiz)** : les règles sont déjà communes (`AiQuotaRules`) ; seul l'accès à la base diffère (deux bases, deux listes de fonctions). Les fusionner obligerait `ServiceDefaults` à dépendre d'Entity Framework pour tous les services : écart assumé, à revoir avec le quota réservé de façon atomique (A3, décision 41).
+
+---
+
+## Lot B1 : ce qui a été fait (17 nov. 2026)
+
+- **Contexte d'apprentissage dans le service User** (`User/Model/LearningContext.cs`) : pays (ISO 3166-1, « ZZ » pour un pays sans préréglage), système d'enseignement (texte libre, facultatif), tranche de niveau normalisée (primaire, collège, lycée, supérieur, adulte hors cursus), objectif (examen, compétence, curiosité), échelle de notes (/20, /10, /100, lettres), fuseau IANA. Six colonnes nullables ajoutées à `AppUsers` (`UserSchema`, idempotent).
+- **Anciens champs lus, pas supprimés** : tant qu'une valeur n'est pas choisie, `LearningContextRules.Resolve` la déduit à la lecture, sans rien écrire en base. Le sous-système ou un examen propre au Cameroun (BEPC, CAP, Probatoire, GCE) donne le Cameroun ; « Baccalauréat » seul ne donne aucun pays. La tranche vient du niveau libre (classes du Cameroun, de France, du Mexique), en mots entiers, sinon de l'étape « supérieur » ; un niveau inconnu ne donne rien. **Un profil vide reste neutre** : aucun pays, aucun fuseau. Le contexte effectif dit quels champs sont déduits (`Inferred`).
+- **Préréglages par pays** (Cameroun, France, Mexique, Cuba, Sénégal, Côte d'Ivoire, Gabon) : langue, échelle, fuseau, systèmes et examens proposés, servis par `GET /auth/learning-context/presets` (public : l'inscription neutre de B5 en aura besoin). Le Cameroun est un préréglage parmi d'autres.
+- **`GET /auth/me`** renvoie `learningContext` (contexte effectif) ; **`PUT /auth/me/profile`** accepte pays, fuseau, échelle et système pour tous les rôles (pas de système pour un parent), tranche et objectif pour l'élève. Pays et fuseau sont vérifiés ; une chaîne vide efface le choix, et la valeur redevient déduite.
+- **Page « Mon profil »** : partie « Où et comment j'apprends ». Changer de pays propose son fuseau et son échelle, sauf si la personne les avait choisis autrement ; enregistrer confirme ce qui est affiché.
+- **Tests** : `LearningContextTests.cs` (32 tests, dont l'aller-retour JSON service User → interface) ; 571 tests au vert.
+- **Pas encore lu par les agents** : `LearnerProfileRef` (Chat) ignore ce nouveau champ. B2 s'en servira (langue, échelle, exemples), B3 pour le fuseau, B5 pour l'inscription. Non vérifié dans l'application en marche (Aspire arrêté pendant le lot) : les colonnes seront ajoutées au prochain démarrage du service User.

@@ -132,6 +132,85 @@
                 </div>
             }
 
+            <fieldset class="ga-stack pf-context" aria-describedby="pf-context-help">
+                <legend class="ga-h3">Où et comment j'apprends</legend>
+                <p id="pf-context-help" class="ga-small ga-muted" style="margin:0">
+                    Les agents s'en servent pour choisir la langue, les exemples, l'échelle de notes et l'heure.
+                    @if (_inferred.Count > 0)
+                    {
+                        <text> Ce que vous n'avez pas encore choisi est proposé d'après vos autres informations : vérifiez puis enregistrez.</text>
+                    }
+                </p>
+                <div class="ga-grid tight pf-two">
+                    <div class="ga-field">
+                        <label for="pf-country">Pays</label>
+                        <select id="pf-country" class="ga-select" value="@(_country ?? "")" @onchange="OnCountryChanged">
+                            <option value="">Non précisé</option>
+                            @foreach (var preset in _presets)
+                            {
+                                <option value="@preset.Code">@preset.Name</option>
+                            }
+                            <option value="@OtherCountry">Autre pays</option>
+                        </select>
+                    </div>
+                    <div class="ga-field">
+                        <label for="pf-tz">Fuseau horaire</label>
+                        <input id="pf-tz" class="ga-input" maxlength="64" list="pf-tz-list" placeholder="ex. Africa/Douala" spellcheck="false" @bind="_timeZone" />
+                        <datalist id="pf-tz-list">
+                            @foreach (var zone in _presets.Select(p => p.TimeZone).Distinct())
+                            {
+                                <option value="@zone"></option>
+                            }
+                        </datalist>
+                    </div>
+                    <div class="ga-field">
+                        <label for="pf-scale">Échelle de notes</label>
+                        <select id="pf-scale" class="ga-select" @bind="_gradeScale">
+                            <option value="@GradeScale.Over20">Sur 20</option>
+                            <option value="@GradeScale.Over10">Sur 10</option>
+                            <option value="@GradeScale.Over100">Sur 100</option>
+                            <option value="@GradeScale.Letters">Lettres (A à F)</option>
+                        </select>
+                    </div>
+                    @if (Me.Role != UserRole.Parent)
+                    {
+                        <div class="ga-field">
+                            <label for="pf-system">Système d'enseignement <span class="ga-muted">(facultatif)</span></label>
+                            <input id="pf-system" class="ga-input" maxlength="100" list="pf-system-list" placeholder="ex. Sous-système anglophone" @bind="_educationSystem" />
+                            <datalist id="pf-system-list">
+                                @foreach (var system in _presets.FirstOrDefault(p => p.Code == _country)?.Systems ?? [])
+                                {
+                                    <option value="@system"></option>
+                                }
+                            </datalist>
+                        </div>
+                    }
+                    @if (Me.Role == UserRole.Student)
+                    {
+                        <div class="ga-field">
+                            <label for="pf-band">Niveau</label>
+                            <select id="pf-band" class="ga-select" @bind="_levelBand">
+                                <option value="">Non précisé</option>
+                                <option value="@LevelBand.Primary">Primaire</option>
+                                <option value="@LevelBand.LowerSecondary">Premier cycle du secondaire (collège)</option>
+                                <option value="@LevelBand.UpperSecondary">Second cycle du secondaire (lycée)</option>
+                                <option value="@LevelBand.Higher">Études supérieures</option>
+                                <option value="@LevelBand.Adult">Adulte, hors cursus</option>
+                            </select>
+                        </div>
+                        <div class="ga-field">
+                            <label for="pf-goal">J'apprends pour</label>
+                            <select id="pf-goal" class="ga-select" @bind="_goal">
+                                <option value="">Non précisé</option>
+                                <option value="@LearningGoal.Exam">Préparer un examen</option>
+                                <option value="@LearningGoal.Skill">Acquérir une compétence</option>
+                                <option value="@LearningGoal.Curiosity">Par curiosité</option>
+                            </select>
+                        </div>
+                    }
+                </div>
+            </fieldset>
+
             <button type="submit" class="ga-btn" style="align-self:flex-start" disabled="@_savingProfile">
                 @(_savingProfile ? "Enregistrement…" : "Enregistrer")
             </button>
@@ -173,14 +252,23 @@
     private string? _profileError, _profileOk;
     private bool _savingProfile;
 
+    // Contexte d'apprentissage (lot B1)
+    private const string OtherCountry = "ZZ";
+    private List<CountryPreset> _presets = [];
+    private string? _country, _timeZone, _educationSystem;
+    private GradeScale _gradeScale = GradeScale.Over20;
+    private LevelBand? _levelBand;
+    private LearningGoal? _goal;
+    private HashSet<string> _inferred = [];
+
     private string _currentPassword = "", _newPassword = "", _confirmPassword = "";
     private string? _passwordError, _passwordOk;
     private bool _savingPassword;
 
-    protected override Task LoadAsync()
+    protected override async Task LoadAsync()
     {
         Fill(Me);
-        return Task.CompletedTask;
+        _presets = (await Account.CountryPresetsAsync()).Value ?? [];
     }
 
     private void Fill(UserProfile me)
@@ -197,7 +285,27 @@
         _specialite = me.Specialite;
         _teachingSubjects = me.TeachingSubjects is { Count: > 0 } t ? string.Join(", ", t) : null;
         _teachingContext = me.TeachingContext;
+
+        var context = me.LearningContext;
+        _country = context?.Country;
+        _timeZone = context?.TimeZone;
+        _educationSystem = context?.EducationSystem;
+        _gradeScale = context?.GradeScale ?? GradeScale.Over20;
+        _levelBand = context?.LevelBand;
+        _goal = context?.Goal;
+        _inferred = [.. context?.Inferred ?? []];
     }
+
+    /// <summary>Un autre pays propose son fuseau et son échelle, sauf si la personne les avait choisis autrement.</summary>
+    private void OnCountryChanged(ChangeEventArgs e)
+    {
+        var previous = _presets.FirstOrDefault(p => p.Code == _country);
+        _country = e.Value?.ToString() is { Length: > 0 } code ? code : null;
+        if (_presets.FirstOrDefault(p => p.Code == _country) is not { } next) return;
+        if (string.IsNullOrWhiteSpace(_timeZone) || _timeZone == previous?.TimeZone) _timeZone = next.TimeZone;
+        if (previous is null || _gradeScale == previous.GradeScale) _gradeScale = next.GradeScale;
+    }
+
 
     private static List<string> SplitList(string? value) =>
         (value ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
@@ -246,6 +354,14 @@
             Specialite = teacher ? _specialite ?? "" : null,
             TeachingSubjects = teacher ? SplitList(_teachingSubjects) : null,
             TeachingContext = teacher ? _teachingContext : null,
+            // Enregistrer confirme le contexte affiché, y compris les valeurs proposées d'après le reste du profil.
+            // Chaîne vide : la valeur est effacée et redevient déduite.
+            Country = _country ?? "",
+            TimeZone = _timeZone?.Trim() ?? "",
+            GradeScale = _gradeScale,
+            EducationSystem = Me.Role == UserRole.Parent ? null : _educationSystem?.Trim() ?? "",
+            LevelBand = student ? _levelBand : null,
+            Goal = student ? _goal : null,
         };
 
         _savingProfile = true;

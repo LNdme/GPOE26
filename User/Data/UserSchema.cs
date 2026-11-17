@@ -249,6 +249,14 @@ public static class UserSchema
         @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Organizations_ShortCode"" ON ""Organizations"" (""ShortCode"") WHERE ""ShortCode"" IS NOT NULL",
         @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""MustChangePassword"" boolean NOT NULL DEFAULT false",
 
+        // ── Contexte d'apprentissage (plan de l'agent noyau, lot B1) : null = déduit des anciens champs ──
+        @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""Country"" character varying(2)",
+        @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""EducationSystem"" character varying(100)",
+        @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""LevelBand"" text",
+        @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""LearningGoal"" text",
+        @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""GradeScale"" text",
+        @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""TimeZone"" character varying(64)",
+
         // Phase 2, lot 9 : e-mail importé et colonnes en plus du fichier de l'établissement (JSON, titre → valeur)
         @"ALTER TABLE ""OrganizationStudents"" ADD COLUMN IF NOT EXISTS ""Email"" character varying(256)",
         @"ALTER TABLE ""OrganizationStudents"" ADD COLUMN IF NOT EXISTS ""ExtraJson"" text",
