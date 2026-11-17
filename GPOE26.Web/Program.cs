@@ -80,7 +80,9 @@ builder.Services.AddScoped<AuthService>();
 // Session conservée dans le localStorage du navigateur (chiffrée par la protection des données ASP.NET)
 builder.Services.AddGpoeLearningUi();
 builder.Services.AddScoped<ISessionStore, BrowserSessionStore>();
-AppTime.Zone = AppTime.Find(builder.Configuration["App:TimeZone"] ?? "Africa/Douala");
+// Fuseau de la personne connectée (lot B3), posé à chaque activité de son circuit ; celui de l'hôte sinon
+AppTime.Zone = AppTime.Find(builder.Configuration["App:TimeZone"] ?? AppTime.DefaultZoneId);
+builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler, PersonTimeZoneCircuitHandler>();
 
 var app = builder.Build();
 

@@ -928,3 +928,17 @@ Un quatrième échec venait d'une règle trop stricte (`dur-long-depistage` exig
 - **Site** : les cas de l'agent du site restent « non joués » faute de compte éditeur pour les évaluations.
 
 **Évaluations (17 nov., après libération du disque)** : Chat de B2 lancé à côté d'Aspire (port 5312, même base et mêmes services), comptes de démonstration inchangés. `--filter langue` : 9/9 ; `--filter neutralite` : 8/8. **`dur-langue-espagnol-calcul`, en échec avant B2, réussit aux deux passages** sans régler le compte sur le Mexique : la règle « langue du dernier message d'abord » suffit. Une seule répétition par cas : la lecture reste cas par cas. Vu aussi en marche : les six colonnes de B1 existent, `GET /auth/learning-context/presets` répond, le contexte de l'élève de démonstration (sans pays) reste neutre, sa tranche étant déduite de « Terminale ».
+
+---
+
+## Lot B3 : ce qui a été fait (17 nov. 2026)
+
+- **Agents (Chat)** : `AgentContextService.ResolveZone` choisit le fuseau de la personne (contexte d'apprentissage : choisi, ou celui de son pays), sinon `App:TimeZone`, sinon `Africa/Douala` en dernier recours ; un identifiant inconnu est ignoré. Il sert au plan du jour (créneaux libres), au temps d'étude compté par jour et aux échéances données au tuteur. Le profil est lu une fois par requête (déjà gardé une minute).
+- **Interface (`AppTime`)** : le serveur web sert plusieurs personnes à la fois, donc le fuseau de la personne n'est jamais rangé dans une variable partagée. `AppTime.Use` le pose pour une activité de circuit (variable asynchrone), et `PersonTimeZoneCircuitHandler` (GPOE26.Web) le fait à chaque clic, saisie, navigation ou appel JavaScript. Le fuseau est lu dans le profil au moment de chaque conversion : un profil restauré pendant l'ouverture de la page compte aussitôt. Sans personne connue, c'est le fuseau de l'hôte (`App:TimeZone`, sinon `Africa/Douala`).
+- **Tests** : `PersonTimeZoneTests.cs` (10 tests, dont deux personnes servies en même temps qui gardent chacune leur fuseau) ; 602 tests au vert.
+- **Vérifié en marche** (User, Chat et Web recompilés par la commande « Rebuild » d'Aspire) : l'élève de démonstration voit « MARDI 17 NOVEMBRE » à 10 h 14 UTC ; réglé sur `Pacific/Kiritimati` (UTC+14), il voit « MERCREDI 18 NOVEMBRE », aussi après un rechargement complet de la page. Le plan du jour de Chat répond avec ce fuseau. Compte remis dans son état d'origine ensuite.
+
+**Limites connues** :
+- Un rendu déclenché hors d'une activité de la personne (minuterie en arrière-plan) utilise le fuseau de l'hôte.
+- **L'application Windows** (`GPOE26.Windows`, autre session) n'a qu'une personne par processus : elle peut simplement poser `AppTime.Zone = AppTime.ZoneOf(profil) ?? …` après la connexion. Non fait ici : ce projet n'est pas encore commité.
+- Une personne sans pays ni fuseau garde le fuseau de l'hôte : l'inscription neutre (B5) demandera le pays, et pourra proposer le fuseau du navigateur.

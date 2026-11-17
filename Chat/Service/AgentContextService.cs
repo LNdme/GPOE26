@@ -14,22 +14,38 @@ public class AgentContextService(TutorContext db, PlatformClients platform, Agen
     private record ProgressRef(List<MasteryRef>? Mastery);
     private record SharedCourseRef(Guid Id, string Title);
 
-    private TimeZoneInfo Zone
+    /// <summary>Fuseau de dernier recours, quand ni la personne ni la configuration (App:TimeZone) n'en donnent un valide.</summary>
+    public const string LastResortZone = "Africa/Douala";
+
+    /// <summary>
+    /// Fuseau dans lequel compter « aujourd'hui » et « maintenant » pour une personne (lot B3) : le sien (contexte
+    /// d'apprentissage : choisi, ou celui de son pays), sinon celui de la plateforme, sinon <see cref="LastResortZone"/>.
+    /// Un identifiant inconnu est ignoré, jamais une erreur.
+    /// </summary>
+    public static TimeZoneInfo ResolveZone(string? person, string? configured)
     {
-        get
+        foreach (var id in new[] { person, configured, LastResortZone })
         {
-            try { return TimeZoneInfo.FindSystemTimeZoneById(config["App:TimeZone"] ?? "Africa/Douala"); }
-            catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException) { return TimeZoneInfo.CreateCustomTimeZone("UTC+1", TimeSpan.FromHours(1), "UTC+1", "UTC+1"); }
+            if (string.IsNullOrWhiteSpace(id)) continue;
+            if (TimeZoneInfo.TryFindSystemTimeZoneById(id.Trim(), out var zone)) return zone;
         }
+        return TimeZoneInfo.CreateCustomTimeZone("UTC+1", TimeSpan.FromHours(1), "UTC+1", "UTC+1");
     }
 
-    private DateTime LocalNow => TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, Zone);
+    private TimeZoneInfo? _zone;
+
+    /// <summary>Fuseau de la personne qui fait la requête, lu une fois par requête (profil gardé une minute).</summary>
+    private async Task<TimeZoneInfo> ZoneAsync(CancellationToken ct) =>
+        _zone ??= ResolveZone((await ProfileAsync(ct))?.LearningContext?.TimeZone, config["App:TimeZone"]);
+
+    private async Task<DateTime> LocalNowAsync(CancellationToken ct) =>
+        TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, await ZoneAsync(ct));
 
     private static int IsoDay(DayOfWeek day) => day == DayOfWeek.Sunday ? 7 : (int)day;
 
-    public async Task RecordStudyAsync(Guid userId, Guid courseId, int minutes)
+    public async Task RecordStudyAsync(Guid userId, Guid courseId, int minutes, CancellationToken ct = default)
     {
-        var day = DateOnly.FromDateTime(LocalNow);
+        var day = DateOnly.FromDateTime(await LocalNowAsync(ct));
         var session = await db.StudySessions.FirstOrDefaultAsync(s => s.UserId == userId && s.CourseId == courseId && s.Day == day);
         if (session is null)
         {
@@ -57,7 +73,7 @@ public class AgentContextService(TutorContext db, PlatformClients platform, Agen
 
     public async Task<TodayPlan> TodayPlanAsync(Guid userId, CancellationToken ct)
     {
-        var now = LocalNow;
+        var now = await LocalNowAsync(ct);
 
         // Les quatre services sont interrogés en même temps (ils l'étaient l'un après l'autre)
         var assessmentsTask = platform.GetJsonAsync<List<StudentAssessmentRef>>("quiz", "/assessments/mine", ct);
@@ -132,7 +148,7 @@ public class AgentContextService(TutorContext db, PlatformClients platform, Agen
 
         // Épreuves à venir et derniers résultats (lot 12) ; la liste vient du cache d'une minute partagé avec le plan du jour
         var assessments = await platform.GetJsonAsync<List<StudentAssessmentRef>>("quiz", "/assessments/mine", ct);
-        lines.AddRange(InsightRules.AssessmentLines(assessments ?? [], DateTime.UtcNow, Zone));
+        lines.AddRange(InsightRules.AssessmentLines(assessments ?? [], DateTime.UtcNow, await ZoneAsync(ct)));
 
         var plan = await TodayPlanAsync(userId, ct);
         var minutes = plan.Windows.Sum(w => w.Minutes);
