@@ -11,7 +11,16 @@ namespace Chat.Service;
 public record LearnerProfileRef(
     string? Role, string? Level, string? Specialite, string? Filiere, string? Language, string? SubSystem,
     string? ExamTarget, DateOnly? ExamDate, List<string>? FocusSubjects, int? DailyStudyMinutes,
-    List<string>? TeachingSubjects, string? TeachingContext, string? OrganizationName, string? Stage);
+    List<string>? TeachingSubjects, string? TeachingContext, string? OrganizationName, string? Stage,
+    LearningContextRef? LearningContext = null);
+
+/// <summary>
+/// Contexte d'apprentissage (lot B1, service User) : ce que la personne a choisi, sinon déduit de son ancien profil.
+/// Absent d'un service User plus ancien : les agents retombent alors sur les anciens champs.
+/// </summary>
+public record LearningContextRef(
+    string? Country, string? CountryName, string? EducationSystem, string? Level, string? LevelBand, string? Goal,
+    string? ExamTarget, DateOnly? ExamDate, string? GradeScale, string? TimeZone, List<string>? Inferred);
 
 /// <summary>Morceaux de consignes construits à partir du profil et du cours (fonctions pures, testées).</summary>
 public static partial class AgentPrompts
@@ -26,12 +35,16 @@ public static partial class AgentPrompts
     {
         var lines = new List<string>();
         if (p is null) return lines;
+        var ctx = p.LearningContext;
 
+        if (ctx?.CountryName is { Length: > 0 } country) lines.Add($"Pays : {country}");
         var level = p.Level is { Length: > 0 } ? p.Level : null;
-        var system = p.SubSystem switch { "Anglophone" => "sous-système anglophone", "Francophone" => "sous-système francophone", _ => null };
+        var system = ctx?.EducationSystem is { Length: > 0 } chosen ? chosen
+            : p.SubSystem switch { "Anglophone" => "sous-système anglophone", "Francophone" => "sous-système francophone", _ => null };
         if (level is not null || system is not null)
             lines.Add("Classe ou niveau : " + string.Join(", ", new[] { level, system }.Where(x => x is not null)));
         if (p.Stage == "Higher") lines.Add("Enseignement supérieur");
+        else if (BandLabel(ctx?.LevelBand) is { } band) lines.Add($"Tranche : {band}");
         if (p.Filiere is { Length: > 0 }) lines.Add($"Filière : {p.Filiere}");
 
         if (p.ExamTarget is { Length: > 0 })
@@ -50,17 +63,22 @@ public static partial class AgentPrompts
             }
             lines.Add(exam);
         }
+        else if (GoalLabel(ctx?.Goal) is { } goal) lines.Add($"Objectif : {goal}");
 
+        if (ScaleLine(ctx) is { } scale) lines.Add(scale);
         if (p.FocusSubjects is { Count: > 0 } focus) lines.Add($"Matières à renforcer : {string.Join(", ", focus)}");
         if (p.DailyStudyMinutes is > 0 and var minutes) lines.Add($"Temps d'étude quotidien visé : {minutes} min");
         return lines;
     }
 
-    /// <summary>Ce que l'assistant doit savoir de l'enseignant (il n'est pas toujours dans le secondaire camerounais).</summary>
+    /// <summary>Ce que l'assistant doit savoir de l'enseignant : pays, système, matières et cadre (aucun n'est supposé).</summary>
     public static List<string> TeacherLines(LearnerProfileRef? p)
     {
         var lines = new List<string>();
         if (p is null) return lines;
+        var ctx = p.LearningContext;
+        if (ctx?.CountryName is { Length: > 0 } country) lines.Add($"Pays : {country}");
+        if (ctx?.EducationSystem is { Length: > 0 } system) lines.Add($"Système d'enseignement : {system}");
         var subjects = p.TeachingSubjects is { Count: > 0 } list ? string.Join(", ", list) : p.Specialite;
         if (subjects is { Length: > 0 }) lines.Add($"Matières enseignées : {subjects}");
         var context = p.TeachingContext switch
@@ -71,14 +89,87 @@ public static partial class AgentPrompts
             _ => null
         };
         if (context is not null) lines.Add(context + (p.OrganizationName is { Length: > 0 } org ? $" : {org}" : ""));
+        if (ScaleLine(ctx) is { } scale) lines.Add(scale);
         return lines;
     }
 
-    /// <summary>Langue des réponses : l'anglais pour un apprenant anglophone, sinon le français (ou la langue de la question).</summary>
-    public static string LanguageRule(LearnerProfileRef? p) =>
-        p?.Language == "en" || p?.SubSystem == "Anglophone"
-            ? "Réponds en anglais : l'apprenant suit le sous-système anglophone (en français s'il t'écrit en français)."
-            : "Réponds en français (en anglais si l'élève écrit en anglais).";
+    // ─── Neutralité (lot B2) ──────────────────────────────────────────────────────
+
+    private static string? BandLabel(string? band) => band switch
+    {
+        "Primary" => "école primaire (enfant)",
+        "LowerSecondary" => "premier cycle du secondaire",
+        "UpperSecondary" => "second cycle du secondaire",
+        "Higher" => "enseignement supérieur",
+        "Adult" => "adulte qui apprend hors d'un cursus scolaire (ni classe ni examen scolaire)",
+        _ => null
+    };
+
+    private static string? GoalLabel(string? goal) => goal switch
+    {
+        "Exam" => "préparer un examen",
+        "Skill" => "acquérir une compétence, sans examen à préparer",
+        "Curiosity" => "apprendre par curiosité, sans examen à préparer",
+        _ => null
+    };
+
+    /// <summary>
+    /// Échelle de notes, seulement quand elle dit quelque chose de la personne (choisie, ou venue de son pays) :
+    /// la valeur par défaut d'un profil vide n'apprend rien à l'agent.
+    /// </summary>
+    private static string? ScaleLine(LearningContextRef? ctx)
+    {
+        if (ctx?.GradeScale is not { } scale) return null;
+        var chosen = ctx.Inferred is not { } inferred || !inferred.Contains("gradeScale");
+        if (!chosen && ctx.Country is null or "ZZ") return null;
+        return "Notes exprimées " + scale switch
+        {
+            "Over10" => "sur 10",
+            "Over100" => "sur 100",
+            "Letters" => "en lettres (A à F)",
+            _ => "sur 20"
+        };
+    }
+
+    // Pays où l'espagnol est la langue de l'école : langue par défaut quand la personne n'en a pas choisi d'autre
+    private static readonly HashSet<string> SpanishCountries =
+        ["MX", "CU", "ES", "AR", "BO", "CL", "CO", "CR", "DO", "EC", "GQ", "GT", "HN", "NI", "PA", "PE", "PR", "PY", "SV", "UY", "VE"];
+
+    /// <summary>Langue par défaut des réponses : celle choisie (anglais, espagnol), le sous-système anglophone, le pays, sinon le français.</summary>
+    public static string DefaultLanguage(LearnerProfileRef? p) =>
+        p?.Language is "en" or "es" ? p.Language
+        : p?.SubSystem == "Anglophone" ? "en"
+        : p?.LearningContext?.Country is { } country && SpanishCountries.Contains(country) ? "es"
+        : "fr";
+
+    /// <summary>
+    /// Langue des réponses : celle du dernier message de l'apprenant, quelle qu'elle soit ; à défaut, sa langue par défaut.
+    /// (Avant B2, seuls le français et l'anglais étaient prévus : une question en espagnol recevait une réponse en français.)
+    /// </summary>
+    public static string LanguageRule(LearnerProfileRef? p)
+    {
+        var fallback = DefaultLanguage(p) switch { "en" => "anglais", "es" => "espagnol", _ => "français" };
+        var why = p?.SubSystem == "Anglophone" && p.Language is not ("en" or "es") ? " (l'apprenant suit le sous-système anglophone)" : "";
+        return "Réponds dans la langue du dernier message de l'apprenant (français, anglais, espagnol ou toute autre langue) ; "
+               + $"si elle n'est pas claire, réponds en {fallback}{why}.";
+    }
+
+    /// <summary>
+    /// Une note stockée sur 20 (service Quiz), écrite dans l'échelle de la personne : 12 → « 12/20 », « 6/10 », « 60/100 »
+    /// ou « D (60 %) » (lettres à l'américaine : A dès 90 %, B dès 80 %, C dès 70 %, D dès 60 %, sinon F).
+    /// </summary>
+    public static string Grade(double on20, string? scale)
+    {
+        static string N(double v) => Math.Round(v, 1).ToString("0.#", Fr);
+        var percent = on20 * 5;
+        return scale switch
+        {
+            "Over10" => $"{N(on20 / 2)}/10",
+            "Over100" => $"{N(percent)}/100",
+            "Letters" => $"{(percent >= 90 ? "A" : percent >= 80 ? "B" : percent >= 70 ? "C" : percent >= 60 ? "D" : "F")} ({N(percent)} %)",
+            _ => $"{N(on20)}/20"
+        };
+    }
 
     // ─── Réglage du modèle selon la matière (H11) ────────────────────────────────
 
@@ -251,7 +342,14 @@ public static partial class AgentPrompts
     [
         "dans", "pour", "avec", "sans", "sont", "cette", "comment", "quelle", "quel", "quels", "quelles", "peux", "explique",
         "moi", "donne", "faire", "fait", "plus", "moins", "aussi", "mais", "donc", "alors", "tout", "tous", "elle", "elles",
-        "nous", "vous", "leur", "leurs", "être", "etre", "avoir", "entre", "chaque", "cours", "partie", "what", "with", "this", "that"
+        "nous", "vous", "leur", "leurs", "être", "etre", "avoir", "entre", "chaque", "cours", "partie",
+        // anglais
+        "what", "with", "this", "that", "which", "where", "when", "there", "their", "about", "from", "have", "your", "explain",
+        "does", "would", "could", "should", "into", "than", "them", "they", "these", "those", "course", "part",
+        // espagnol (sans accents : les mots sont comparés une fois les accents retirés)
+        "para", "como", "cual", "cuales", "porque", "esta", "este", "estos", "estas", "donde", "cuando", "tiene", "tienen",
+        "hacer", "puedes", "explica", "explicame", "sobre", "pero", "tambien", "todo", "todos", "ellos", "ellas", "nosotros",
+        "ustedes", "curso", "parte", "cada", "desde", "hasta", "pues", "mismo", "misma"
     ];
 
     /// <summary>Mots d'au moins quatre lettres, en minuscules et sans accents, hors mots courants.</summary>

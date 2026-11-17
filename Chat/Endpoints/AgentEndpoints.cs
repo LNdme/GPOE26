@@ -239,7 +239,8 @@ public static class AgentEndpoints
             string? narrative = null;
             if ((await quota.CheckAsync(userId, AiFeatures.TeacherAgent, ct)).Refusal is null)
             {
-                narrative = await NarrativeAsync(insights, llm, ct);
+                var scale = (await context.ProfileAsync(ct))?.LearningContext?.GradeScale;
+                narrative = await NarrativeAsync(insights, scale, llm, ct);
                 if (narrative is not null) await quota.RecordAsync(userId, AiFeatures.TeacherAgent, ct);
             }
             return Results.Ok(new ClassInsightsDto(insights, narrative));
@@ -282,7 +283,8 @@ public static class AgentEndpoints
                 if (progress is null) return Results.NotFound(new { message = "Classe introuvable." });
                 // Lot 13 : l'assistant sait de quel espace relève la classe (établissement ou espace personnel)
                 if (await context.ClassroomSpaceLineAsync(classroomId, ct) is { } space) system += "\n\n" + space;
-                system += Anonymized(ClassInsightsCalculator.Compute(progress, DateTime.UtcNow, await context.CourseTitlesAsync(ct)));
+                system += Anonymized(ClassInsightsCalculator.Compute(progress, DateTime.UtcNow, await context.CourseTitlesAsync(ct)),
+                    (await context.ProfileAsync(ct))?.LearningContext?.GradeScale);
             }
 
             // La conversation continue : l'assistant relit les derniers échanges (avant, chaque question partait seule)
@@ -330,7 +332,7 @@ public static class AgentEndpoints
         return TeacherAssistant.System(lines);
     }
 
-    private static async Task<string?> NarrativeAsync(ClassInsights insights, LlmClient llm, CancellationToken ct)
+    private static async Task<string?> NarrativeAsync(ClassInsights insights, string? gradeScale, LlmClient llm, CancellationToken ct)
     {
         if (!llm.IsConfigured) return null;
         try
@@ -338,7 +340,7 @@ public static class AgentEndpoints
             var reply = await llm.CompleteAsync(
             [
                 new LlmMessage("system", InsightsSystem),
-                new LlmMessage("user", Anonymized(insights))
+                new LlmMessage("user", Anonymized(insights, gradeScale))
             ], maxTokens: 400, ct: ct);
             return Deanonymize(reply, insights);
         }

@@ -911,3 +911,20 @@ Un quatrième échec venait d'une règle trop stricte (`dur-long-depistage` exig
 - **Page « Mon profil »** : partie « Où et comment j'apprends ». Changer de pays propose son fuseau et son échelle, sauf si la personne les avait choisis autrement ; enregistrer confirme ce qui est affiché.
 - **Tests** : `LearningContextTests.cs` (32 tests, dont l'aller-retour JSON service User → interface) ; 571 tests au vert.
 - **Pas encore lu par les agents** : `LearnerProfileRef` (Chat) ignore ce nouveau champ. B2 s'en servira (langue, échelle, exemples), B3 pour le fuseau, B5 pour l'inscription. Non vérifié dans l'application en marche (Aspire arrêté pendant le lot) : les colonnes seront ajoutées au prochain démarrage du service User.
+
+---
+
+## Lot B2 : ce qui a été fait (17 nov. 2026)
+
+- **Chat lit le contexte d'apprentissage** (`LearnerProfileRef.LearningContext`, rempli par `GET /auth/me` depuis B1). Un service User plus ancien ne l'envoie pas : les agents retombent alors sur les anciens champs.
+- **Plus de pays en dur dans les consignes** : « (Cameroun) » retiré de `teacher.md` ; l'agent du site prend le nom de l'établissement dans les coordonnées du site (`/api/contact`, « l'établissement » si elles manquent) et l'heure de son fuseau (`App:TimeZone`, `Africa/Douala` en dernier recours) au lieu de « Lycée Technique de Nanga-Eboko » et « heure du Cameroun ». L'assistant enseignant tire exemples, unités et monnaie du pays de l'enseignant et n'impose jamais un pays, un examen ou un programme. Un test vérifie qu'aucune consigne ne contient « Cameroun » ni « Nanga ».
+- **Le pays arrive par le profil** : un ancien élève camerounais reçoit « Pays : Cameroun », son sous-système, sa tranche, son examen et « Notes exprimées sur 20 » ; un profil vide ne reçoit ni pays ni échelle inventés.
+- **Langue** (défaut `dur-langue-espagnol-calcul`) : les agents répondent dans la langue du dernier message, quelle qu'elle soit ; à défaut, dans la langue choisie (français, anglais, **espagnol**, ajouté au profil), celle du sous-système anglophone ou celle du pays (pays hispanophones), sinon en français. Mots vides anglais et espagnols ajoutés pour retrouver les passages d'un long cours.
+- **Échelle de notes** : `AgentPrompts.Grade` écrit une note stockée sur 20 dans l'échelle de la personne (sur 10, sur 100, lettres A à F) ; le suivi de classe envoyé à l'assistant suit l'échelle de l'enseignant. Le motif « Moyenne sous 10/20 » devient « Moyenne sous la moitié des points ».
+- **Tests** : `NeutralityTests.cs` (21 tests, dont l'aller-retour profil service User → Chat) ; 592 tests au vert.
+
+**Reste dans B2** :
+- **Le tuteur** garde « (Cameroun) » et « un élève du secondaire » dans `TutorEndpoints.cs`, que l'autre session modifie : à retirer en même temps que ses consignes passent dans `tutor.md` (reste du lot A1). Il profite déjà du reste de B2 (langue, lignes du profil), qui passe par `AgentPrompts`.
+- **Site** : les cas de l'agent du site restent « non joués » faute de compte éditeur pour les évaluations.
+
+**Évaluations (17 nov., après libération du disque)** : Chat de B2 lancé à côté d'Aspire (port 5312, même base et mêmes services), comptes de démonstration inchangés. `--filter langue` : 9/9 ; `--filter neutralite` : 8/8. **`dur-langue-espagnol-calcul`, en échec avant B2, réussit aux deux passages** sans régler le compte sur le Mexique : la règle « langue du dernier message d'abord » suffit. Une seule répétition par cas : la lecture reste cas par cas. Vu aussi en marche : les six colonnes de B1 existent, `GET /auth/learning-context/presets` répond, le contexte de l'élève de démonstration (sans pays) reste neutre, sa tranche étant déduite de « Terminale ».

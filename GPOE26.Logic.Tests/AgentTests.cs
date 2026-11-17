@@ -32,7 +32,7 @@ public class LearnerProfileTests
     [InlineData("Francophone", "fr", false)]
     [InlineData(null, null, false)]
     public void Un_apprenant_anglophone_recoit_des_reponses_en_anglais(string? subSystem, string? language, bool english) =>
-        Assert.Equal(english, AgentPrompts.LanguageRule(Student(subSystem, language)).StartsWith("Réponds en anglais"));
+        Assert.Equal(english, AgentPrompts.LanguageRule(Student(subSystem, language)).Contains("réponds en anglais"));
 
     [Fact]
     public void Sans_profil_rien_n_est_invente() => Assert.Empty(AgentPrompts.LearnerLines(null, Today));

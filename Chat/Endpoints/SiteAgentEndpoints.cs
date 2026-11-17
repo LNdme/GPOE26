@@ -35,7 +35,7 @@ public static class SiteAgentEndpoints
             });
 
         group.MapPost("/ask", async (SiteAgentAskRequest req, ClaimsPrincipal principal, PlatformClients platform,
-            LlmClient llm, AiQuota quota, CancellationToken ct) =>
+            LlmClient llm, AiQuota quota, IConfiguration config, CancellationToken ct) =>
         {
             var message = req.Message?.Trim() ?? "";
             if (message.Length is 0 or > MaxMessageLength)
@@ -47,7 +47,7 @@ public static class SiteAgentEndpoints
                 return Error(429, refusal);
 
             var context = await SiteContextAsync(platform, ct);
-            var system = SiteAgentPrompt.System(principal.FindFirstValue("username"), IsAdmin(principal), context);
+            var system = SiteAgentPrompt.System(principal.FindFirstValue("username"), IsAdmin(principal), context, config["App:TimeZone"]);
 
             var history = (req.History ?? [])
                 .Where(m => m.Role is "user" or "assistant" && !string.IsNullOrWhiteSpace(m.Content))
@@ -106,21 +106,32 @@ public record SiteAction(string Type, string Summary, Dictionary<string, JsonEle
 
 /// <param name="Ids">Identifiants présents sur le site, par sorte (news, event, activity, team) : une action ne vise que ceux-là.</param>
 /// <param name="Titles">Titre lisible de chaque identifiant, pour les résumés des cartes.</param>
+/// <param name="School">Nom de l'établissement, lu dans les coordonnées du site (null si elles manquent).</param>
 public record SiteContext(string Text, IReadOnlyList<string> Missing,
-    IReadOnlyDictionary<string, HashSet<string>>? Ids = null, IReadOnlyDictionary<string, string>? Titles = null);
+    IReadOnlyDictionary<string, HashSet<string>>? Ids = null, IReadOnlyDictionary<string, string>? Titles = null,
+    string? School = null);
 
 /// <summary>Mise en texte du contenu du site pour le modèle (fonctions pures, testées).</summary>
 public static class SiteAgentPrompt
 {
     private const int MaxExcerpt = 220;
 
-    /// <summary>Consigne de l'agent du site : Chat/Agents/Prompts/site.md, avec la personne et le contenu actuel du site.</summary>
-    public static string System(string? username, bool isAdmin, SiteContext context) => PromptLibrary.Render("site", new Dictionary<string, string>
-    {
-        ["person"] = string.IsNullOrWhiteSpace(username) ? "la personne" : username,
-        ["right"] = isAdmin ? "administrateur" : "éditeur du site",
-        ["context"] = context.Text
-    });
+    /// <summary>Fuseau de l'établissement quand sa configuration n'en donne pas (App:TimeZone).</summary>
+    public const string DefaultTimeZone = "Africa/Douala";
+
+    /// <summary>
+    /// Consigne de l'agent du site : Chat/Agents/Prompts/site.md, avec la personne, l'établissement (nom tiré des
+    /// coordonnées du site, plus écrit en dur), son fuseau et le contenu actuel du site.
+    /// </summary>
+    public static string System(string? username, bool isAdmin, SiteContext context, string? timeZone = null) =>
+        PromptLibrary.Render("site", new Dictionary<string, string>
+        {
+            ["school"] = string.IsNullOrWhiteSpace(context.School) ? "l'établissement" : context.School.Trim(),
+            ["timezone"] = string.IsNullOrWhiteSpace(timeZone) ? DefaultTimeZone : timeZone.Trim(),
+            ["person"] = string.IsNullOrWhiteSpace(username) ? "la personne" : username,
+            ["right"] = isAdmin ? "administrateur" : "éditeur du site",
+            ["context"] = context.Text
+        });
 
     public static SiteContext BuildContext(JsonElement? news, JsonElement? events, JsonElement? activities,
         JsonElement? team, JsonElement? contact, DateTime nowUtc)
@@ -136,8 +147,12 @@ public static class SiteAgentPrompt
 
         sb.AppendLine($"Date du jour : {nowUtc:yyyy-MM-dd}");
 
+        string? school = null;
         if (contact is { ValueKind: JsonValueKind.Object } c)
+        {
+            school = Str(c, "name") is { Length: > 0 } name ? name : null;
             sb.AppendLine($"\n## Coordonnées\n{Str(c, "name")} — {Str(c, "address")}, {Str(c, "city")} — {Str(c, "email")} — {Str(c, "phone")}");
+        }
         else if (contact is null) missing.Add("coordonnées");
 
         var newsItems = news is { ValueKind: JsonValueKind.Object } n && n.TryGetProperty("items", out var items) ? items : (JsonElement?)null;
@@ -193,7 +208,7 @@ public static class SiteAgentPrompt
         }
         else missing.Add("équipe");
 
-        return new SiteContext(sb.ToString(), missing, ids, titles);
+        return new SiteContext(sb.ToString(), missing, ids, titles, school);
     }
 
     private static void Remember(Dictionary<string, HashSet<string>> ids, Dictionary<string, string> titles, string kind, string id, string title)

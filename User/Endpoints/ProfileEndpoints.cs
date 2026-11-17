@@ -51,8 +51,8 @@ public static class ProfileRules
         var username = req.Username?.Trim();
         if (username is not null && username.Length is < 3 or > 64)
             return "Le nom affiché doit contenir entre 3 et 64 caractères.";
-        if (req.Language is { } lang && lang is not ("fr" or "en"))
-            return "Langue inconnue : choisissez le français ou l'anglais.";
+        if (req.Language is { } lang && lang is not ("fr" or "en" or "es"))
+            return "Langue inconnue : choisissez le français, l'anglais ou l'espagnol.";
         if (req.DailyStudyMinutes is < 0 or > 600)
             return "Le temps d'étude quotidien doit être compris entre 0 et 600 minutes.";
         if (req.ExamTarget?.Trim().Length > 100 || req.Level?.Trim().Length > 64 ||

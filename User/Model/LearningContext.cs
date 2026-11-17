@@ -52,6 +52,7 @@ public record CountryPreset(
 /// </param>
 public record LearningContextDto(
     string? Country,
+    string? CountryName,
     string? EducationSystem,
     string? Level,
     LevelBand? LevelBand,
@@ -117,7 +118,16 @@ public static class LearningContextRules
         // L'échelle a toujours une valeur : celle du pays, sinon celle qu'utilise déjà la plateforme
         var scale = Infer(user.GradeScale, () => (GradeScale?)(preset?.GradeScale ?? DefaultGradeScale), "gradeScale")!.Value;
 
-        return new LearningContextDto(country, system, user.Level, band, goal, user.ExamTarget, user.ExamDate, scale, timeZone, inferred);
+        return new LearningContextDto(country, CountryName(country), system, user.Level, band, goal, user.ExamTarget, user.ExamDate, scale, timeZone, inferred);
+    }
+
+    /// <summary>Nom du pays pour les agents : celui du préréglage, sinon le nom local connu du système ; rien pour « ZZ ».</summary>
+    public static string? CountryName(string? code)
+    {
+        if (code is null || code == OtherCountry) return null;
+        if (Preset(code) is { } preset) return preset.Name;
+        try { return new RegionInfo(code).NativeName; }
+        catch (ArgumentException) { return null; }
     }
 
     /// <summary>Les comptes créés avant B1 n'ont pas de pays : le sous-système ou un examen camerounais le donne.</summary>

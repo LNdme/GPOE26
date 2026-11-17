@@ -193,7 +193,7 @@ public static class ClassInsightsCalculator
         {
             var name = s.Username ?? "Élève";
             if (s.AverageOn20 < PassMark)
-                atRisk.Add(new AtRiskStudent(s.StudentId, name, s.AverageOn20, "Moyenne sous 10/20"));
+                atRisk.Add(new AtRiskStudent(s.StudentId, name, s.AverageOn20, "Moyenne sous la moitié des points"));
             else if (s.LastLoginAt is null || (now - s.LastLoginAt.Value).TotalDays > InactiveDays)
                 atRisk.Add(new AtRiskStudent(s.StudentId, name, s.AverageOn20, $"Pas de connexion depuis plus de {InactiveDays} jours"));
         }

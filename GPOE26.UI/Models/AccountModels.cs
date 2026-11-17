@@ -70,7 +70,7 @@ public record EditProfileRequest
 /// <see cref="Inferred"/> nomme les champs déduits de l'ancien profil plutôt que choisis.
 /// </summary>
 public record LearningContext(
-    string? Country, string? EducationSystem, string? Level, LevelBand? LevelBand, LearningGoal? Goal,
+    string? Country, string? CountryName, string? EducationSystem, string? Level, LevelBand? LevelBand, LearningGoal? Goal,
     string? ExamTarget, DateOnly? ExamDate, GradeScale GradeScale, string? TimeZone, List<string>? Inferred);
 
 /// <summary>Préréglage d'un pays (service User) : valeurs proposées par défaut, toutes modifiables.</summary>

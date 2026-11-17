@@ -66,13 +66,17 @@ public static partial class TeacherAssistant
         return Regex.Replace(cleaned, $@"<\s*/?\s*{Regex.Escape(tag)}\s*>", m => m.Value.Replace("<", "‹").Replace(">", "›"), RegexOptions.IgnoreCase);
     }
 
-    /// <summary>Le service d'IA est externe : les élèves (mineurs) n'y sont désignés que par un numéro.</summary>
-    public static string Anonymized(ClassInsights insights)
+    /// <summary>
+    /// Le service d'IA est externe : les élèves (mineurs) n'y sont désignés que par un numéro. Les notes sont écrites
+    /// dans l'échelle de l'enseignant (<paramref name="gradeScale"/> : Over20, Over10, Over100, Letters), sur 20 sinon.
+    /// </summary>
+    public static string Anonymized(ClassInsights insights, string? gradeScale = null)
     {
-        var students = insights.AtRisk.Select((a, i) => $"Élève {i + 1} : {a.Reason}{(a.AverageOn20 is { } m ? $" ({m}/20)" : "")}");
+        var students = insights.AtRisk.Select((a, i) =>
+            $"Élève {i + 1} : {a.Reason}{(a.AverageOn20 is { } m ? $" ({AgentPrompts.Grade(m, gradeScale)})" : "")}");
         return AgentMemoryStore.Render("Suivi de la classe",
         [
-            $"Effectif : {insights.StudentCount} ; moyenne : {insights.AverageOn20?.ToString() ?? "non disponible"}/20",
+            $"Effectif : {insights.StudentCount} ; moyenne : {(insights.AverageOn20 is { } average ? AgentPrompts.Grade(average, gradeScale) : "non disponible")}",
             .. students,
             .. insights.WeakCourses.Select(c => $"Notion à revoir : {c.Title} ({c.AveragePercent} % de réussite)")
         ]);

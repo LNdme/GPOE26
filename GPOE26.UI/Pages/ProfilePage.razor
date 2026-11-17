@@ -67,6 +67,7 @@
                 <select id="pf-lang" class="ga-select" @bind="_language">
                     <option value="fr">Français</option>
                     <option value="en">English</option>
+                    <option value="es">Español</option>
                 </select>
             </div>
 
@@ -274,7 +275,7 @@
     private void Fill(UserProfile me)
     {
         _username = me.Username;
-        _language = me.Language is "en" ? "en" : "fr";
+        _language = me.Language is "en" or "es" ? me.Language : "fr";
         _level = me.Level;
         _filiere = me.Filiere;
         _subSystem = me.SubSystem;
