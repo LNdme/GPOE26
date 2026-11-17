@@ -8,7 +8,7 @@ Elles ne font pas partie de `dotnet test`, parce que chaque cas coûte des appel
 
 | Dossier | Rôle |
 |---|---|
-| `cases/*.json` | les cas (60 au départ : tuteur 36, rédaction 12, agent du site 12) |
+| `cases/*.json` | les cas : 96 (tuteur 62, rédaction 22, agent du site 12), dont 36 difficiles (`*-hard.json`, étiquette `difficile`) : calculs en plusieurs étapes, complaisance, cours qui contient des erreurs, consignes cachées dans une photo, détresse d'un élève, neutralité du pays |
 | `fixtures/courses/*.md` | cours d'essai, créés dans le compte élève à la première passe, puis recréés s'ils changent |
 | `fixtures/images/` | photo de copie avec une erreur volontaire (le carré oublié) |
 | `baseline.json` | la référence : le résultat contre lequel chaque passe est comparée |

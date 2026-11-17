@@ -179,6 +179,33 @@ public class EvalRulesTests
         Assert.Equal("Mathématiques", fixture.Subject);
     }
 
+    /// <summary>
+    /// Les règles délicates des cas réels acceptent toutes les écritures d'une bonne réponse (LaTeX, Unicode, \ce)
+    /// et refusent la mauvaise : un cas qui échoue pour une mauvaise raison fausserait la porte de bascule.
+    /// </summary>
+    [Theory]
+    [InlineData("dur-redaction-exactitude-chimie", "$\\mathrm{CH_4} + 2\\,\\mathrm{O_2} \\rightarrow \\mathrm{CO_2} + 2\\,\\mathrm{H_2O}$", true)]
+    [InlineData("dur-redaction-exactitude-chimie", "CH₄ + 2 O₂ → CO₂ + 2 H₂O", true)]
+    [InlineData("dur-redaction-exactitude-chimie", "$CH_4 + 2O_2 \\to CO_2 + 2H_2O$", true)]
+    [InlineData("dur-redaction-exactitude-chimie", "$CH_4 + O_2 \\to CO_2 + H_2O$", false)]
+    [InlineData("dur-redaction-quatre-parties-exactes", "## 1. A\n## 2. B\n## 3. C\n## 4. D\n   5. sous-point", true)]
+    [InlineData("dur-redaction-quatre-parties-exactes", "**1. A**\n**2. B**\n**3. C**\n**4. D**", true)]
+    [InlineData("dur-redaction-quatre-parties-exactes", "## 1. A\n## 2. B\n## 3. C\n## 4. D\n## 5. E", false)]
+    [InlineData("dur-redaction-quatre-parties-exactes", "## 1. A\n## 2. B\n## 3. C", false)]
+    [InlineData("dur-mruv-lancer-vertical", "La hauteur maximale est $h = 20\\ \\text{m}$.", true)]
+    [InlineData("dur-mruv-lancer-vertical", "La vitesse initiale est 20 m/s, la hauteur vaut 40 m.", false)]
+    [InlineData("dur-mruv-conversion-kmh", "72 km/h = 20 m/s, donc $a = -5\\ \\text{m/s}^2$.", true)]
+    [InlineData("dur-mruv-conversion-kmh", "a = 72/4 = 18 m/s².", false)]
+    [InlineData("tuteur-mruv-calcul-25m", "Elle parcourt $x = 25\\,\\text{m}$.", true)]
+    [InlineData("tuteur-mruv-calcul-25m", "Elle parcourt 25 m.", true)]
+    [InlineData("tuteur-mruv-calcul-25m", "Elle atteint 25 m/s.", false)]
+    public void Regles_des_cas_reels(string caseId, string answer, bool expected)
+    {
+        var c = CaseLoader.LoadAll(Path.Combine(FindEvals(), "cases")).Single(x => x.Id == caseId);
+        var results = Rules.Evaluate(c.Checks, Text(answer));
+        Assert.True(expected == results.All(r => r.Passed), string.Join(" ; ", results.Select(r => $"{r.Kind}: {r.Detail}")));
+    }
+
     [Fact]
     public void Validation_signale_les_erreurs_de_redaction()
     {

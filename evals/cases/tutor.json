@@ -15,7 +15,7 @@
     "id": "tuteur-mruv-calcul-25m",
     "agent": "tutor", "course": "mruv", "tags": ["calcul"],
     "message": "Une voiture part du repos avec une accélération de 2 m/s². Quelle distance parcourt-elle en 5 s ?",
-    "checks": [ { "kind": "regex", "pattern": "25\\s*(\\\\,|\\\\ |~|\\s)*(\\\\text\\{\\s*|\\\\mathrm\\{\\s*)?m\\b" } ],
+    "checks": [ { "kind": "regex", "pattern": "25\\s*(\\\\,|\\\\ |~|\\s)*(\\\\text\\{\\s*|\\\\mathrm\\{\\s*)?m\\b(?!\\s*/)" } ],
     "rubric": "Trouve 25 m avec x = ½·a·t², calcul détaillé, unité correcte."
   },
   {
