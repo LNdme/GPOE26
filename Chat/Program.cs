@@ -85,6 +85,8 @@ builder.Services.AddAuthorization();
 builder.Services.AddScoped<ILlmService, CompatibleLlmService>();
 
 var app = builder.Build();
+// Version de chaque consigne (Chat/Agents/Prompts) : relie un comportement observé à un texte précis
+app.Logger.LogInformation("Consignes des agents : {Versions}", Chat.Agents.PromptLibrary.Describe());
 
 app.MapDefaultEndpoints();
 

@@ -41,7 +41,7 @@
     "agent": "compose", "tags": ["difficile", "reecriture", "fidelite"],
     "compose": { "mode": "rewrite", "subject": "Physique", "title": "La lumière",
       "selection": "La lumière se propage dans le vide à environ 300 000 km/s. Elle met environ 8 minutes pour venir du Soleil." },
-    "checks": [ { "kind": "regex", "pattern": "300\\s*000|3\\s*\\\\?(×|\\\\times|x)\\s*10\\^?\\{?5\\}?|3\\s*\\\\cdot\\s*10" }, { "kind": "contains", "values": ["8 min", "huit min"] } ],
+    "checks": [ { "kind": "regex", "pattern": "300\\s*000|3([,.]0+)?\\s*\\\\?(×|\\\\times|x|\\\\cdot)\\s*10\\^?\\{?5\\}?" }, { "kind": "contains", "values": ["8 min", "huit min"] } ],
     "rubric": "Garde exactement les deux valeurs (300 000 km/s, 8 minutes) sans les arrondir autrement."
   },
   {

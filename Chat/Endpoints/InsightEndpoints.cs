@@ -3,6 +3,7 @@ using Chat.Data;
 using Chat.Model;
 using Chat.Service;
 using Microsoft.EntityFrameworkCore;
+using static Chat.Endpoints.EndpointHelpers;
 
 namespace Chat.Endpoints;
 
@@ -108,6 +109,4 @@ public static class InsightEndpoints
             .ToListAsync(ct);
         return userIds.Except(off).ToHashSet();
     }
-
-    private static IResult Error(int status, string message) => Results.Json(new { message }, statusCode: status);
 }

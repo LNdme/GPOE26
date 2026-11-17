@@ -883,3 +883,19 @@ Plan de tests : `~/.gstack/projects/LNdme-GPOE26/Libert-feat-site-admin-navbar-e
 | `dur-langue-espagnol-calcul` | Une question en espagnol reçoit une réponse en français : `AgentPrompts.LanguageRule` ne connaît que le français et l'anglais (un autre cas en espagnol avait réussi par hasard) | B2 |
 
 Un quatrième échec venait d'une règle trop stricte (`dur-long-depistage` exigeait le nombre alors que guider l'élève est correct) : règle corrigée. Des tests vérifient maintenant les règles délicates des vrais cas sur des réponses justes et fausses (`Regles_des_cas_reels`) : ils ont trouvé que « 25 m » acceptait « 25 m/s ».
+
+---
+
+## Lot A1 : ce qui a été fait (17 nov. 2026, première moitié)
+
+- **Consignes sorties des routes** vers `Chat/Agents/Prompts/*.md` (ressources incorporées) : `teacher.md`, `teacher-insights.md`, `site.md`. Lues par `Chat/Agents/PromptLibrary.cs` : variables `{{nom}}` (une variable oubliée est une erreur), version = 8 caractères d'empreinte, écrite au démarrage du service (« Consignes des agents : site@…, teacher@… »). Texte de l'agent du site vérifié identique à l'ancien ; celui de l'enseignant a une ligne de plus.
+- **`Chat/Agents/TeacherAssistant.cs`** : construction des demandes de l'assistant enseignant (fonctions pures). Les routes ne font plus que lire la base, appeler le modèle et compter le quota.
+- **Défaut de sécurité corrigé** (`dur-redaction-consigne-cachee-courstext`) : les données (passage, cours déjà rédigé) viennent d'abord, nettoyées (commentaires HTML retirés, balise fermante neutralisée), puis la tâche et les consignes de l'enseignant en dernier, avec un rappel ; règle ajoutée à la consigne.
+- **Réponses coupées** : la rédaction demande maintenant une réponse complète (`requireComplete`), sinon le modèle suivant est essayé (vu dans les évaluations : une partie de cours arrêtée après 485 caractères).
+- **`Chat/Endpoints/EndpointHelpers.cs`** : `UserId` et `Error` en commun pour `AgentEndpoints`, `SiteAgentEndpoints`, `InsightEndpoints`.
+- **Tests** : `PromptLibraryTests.cs` (12 tests) ; 539 tests au vert.
+- **Porte avant/après** : nouveau Chat lancé à côté d'Aspire (port 5312, même base), 22 cas de rédaction : 20/22 au premier passage. Les deux échecs ne venaient pas du rangement : une règle trop stricte (« 3,0 × 10⁵ » refusé, corrigée et testée) et une réponse coupée par le modèle (rejouée deux fois : réussie). Le cas de la consigne cachée échouait avant et réussit maintenant.
+
+**Reste dans A1** :
+- **Le tuteur** (`TutorEndpoints.cs`) : une autre session y a des modifications non commitées (choix du modèle pour l'application Windows). Ses consignes passeront dans `Chat/Agents/Prompts/tutor*.md` une fois ce travail commité, pour ne pas le mélanger.
+- **`AiQuota` en double (Chat et Quiz)** : les règles sont déjà communes (`AiQuotaRules`) ; seul l'accès à la base diffère (deux bases, deux listes de fonctions). Les fusionner obligerait `ServiceDefaults` à dépendre d'Entity Framework pour tous les services : écart assumé, à revoir avec le quota réservé de façon atomique (A3, décision 41).

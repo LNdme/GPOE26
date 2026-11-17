@@ -6,6 +6,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <!-- Consignes des agents : fichiers versionnés, lus par Chat.Agents.PromptLibrary -->
+  <ItemGroup>
+    <EmbeddedResource Include="Agents\Prompts\*.md" LogicalName="Chat.Agents.Prompts.%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <ItemGroup>
 	  <PackageReference Include="Aspire.Npgsql" Version="13.6.5" />
 	  <PackageReference Include="Aspire.Npgsql.EntityFrameworkCore.PostgreSQL" Version="13.6.5" />
