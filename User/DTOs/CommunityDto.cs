@@ -68,7 +68,11 @@ public record CreateChildRequest(
     SchoolSubSystem? SubSystem = null,
     string? Level = null,
     string? Filiere = null,
-    string? ExamTarget = null
+    string? ExamTarget = null,
+    // Lot B5 : pays et fuseau de l'enfant (ceux du parent par défaut), tranche de niveau hors Cameroun
+    string? Country = null,
+    string? TimeZone = null,
+    LevelBand? LevelBand = null
 );
 
 public record ChildLinkDto(

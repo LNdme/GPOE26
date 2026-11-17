@@ -67,6 +67,10 @@ public static class ParentEndpoints
                 ExamTarget = req.ExamTarget,
                 LinkCode = await UniqueLinkCodeAsync(db)
             };
+            // L'enfant vit d'ordinaire dans le pays et le fuseau de son parent (lot B5)
+            var parent = await db.AppUsers.AsNoTracking().FirstOrDefaultAsync(u => u.Id == parentId);
+            LearningContextRules.ApplyAtRegistration(child, req.Country ?? parent?.Country, req.TimeZone ?? parent?.TimeZone,
+                null, req.LevelBand, null);
             var link = new ParentChildLink
             {
                 ParentId = parentId,

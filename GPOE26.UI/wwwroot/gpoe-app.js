@@ -80,3 +80,8 @@ export function reveal(id) {
     const el = document.getElementById(id);
     if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('flash'); }
 }
+
+/** Fuseau horaire du navigateur (IANA, ex. « America/Mexico_City »), ou chaîne vide s'il est inconnu. */
+export function timeZone() {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; }
+}

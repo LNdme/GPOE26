@@ -49,7 +49,13 @@ public record RegisterRequest(
     // ── Élève ou enseignant : clé familiale / d'établissement / d'institution ──
     string? SubscriptionKey = null,
     // ── Secondaire (élève) ou supérieur (étudiant) ──
-    EducationStage? Stage = null
+    EducationStage? Stage = null,
+    // ── Contexte d'apprentissage (lot B5 : pays d'abord, fuseau du navigateur) ──
+    string? Country = null,
+    string? TimeZone = null,
+    string? EducationSystem = null,
+    LevelBand? LevelBand = null,
+    LearningGoal? Goal = null
 );
 
 /// <summary>

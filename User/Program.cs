@@ -221,6 +221,7 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
         LinkCode = req.Role == UserRole.Student ? await ParentEndpoints.UniqueLinkCodeAsync(db) : null,
         LastLoginAt = DateTime.UtcNow   // l'inscription ouvre la première session
     };
+    LearningContextRules.ApplyAtRegistration(user, req.Country, req.TimeZone, req.EducationSystem, req.LevelBand, req.Goal);
     db.AppUsers.Add(user);
 
     // Enseignant indépendant : son espace existe dès l'inscription (« Mes élèves et codes »), même sans classe
@@ -233,7 +234,8 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
         var isSchool = req.TeachingContext != TeachingContext.Institution;
         foreach (var name in req.InitialClasses.Where(n => !string.IsNullOrWhiteSpace(n)).Distinct())
         {
-            var subSystem = !isSchool ? (SchoolSubSystem?)null
+            // Sous-système déduit du nom de la classe : seulement au Cameroun (lot B5)
+            var subSystem = !isSchool || !LearningContextRules.UsesCameroonSubSystems(user) ? (SchoolSubSystem?)null
                 : name.StartsWith("Form", StringComparison.OrdinalIgnoreCase) || name.EndsWith("Sixth", StringComparison.OrdinalIgnoreCase)
                     ? SchoolSubSystem.Anglophone : SchoolSubSystem.Francophone;
             await classrooms.CreateAsync(user, name, isSchool ? name.Trim() : null, subSystem);

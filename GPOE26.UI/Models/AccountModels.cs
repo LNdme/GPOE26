@@ -39,6 +39,12 @@ public record RegisterRequest
     public bool StartTrial { get; init; }
     public string? SubscriptionKey { get; init; }
     public EducationStage? Stage { get; init; }
+    // Contexte d'apprentissage (lot B5) : pays choisi d'abord, fuseau du navigateur
+    public string? Country { get; init; }
+    public string? TimeZone { get; init; }
+    public string? EducationSystem { get; init; }
+    public LevelBand? LevelBand { get; init; }
+    public LearningGoal? Goal { get; init; }
 }
 
 /// <summary>Modification du profil (page « Mon profil ») : null = valeur inchangée, chaîne vide = valeur effacée.</summary>
@@ -151,7 +157,8 @@ public record ChildLink(Guid LinkId, LinkStatus Status, Guid ChildId, string Use
 public record ParentLink(Guid LinkId, LinkStatus Status, Guid ParentId, string ParentName, DateTime CreatedAt);
 
 public record CreateChildRequest(string Email, string Username, string Password, SchoolSubSystem? SubSystem = null,
-    string? Level = null, string? Filiere = null, string? ExamTarget = null);
+    string? Level = null, string? Filiere = null, string? ExamTarget = null,
+    string? Country = null, string? TimeZone = null, LevelBand? LevelBand = null);
 
 // ─── Abonnements ──────────────────────────────────────────────────────────────
 

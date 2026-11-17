@@ -942,3 +942,17 @@ Un quatrième échec venait d'une règle trop stricte (`dur-long-depistage` exig
 - Un rendu déclenché hors d'une activité de la personne (minuterie en arrière-plan) utilise le fuseau de l'hôte.
 - **L'application Windows** (`GPOE26.Windows`, autre session) n'a qu'une personne par processus : elle peut simplement poser `AppTime.Zone = AppTime.ZoneOf(profil) ?? …` après la connexion. Non fait ici : ce projet n'est pas encore commité.
 - Une personne sans pays ni fuseau garde le fuseau de l'hôte : l'inscription neutre (B5) demandera le pays, et pourra proposer le fuseau du navigateur.
+
+---
+
+## Lot B5 : ce qui a été fait (17 nov. 2026)
+
+- **Pays d'abord** : chaque parcours d'inscription (élève, étudiant, adulte, enseignant, parent) demande le pays juste après le prénom, parmi les préréglages de B1 (servis par le service User) et « Un autre pays ».
+- **Le Cameroun garde exactement son parcours** (sous-système, classes 6e → Terminale et Form 1 → Upper Sixth, série, BEPC… GCE). **Ailleurs**, parcours sans référentiel imposé : tranche (primaire, collège, lycée), classe en texte libre avec un exemple du pays (« 3° de secundaria » pour le Mexique), puis les examens du pays et « Pas d'examen cette année » (texte libre pour un autre pays). L'enseignant hors Cameroun écrit ses classes en texte libre ; aucune classe ne reçoit plus de sous-système camerounais hors Cameroun.
+- **Nouveau profil « J'apprends par moi-même »** (adulte, sans classe ni établissement) : pays, objectif (compétence, curiosité, examen ou concours), sujets en texte libre, temps par jour. Enregistré comme apprenant de tranche « adulte », sans étape « secondaire ».
+- **Fuseau du navigateur** (`Intl`, `gpoe-app.js`) envoyé à l'inscription : plus précis que celui du pays (plusieurs fuseaux au Mexique). Un fuseau ou un pays invalide est ignoré, jamais une cause d'échec (`LearningContextRules.ApplyAtRegistration`).
+- **Enfant créé par un parent** : il reçoit le pays et le fuseau du parent, et sa tranche hors Cameroun.
+- **Tests** : `RegistrationContextTests.cs` (8 tests) ; 612 tests au vert.
+- **Vérifié en marche** (User et Web recompilés) : parcours élève au Mexique dans le navigateur intégré (pays, tranche, classe avec exemple mexicain, EXANI-I / EXANI-II / pas d'examen). Compte enregistré avec pays MX, sans sous-système, tranche « collège », examen EXANI-I, échelle sur 10 déduite et fuseau du navigateur. Compte d'essai laissé en base de développement : `b5-eleve-mx@exemple.test`.
+
+**Non fait** : les textes de l'inscription restent en français (B4) ; les parcours adulte, enseignant et parent hors Cameroun n'ont été vérifiés que par les tests, pas dans le navigateur.

@@ -171,6 +171,28 @@ public static class LearningContextRules
         new string((value ?? "").Trim().ToLowerInvariant().Normalize(NormalizationForm.FormD)
             .Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark).ToArray());
 
+    /// <summary>
+    /// Contexte donné à l'inscription (lot B5). Une valeur invalide est ignorée plutôt que refusée : l'inscription ne doit
+    /// pas échouer parce que le navigateur annonce un fuseau inconnu du serveur. Le système, la tranche et l'objectif ne
+    /// valent que pour un apprenant.
+    /// </summary>
+    public static void ApplyAtRegistration(AppUser user, string? country, string? timeZone, string? educationSystem,
+        LevelBand? levelBand, LearningGoal? goal)
+    {
+        if (country?.Trim().ToUpperInvariant() is { } code && IsCountryCode(code)) user.Country = code;
+        if (timeZone?.Trim() is { Length: > 0 } zone && IsTimeZone(zone)) user.TimeZone = zone;
+        if (user.Role == UserRole.Parent) return;
+        if (educationSystem?.Trim() is { Length: > 0 and <= 100 } system) user.EducationSystem = system;
+        if (user.Role != UserRole.Student) return;
+        user.LevelBand = levelBand ?? user.LevelBand;
+        user.LearningGoal = goal ?? user.LearningGoal;
+        // Un adulte qui apprend seul n'est ni au collège ni au lycée
+        if (levelBand == LevelBand.Adult) user.Stage = null;
+    }
+
+    /// <summary>Les classes « 6e … Terminale / Form 1 … Upper Sixth » et leurs sous-systèmes ne valent qu'au Cameroun.</summary>
+    public static bool UsesCameroonSubSystems(AppUser user) => user.Country is null or "CM";
+
     /// <summary>Code pays accepté : deux lettres majuscules (ISO 3166-1), dont « ZZ » pour un autre pays.</summary>
     public static bool IsCountryCode(string code) => code.Length == 2 && code.All(c => c is >= 'A' and <= 'Z');
 
