@@ -70,6 +70,12 @@ public static class TutorEndpoints
         })
         .WithSummary("Mes discussions avec le tuteur (une par cours)");
 
+        // ── GET /tutor/models ─────────────────────────────────────────────────────
+        // Le sélecteur de modèle de l'application Windows : seuls les modèles retenus par le serveur sont proposés.
+        group.MapGet("/models", async (LlmClient llm, CancellationToken ct) =>
+                Results.Ok(new TutorModelsDto(llm.TextModels, llm.VisionModels, await llm.ContextLengthsAsync(ct))))
+            .WithSummary("Modèles d'IA proposés pour le tuteur (ordre de repli du serveur)");
+
         // ── GET /tutor/courses/{courseId} ─────────────────────────────────────────
         group.MapGet("/courses/{courseId:guid}", async (Guid courseId, ClaimsPrincipal principal, TutorContext db) =>
         {
@@ -89,11 +95,12 @@ public static class TutorEndpoints
             TutorContext db, PlatformClients platform, LlmClient llm, AgentContextService agent,
             AiQuota quota, CourseIndex index, ILogger<TutorContext> logger, CancellationToken ct) =>
         {
+            if (UnknownModel(llm, req.Model) is { } unknown) return unknown;
             var (refusal, ask) = await PrepareAsync(courseId, req, principal, db, platform, agent, quota, index, ct);
             if (refusal is not null) return refusal;
 
             string reply;
-            var info = new LlmCallInfo();
+            var info = new LlmCallInfo { Preferred = req.Model };
             try
             {
                 reply = await llm.CompleteAsync(ask!.Messages, temperature: ask.Temperature, ct: ct, info: info);
@@ -104,7 +111,7 @@ public static class TutorEndpoints
                 return Error(ex is LlmNotConfiguredException ? 503 : 502, Unavailable(ex));
             }
 
-            var saved = await SaveAsync(ask!, reply, info.Model, db, agent, quota, ct);
+            var saved = await SaveAsync(ask!, reply, info, db, agent, quota, ct);
             return Results.Ok(saved);
         })
         .WithSummary("Poser une question au tuteur (Premium) — la question et la réponse sont enregistrées");
@@ -117,6 +124,7 @@ public static class TutorEndpoints
             HttpContext http, TutorContext db, PlatformClients platform, LlmClient llm, AgentContextService agent,
             AiQuota quota, CourseIndex index, ILogger<TutorContext> logger, CancellationToken ct) =>
         {
+            if (UnknownModel(llm, req.Model) is { } unknown) return unknown;
             var (refusal, ask) = await PrepareAsync(courseId, req, principal, db, platform, agent, quota, index, ct);
             if (refusal is not null) return refusal;
 
@@ -135,7 +143,7 @@ public static class TutorEndpoints
             await WriteAsync(new { type = "start" });
 
             var reply = new System.Text.StringBuilder();
-            var info = new LlmCallInfo();
+            var info = new LlmCallInfo { Preferred = req.Model };
             try
             {
                 await foreach (var piece in llm.StreamAsync(ask!.Messages, temperature: ask.Temperature, info: info, ct: ct))
@@ -152,7 +160,7 @@ public static class TutorEndpoints
             }
 
             var text = LlmClient.StripThinking(reply.ToString())!.Trim();
-            var saved = await SaveAsync(ask!, text, info.Model, db, agent, quota, ct);
+            var saved = await SaveAsync(ask!, text, info, db, agent, quota, ct);
             await WriteAsync(new { type = "done", question = saved.Question, answer = saved.Answer });
             return Results.Empty;
         })
@@ -309,12 +317,16 @@ public static class TutorEndpoints
     }
 
     /// <summary>Enregistre la question et la réponse, décompte la demande, et note le cours comme étudié.</summary>
-    private static async Task<AskTutorResponse> SaveAsync(TutorAsk ask, string reply, string? model, TutorContext db,
+    private static async Task<AskTutorResponse> SaveAsync(TutorAsk ask, string reply, LlmCallInfo info, TutorContext db,
         AgentContextService agent, AiQuota quota, CancellationToken ct)
     {
         var now = DateTime.UtcNow;
         var question = new TutorMessage { ConversationId = ask.Conversation.Id, Role = "user", Content = ask.Text, ImageId = ask.Image?.Id, CreatedAt = now };
-        var answer = new TutorMessage { ConversationId = ask.Conversation.Id, Role = "assistant", Content = reply, Model = model, CreatedAt = now.AddMilliseconds(1) };
+        var answer = new TutorMessage
+        {
+            ConversationId = ask.Conversation.Id, Role = "assistant", Content = reply, Model = info.Model, CreatedAt = now.AddMilliseconds(1),
+            PromptTokens = info.Usage?.Prompt, CompletionTokens = info.Usage?.Completion, ReasoningTokens = info.Usage?.Reasoning
+        };
         db.Messages.AddRange(question, answer);
         ask.Conversation.UpdatedAt = now;
         await db.SaveChangesAsync(ct);
@@ -324,6 +336,13 @@ public static class TutorEndpoints
         // La mémoire relit les échanges par lots (TutorReflectionScheduler) : un appel au modèle pour plusieurs questions
         return new AskTutorResponse(new TutorMessageDto(question), new TutorMessageDto(answer));
     }
+
+    /// <summary>Un modèle demandé doit faire partie de ceux du serveur : le client ne choisit pas un modèle payant à sa place.</summary>
+    private static IResult? UnknownModel(LlmClient llm, string? model) =>
+        string.IsNullOrWhiteSpace(model)
+        || llm.TextModels.Concat(llm.VisionModels).Contains(model.Trim(), StringComparer.OrdinalIgnoreCase)
+            ? null
+            : Error(400, "Ce modèle n'est pas proposé sur ce serveur. Choisis-en un autre dans la liste.");
 
     private static string Unavailable(LlmUnavailableException ex) => ex is LlmNotConfiguredException
         ? "Le tuteur n'est pas activé sur ce serveur : aucune clé d'IA n'est configurée."

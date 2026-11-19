@@ -237,7 +237,8 @@ public record ClassroomProgress(Guid ClassroomId, List<AssessmentHeader> Assessm
 
 // ─── Tuteur IA ────────────────────────────────────────────────────────────────
 
-public record TutorMessage(Guid Id, string Role, string Content, Guid? ImageId, bool Pinned, DateTime CreatedAt)
+public record TutorMessage(Guid Id, string Role, string Content, Guid? ImageId, bool Pinned, DateTime CreatedAt, string? Model = null,
+    int? PromptTokens = null, int? CompletionTokens = null, int? ReasoningTokens = null)
 {
     public bool FromStudent => Role == "user";
 }

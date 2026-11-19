@@ -35,6 +35,24 @@ public class LlmStreamTests
     }
 
     [Fact]
+    public void Les_tokens_du_dernier_morceau_sont_lus()
+    {
+        var piece = LlmClient.ReadStreamLine(
+            """data: {"choices":[],"usage":{"prompt_tokens":5120,"completion_tokens":830,"completion_tokens_details":{"reasoning_tokens":400},"prompt_tokens_details":{"cached_tokens":4096}}}""",
+            out var done, out var usage);
+        Assert.Null(piece);
+        Assert.False(done);
+        Assert.Equal(new LlmUsage(5120, 830, 400, 4096), usage);
+    }
+
+    [Fact]
+    public void Un_morceau_sans_tokens_n_en_invente_pas()
+    {
+        LlmClient.ReadStreamLine("""data: {"choices":[{"delta":{"content":"a"}}]}""", out _, out var usage);
+        Assert.Null(usage);
+    }
+
+    [Fact]
     public void Une_erreur_du_fournisseur_dans_le_flux_est_signalee() =>
         Assert.Throws<HttpRequestException>(() =>
             LlmClient.ReadStreamLine("""data: {"error":{"message":"Provider overloaded"}}""", out _));

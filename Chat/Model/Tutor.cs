@@ -61,6 +61,13 @@ public class TutorMessage
     /// <summary>Modèle d'IA qui a écrit la réponse (null pour une question) : pour savoir d'où vient une erreur</summary>
     public string? Model { get; set; }
 
+    /// <summary>Tokens envoyés au modèle pour cette réponse (place occupée dans sa fenêtre de contexte)</summary>
+    public int? PromptTokens { get; set; }
+    /// <summary>Tokens écrits par le modèle (réponse et réflexion)</summary>
+    public int? CompletionTokens { get; set; }
+    /// <summary>Dont tokens de réflexion, si le fournisseur les compte à part</summary>
+    public int? ReasoningTokens { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
@@ -91,9 +98,13 @@ public class CourseChunk
 
 // ─── DTO ──────────────────────────────────────────────────────────────────────
 
-public record TutorMessageDto(Guid Id, string Role, string Content, Guid? ImageId, bool Pinned, DateTime CreatedAt)
+/// <param name="Model">Modèle qui a rédigé la réponse (absent pour les questions de l'élève).</param>
+/// <param name="PromptTokens">Tokens envoyés au modèle pour écrire cette réponse ; CompletionTokens, ceux qu'il a écrits.</param>
+public record TutorMessageDto(Guid Id, string Role, string Content, Guid? ImageId, bool Pinned, DateTime CreatedAt, string? Model = null,
+    int? PromptTokens = null, int? CompletionTokens = null, int? ReasoningTokens = null)
 {
-    public TutorMessageDto(TutorMessage m) : this(m.Id, m.Role, m.Content, m.ImageId, m.Pinned, m.CreatedAt) { }
+    public TutorMessageDto(TutorMessage m) : this(m.Id, m.Role, m.Content, m.ImageId, m.Pinned, m.CreatedAt, m.Model,
+        m.PromptTokens, m.CompletionTokens, m.ReasoningTokens) { }
 }
 
 public record ConversationSummaryDto(Guid Id, Guid CourseId, string CourseTitle, string? Subject,
@@ -101,7 +112,12 @@ public record ConversationSummaryDto(Guid Id, Guid CourseId, string CourseTitle,
 
 public record ConversationDto(Guid? Id, Guid CourseId, string? CourseTitle, List<TutorMessageDto> Messages);
 
-public record AskTutorRequest(string? Message, Guid? ImageId);
+/// <param name="Model">Modèle choisi dans le sélecteur ; null ou absent : ordre du serveur (« Automatique »).</param>
+public record AskTutorRequest(string? Message, Guid? ImageId, string? Model = null);
+
+/// <summary>Modèles proposés par le serveur, dans leur ordre de repli : texte, et lecture de photos.</summary>
+/// <param name="Context">Taille de la fenêtre de contexte de chaque modèle, en tokens (quand le fournisseur la publie).</param>
+public record TutorModelsDto(IReadOnlyList<string> Text, IReadOnlyList<string> Vision, IReadOnlyDictionary<string, int>? Context = null);
 
 public record AskTutorResponse(TutorMessageDto Question, TutorMessageDto Answer);
 

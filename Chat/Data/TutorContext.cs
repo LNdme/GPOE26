@@ -193,6 +193,10 @@ public static partial class AgentSchema
         @"ALTER TABLE ""AgentProfiles"" ADD COLUMN IF NOT EXISTS ""ForgottenAt"" timestamp with time zone",
         // H11 : modèle d'IA qui a écrit chaque réponse
         @"ALTER TABLE ""TutorMessages"" ADD COLUMN IF NOT EXISTS ""Model"" text",
+        // Tokens de chaque réponse : l'application montre ce que coûte la discussion et la place prise dans le contexte
+        @"ALTER TABLE ""TutorMessages"" ADD COLUMN IF NOT EXISTS ""PromptTokens"" integer",
+        @"ALTER TABLE ""TutorMessages"" ADD COLUMN IF NOT EXISTS ""CompletionTokens"" integer",
+        @"ALTER TABLE ""TutorMessages"" ADD COLUMN IF NOT EXISTS ""ReasoningTokens"" integer",
         // H12 : passages des cours et leurs vecteurs de sens (comparés par le service, sans dépendre de pgvector)
         @"CREATE TABLE IF NOT EXISTS ""CourseChunks"" (
             ""CourseId"" uuid NOT NULL,
