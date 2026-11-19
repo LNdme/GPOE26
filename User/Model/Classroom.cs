@@ -14,6 +14,8 @@ namespace User.Model
 
         public Guid TeacherId { get; set; }
 
+        public Guid? WorkspaceId { get; set; }
+
         public Guid? OrganizationId { get; set; }
 
         /// <summary>Niveau (ex: "Terminale", "Upper Sixth") — null pour un groupe hors scolaire</summary>

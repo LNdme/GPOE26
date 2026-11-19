@@ -60,6 +60,13 @@ builder.Services.AddSwaggerGen(c =>
 builder.Services.AddScoped<Jwtservice>();
 builder.Services.AddScoped<SubscriptionService>();
 builder.Services.AddScoped<ClassroomService>();
+builder.Services.AddScoped<WorkspaceService>();
+builder.Services.AddDataProtection();
+builder.Services.AddScoped<McpAuthorizationService>();
+builder.Services.AddScoped<GPOE26.Agent.Abstractions.IMcpPermissionGrantStore>(
+    services => services.GetRequiredService<McpAuthorizationService>());
+builder.Services.AddScoped<GPOE26.Agent.Abstractions.IMcpServerProcessOptionsStore>(
+    services => services.GetRequiredService<McpAuthorizationService>());
 
 // Applique les [Required], [MinLength]… des DTOs aux Minimal APIs (sinon ils sont ignorés)
 builder.Services.AddValidation();
@@ -149,7 +156,7 @@ var auth = app.MapGroup("/auth").WithTags("Auth");
 // Inscription guidée (élève, enseignant ou parent). Les clés et codes sont vérifiés
 // AVANT la création du compte : une clé invalide ne laisse pas de compte à moitié créé.
 auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice jwt,
-    SubscriptionService subs, ClassroomService classrooms) =>
+    SubscriptionService subs, ClassroomService classrooms, WorkspaceService workspaces) =>
 {
     if (req.Role == UserRole.Admin)
         return Results.BadRequest(new { message = "Un compte administrateur ne peut pas être créé par inscription." });
@@ -212,6 +219,27 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
         LastLoginAt = DateTime.UtcNow   // l'inscription ouvre la première session
     };
     db.AppUsers.Add(user);
+    await db.SaveChangesAsync();
+    var activeWorkspace = await workspaces.EnsurePersonalWorkspaceAsync(user.Id);
+
+    if (req.SubscriptionKey is not null)
+        await subs.RedeemAsync(user, req.SubscriptionKey);
+
+    if (req.StartTrial)
+        await subs.StartTrialAsync(user.Id, SubscriptionPlan.Teacher);
+
+    if (user.Role == UserRole.Parent)
+    {
+        await workspaces.EnsureFamilyWorkspaceAsync(user.Id);
+        activeWorkspace = (await workspaces.GetMineAsync(user.Id))
+            .Single(workspace => workspace.Kind == WorkspaceKind.Family);
+    }
+    else if (user.OrganizationId is { } organizationId)
+    {
+        activeWorkspace = (await workspaces.GetMineAsync(user.Id))
+            .FirstOrDefault(workspace => workspace.OrganizationId == organizationId)
+            ?? activeWorkspace;
+    }
 
     // Enseignant : une classe (ou un groupe) par niveau choisi pendant l'inscription
     if (req.Role == UserRole.Teacher && req.InitialClasses is { Count: > 0 })
@@ -222,7 +250,12 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
             var subSystem = !isSchool ? (SchoolSubSystem?)null
                 : name.StartsWith("Form", StringComparison.OrdinalIgnoreCase) || name.EndsWith("Sixth", StringComparison.OrdinalIgnoreCase)
                     ? SchoolSubSystem.Anglophone : SchoolSubSystem.Francophone;
-            await classrooms.CreateAsync(user, name, isSchool ? name.Trim() : null, subSystem);
+            await classrooms.CreateAsync(
+                user,
+                activeWorkspace.Id,
+                name,
+                isSchool ? name.Trim() : null,
+                subSystem);
         }
     }
 
@@ -231,15 +264,9 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
 
     await db.SaveChangesAsync();
 
-    if (req.SubscriptionKey is not null)
-        await subs.RedeemAsync(user, req.SubscriptionKey);
-
-    if (req.StartTrial)
-        await subs.StartTrialAsync(user.Id, SubscriptionPlan.Teacher);
-
     var entitlement = await subs.GetEntitlementAsync(user.Id);
-    var (token, expiresAt) = jwt.GenerateToken(user, entitlement);
-    return Results.Created("/auth/me", new AuthResponse(token, expiresAt, new UserProfileDto(user, entitlement)));
+    var (token, expiresAt) = jwt.GenerateToken(user, entitlement, activeWorkspace);
+    return Results.Created("/auth/me", new AuthResponse(token, expiresAt, new UserProfileDto(user, entitlement), activeWorkspace));
 })
 .WithSummary("Créer un compte")
 .Produces<AuthResponse>(201)
@@ -247,7 +274,12 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
 .Produces(400);
 
 // ── POST /auth/login ──────────────────────────────────────────────────────────
-auth.MapPost("/login", async (LoginRequest req, UserContext db, Jwtservice jwt, SubscriptionService subs) =>
+auth.MapPost("/login", async (
+    LoginRequest req,
+    UserContext db,
+    Jwtservice jwt,
+    SubscriptionService subs,
+    WorkspaceService workspaces) =>
 {
     var user = await db.AppUsers.FirstOrDefaultAsync(u => u.Email == req.Email.ToLower());
 
@@ -258,10 +290,23 @@ auth.MapPost("/login", async (LoginRequest req, UserContext db, Jwtservice jwt, 
 
     user.LastLoginAt = DateTime.UtcNow;
     await db.SaveChangesAsync();
+    var activeWorkspace = await workspaces.EnsurePersonalWorkspaceAsync(user.Id);
+    if (user.Role == UserRole.Parent)
+    {
+        await workspaces.EnsureFamilyWorkspaceAsync(user.Id);
+        activeWorkspace = (await workspaces.GetMineAsync(user.Id))
+            .Single(workspace => workspace.Kind == WorkspaceKind.Family);
+    }
+    else if (user.OrganizationId is { } organizationId)
+    {
+        activeWorkspace = (await workspaces.GetMineAsync(user.Id))
+            .FirstOrDefault(workspace => workspace.OrganizationId == organizationId)
+            ?? activeWorkspace;
+    }
 
     var entitlement = await subs.GetEntitlementAsync(user.Id);
-    var (token, expiresAt) = jwt.GenerateToken(user, entitlement);
-    return Results.Ok(new AuthResponse(token, expiresAt, new UserProfileDto(user, entitlement)));
+    var (token, expiresAt) = jwt.GenerateToken(user, entitlement, activeWorkspace);
+    return Results.Ok(new AuthResponse(token, expiresAt, new UserProfileDto(user, entitlement), activeWorkspace));
 })
 .WithSummary("Se connecter")
 .Produces<AuthResponse>()
@@ -321,6 +366,8 @@ app.MapClassroomEndpoints();
 app.MapParentEndpoints();
 app.MapSubscriptionEndpoints();
 app.MapAdminEndpoints();
+app.MapWorkspaceEndpoints();
+app.MapMcpRuntimeEndpoints();
 
 app.MapControllers();
 

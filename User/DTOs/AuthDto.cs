@@ -58,7 +58,8 @@ public record LoginRequest(
 public record AuthResponse(
     string Token,
     DateTime ExpiresAt,
-    UserProfileDto Profile
+    UserProfileDto Profile,
+    WorkspaceSummaryDto? ActiveWorkspace = null
 );
 
 public record UserProfileDto(

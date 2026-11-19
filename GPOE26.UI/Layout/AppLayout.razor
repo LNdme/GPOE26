@@ -1,6 +1,7 @@
 @inherits LayoutComponentBase
 @implements IDisposable
 @inject SessionState Session
+@inject IAccountApi Account
 @inject NavigationManager Nav
 
 <div class="ga-app">
@@ -21,12 +22,38 @@
             @if (Session.Profile is { } me)
             {
                 <div class="ga-badge-box">
-                    @SpaceLabel(me.Role)
+                    @SpaceLabel(Session)
                     <small>@(me.IsPremium ? Labels.Of(me.Plan) : "Formule gratuite")</small>
+                    @if (_workspaces.Count <= 1 && Session.ActiveWorkspace is { } activeWorkspace)
+                    {
+                        <small>@activeWorkspace.Name</small>
+                    }
                 </div>
 
+                @if (_workspaces.Count > 0 && (_workspaces.Count > 1 || Session.ActiveWorkspace is null))
+                {
+                    <div class="ga-workspace-picker">
+                        <label for="active-workspace">Espace actif</label>
+                        <select id="active-workspace" class="ga-select" value="@_selectedWorkspaceId"
+                                disabled="@_switchingWorkspace" @onchange="SwitchWorkspaceAsync">
+                            @if (string.IsNullOrEmpty(_selectedWorkspaceId))
+                            {
+                                <option value="" disabled>Choisir un espace</option>
+                            }
+                            @foreach (var workspace in _workspaces)
+                            {
+                                <option value="@workspace.Id">@workspace.Name (@WorkspaceKindLabel(workspace.Kind))</option>
+                            }
+                        </select>
+                    </div>
+                }
+                @if (_workspaceError is not null)
+                {
+                    <div class="ga-workspace-error"><Alert Message="@_workspaceError" /></div>
+                }
+
                 <div class="ga-nav">
-                    @foreach (var item in Items(me.Role))
+                    @foreach (var item in Items(Session))
                     {
                         <NavLink href="@item.Href" Match="@(item.Href == "/app" ? NavLinkMatch.All : NavLinkMatch.Prefix)">
                             <Icon Name="@item.Icon" /> <span>@item.Label</span>
@@ -37,6 +64,14 @@
                         </NavLink>
                     }
                 </div>
+                @if (!Items(Session).Any())
+                {
+                    <p class="ga-small ga-muted">
+                        @(_workspaces.Count > 1
+                            ? "Choisis un espace pour afficher les pages auxquelles tu as accès."
+                            : "Aucune page n'est disponible sans rôle dans un espace actif.")
+                    </p>
+                }
 
                 <div class="ga-nav-title">SITE</div>
                 <div class="ga-nav">
@@ -57,54 +92,204 @@
         </nav>
 
         <main class="ga-main" id="contenu">
-            @Body
+            @if (Session.IsAuthenticated && Session.ActiveWorkspace is null)
+            {
+                <div class="ga-page">
+                    <section class="ga-card">
+                        <h1 class="ga-h1">Espace actif requis</h1>
+                        @if (!_workspacesLoaded)
+                        {
+                            <p>Les espaces disponibles n'ont pas pu être vérifiés. Réessaie ou reconnecte-toi.</p>
+                        }
+                        else if (_workspaces.Count == 0)
+                        {
+                            <p>Aucun espace n'est associé à ce compte. Contacte l'administrateur de ton établissement si tu penses qu'il s'agit d'une erreur.</p>
+                        }
+                        else if (_workspaces.Count == 1)
+                        {
+                            <p>L'espace disponible n'a pas pu être sélectionné. Réessaie depuis le sélecteur ou reconnecte-toi.</p>
+                        }
+                        else
+                        {
+                            <p>Choisis un espace dans le menu pour continuer. Aucun espace n'a été sélectionné automatiquement.</p>
+                        }
+                        @if (_workspaceError is not null)
+                        {
+                            <Alert Message="@_workspaceError" />
+                        }
+                    </section>
+                </div>
+            }
+            else
+            {
+                @Body
+            }
         </main>
     </div>
 </div>
 
 @code {
     private bool _open;
+    private bool _switchingWorkspace;
+    private bool _workspacesLoaded;
+    private List<WorkspaceSummary> _workspaces = [];
+    private string? _workspaceError;
+    private string _selectedWorkspaceId = "";
 
     private record NavItem(string Href, string Label, string Icon, bool Premium = false);
 
-    private static IEnumerable<NavItem> Items(UserRole role) => role switch
+    private static IEnumerable<NavItem> Items(SessionState session)
     {
-        UserRole.Teacher =>
-        [
-            new("/app", "Mes classes", "users"),
-            new("/app/evaluations", "Épreuves et devoirs", "file"),
-            new("/app/cours", "Mes cours", "book"),
-            new("/app/abonnement", "Abonnement", "card"),
-        ],
-        UserRole.Parent =>
-        [
-            new("/app", "Vue d'ensemble", "grid"),
-            new("/app/abonnement", "Abonnement et paiements", "card"),
-        ],
-        _ =>
-        [
-            new("/app", "Plan d'études", "compass"),
-            new("/app/cours", "Mes cours", "book"),
-            new("/app/evaluations", "Évaluations", "check"),
-            new("/app/tuteur", "Tuteur IA", "spark", Premium: true),
-            new("/app/abonnement", "Abonnement", "card"),
-        ]
-    };
+        if (session.Profile?.Role == UserRole.Admin)
+            return
+            [
+                new("/app", "Vue d'ensemble", "grid"),
+                new("/app/admin/mcp", "Administration MCP", "key"),
+                new("/app/mcp", "Autorisations MCP", "key"),
+                new("/app/abonnement", "Abonnement", "card"),
+            ];
+        if (session.IsFamilyGuardian)
+            return
+            [
+                new("/app", "Vue d'ensemble", "grid"),
+                new("/app/mcp", "Autorisations MCP", "key"),
+                new("/app/abonnement", "Abonnement et paiements", "card"),
+            ];
+        if (session.CanTeach)
+            return
+            [
+                new("/app", "Mes classes", "users"),
+                new("/app/evaluations", "Épreuves et devoirs", "file"),
+                new("/app/cours", "Mes cours", "book"),
+                new("/app/mcp", "Autorisations MCP", "key"),
+                new("/app/abonnement", "Abonnement", "card"),
+            ];
+        if (session.CanLearn)
+            return
+            [
+                new("/app", "Plan d'études", "compass"),
+                new("/app/cours", "Mes cours", "book"),
+                new("/app/evaluations", "Évaluations", "check"),
+                new("/app/tuteur", "Tuteur IA", "spark", Premium: true),
+                new("/app/mcp", "Autorisations MCP", "key"),
+                new("/app/abonnement", "Abonnement", "card"),
+            ];
+        if (session.CanManageCourses)
+            return
+            [
+                new("/app/cours", "Mes cours", "book"),
+                new("/app/mcp", "Autorisations MCP", "key"),
+                new("/app/abonnement", "Abonnement", "card"),
+            ];
+        return session.ActiveWorkspace is not null
+            ? [new("/app/mcp", "Autorisations MCP", "key")]
+            : [];
+    }
 
-    private static string SpaceLabel(UserRole role) => role switch
-    {
-        UserRole.Teacher => "Espace enseignant",
-        UserRole.Parent => "Espace parent",
-        UserRole.Admin => "Administration",
-        _ => "Espace élève"
-    };
+    private static string SpaceLabel(SessionState session) =>
+        session.IsFamilyGuardian ? "Espace familial" :
+        session.CanTeach ? "Espace enseignant" :
+        session.ActiveWorkspace?.Kind == WorkspaceKind.Organization ? "Espace organisation" :
+        session.CanLearn ? "Espace élève" :
+        "Espace actif";
 
     protected override async Task OnInitializedAsync()
     {
         Session.Changed += OnSessionChanged;
         Nav.LocationChanged += OnLocationChanged;
         await Session.RestoreAsync();
+        if (Session.IsAuthenticated)
+        {
+            try
+            {
+                var result = await Account.WorkspacesAsync();
+                if (!result.Ok || result.Value is null)
+                {
+                    _workspaceError = result.Error ?? "Impossible de charger les espaces disponibles.";
+                    return;
+                }
+
+                _workspaces = result.Value;
+                _workspacesLoaded = true;
+                var activeWorkspaceId = Session.ActiveWorkspace?.Id;
+                if (activeWorkspaceId is { } activeId && _workspaces.Any(w => w.Id == activeId))
+                {
+                    _selectedWorkspaceId = activeId.ToString();
+                    return;
+                }
+
+                var hadUnavailableActiveWorkspace = activeWorkspaceId is not null;
+                if (hadUnavailableActiveWorkspace)
+                {
+                    await Session.ClearActiveWorkspaceAsync();
+                    _workspaceError = "L'espace enregistré n'est plus disponible. Choisis un espace accessible.";
+                }
+
+                if (_workspaces.Count == 0)
+                {
+                    _workspaceError ??= "Aucun espace n'est disponible pour ce compte.";
+                    return;
+                }
+
+                if (_workspaces.Count == 1 && !hadUnavailableActiveWorkspace)
+                    await SelectWorkspaceAsync(_workspaces[0].Id, reload: false);
+            }
+            catch
+            {
+                _workspaceError = "Impossible de charger ou de sélectionner un espace. Réessaie ou reconnecte-toi.";
+            }
+            finally
+            {
+                Session.CompleteWorkspaceResolution();
+            }
+        }
     }
+
+    private async Task SwitchWorkspaceAsync(ChangeEventArgs args)
+    {
+        if (_switchingWorkspace ||
+            !Guid.TryParse(args.Value?.ToString(), out var workspaceId) ||
+            workspaceId == Session.ActiveWorkspace?.Id)
+            return;
+
+        await SelectWorkspaceAsync(workspaceId, reload: true);
+    }
+
+    private async Task SelectWorkspaceAsync(Guid workspaceId, bool reload)
+    {
+        _switchingWorkspace = true;
+        _workspaceError = null;
+        try
+        {
+            var result = await Account.SelectWorkspaceAsync(workspaceId);
+            if (result.Ok && result.Value is { ActiveWorkspace: { } activeWorkspace } &&
+                activeWorkspace.Id == workspaceId)
+            {
+                await Session.SignInAsync(result.Value);
+                _selectedWorkspaceId = activeWorkspace.Id.ToString();
+                if (reload)
+                    Nav.NavigateTo(Nav.Uri, forceLoad: true);
+                return;
+            }
+
+            _workspaceError = result.Error ?? "Impossible de sélectionner cet espace.";
+        }
+        catch
+        {
+            _workspaceError = "Impossible de sélectionner cet espace. Réessaie ou reconnecte-toi.";
+        }
+
+        _selectedWorkspaceId = Session.ActiveWorkspace?.Id.ToString() ?? "";
+        _switchingWorkspace = false;
+    }
+
+    private static string WorkspaceKindLabel(WorkspaceKind kind) => kind switch
+    {
+        WorkspaceKind.Personal => "Personnel",
+        WorkspaceKind.Family => "Famille",
+        WorkspaceKind.Organization => "Organisation",
+        _ => kind.ToString()
+    };
 
     private void OnSessionChanged()
     {

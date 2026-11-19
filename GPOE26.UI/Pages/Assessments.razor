@@ -113,7 +113,7 @@
 </div>
 
 @code {
-    private bool IsTeacher => Session.Role == UserRole.Teacher;
+    private bool IsTeacher => Session.CanTeach;
     private bool _loading = true;
     private int _tab;
     private string? _error, _info;

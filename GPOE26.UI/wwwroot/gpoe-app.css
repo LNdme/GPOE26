@@ -55,6 +55,10 @@
 .ga-brand span { font-family: var(--ga-display); font-weight: 600; font-size: 23px; }
 .ga-badge-box { margin: 0 6px; padding: 10px 12px; border-radius: 12px; background: var(--ga-navy-2); border: 1px solid #3A5290; font-size: 13px; }
 .ga-badge-box small { display: block; color: var(--ga-lime); font-size: 12px; }
+.ga-workspace-picker { margin: -10px 6px 0; }
+.ga-workspace-picker label { display: block; margin-bottom: 6px; color: #B8C3DE; font-size: 12px; font-weight: 600; }
+.ga-workspace-picker .ga-select { min-height: 40px; padding: 7px 10px; font-size: 13px; }
+.ga-workspace-error { margin: -12px 6px 0; }
 .ga-nav { display: flex; flex-direction: column; gap: 3px; }
 .ga-nav a {
   display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 12px; border-radius: 10px;
@@ -147,6 +151,9 @@
 .ga-stack { display: flex; flex-direction: column; gap: 12px; }
 .ga-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .ga-row.between { justify-content: space-between; }
+.ga-consent-choice { display: flex; align-items: flex-start; gap: 10px; margin-top: 12px; color: var(--ga-muted); }
+.ga-consent-choice input { margin-top: 5px; flex: 0 0 auto; }
+.ga-consent-choice strong { color: var(--ga-navy); }
 .ga-muted { color: var(--ga-muted); }
 .ga-small { font-size: 13px; }
 

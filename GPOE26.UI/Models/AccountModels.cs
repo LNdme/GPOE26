@@ -12,6 +12,8 @@ public enum LinkStatus { Pending, Active, Rejected }
 public enum SubscriptionPlan { StudentPremium, Family, Teacher, OrganizationLicense }
 public enum BillingPeriod { Monthly, Yearly }
 public enum SubscriptionStatus { PendingPayment, Trial, Active, Expired, Cancelled }
+public enum WorkspaceKind { Personal, Family, Organization }
+public enum WorkspaceRole { Owner, Admin, Guardian, Learner, Instructor, Member }
 
 public record LoginRequest(string Email, string Password);
 
@@ -61,7 +63,54 @@ public record UserProfile(
     DateTime? PremiumUntil
 );
 
-public record AuthResponse(string Token, DateTime ExpiresAt, UserProfile Profile);
+public record AuthResponse(string Token, DateTime ExpiresAt, UserProfile Profile, WorkspaceSummary? ActiveWorkspace = null);
+
+public record WorkspaceSummary(
+    Guid Id,
+    string Name,
+    WorkspaceKind Kind,
+    Guid? OrganizationId,
+    IReadOnlyList<WorkspaceRole> Roles,
+    DateTime? JoinedAt);
+
+public record McpWorkspaceMember(Guid UserId, string Username, IReadOnlyList<WorkspaceRole> Roles);
+
+public record McpActiveGrant(
+    string ExtensionId,
+    IReadOnlyList<string> CapabilityIds,
+    IReadOnlyList<string> PermissionIds,
+    DateTime ApprovedAt);
+
+public record McpExtensionSummary(
+    string Id,
+    string Name,
+    string Description,
+    string PublisherName,
+    IReadOnlyList<McpCapabilitySummary> Capabilities,
+    IReadOnlyList<McpPermissionSummary> Permissions);
+
+public record McpCapabilitySummary(
+    string Id,
+    string Description,
+    IReadOnlyList<string> RequiredPermissionIds);
+
+public record McpPermissionSummary(string Id, string Description, bool Required);
+
+public record McpProcessConfigurationSummary(
+    Guid UserId,
+    Guid WorkspaceId,
+    string ExtensionId,
+    bool IsVerified,
+    bool IsSandboxed,
+    DateTime UpdatedAt);
+
+public record ConfigureMcpProcessRequest(
+    Guid UserId,
+    Guid WorkspaceId,
+    string ExtensionId,
+    string ImageReference,
+    IReadOnlyList<string>? Arguments,
+    IReadOnlyDictionary<string, string?>? EnvironmentVariables);
 
 // ─── Classes ──────────────────────────────────────────────────────────────────
 

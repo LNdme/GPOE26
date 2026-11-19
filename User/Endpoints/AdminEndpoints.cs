@@ -16,12 +16,82 @@ public static class AdminEndpoints
     {
         var admin = app.MapGroup("/admin").WithTags("Administration").RequireAuthorization(Policies.Admin);
 
+        admin.MapGet("/mcp/process-configurations", async (
+            McpAuthorizationService authorization,
+            CancellationToken cancellationToken) =>
+            Results.Ok(await authorization.ListProcessConfigurationsAsync(cancellationToken)))
+        .WithSummary("Lister les configurations MCP enregistrées, sans exposer leurs secrets")
+        .Produces<IReadOnlyList<McpProcessConfigurationSummary>>();
+
+        admin.MapPost("/mcp/process-configurations", async (
+            ConfigureMcpProcessRequest request,
+            McpAuthorizationService authorization,
+            CancellationToken cancellationToken) =>
+        {
+            var outcome = await authorization.ConfigureProcessOptionsAsync(
+                request.UserId,
+                request.WorkspaceId,
+                request.ExtensionId,
+                request.ImageReference,
+                request.Arguments,
+                request.EnvironmentVariables,
+                cancellationToken);
+            return ToMcpProcessConfigurationResult(outcome);
+        })
+        .WithSummary("Enregistrer une configuration MCP chiffrée comme non vérifiée")
+        .Produces(204)
+        .Produces(400)
+        .Produces(404);
+
+        admin.MapPost("/mcp/process-configurations/{workspaceId:guid}/{userId:guid}/{extensionId}/verify", async (
+            Guid workspaceId,
+            Guid userId,
+            string extensionId,
+            McpAuthorizationService authorization,
+            CancellationToken cancellationToken) =>
+        {
+            var outcome = await authorization.VerifyProcessOptionsAsync(
+                userId,
+                workspaceId,
+                extensionId,
+                cancellationToken);
+            return ToMcpProcessConfigurationResult(outcome);
+        })
+        .WithSummary("Approuver une configuration MCP pour une future exécution sandboxée")
+        .Produces(204)
+        .Produces(400)
+        .Produces(404);
+
+        admin.MapDelete("/mcp/process-configurations/{workspaceId:guid}/{userId:guid}/{extensionId}", async (
+            Guid workspaceId,
+            Guid userId,
+            string extensionId,
+            McpAuthorizationService authorization,
+            CancellationToken cancellationToken) =>
+        {
+            var outcome = await authorization.RevokeProcessOptionsAsync(
+                userId,
+                workspaceId,
+                extensionId,
+                cancellationToken);
+            return ToMcpProcessConfigurationResult(outcome);
+        })
+        .WithSummary("Retirer une configuration MCP vérifiée ou non vérifiée")
+        .Produces(204)
+        .Produces(400)
+        .Produces(404);
+
         // ── POST /admin/organizations ─────────────────────────────────────────────
-        admin.MapPost("/organizations", async (CreateOrganizationRequest req, UserContext db) =>
+        admin.MapPost("/organizations", async (
+            CreateOrganizationRequest req,
+            UserContext db,
+            WorkspaceService workspaces,
+            CancellationToken cancellationToken) =>
         {
             var org = new Organization { Name = req.Name.Trim(), Type = req.Type, City = req.City };
             db.Organizations.Add(org);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(cancellationToken);
+            await workspaces.EnsureOrganizationWorkspaceAsync(org.Id, cancellationToken);
             return Results.Created($"/admin/organizations/{org.Id}", new OrganizationDto(org.Id, org.Name, org.Type, org.City, []));
         })
         .WithSummary("Créer un établissement ou une institution")
@@ -82,4 +152,24 @@ public static class AdminEndpoints
         .Produces(404)
         .Produces(409);
     }
+
+    private static IResult ToMcpProcessConfigurationResult(McpProcessConfigurationOutcome outcome) => outcome switch
+    {
+        McpProcessConfigurationOutcome.Success => Results.NoContent(),
+        McpProcessConfigurationOutcome.InvalidRequest => Results.BadRequest(
+            new { message = "La configuration MCP est invalide." }),
+        McpProcessConfigurationOutcome.TargetNotMember => Results.NotFound(
+            new { message = "Le destinataire n'est pas membre actif de l'espace." }),
+        McpProcessConfigurationOutcome.NotFound => Results.NotFound(
+            new { message = "Configuration MCP introuvable." }),
+        _ => Results.StatusCode(StatusCodes.Status500InternalServerError)
+    };
 }
+
+public sealed record ConfigureMcpProcessRequest(
+    Guid UserId,
+    Guid WorkspaceId,
+    string ExtensionId,
+    string ImageReference,
+    IReadOnlyList<string>? Arguments,
+    IReadOnlyDictionary<string, string?>? EnvironmentVariables);

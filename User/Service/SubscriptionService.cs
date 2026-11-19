@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using GPOE26.Workspaces.Abstractions;
 using User.Data;
 using User.Model;
 
@@ -25,7 +26,7 @@ public enum RedeemError
 /// Un utilisateur est Premium s'il possède un abonnement individuel en cours
 /// (StudentPremium, Teacher, essai) ou s'il a activé une clé dont l'abonnement est en cours.
 /// </summary>
-public class SubscriptionService(UserContext db, IConfiguration config)
+public class SubscriptionService(UserContext db, IConfiguration config, WorkspaceService workspaces)
 {
     public int TrialDays => config.GetValue("Subscriptions:TrialDays", 14);
     public int FamilySeats => config.GetValue("Subscriptions:FamilySeats", 3);
@@ -63,6 +64,16 @@ public class SubscriptionService(UserContext db, IConfiguration config)
     /// Utilisé à l'inscription pour refuser la création du compte si la clé est invalide.
     /// </summary>
     public async Task<(RedeemError Error, SubscriptionKey? Key)> CheckKeyAsync(string code, UserRole role)
+        => await CheckKeyAsync(code, plan => plan switch
+        {
+            SubscriptionPlan.Family => role == UserRole.Student,
+            SubscriptionPlan.OrganizationLicense => role is UserRole.Teacher or UserRole.Student,
+            _ => false
+        });
+
+    private async Task<(RedeemError Error, SubscriptionKey? Key)> CheckKeyAsync(
+        string code,
+        Func<SubscriptionPlan, bool> isRoleAllowed)
     {
         var normalized = CodeGenerator.Normalize(code);
         var key = await db.SubscriptionKeys
@@ -73,13 +84,7 @@ public class SubscriptionService(UserContext db, IConfiguration config)
         if (key.IsRevoked) return (RedeemError.Revoked, key);
         if (!key.Subscription.IsCurrent(DateTime.UtcNow)) return (RedeemError.Inactive, key);
 
-        var allowed = key.Subscription.Plan switch
-        {
-            SubscriptionPlan.Family => role == UserRole.Student,
-            SubscriptionPlan.OrganizationLicense => role is UserRole.Teacher or UserRole.Student,
-            _ => false
-        };
-        if (!allowed) return (RedeemError.WrongRole, key);
+        if (!isRoleAllowed(key.Subscription.Plan)) return (RedeemError.WrongRole, key);
         if (key.UsedCount >= key.MaxUses) return (RedeemError.Full, key);
 
         return (RedeemError.None, key);
@@ -89,11 +94,35 @@ public class SubscriptionService(UserContext db, IConfiguration config)
     /// Active une clé pour un utilisateur. Idempotent : réactiver une clé déjà activée ne consomme pas de place.
     /// La place est réservée par un UPDATE conditionnel pour éviter de dépasser MaxUses en cas d'activations simultanées.
     /// </summary>
-    public async Task<RedeemError> RedeemAsync(AppUser user, string code)
+    public async Task<RedeemError> RedeemAsync(
+        AppUser user,
+        string code,
+        WorkspaceTokenContext? activeWorkspace = null)
     {
-        var (error, key) = await CheckKeyAsync(code, user.Role);
+        var roles = activeWorkspace?.Roles ??
+            (await db.WorkspaceMemberships
+                .Where(membership =>
+                    membership.UserId == user.Id &&
+                    membership.Status == WorkspaceMembershipStatus.Active)
+                .SelectMany(membership => membership.RoleGrants)
+                .Select(grant => grant.Role)
+                .ToListAsync())
+            .Select(role => role.ToString())
+            .ToHashSet(StringComparer.Ordinal);
+        var (error, key) = await CheckKeyAsync(code, plan => plan switch
+        {
+            SubscriptionPlan.Family => roles.Contains(WorkspaceRoles.Learner),
+            SubscriptionPlan.OrganizationLicense =>
+                roles.Contains(WorkspaceRoles.Learner) ||
+                roles.Contains(WorkspaceRoles.Instructor),
+            _ => false
+        });
         if (key is not null && await db.KeyRedemptions.AnyAsync(r => r.KeyId == key.Id && r.UserId == user.Id))
+        {
+            if (key.Subscription.OrganizationId is { } existingOrganizationId)
+                await workspaces.EnsureOrganizationMembershipAsync(user, existingOrganizationId);
             return RedeemError.None;
+        }
         if (error != RedeemError.None) return error;
 
         var reserved = await db.SubscriptionKeys
@@ -108,6 +137,8 @@ public class SubscriptionService(UserContext db, IConfiguration config)
             user.OrganizationId = orgId;
 
         await db.SaveChangesAsync();
+        if (key.Subscription.OrganizationId is { } organizationId)
+            await workspaces.EnsureOrganizationMembershipAsync(user, organizationId);
         return RedeemError.None;
     }
 

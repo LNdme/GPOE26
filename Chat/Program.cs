@@ -2,7 +2,11 @@ using System.Text;
 using Chat.Data;
 using Chat.Endpoints;
 using Chat.Service;
+using GPOE26.Agent.Abstractions;
+using GPOE26.Agent.Runtime.Maf;
+using GPOE26.Agent.Runtime.Mcp;
 using GPOE26.ServiceDefaults.Llm;
+using GPOE26.Workspaces.Abstractions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -53,7 +57,36 @@ builder.AddLlmClient();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient("cours", c => c.BaseAddress = new Uri(builder.Configuration["Services:Cours"] ?? "http://localhost:5188"));
 builder.Services.AddHttpClient("user", c => c.BaseAddress = new Uri(builder.Configuration["Services:User"] ?? "http://localhost:5197"));
+builder.Services.AddHttpClient<McpAuthorizationClient>(client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Services:User"] ?? "http://localhost:5197");
+    client.Timeout = TimeSpan.FromSeconds(5);
+});
+builder.Services.AddWorkspaceContextValidation(new Uri(
+    builder.Configuration["Services:User"] ?? "http://localhost:5197"));
+builder.Services.AddScoped<IMcpPermissionGrantStore>(services =>
+    services.GetRequiredService<McpAuthorizationClient>());
+builder.Services.AddScoped<IMcpServerProcessOptionsStore>(services =>
+    services.GetRequiredService<McpAuthorizationClient>());
 builder.Services.AddScoped<PlatformClients>();
+builder.Services.AddScoped<TutorCourseToolContext>();
+builder.Services.AddScoped<TutorCourseToolExecutor>();
+builder.Services.AddScoped<IAgentToolExecutor>(sp => sp.GetRequiredService<TutorCourseToolExecutor>());
+builder.Services.AddScoped<TutorConversationService>();
+builder.Services.AddSingleton<IAgentProfileCatalog>(_ => AgentProfileCatalog.CreateDefault());
+builder.Services.AddSingleton<IAgentProfileRouter, AgentProfileRouter>();
+var mcpExtensionOptions = builder.Configuration.GetSection("Mcp").Get<McpExtensionCatalogOptions>()
+    ?? new McpExtensionCatalogOptions();
+var mcpManifests = mcpExtensionOptions.Extensions.Select(extension => extension.ToManifest()).ToArray();
+builder.Services.AddSingleton<IAgentExtensionRegistry>(_ => new AgentExtensionRegistry(mcpManifests));
+builder.Services.AddSingleton<MafAgentRuntime>();
+builder.Services.AddSingleton<IAgentRuntime>(sp => new ObservedAgentRuntime(
+    sp.GetRequiredService<MafAgentRuntime>(),
+    sp.GetRequiredService<ILogger<ObservedAgentRuntime>>()));
+builder.Services.Configure<McpDockerSandboxOptions>(builder.Configuration.GetSection("McpSandbox"));
+builder.Services.AddSingleton<IMcpDockerEgressNetworkManager, DockerMcpEgressNetworkManager>();
+builder.Services.AddSingleton<IMcpSandboxClientFactory, DockerMcpSandboxClientFactory>();
+builder.Services.AddScoped<IMcpReadOnlyAdapter, ReadOnlyMcpProcessAdapter>();
 
 var jwtKey = builder.Configuration["Jwt:Key"]
     ?? throw new InvalidOperationException("La configuration Jwt:Key est manquante.");

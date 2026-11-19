@@ -10,7 +10,7 @@ public class ClassroomService(UserContext db)
     /// Prépare une classe pour l'enseignant (sans SaveChanges). Un enseignant d'une institution
     /// non scolaire (entreprise, startup…) crée des groupes plutôt que des classes.
     /// </summary>
-    public async Task<Classroom> CreateAsync(AppUser teacher, string name, string? level = null,
+    public async Task<Classroom> CreateAsync(AppUser teacher, Guid workspaceId, string name, string? level = null,
         SchoolSubSystem? subSystem = null, string? subject = null)
     {
         var classroom = new Classroom
@@ -18,6 +18,7 @@ public class ClassroomService(UserContext db)
             Name = name.Trim(),
             Kind = teacher.TeachingContext == TeachingContext.Institution ? ClassroomKind.Group : ClassroomKind.Class,
             TeacherId = teacher.Id,
+            WorkspaceId = workspaceId,
             OrganizationId = teacher.OrganizationId,
             Level = level,
             SubSystem = subSystem,

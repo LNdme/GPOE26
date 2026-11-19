@@ -15,7 +15,7 @@ public class TutorContext(DbContextOptions<TutorContext> options) : DbContext(op
         {
             e.ToTable("TutorConversations");
             e.Property(c => c.Id).ValueGeneratedNever();
-            e.HasIndex(c => new { c.UserId, c.CourseId }).IsUnique();
+            e.HasIndex(c => new { c.UserId, c.WorkspaceId, c.CourseId }).IsUnique();
             e.HasMany(c => c.Messages).WithOne(m => m.Conversation).HasForeignKey(m => m.ConversationId);
         });
         modelBuilder.Entity<TutorMessage>(e =>
@@ -40,6 +40,7 @@ public static class TutorSchema
         @"CREATE TABLE IF NOT EXISTS ""TutorConversations"" (
             ""Id"" uuid NOT NULL,
             ""UserId"" uuid NOT NULL,
+            ""WorkspaceId"" uuid,
             ""CourseId"" uuid NOT NULL,
             ""CourseTitle"" text NOT NULL,
             ""Subject"" text,
@@ -47,7 +48,9 @@ public static class TutorSchema
             ""UpdatedAt"" timestamp with time zone NOT NULL,
             CONSTRAINT ""PK_TutorConversations"" PRIMARY KEY (""Id"")
         )",
-        @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_TutorConversations_UserId_CourseId"" ON ""TutorConversations"" (""UserId"", ""CourseId"")",
+        @"ALTER TABLE ""TutorConversations"" ADD COLUMN IF NOT EXISTS ""WorkspaceId"" uuid",
+        @"DROP INDEX IF EXISTS ""IX_TutorConversations_UserId_CourseId""",
+        @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_TutorConversations_UserId_WorkspaceId_CourseId"" ON ""TutorConversations"" (""UserId"", ""WorkspaceId"", ""CourseId"")",
         @"CREATE TABLE IF NOT EXISTS ""TutorImages"" (
             ""Id"" uuid NOT NULL,
             ""UserId"" uuid NOT NULL,

@@ -11,6 +11,8 @@ public interface IAccountApi
 {
     Task<ApiResult<AuthResponse>> LoginAsync(string email, string password);
     Task<ApiResult<AuthResponse>> RegisterAsync(RegisterRequest request);
+    Task<ApiResult<List<WorkspaceSummary>>> WorkspacesAsync();
+    Task<ApiResult<AuthResponse>> SelectWorkspaceAsync(Guid workspaceId);
     Task<ApiResult<UserProfile>> MeAsync();
     Task<ApiResult<MySubscriptions>> MySubscriptionsAsync();
     Task<ApiResult<Entitlement>> RedeemKeyAsync(string code);
@@ -79,6 +81,7 @@ public interface ITutorApi
     Task<ApiResult<TutorMessage>> PinAsync(Guid messageId, bool pinned);
     Task<ApiResult<List<PinnedExplanation>>> PinnedAsync();
     Task<ApiResult<bool>> ClearAsync(Guid courseId);
+    Task<ApiResult<List<McpExtensionSummary>>> McpExtensionsAsync();
 }
 
 public interface IProgressApi
@@ -88,6 +91,27 @@ public interface IProgressApi
     Task<ApiResult<ClassroomProgress>> ClassroomAsync(Guid classroomId);
 }
 
+public interface IMcpConsentApi
+{
+    Task<ApiResult<List<McpWorkspaceMember>>> MembersAsync(Guid workspaceId, string? query = null);
+    Task<ApiResult<List<McpActiveGrant>>> GrantsAsync(Guid workspaceId, Guid targetUserId);
+    Task<ApiResult<bool>> ApproveAsync(
+        Guid workspaceId,
+        Guid targetUserId,
+        string extensionId,
+        IReadOnlyList<string> capabilityIds,
+        IReadOnlyList<string> permissionIds);
+    Task<ApiResult<bool>> RevokeAsync(Guid workspaceId, Guid targetUserId, string extensionId);
+}
+
+public interface IAdminMcpApi
+{
+    Task<ApiResult<List<McpProcessConfigurationSummary>>> ListAsync();
+    Task<ApiResult<bool>> ConfigureAsync(ConfigureMcpProcessRequest request);
+    Task<ApiResult<bool>> VerifyAsync(Guid workspaceId, Guid userId, string extensionId);
+    Task<ApiResult<bool>> RevokeAsync(Guid workspaceId, Guid userId, string extensionId);
+}
+
 // ─── Implémentations HTTP ─────────────────────────────────────────────────────
 
 public class AccountApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.User), IAccountApi
@@ -95,6 +119,10 @@ public class AccountApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, Ap
     public Task<ApiResult<AuthResponse>> LoginAsync(string email, string password) =>
         PostAsync<AuthResponse>("/auth/login", new LoginRequest(email, password));
     public Task<ApiResult<AuthResponse>> RegisterAsync(RegisterRequest request) => PostAsync<AuthResponse>("/auth/register", request);
+    public Task<ApiResult<List<WorkspaceSummary>>> WorkspacesAsync() =>
+        GetAsync<List<WorkspaceSummary>>("/workspaces/mine");
+    public Task<ApiResult<AuthResponse>> SelectWorkspaceAsync(Guid workspaceId) =>
+        PostAsync<AuthResponse>($"/workspaces/{workspaceId}/select");
     public Task<ApiResult<UserProfile>> MeAsync() => GetAsync<UserProfile>("/auth/me");
     public Task<ApiResult<MySubscriptions>> MySubscriptionsAsync() => GetAsync<MySubscriptions>("/subscriptions/me");
     public Task<ApiResult<Entitlement>> RedeemKeyAsync(string code) => PostAsync<Entitlement>("/subscriptions/redeem", new { code });
@@ -193,8 +221,54 @@ public class ProgressApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, A
     public Task<ApiResult<ClassroomProgress>> ClassroomAsync(Guid classroomId) => GetAsync<ClassroomProgress>($"/progress/classrooms/{classroomId}");
 }
 
+public class McpConsentApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.User), IMcpConsentApi
+{
+    public Task<ApiResult<List<McpWorkspaceMember>>> MembersAsync(Guid workspaceId, string? query = null) =>
+        GetAsync<List<McpWorkspaceMember>>(
+            $"/workspaces/{workspaceId}/mcp/members" +
+            (string.IsNullOrWhiteSpace(query) ? "" : $"?query={Uri.EscapeDataString(query.Trim())}"));
+
+    public Task<ApiResult<List<McpActiveGrant>>> GrantsAsync(Guid workspaceId, Guid targetUserId) =>
+        GetAsync<List<McpActiveGrant>>($"/workspaces/{workspaceId}/mcp/grants/{targetUserId}");
+
+    public Task<ApiResult<bool>> ApproveAsync(
+        Guid workspaceId,
+        Guid targetUserId,
+        string extensionId,
+        IReadOnlyList<string> capabilityIds,
+        IReadOnlyList<string> permissionIds) =>
+        PostAsync<bool>(
+            $"/workspaces/{workspaceId}/mcp/extensions/{Uri.EscapeDataString(extensionId)}/approve",
+            new { targetUserId, capabilityIds, permissionIds });
+
+    public Task<ApiResult<bool>> RevokeAsync(Guid workspaceId, Guid targetUserId, string extensionId) =>
+        PostAsync<bool>(
+            $"/workspaces/{workspaceId}/mcp/extensions/{Uri.EscapeDataString(extensionId)}/revoke",
+            new { targetUserId });
+}
+
+public class AdminMcpApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.User), IAdminMcpApi
+{
+    public Task<ApiResult<List<McpProcessConfigurationSummary>>> ListAsync() =>
+        GetAsync<List<McpProcessConfigurationSummary>>("/admin/mcp/process-configurations");
+
+    public Task<ApiResult<bool>> ConfigureAsync(ConfigureMcpProcessRequest request) =>
+        PostAsync<bool>("/admin/mcp/process-configurations", request);
+
+    public Task<ApiResult<bool>> VerifyAsync(Guid workspaceId, Guid userId, string extensionId) =>
+        PostAsync<bool>(
+            $"/admin/mcp/process-configurations/{workspaceId}/{userId}/{Uri.EscapeDataString(extensionId)}/verify");
+
+    public Task<ApiResult<bool>> RevokeAsync(Guid workspaceId, Guid userId, string extensionId) =>
+        DeleteAsync<bool>(
+            $"/admin/mcp/process-configurations/{workspaceId}/{userId}/{Uri.EscapeDataString(extensionId)}");
+}
+
 public class TutorApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.Chat), ITutorApi
 {
+    public Task<ApiResult<List<McpExtensionSummary>>> McpExtensionsAsync() =>
+        GetAsync<List<McpExtensionSummary>>("/tutor/mcp/extensions");
+
     public Task<ApiResult<List<TutorConversationSummary>>> ConversationsAsync() =>
         GetAsync<List<TutorConversationSummary>>("/tutor/conversations");
     public Task<ApiResult<TutorConversation>> ConversationAsync(Guid courseId) => GetAsync<TutorConversation>($"/tutor/courses/{courseId}");

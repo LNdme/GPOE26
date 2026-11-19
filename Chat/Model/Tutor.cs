@@ -9,6 +9,7 @@ public class TutorConversation
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid UserId { get; set; }
+    public Guid? WorkspaceId { get; set; }
     public Guid CourseId { get; set; }
 
     /// <summary>Copie du titre et de la matière : la liste des discussions s'affiche sans interroger le service Cours</summary>
@@ -61,7 +62,7 @@ public record ConversationSummaryDto(Guid Id, Guid CourseId, string CourseTitle,
 
 public record ConversationDto(Guid? Id, Guid CourseId, string? CourseTitle, List<TutorMessageDto> Messages);
 
-public record AskTutorRequest(string? Message, Guid? ImageId);
+public record AskTutorRequest(string? Message, Guid? ImageId, string? ProfileId = null);
 
 public record AskTutorResponse(TutorMessageDto Question, TutorMessageDto Answer);
 

@@ -12,6 +12,9 @@ public class Assessment
     /// <summary>Enseignant auteur (claim "sub" du JWT)</summary>
     public Guid TeacherId { get; set; }
 
+    /// <summary>Espace actif au moment de la création ; null uniquement pour les évaluations historiques.</summary>
+    public Guid? WorkspaceId { get; set; }
+
     public required string Title { get; set; }
     public string? Description { get; set; }
 

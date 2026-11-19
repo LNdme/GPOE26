@@ -144,7 +144,7 @@ else
         _mathPending = true;
 
         // Évaluations d'entraînement ouvertes : proposées à l'élève à la fin du cours
-        if (Session.Role == UserRole.Student)
+        if (Session.CanLearn)
         {
             var mine = await Assessments.MineAsStudentAsync();
             _related = (mine.Value ?? new()).Where(a => a.Kind == AssessmentKind.Practice && a.CanStart(DateTime.UtcNow)).Take(3).ToList();

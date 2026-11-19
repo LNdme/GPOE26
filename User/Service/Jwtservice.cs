@@ -2,6 +2,8 @@ using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using GPOE26.Workspaces.Abstractions;
+using User.Helper;
 using User.Model;
 
 namespace User.Service
@@ -9,7 +11,10 @@ namespace User.Service
     public class Jwtservice(IConfiguration config)
     {
 
-        public (string token, DateTime expiresAt) GenerateToken(AppUser user, Entitlement entitlement)
+        public (string token, DateTime expiresAt) GenerateToken(
+            AppUser user,
+            Entitlement entitlement,
+            WorkspaceSummaryDto? activeWorkspace = null)
         {
             var jwtKey = config["Jwt:Key"]
                 ?? throw new InvalidOperationException("Jwt:Key manquant dans la configuration.");
@@ -26,21 +31,31 @@ namespace User.Service
             //   "subjects" → pour personnaliser les exemples
             //   "lang"     → pour répondre dans la bonne langue
             //   "premium"  → pour réserver les fonctions Premium aux abonnés
-            var claims = new[]
+            var claims = new List<Claim>
             {
-            new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-            new Claim(JwtRegisteredClaimNames.Email, user.Email),
-            new Claim("username", user.Username),
-            new Claim("role", user.Role.ToString()),
-            new Claim("level", user.Level ?? ""),
-            new Claim("specialite", user.Specialite ?? ""),
-            new Claim("filiere", user.Filiere ?? ""),
-            new Claim("lang", user.Language),
-            // "premium" → les services Chat/Quiz réservent le tuteur IA et les quiz illimités aux abonnés
-            new Claim("premium", entitlement.IsPremium ? "true" : "false"),
-            new Claim("plan", entitlement.Plan?.ToString() ?? ""),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-        };
+                new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+                new Claim(JwtRegisteredClaimNames.Email, user.Email),
+                new Claim("username", user.Username),
+                new Claim("role", user.Role.ToString()),
+                new Claim("level", user.Level ?? ""),
+                new Claim("specialite", user.Specialite ?? ""),
+                new Claim("filiere", user.Filiere ?? ""),
+                new Claim("lang", user.Language),
+                // "premium" → les services Chat/Quiz réservent le tuteur IA et les quiz illimités aux abonnés
+                new Claim("premium", entitlement.IsPremium ? "true" : "false"),
+                new Claim("plan", entitlement.Plan?.ToString() ?? ""),
+                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            };
+
+            if (activeWorkspace is not null)
+            {
+                claims.Add(new Claim(WorkspaceClaimTypes.Id, activeWorkspace.Id.ToString()));
+                claims.Add(new Claim(WorkspaceClaimTypes.Kind, activeWorkspace.Kind.ToString()));
+                claims.AddRange(activeWorkspace.Roles
+                    .Distinct()
+                    .OrderBy(role => role)
+                    .Select(role => new Claim(WorkspaceClaimTypes.Role, role.ToString())));
+            }
 
             var expiresAt = DateTime.UtcNow.AddMinutes(
                 config.GetValue<int>("Jwt:ExpirationMinutes", 60));

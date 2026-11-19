@@ -55,7 +55,8 @@ namespace Cours.DTOs
         DateTime UpdatedAt,
         CourseStatus Status,
         List<Guid> ClassroomIds,
-        Guid OwnerId
+        Guid OwnerId,
+        Guid? WorkspaceId
     )
     {
         public CourseDto(Course c) : this(
@@ -74,7 +75,8 @@ namespace Cours.DTOs
             c.UpdatedAt,
             c.Status,
             c.ClassroomIds,
-            c.OwnerId
+            c.OwnerId,
+            c.WorkspaceId
         )
         { }
     }
@@ -99,7 +101,8 @@ namespace Cours.DTOs
         DateTime CreatedAt,
         CourseStatus Status,
         List<Guid> ClassroomIds,
-        Guid OwnerId
+        Guid OwnerId,
+        Guid? WorkspaceId
     )
     {
         public CourseSummaryDto(Course c) : this(
@@ -111,7 +114,8 @@ namespace Cours.DTOs
             c.CreatedAt,
             c.Status,
             c.ClassroomIds,
-            c.OwnerId
+            c.OwnerId,
+            c.WorkspaceId
         )
         { }
     }

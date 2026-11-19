@@ -5,6 +5,7 @@ using User.DTOs;
 using User.Helper;
 using User.Model;
 using User.Service;
+using GPOE26.Workspaces.Abstractions;
 
 namespace User.Endpoints;
 
@@ -12,19 +13,33 @@ public static class ClassroomEndpoints
 {
     public static void MapClassroomEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/classrooms").WithTags("Classes").RequireAuthorization();
+        var group = app.MapGroup("/classrooms")
+            .WithTags("Classes")
+            .RequireAuthorization()
+            .RequireCurrentWorkspaceMembership();
 
         // ── POST /classrooms ──────────────────────────────────────────────────────
-        group.MapPost("", async (CreateClassroomRequest req, ClaimsPrincipal principal, UserContext db, ClassroomService classrooms) =>
+        group.MapPost("", async (
+            CreateClassroomRequest req,
+            ClaimsPrincipal principal,
+            UserContext db,
+            ClassroomService classrooms) =>
         {
             var teacher = await db.CurrentUserAsync(principal);
             if (teacher is null) return Results.Unauthorized();
 
-            var classroom = await classrooms.CreateAsync(teacher, req.Name, req.Level, req.SubSystem, req.Subject);
+            var workspace = principal.GetWorkspaceContext();
+            var classroom = await classrooms.CreateAsync(
+                teacher,
+                workspace.WorkspaceId,
+                req.Name,
+                req.Level,
+                req.SubSystem,
+                req.Subject);
             await db.SaveChangesAsync();
             return Results.Created($"/classrooms/{classroom.Id}", ToDto(classroom, teacher.Username, 0, isOwner: true));
         })
-        .RequireAuthorization(Policies.Teacher)
+        .RequireUserWorkspaceRoles(WorkspaceRole.Instructor, WorkspaceRole.Admin)
         .WithSummary("Créer une classe (ou un groupe)")
         .Produces<ClassroomDto>(201);
 
@@ -32,14 +47,29 @@ public static class ClassroomEndpoints
         // Enseignant : ses classes. Élève : les classes qu'il a rejointes.
         group.MapGet("/mine", async (ClaimsPrincipal principal, UserContext db) =>
         {
-            var user = await db.CurrentUserAsync(principal);
-            if (user is null) return Results.Unauthorized();
+            var userId = principal.GetUserId();
+            var workspace = principal.GetWorkspaceContext();
+            var classroomIds = new HashSet<Guid>();
+            if (workspace.HasAnyRole(WorkspaceRole.Instructor.ToString(), WorkspaceRole.Admin.ToString()))
+            {
+                var ownedIds = await db.Classrooms
+                    .Where(classroom => classroom.TeacherId == userId &&
+                                        classroom.WorkspaceId == workspace.WorkspaceId)
+                    .Select(classroom => classroom.Id)
+                    .ToListAsync();
+                classroomIds.UnionWith(ownedIds);
+            }
+            if (workspace.HasAnyRole(WorkspaceRole.Learner.ToString()))
+            {
+                var joinedIds = await db.ClassroomMembers
+                    .Where(member => member.StudentId == userId)
+                    .Select(member => member.ClassroomId)
+                    .ToListAsync();
+                classroomIds.UnionWith(joinedIds);
+            }
 
-            var query = user.Role == UserRole.Teacher
-                ? db.Classrooms.Where(c => c.TeacherId == user.Id)
-                : db.Classrooms.Where(c => c.Members.Any(m => m.StudentId == user.Id));
-
-            var rows = await query
+            var rows = await db.Classrooms
+                .Where(classroom => classroomIds.Contains(classroom.Id))
                 .Where(c => !c.IsArchived)
                 .OrderBy(c => c.CreatedAt)
                 .Select(c => new
@@ -50,7 +80,7 @@ public static class ClassroomEndpoints
                 })
                 .ToListAsync();
 
-            return Results.Ok(rows.Select(r => ToDto(r.Classroom, r.Teacher ?? "", r.Count, r.Classroom.TeacherId == user.Id)));
+            return Results.Ok(rows.Select(r => ToDto(r.Classroom, r.Teacher ?? "", r.Count, r.Classroom.TeacherId == userId)));
         })
         .WithSummary("Mes classes")
         .Produces<List<ClassroomDto>>();
@@ -59,8 +89,13 @@ public static class ClassroomEndpoints
         group.MapGet("/{id:guid}", async (Guid id, ClaimsPrincipal principal, UserContext db) =>
         {
             var userId = principal.GetUserId();
+            var workspace = principal.GetWorkspaceContext();
+            var mayManage = workspace.HasAnyRole(WorkspaceRole.Instructor.ToString(), WorkspaceRole.Admin.ToString());
+            var mayLearn = workspace.HasAnyRole(WorkspaceRole.Learner.ToString());
             var row = await db.Classrooms
-                .Where(c => c.Id == id && (c.TeacherId == userId || c.Members.Any(m => m.StudentId == userId)))
+                .Where(c => c.Id == id &&
+                    ((mayManage && c.TeacherId == userId && c.WorkspaceId == workspace.WorkspaceId) ||
+                     (mayLearn && c.Members.Any(m => m.StudentId == userId))))
                 .Select(c => new
                 {
                     Classroom = c,
@@ -81,7 +116,11 @@ public static class ClassroomEndpoints
         group.MapGet("/{id:guid}/members", async (Guid id, ClaimsPrincipal principal, UserContext db) =>
         {
             var userId = principal.GetUserId();
-            if (!await db.Classrooms.AnyAsync(c => c.Id == id && c.TeacherId == userId))
+            var workspace = principal.GetWorkspaceContext();
+            if (!await db.Classrooms.AnyAsync(c =>
+                    c.Id == id &&
+                    c.TeacherId == userId &&
+                    c.WorkspaceId == workspace.WorkspaceId))
                 return Results.NotFound();
 
             var members = await db.ClassroomMembers
@@ -94,7 +133,7 @@ public static class ClassroomEndpoints
 
             return Results.Ok(members);
         })
-        .RequireAuthorization(Policies.Teacher)
+        .RequireUserWorkspaceRoles(WorkspaceRole.Instructor, WorkspaceRole.Admin)
         .WithSummary("Élèves d'une classe (enseignant propriétaire)")
         .Produces<List<ClassroomMemberDto>>();
 
@@ -113,7 +152,7 @@ public static class ClassroomEndpoints
             var count = await db.ClassroomMembers.CountAsync(m => m.ClassroomId == classroom.Id);
             return Results.Ok(ToDto(classroom, teacher, count, isOwner: false));
         })
-        .RequireAuthorization(Policies.Student)
+        .RequireUserWorkspaceRoles(WorkspaceRole.Learner)
         .WithSummary("Rejoindre une classe avec son code d'invitation")
         .Produces<ClassroomDto>()
         .Produces(404);
@@ -123,8 +162,15 @@ public static class ClassroomEndpoints
         group.MapDelete("/{id:guid}/members/{studentId:guid}", async (Guid id, Guid studentId, ClaimsPrincipal principal, UserContext db) =>
         {
             var userId = principal.GetUserId();
-            var isOwner = await db.Classrooms.AnyAsync(c => c.Id == id && c.TeacherId == userId);
-            if (!isOwner && studentId != userId) return Results.NotFound();
+            var workspace = principal.GetWorkspaceContext();
+            var mayManage = workspace.HasAnyRole(WorkspaceRole.Instructor.ToString(), WorkspaceRole.Admin.ToString()) &&
+                await db.Classrooms.AnyAsync(c =>
+                    c.Id == id &&
+                    c.TeacherId == userId &&
+                    c.WorkspaceId == workspace.WorkspaceId);
+            var isSelf = studentId == userId &&
+                await db.ClassroomMembers.AnyAsync(m => m.ClassroomId == id && m.StudentId == userId);
+            if (!mayManage && !isSelf) return Results.NotFound();
 
             var deleted = await db.ClassroomMembers
                 .Where(m => m.ClassroomId == id && m.StudentId == studentId)
@@ -138,14 +184,18 @@ public static class ClassroomEndpoints
         group.MapPost("/{id:guid}/invite-code", async (Guid id, ClaimsPrincipal principal, UserContext db, ClassroomService classrooms) =>
         {
             var userId = principal.GetUserId();
-            var classroom = await db.Classrooms.FirstOrDefaultAsync(c => c.Id == id && c.TeacherId == userId);
+            var workspace = principal.GetWorkspaceContext();
+            var classroom = await db.Classrooms.FirstOrDefaultAsync(c =>
+                c.Id == id &&
+                c.TeacherId == userId &&
+                c.WorkspaceId == workspace.WorkspaceId);
             if (classroom is null) return Results.NotFound();
 
             classroom.InviteCode = await classrooms.UniqueInviteCodeAsync();
             await db.SaveChangesAsync();
             return Results.Ok(new { classroom.InviteCode });
         })
-        .RequireAuthorization(Policies.Teacher)
+        .RequireUserWorkspaceRoles(WorkspaceRole.Instructor, WorkspaceRole.Admin)
         .WithSummary("Régénérer le code d'invitation");
 
         // ── DELETE /classrooms/{id} ───────────────────────────────────────────────
@@ -153,12 +203,15 @@ public static class ClassroomEndpoints
         group.MapDelete("/{id:guid}", async (Guid id, ClaimsPrincipal principal, UserContext db) =>
         {
             var userId = principal.GetUserId();
+            var workspace = principal.GetWorkspaceContext();
             var archived = await db.Classrooms
-                .Where(c => c.Id == id && c.TeacherId == userId)
+                .Where(c => c.Id == id &&
+                    c.TeacherId == userId &&
+                    c.WorkspaceId == workspace.WorkspaceId)
                 .ExecuteUpdateAsync(s => s.SetProperty(c => c.IsArchived, true));
             return archived == 0 ? Results.NotFound() : Results.NoContent();
         })
-        .RequireAuthorization(Policies.Teacher)
+        .RequireUserWorkspaceRoles(WorkspaceRole.Instructor, WorkspaceRole.Admin)
         .WithSummary("Archiver une classe");
     }
 

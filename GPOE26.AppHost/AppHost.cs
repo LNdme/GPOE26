@@ -8,12 +8,15 @@ var jwtAudience = "GPOE2026Users";
 // ── Clé du LLM (OpenRouter par défaut, modèles gratuits) : secret, à définir via
 //    `dotnet user-secrets set "Parameters:llm-apikey" "<clé>"`
 var llmApiKey = builder.AddParameter("llm-apikey", secret: true);
+var mcpChatServiceKey = builder.AddParameter("mcp-chat-service-key", secret: true);
 
 
 
 
 // ── 1 seul serveur PostgreSQL, toutes les DBs dessus ─────────────────────────
 var postgres = builder.AddPostgres("postgres")
+    // Verrouille la version majeure pour préserver les volumes PostgreSQL locaux.
+    .WithImageTag("17.6")
     .WithDataVolume()
     .WithPgAdmin(); // interface admin dispo sur http://localhost:5050
 
@@ -37,6 +40,7 @@ var userService = builder.AddProject<Projects.User>("user")
     .WithEnvironment("Jwt__Key", jwtKeyValue)
     .WithEnvironment("Jwt__Issuer", jwtIssuer)
     .WithEnvironment("Jwt__Audience", jwtAudience)
+    .WithEnvironment("Mcp__ChatServiceKey", mcpChatServiceKey)
     .WithReference(userDb)   // ← ajoute
     .WaitFor(userDb);        // ← ajoute
 
@@ -53,6 +57,7 @@ var chatService = builder.AddProject<Projects.Chat>("chat")
     .WithEnvironment("Jwt__Key", jwtKeyValue)
     .WithEnvironment("Jwt__Issuer", jwtIssuer)
     .WithEnvironment("Jwt__Audience", jwtAudience)
+    .WithEnvironment("Mcp__ChatServiceKey", mcpChatServiceKey)
     .WithEnvironment("Services__User", userService.GetEndpoint("http"))    // abonnement Premium
     .WithEnvironment("Services__Cours", coursService.GetEndpoint("http"))  // contenu du cours étudié
     .WithReference(chatDb)

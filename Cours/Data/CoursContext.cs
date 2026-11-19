@@ -24,6 +24,7 @@ namespace Cours.Data
 
                 // Index composite pour filtrer par utilisateur ET matière
                 entity.HasIndex(c => new { c.OwnerId, c.Subject });
+                entity.HasIndex(c => c.WorkspaceId);
 
                 // Relation 1-N : Course → Sections (cascade delete)
                 entity.HasMany(c => c.Sections)
