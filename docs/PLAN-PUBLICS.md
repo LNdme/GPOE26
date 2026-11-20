@@ -187,6 +187,17 @@ Toutes validées telles que proposées le 21 novembre 2026.
 
 ---
 
+## 6 bis. Avancement
+
+- **P1 fait le 21 novembre 2026 (`825f3fc`).**
+  - **Écart avec le tableau** : pas de nouvelle route `/tutor/free`. La discussion libre est une conversation par personne, rangée sous `CourseId = Guid.Empty` (`TutorConversation.FreeCourseId`). Elle réutilise les routes `/tutor/courses/{id}` sans changement de schéma.
+  - **Ce qui change pour une question libre** : consigne `FreePrompt`, et `Learner(…, free: true)` ne suppose plus « élève du secondaire ». La mémoire est rangée sans cours, et rien n'est noté dans la maîtrise.
+  - **Interface** : le panneau est en haut de `/app/tuteur`, et la discussion libre s'ouvre aussi sur `/app/tuteur/{Guid.Empty}`.
+  - **Reste à faire** :
+    - l'application Windows n'affiche pas encore la discussion libre (elle la masque) ;
+    - plusieurs discussions libres viendront avec les projets (A6).
+- **Prochain lot : P2** (inscription par objectif).
+
 ## 7. Hors de ce plan
 
 - Paiement réel (mobile money, carte) : à brancher sur P4 quand un prestataire sera choisi.
