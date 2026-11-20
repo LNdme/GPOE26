@@ -399,6 +399,9 @@ Le script `scripts/test-user-api.sh` rejoue les parcours de la phase 1 sur le se
 La liste détaillée des validations, décisions et fonctionnalités restantes est tenue dans
 [`TRAVAUX_RESTANTS.md`](TRAVAUX_RESTANTS.md).
 
+La comparaison entre l’architecture GPOE26 actuelle et le harness open source Pi est disponible dans
+[`COMPARAISON_HARNESS_PI.md`](COMPARAISON_HARNESS_PI.md).
+
 | Phase | Contenu | État |
 |---|---|---|
 | 0 | Nettoyage du dépôt, secrets hors du code, README | ✅ |

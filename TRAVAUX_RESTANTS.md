@@ -41,6 +41,14 @@ doivent être réécrits.
 
 ## Priorité 2 — Personnaliser le tuteur et développer le harness
 
+- [ ] Évaluer Pi comme runtime alternatif derrière `IAgentRuntime` dans un processus Node séparé :
+  adapter les événements, les outils autorisés, le streaming et les erreurs de repli sans exposer
+  les secrets GPOE26 ou contourner les grants/workspaces.
+- [ ] Lancer un test A/B limité sur un jeu de tutorat représentatif, puis comparer la qualité,
+  la latence, le coût, les appels d’outils et la robustesse aux contenus non fiables.
+- [ ] Ne pas intégrer les extensions, compétences ou répertoires Pi comme source d’autorisation ;
+  conserver les profils, grants, MCP et données de GPOE26 comme frontières officielles.
+
 - [ ] Définir le modèle de profil pédagogique persistant par utilisateur : langue, niveau, objectifs,
   préférences d’explication, progression et consentements. Les profils et le routeur actuels
   constituent le socle ; décider quelles préférences sont modifiables par l’élève ou son responsable.
