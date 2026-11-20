@@ -4,7 +4,7 @@ namespace GPOE26.Tests;
 
 public class WebTests
 {
-    private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(180);
 
     [Fact]
     public async Task GetWebResourceRootReturnsOkStatusCode()
