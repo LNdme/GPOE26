@@ -33,6 +33,16 @@ public class SessionState(ISessionStore store)
     private DateTime _receivedAt;
     private DateTime _renewalRetryAt;
 
+    /// <summary>
+    /// Délai entre deux relectures du profil pendant la navigation. Les droits (formule, fonctionnalités) changent
+    /// côté serveur sans que le navigateur le sache : activation par l'administration, clé, établissement, parent.
+    /// </summary>
+    public static readonly TimeSpan ProfileMaxAge = TimeSpan.FromMinutes(1);
+
+    // Relecture du profil : une seule à la fois ; MinValue = profil jamais vérifié (session restaurée du navigateur)
+    private Task? _profileRefresh;
+    private DateTime _profileCheckedAt = DateTime.MinValue;
+
     public string? Token { get; private set; }
     public DateTime ExpiresAt { get; private set; }
     public UserProfile? Profile { get; private set; }
@@ -68,7 +78,10 @@ public class SessionState(ISessionStore store)
         {
             var saved = await store.LoadAsync();
             if (saved is not null && saved.ExpiresAt > DateTime.UtcNow)
+                {
                 Apply(saved.Token, saved.ExpiresAt, saved.Profile, notify: true);
+                _profileCheckedAt = DateTime.MinValue;   // copie du navigateur : à relire au service User
+            }
             else if (saved is not null)
                 await store.ClearAsync();
         }
@@ -128,11 +141,49 @@ public class SessionState(ISessionStore store)
         await store.SaveAsync(new StoredSession(Token, ExpiresAt, profile));
     }
 
+    /// <summary>
+    /// Le profil gardé dans le navigateur date de la connexion : un abonnement activé ensuite (par l'administration,
+    /// une clé, un établissement ou un parent) n'y figurait pas, et le tuteur restait verrouillé alors que la page
+    /// Abonnement affichait « actif ». Relit le profil au service User si sa dernière vérification date de plus de
+    /// <see cref="ProfileMaxAge"/> (toujours pour une session restaurée). <paramref name="fetch"/> renvoie null en cas
+    /// d'échec : le profil connu reste alors en place.
+    /// </summary>
+    public Task RefreshProfileAsync(Func<Task<UserProfile?>> fetch) =>
+        !IsAuthenticated || DateTime.UtcNow - _profileCheckedAt < ProfileMaxAge
+            ? Task.CompletedTask
+            : _profileRefresh ??= RefreshProfileCoreAsync(fetch);
+
+    private async Task RefreshProfileCoreAsync(Func<Task<UserProfile?>> fetch)
+    {
+        try
+        {
+            var token = Token;
+            var profile = await fetch();
+            _profileCheckedAt = DateTime.UtcNow;
+            // Déconnexion ou autre connexion pendant l'appel : ce profil n'est plus celui de la session
+            if (profile is null || token is null || Token != token) return;
+
+            Apply(token, ExpiresAt, profile, notify: true);
+            try { await store.SaveAsync(new StoredSession(token, ExpiresAt, profile)); }
+            catch { /* navigateur injoignable : le profil neuf sert déjà en mémoire */ }
+        }
+        catch
+        {
+            // Service injoignable (application hors connexion) : on garde le profil connu et on réessaiera plus tard
+            _profileCheckedAt = DateTime.UtcNow;
+        }
+        finally
+        {
+            _profileRefresh = null;
+        }
+    }
+
     public async Task SignOutAsync()
     {
         Token = null;
         Profile = null;
         ExpiresAt = DateTime.MinValue;
+        _profileCheckedAt = DateTime.MinValue;
         await SafeClearAsync();
         Changed?.Invoke();
     }
@@ -150,6 +201,7 @@ public class SessionState(ISessionStore store)
         Token = token;
         ExpiresAt = expiresAt;
         Profile = profile;
+        _profileCheckedAt = DateTime.UtcNow;   // profil tout juste reçu du service User (la restauration le remet à relire)
         if (notify) Changed?.Invoke();
     }
 

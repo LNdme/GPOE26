@@ -13,6 +13,7 @@ public abstract class AppPage : ComponentBase
 {
     [Inject] protected SessionState Session { get; set; } = default!;
     [Inject] protected NavigationManager Nav { get; set; } = default!;
+    [Inject] private IAccountApi Account { get; set; } = default!;
 
     /// <summary>Rôles autorisés (null = tout utilisateur connecté)</summary>
     protected virtual UserRole[]? AllowedRoles => null;
@@ -35,6 +36,9 @@ public abstract class AppPage : ComponentBase
             Nav.NavigateTo($"/login?retour={Uri.EscapeDataString("/" + back)}");
             return;
         }
+        // Droits à jour avant d'afficher la page : un abonnement activé depuis la connexion déverrouille le tuteur
+        await Session.RefreshProfileAsync(async () => (await Account.MeAsync()).Value);
+        if (!Session.IsAuthenticated) return;   // jeton refusé pendant la relecture : la mise en page renvoie vers /login
         if (Session.Profile?.MustChangePassword == true && !AllowsPendingPassword)
         {
             var back = Nav.ToBaseRelativePath(Nav.Uri);

@@ -102,6 +102,102 @@ public class SessionRenewalTests
     }
 }
 
+/// <summary>
+/// Droits à jour dans l'interface : le profil gardé par le navigateur datait de la connexion, et un abonnement
+/// activé ensuite laissait le tuteur verrouillé (« ABONNEMENT ACTIF » sur la page Abonnement, verrou dans le cours).
+/// </summary>
+public class SessionProfileRefreshTests
+{
+    private sealed class MemoryStore : ISessionStore
+    {
+        public StoredSession? Saved;
+        public Task<StoredSession?> LoadAsync() => Task.FromResult(Saved);
+        public Task SaveAsync(StoredSession session) { Saved = session; return Task.CompletedTask; }
+        public Task ClearAsync() { Saved = null; return Task.CompletedTask; }
+    }
+
+    private static readonly Guid Id = Guid.NewGuid();
+
+    private static UserProfile Profile(bool premium) => new(Id, "eleve@exemple.test", "Élève", UI.Models.UserRole.Student,
+        null, null, null, "fr", DateTime.UtcNow, null, null, null, null, null, null, null, null, null, null,
+        premium, premium ? UI.Models.SubscriptionPlan.StudentPremium : null, null,
+        premium ? [new UI.Models.EntitledFeature("tutor-ai", null)] : [new UI.Models.EntitledFeature("quiz-ai", 3)]);
+
+    /// <summary>Session gratuite enregistrée dans le navigateur, puis restaurée (rechargement de la page).</summary>
+    private static async Task<(SessionState Session, MemoryStore Store)> RestoredFreeSessionAsync()
+    {
+        var store = new MemoryStore { Saved = new StoredSession("jeton-1", DateTime.UtcNow.AddMinutes(60), Profile(premium: false)) };
+        var session = new SessionState(store);
+        await session.RestoreAsync();
+        return (session, store);
+    }
+
+    [Fact]
+    public async Task Un_abonnement_active_apres_la_connexion_deverrouille_le_tuteur_au_rechargement()
+    {
+        var (session, store) = await RestoredFreeSessionAsync();
+        Assert.False(session.HasFeature("tutor-ai"));
+
+        await session.RefreshProfileAsync(() => Task.FromResult<UserProfile?>(Profile(premium: true)));
+
+        Assert.True(session.HasFeature("tutor-ai"));
+        Assert.True(store.Saved!.Profile.IsPremium);   // le prochain rechargement repart du profil à jour
+        Assert.Equal("jeton-1", session.Token);
+    }
+
+    [Fact]
+    public async Task Le_profil_n_est_pas_relu_a_chaque_page()
+    {
+        var (session, _) = await RestoredFreeSessionAsync();
+        var calls = 0;
+        Task<UserProfile?> Fetch() { calls++; return Task.FromResult<UserProfile?>(Profile(premium: true)); }
+
+        await session.RefreshProfileAsync(Fetch);
+        await session.RefreshProfileAsync(Fetch);
+
+        Assert.Equal(1, calls);
+    }
+
+    [Fact]
+    public async Task Un_profil_recu_a_la_connexion_n_est_pas_relu_aussitot()
+    {
+        var session = new SessionState(new MemoryStore());
+        await session.SignInAsync(new AuthResponse("jeton-1", DateTime.UtcNow.AddMinutes(60), Profile(premium: true)));
+        var calls = 0;
+
+        await session.RefreshProfileAsync(() => { calls++; return Task.FromResult<UserProfile?>(null); });
+
+        Assert.Equal(0, calls);
+    }
+
+    [Fact]
+    public async Task Un_service_injoignable_garde_le_profil_connu()
+    {
+        var (session, _) = await RestoredFreeSessionAsync();
+
+        await session.RefreshProfileAsync(() => throw new HttpRequestException("hors connexion"));
+        await session.RefreshProfileAsync(() => Task.FromResult<UserProfile?>(null));
+
+        Assert.True(session.IsAuthenticated);
+        Assert.Equal("Élève", session.Profile!.Username);
+    }
+
+    [Fact]
+    public async Task Une_deconnexion_pendant_la_relecture_reste_une_deconnexion()
+    {
+        var (session, _) = await RestoredFreeSessionAsync();
+        var gate = new TaskCompletionSource<UserProfile?>();
+
+        var refresh = session.RefreshProfileAsync(() => gate.Task);
+        await session.SignOutAsync();
+        gate.SetResult(Profile(premium: true));
+        await refresh;
+
+        Assert.Null(session.Profile);
+        Assert.False(session.IsAuthenticated);
+    }
+}
+
 /// <summary>Côté service des comptes : le jeton garde la date de la vraie connexion, qui borne la session.</summary>
 public class SessionLimitTests
 {
