@@ -6,9 +6,9 @@ doivent être réécrits.
 
 ## Priorité 1 — Fiabiliser et exploiter le socle actuel
 
-- [ ] Exécuter et stabiliser la suite complète `dotnet test GPOE26.slnx`, y compris les tests
-  d’intégration qui nécessitent Docker et Aspire ; intégrer les commandes de build et de test dans
-  la CI.
+- [ ] Stabiliser la suite complète `dotnet test GPOE26.slnx`, y compris les tests d’intégration qui
+  nécessitent Docker et Aspire. La CI GitHub exécute désormais restore, build, tests unitaires et
+  test PostgreSQL workspace ; Docker/Aspire restent à confirmer sur le runner.
 - [ ] Vérifier les scénarios d’évolution des schémas User, Cours, Chat et Quiz sur une base
   existante, et adopter une stratégie explicite de migrations avant les déploiements en production.
 - [ ] Valider en environnement de déploiement les secrets et la configuration : clé JWT, clé HMAC

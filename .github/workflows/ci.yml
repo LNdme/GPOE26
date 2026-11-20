@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: gpoe26_test
+          POSTGRES_USER: gpoe26
+          POSTGRES_PASSWORD: gpoe26_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U gpoe26 -d gpoe26_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      GPOE26_USER_TEST_CONNECTION_STRING: Host=127.0.0.1;Port=5432;Database=gpoe26_test;Username=gpoe26;Password=gpoe26_test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore GPOE26.slnx
+
+      - name: Build
+        run: dotnet build GPOE26.slnx --no-restore
+
+      - name: Test
+        run: dotnet test GPOE26.slnx --no-build --no-restore
