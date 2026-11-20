@@ -90,7 +90,10 @@ public class TutorReflectionScheduler(IServiceScopeFactory scopes, IConfiguratio
                 .ToListAsync(ct);
 
             var exchanges = ReflectionPolicy.Pair(messages.Select(m => (m.Role, m.Content, m.HasPhoto))).TakeLast(MaxExchangesPerBatch).ToList();
-            var job = new ReflectionJob(c.UserId, AgentKinds.Student, c.CourseId, c.CourseTitle, exchanges, null);
+            // Discussion libre : ce que l'agent en retient vaut pour la personne, pas pour un cours
+            var job = TutorConversation.IsFree(c.CourseId)
+                ? new ReflectionJob(c.UserId, AgentKinds.Student, null, null, exchanges, null)
+                : new ReflectionJob(c.UserId, AgentKinds.Student, c.CourseId, c.CourseTitle, exchanges, null);
             try
             {
                 using var jobScope = scopes.CreateScope();

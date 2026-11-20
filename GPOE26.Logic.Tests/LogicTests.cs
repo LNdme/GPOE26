@@ -1113,6 +1113,44 @@ public class TutorLearnerTests
     [Fact]
     public void Sans_niveau_le_tuteur_suppose_le_secondaire() =>
         Assert.Equal("un élève du secondaire", Chat.Endpoints.TutorEndpoints.Learner(Principal(("role", "Student"))));
+
+    // ── Tuteur libre (docs/PLAN-PUBLICS.md, lot P1) : la personne n'est pas forcément un élève du secondaire ──
+
+    [Fact]
+    public void Sans_cours_ni_niveau_le_tuteur_ne_suppose_pas_le_secondaire()
+    {
+        var text = Chat.Endpoints.TutorEndpoints.Learner(Principal(("role", "Student")), free: true);
+        Assert.DoesNotContain("secondaire", text);
+        Assert.Contains("une personne qui apprend", text);
+    }
+
+    [Fact]
+    public void Sans_cours_un_etudiant_reste_un_etudiant() =>
+        Assert.Equal("un étudiant (Master 1)",
+            Chat.Endpoints.TutorEndpoints.Learner(Principal(("role", "Student"), ("stage", "Higher"), ("level", "Master 1")), free: true));
+
+    [Fact]
+    public void Sans_cours_un_enseignant_reste_un_collegue() =>
+        Assert.Contains("enseignant", Chat.Endpoints.TutorEndpoints.Learner(Principal(("role", "Teacher")), free: true));
+
+    [Fact]
+    public void La_consigne_libre_se_remplit_sans_erreur_et_n_invente_pas_de_cours()
+    {
+        var prompt = string.Format(Chat.Endpoints.TutorEndpoints.FreePrompt, "une personne qui apprend", "Réponds en français.");
+        Assert.Contains("une personne qui apprend", prompt);
+        Assert.Contains("Réponds en français.", prompt);
+        Assert.Contains("n'invente jamais de source", prompt);
+        Assert.DoesNotContain("<cours>", prompt);
+    }
+
+    [Fact]
+    public void La_discussion_libre_est_rangee_sous_un_identifiant_reserve()
+    {
+        Assert.True(Chat.Model.TutorConversation.IsFree(Guid.Empty));
+        Assert.False(Chat.Model.TutorConversation.IsFree(Guid.NewGuid()));
+        // L'interface utilise la même valeur pour ouvrir la discussion libre
+        Assert.Equal(Chat.Model.TutorConversation.FreeCourseId, GPOE26.UI.Components.TutorPanel.FreeCourseId);
+    }
 }
 
 public class ImageFormatTests

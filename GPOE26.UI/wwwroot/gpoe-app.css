@@ -388,6 +388,8 @@ label.ga-btn { cursor: pointer; }
 
 /* ── Tuteur IA ─────────────────────────────────────────────────────────────── */
 .tu { display: flex; flex-direction: column; background: #fff; border: 1px solid var(--ga-line); border-radius: 18px; min-height: 0; height: calc(100vh - 140px); font-family: var(--ga-font); }
+/* Tuteur libre en haut de « Tuteur IA » : assez haut pour converser, la liste des discussions reste visible en dessous */
+.tu-free .tu { height: min(560px, 68vh); }
 .tu-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 16px; border-bottom: 1px solid var(--ga-line); }
 .tu-head .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .tu-head .ga-icon-btn:hover { background: var(--ga-bg); }

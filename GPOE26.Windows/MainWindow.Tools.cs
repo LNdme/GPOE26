@@ -193,7 +193,8 @@ public sealed partial class MainWindow
         var pinned = _data.PinnedAsync();
         var todo = IsStudent ? _data.StudentAssessmentsAsync() : null;
 
-        var list = (await conversations).Value ?? [];
+        // La discussion libre du site (lot P1, rangée sous Guid.Empty) n'a pas encore d'écran ici : elle n'est pas listée
+        var list = ((await conversations).Value ?? []).Where(c => c.CourseId != Guid.Empty).ToList();
         DiscussionsList.Children.Clear();
         if (list.Count == 0)
             DiscussionsList.Children.Add(new TextBlock

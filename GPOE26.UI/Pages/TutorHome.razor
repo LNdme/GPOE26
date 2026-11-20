@@ -11,14 +11,22 @@
     <div class="ga-head">
         <div>
             <h1>Tuteur IA</h1>
-            <p>Toutes tes discussions sont conservées : relis les explications du tuteur quand tu révises.</p>
+            <p>Pose ta question ici, ou depuis un cours pour que le tuteur s'appuie dessus. Toutes tes discussions sont conservées.</p>
         </div>
         <a class="ga-btn ghost" href="/app/tuteur/memoire"><Icon Name="history" /> Ce qu'il retient de moi</a>
     </div>
 
+    @* Tuteur libre (docs/PLAN-PUBLICS.md, lot P1) : sans cours, pour qui n'a ni classe ni document *@
+    @if (Ready)
+    {
+        <div class="tu-free">
+            <TutorPanel CourseId="TutorPanel.FreeCourseId" />
+        </div>
+    }
+
     <div class="ga-chips" role="tablist" aria-label="Affichage">
         <button role="tab" class="ga-chip @(_tab == 0 ? "on" : "")" aria-selected="@Aria.State(_tab == 0)" @onclick="() => _tab = 0">
-            Discussions (@_conversations.Count)
+            Discussions sur un cours (@_conversations.Count)
         </button>
         <button role="tab" class="ga-chip @(_tab == 1 ? "on" : "")" aria-selected="@Aria.State(_tab == 1)" @onclick="() => _tab = 1">
             <Icon Name="pin" Size="16" /> Explications épinglées (@_pinned.Count)
@@ -38,8 +46,8 @@
             @if (_conversations.Count == 0)
             {
                 <div class="ga-empty">
-                    <strong>Aucune discussion pour l'instant.</strong>
-                    <span>Ouvre un cours et clique sur « Tuteur IA » pour poser ta première question.</span>
+                    <strong>Aucune discussion sur un cours pour l'instant.</strong>
+                    <span>Ouvre un cours et clique sur « Tuteur IA » : le tuteur s'appuiera sur ce cours pour te répondre.</span>
                     <a class="ga-btn secondary small" href="/app/cours">Voir mes cours</a>
                 </div>
             }
@@ -100,7 +108,8 @@
     {
         var conversations = Tutor.ConversationsAsync();
         var pinned = Tutor.PinnedAsync();
-        _conversations = (await conversations).Value ?? new();
+        // La discussion libre est affichée en haut de la page : la liste ne garde que les discussions sur un cours
+        _conversations = ((await conversations).Value ?? new()).Where(c => c.CourseId != TutorPanel.FreeCourseId).ToList();
         _pinned = (await pinned).Value ?? new();
         _error = (await conversations).Error ?? (await pinned).Error;
         _loading = false;

@@ -31,6 +31,12 @@
 
     protected override async Task LoadAsync()
     {
+        // Discussion libre (lot P1) : pas de cours à charger
+        if (CourseId == TutorPanel.FreeCourseId)
+        {
+            _title = TutorPanel.FreeTitle;
+            return;
+        }
         // Le cours peut avoir été retiré de la classe : la discussion reste lisible
         var course = await Courses.GetAsync(CourseId);
         _courseAvailable = course.Ok;

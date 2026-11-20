@@ -7,6 +7,17 @@ namespace Chat.Model;
 
 public class TutorConversation
 {
+    /// <summary>
+    /// Discussion libre, sans cours (docs/PLAN-PUBLICS.md, lot P1) : une par personne, rangée sous ce CourseId.
+    /// Les projets (lot A6 du plan de l'agent noyau) prendront le relais pour plusieurs discussions libres.
+    /// </summary>
+    public static readonly Guid FreeCourseId = Guid.Empty;
+
+    /// <summary>Titre affiché de la discussion libre.</summary>
+    public const string FreeTitle = "Questions libres";
+
+    public static bool IsFree(Guid courseId) => courseId == FreeCourseId;
+
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid UserId { get; set; }
     public Guid CourseId { get; set; }

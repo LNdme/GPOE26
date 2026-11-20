@@ -10,7 +10,7 @@
         <span class="tu-avatar" aria-hidden="true"><Icon Name="spark" Size="18" Stroke="2" /></span>
         <div class="grow">
             <strong>Tuteur IA</strong>
-            <span class="ga-small ga-muted tu-course">@(CourseTitle ?? _conversation?.CourseTitle ?? "Cours")</span>
+            <span class="ga-small ga-muted tu-course">@(Free ? FreeTitle : CourseTitle ?? _conversation?.CourseTitle ?? "Cours")</span>
         </div>
         @if (_busy)
         {
@@ -44,9 +44,18 @@
             @if (_messages.Count == 0)
             {
                 <div class="tu-intro">
-                    <p><strong>Bonjour @(Session.Profile?.Username) !</strong> J'ai lu ce cours. Pose-moi une question,
-                        ou photographie un exercice que tu as traité sur papier : je vérifie ta démarche.</p>
-                    <p class="ga-small ga-muted">Notre discussion est enregistrée : tu pourras la relire plus tard, même après avoir fermé le cours.</p>
+                    @if (Free)
+                    {
+                        <p><strong>Bonjour @(Session.Profile?.Username) !</strong> Pose-moi une question sur ce que tu veux apprendre :
+                            une notion, un exercice, du code, un article… Tu peux aussi photographier ton travail sur papier.</p>
+                        <p class="ga-small ga-muted">Pour que je m'appuie sur un document précis, dépose-le dans « Mes cours » et ouvre le tuteur depuis ce cours.</p>
+                    }
+                    else
+                    {
+                        <p><strong>Bonjour @(Session.Profile?.Username) !</strong> J'ai lu ce cours. Pose-moi une question,
+                            ou photographie un exercice que tu as traité sur papier : je vérifie ta démarche.</p>
+                        <p class="ga-small ga-muted">Notre discussion est enregistrée : tu pourras la relire plus tard, même après avoir fermé le cours.</p>
+                    }
                 </div>
             }
             else
@@ -118,7 +127,7 @@
         @if (!_busy && _messages.Count == 0)
         {
             <div class="tu-suggest" role="group" aria-label="Suggestions">
-                @foreach (var s in Suggestions)
+                @foreach (var s in Free ? FreeSuggestions : Suggestions)
                 {
                     <button class="ga-chip" @onclick="() => AskAsync(s)">@s</button>
                 }
@@ -147,7 +156,7 @@
             <PhotoPicker Css="secondary tu-cam" ShowLabel="false" Label="Joindre la photo de ma copie" Disabled="_busy"
                          OnPicked="OnPhoto" OnError="e => _error = e" />
             <label for="tu-q-@CourseId" class="ga-sr-only">Ta question au tuteur</label>
-            <textarea id="tu-q-@CourseId" class="ga-input" rows="1" placeholder="Pose ta question sur ce cours…" maxlength="4000"
+            <textarea id="tu-q-@CourseId" class="ga-input" rows="1" placeholder="@(Free ? "Pose ta question…" : "Pose ta question sur ce cours…")" maxlength="4000"
                       @bind="_input" @bind:event="oninput" @onkeydown="OnKeyDown" disabled="@_busy"></textarea>
             <button type="submit" class="ga-btn tu-send" disabled="@(_busy || (string.IsNullOrWhiteSpace(_input) && _photo is null))" aria-label="Envoyer">
                 <Icon Name="send" />
@@ -172,6 +181,18 @@
         "Donne-moi un exercice d'application",
     ];
 
+    /// <summary>Discussion libre, sans cours (docs/PLAN-PUBLICS.md, lot P1) : le service Chat la range sous Guid.Empty.</summary>
+    public static readonly Guid FreeCourseId = Guid.Empty;
+    public const string FreeTitle = "Questions libres";
+    private bool Free => CourseId == FreeCourseId;
+
+    private static readonly string[] FreeSuggestions =
+    [
+        "Explique-moi une notion que je ne comprends pas",
+        "Aide-moi à organiser mes révisions de la semaine",
+        "Donne-moi un exercice pour m'entraîner",
+    ];
+
     private static readonly string[] FollowUps =
     [
         "Explique plus simplement",
@@ -187,7 +208,8 @@
     private bool _loading = true, _busy, _confirmClear, _scrollPending = true;
     private string? _input, _error, _sending, _photoPreview;
     private ImageUpload? _photo;
-    private Guid _loadedCourse;
+    // Nullable : la discussion libre se range sous Guid.Empty, la valeur par défaut d'un Guid (elle ne se chargeait jamais)
+    private Guid? _loadedCourse;
 
     protected override async Task OnParametersSetAsync()
     {
