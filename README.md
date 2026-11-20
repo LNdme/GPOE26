@@ -396,6 +396,9 @@ Le script `scripts/test-user-api.sh` rejoue les parcours de la phase 1 sur le se
 
 ## Feuille de route
 
+La liste détaillée des validations, décisions et fonctionnalités restantes est tenue dans
+[`TRAVAUX_RESTANTS.md`](TRAVAUX_RESTANTS.md).
+
 | Phase | Contenu | État |
 |---|---|---|
 | 0 | Nettoyage du dépôt, secrets hors du code, README | ✅ |
@@ -408,9 +411,6 @@ Le script `scripts/test-user-api.sh` rejoue les parcours de la phase 1 sur le se
 | 6 | Import PDF/DOCX/image → Markdown par IA, éditeur de cours à 3 modes, quiz persistés en base, tests | À faire |
 
 **Modèle d'abonnement prévu (freemium)** : les cours partagés par les enseignants restent gratuits ; l'abonnement Premium débloque le tuteur IA, les quiz illimités, les épreuves blanches, le plan d'études et le suivi détaillé.
-
-La liste détaillée des prochaines étapes produit, harness et exploitation est maintenue dans
-[TRAVAUX-RESTANTS.md](TRAVAUX-RESTANTS.md).
 
 | Qui | Comment il accède |
 |---|---|
