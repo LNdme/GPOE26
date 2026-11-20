@@ -324,7 +324,9 @@ public sealed class McpAuthorizationServiceTests
                 Email = $"{userId}@example.test",
                 Username = userId.ToString(),
                 PasswordHash = "test-hash",
-                Role = UserRole.Admin
+                // Administrer est un droit ajouté au compte, plus un rôle (audit B1)
+                Role = UserRole.Teacher,
+                IsAdmin = true
             });
 
         if (!await db.Workspaces.AnyAsync(workspace => workspace.Id == workspaceId))

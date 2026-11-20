@@ -19,8 +19,9 @@ public static class AssessmentEndpoints
             .RequireWorkspaceContext();
 
         // ── POST /assessments ─────────────────────────────────────────────────────
-        group.MapPost("", async (AssessmentInput input, ClaimsPrincipal principal, EvaluationContext db) =>
+        group.MapPost("", async (AssessmentInput input, ClaimsPrincipal principal, EvaluationContext db, UserDirectoryClient users) =>
         {
+            if (await ForeignClassroomsAsync(input, principal, users) is { } refused) return refused;
             var workspace = principal.GetWorkspaceContext();
 
             var assessment = new Assessment
@@ -95,7 +96,11 @@ public static class AssessmentEndpoints
             var own = await db.OwnedAssessmentAsync(id, userId, workspace);
             if (own is not null) return Results.Ok(new AssessmentDto(own, withQuestions: true));
 
-            if (!workspace.HasAnyRole(WorkspaceRoles.Learner)) return Results.NotFound();
+            // Collègue d'un établissement où l'évaluation est déposée : il la voit entière, pour décider de la copier
+            if (await LibraryEndpoints.ReadableFromLibraryAsync(db, id, users) is { } deposited)
+                return Results.Ok(new AssessmentDto(deposited, withQuestions: true));
+
+            if (!principal.IsInRole(Roles.Student) || !workspace.HasAnyRole(WorkspaceRoles.Learner)) return Results.NotFound();
             var assigned = (await AssignedToStudentAsync(db, users)).FirstOrDefault(a => a.Id == id);
             return assigned is null ? Results.NotFound() : Results.Ok(new AssessmentDto(assigned, withQuestions: false));
         })
@@ -105,11 +110,14 @@ public static class AssessmentEndpoints
 
         // ── PUT /assessments/{id} ─────────────────────────────────────────────────
         // Modifiable tant qu'aucun élève n'a commencé à composer.
-        group.MapPut("/{id:guid}", async (Guid id, AssessmentInput input, ClaimsPrincipal principal, EvaluationContext db) =>
+        group.MapPut("/{id:guid}", async (Guid id, AssessmentInput input, ClaimsPrincipal principal, EvaluationContext db, UserDirectoryClient users) =>
         {
             var workspace = principal.GetWorkspaceContext();
             var assessment = await db.OwnedAssessmentAsync(id, principal.UserId(), workspace);
             if (assessment is null) return Results.NotFound();
+            // Vérifié à chaque modification, pas seulement à la publication : une évaluation déjà publiée
+            // pouvait être réassignée aux classes d'un collègue
+            if (await ForeignClassroomsAsync(input, principal, users) is { } refused) return refused;
             if (await db.Submissions.AnyAsync(s => s.AssessmentId == id))
                 return EndpointHelpers.Error(409, "Des élèves ont déjà composé : l'évaluation ne peut plus être modifiée.");
             if (assessment.Status == AssessmentStatus.Closed)
@@ -140,7 +148,7 @@ public static class AssessmentEndpoints
                 return EndpointHelpers.Error(409, "Cette évaluation est clôturée.");
 
             var errors = Grader.ValidateForPublish(assessment);
-            var owned = (await users.MyClassroomsAsync()).Select(c => c.Id).ToHashSet();
+            var owned = await OwnedClassroomIdsAsync(principal, users);
             if (assessment.ClassroomIds.Any(c => !owned.Contains(c)))
                 errors.Add("Vous ne pouvez assigner l'évaluation qu'à vos propres classes.");
             if (errors.Count > 0)
@@ -172,6 +180,8 @@ public static class AssessmentEndpoints
             assessment.Status = AssessmentStatus.Closed;
             assessment.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
+            // Les élèves qui composaient encore : leur copie est rendue avec le dernier brouillon (A8)
+            await AttemptRules.FinalizeExpiredAsync(db, DateTime.UtcNow, assessmentId: id);
             return Results.Ok(new AssessmentDto(assessment, withQuestions: false));
         })
         .RequireWorkspaceRoles(WorkspaceRoles.Instructor, WorkspaceRoles.Admin)
@@ -192,6 +202,21 @@ public static class AssessmentEndpoints
         })
         .RequireWorkspaceRoles(WorkspaceRoles.Instructor, WorkspaceRoles.Admin)
         .WithSummary("Supprimer une évaluation sans copie");
+    }
+
+    /// <summary>Classes où l'utilisateur connecté enseigne (une classe peut avoir plusieurs enseignants).</summary>
+    private static async Task<HashSet<Guid>> OwnedClassroomIdsAsync(ClaimsPrincipal principal, UserDirectoryClient users) =>
+        ClassroomRef.TaughtBy(await users.MyClassroomsAsync(), principal.UserId());
+
+    /// <summary>Refus si l'évaluation vise une classe dont l'enseignant n'est pas le propriétaire, sinon null.</summary>
+    private static async Task<IResult?> ForeignClassroomsAsync(AssessmentInput input, ClaimsPrincipal principal, UserDirectoryClient users)
+    {
+        var wanted = input.ClassroomIds ?? [];
+        if (wanted.Count == 0) return null;
+        var owned = await OwnedClassroomIdsAsync(principal, users);
+        return wanted.All(owned.Contains)
+            ? null
+            : EndpointHelpers.Error(400, "Vous ne pouvez assigner l'évaluation qu'à vos propres classes.");
     }
 
     /// <summary>Évaluations publiées (ou clôturées) pour au moins une classe de l'élève connecté.</summary>

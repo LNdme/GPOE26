@@ -20,6 +20,13 @@ public static class UiServiceCollectionExtensions
         services.AddScoped<IMcpConsentApi, McpConsentApi>();
         services.AddScoped<IAdminMcpApi, AdminMcpApi>();
         services.AddScoped<ITutorApi, TutorApi>();
+        services.AddScoped<IMediaApi, MediaApi>();
+        services.AddScoped<IPlanApi, PlanApi>();
+        services.AddScoped<IAgentApi, AgentApi>();
+        services.AddScoped<IPracticeQuizApi, PracticeQuizApi>();
+        services.AddScoped<IPlatformAdminApi, PlatformAdminApi>();
+        services.AddScoped<ISpaceApi, SpaceApi>();
+        services.AddScoped<Components.Workspace.IWorkspaceStore, Components.Workspace.BrowserWorkspaceStore>();
         return services;
     }
 }

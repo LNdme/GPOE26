@@ -45,6 +45,95 @@ public sealed class WorkspaceService(UserContext db)
             ?? throw new InvalidOperationException("The personal workspace membership could not be loaded.");
     }
 
+    /// <summary>
+    /// Espace de travail d'un jeton neuf (connexion, inscription, activation par code) : celui de la famille pour un
+    /// parent, celui de son établissement pour un membre (ajouté au besoin), sinon son espace personnel.
+    /// </summary>
+    public async Task<WorkspaceSummaryDto> DefaultForAsync(AppUser user, CancellationToken cancellationToken = default)
+    {
+        var personal = await EnsurePersonalWorkspaceAsync(user.Id, cancellationToken);
+        if (user.Role == UserRole.Parent)
+        {
+            await EnsureFamilyWorkspaceAsync(user.Id, cancellationToken: cancellationToken);
+            return (await GetMineAsync(user.Id, cancellationToken)).Single(workspace => workspace.Kind == WorkspaceKind.Family);
+        }
+
+        await SyncSpaceMembershipsAsync(user, cancellationToken);
+        var mine = await GetMineAsync(user.Id, cancellationToken);
+        if (user.OrganizationId is { } organizationId && await IsSchoolAsync(organizationId, cancellationToken))
+        {
+            await EnsureOrganizationMembershipAsync(user, organizationId, cancellationToken);
+            return (await GetMineAsync(user.Id, cancellationToken))
+                .FirstOrDefault(workspace => workspace.OrganizationId == organizationId) ?? personal;
+        }
+        // Élève inscrit sur la liste d'un seul établissement : son espace de travail
+        var schools = mine.Where(workspace => workspace.Kind == WorkspaceKind.Organization).ToList();
+        return user.Role == UserRole.Student && schools.Count == 1 ? schools[0] : personal;
+    }
+
+    /// <summary>Au renouvellement de la session : l'espace du jeton actuel si la personne en est toujours membre.</summary>
+    public async Task<WorkspaceSummaryDto> CurrentOrDefaultAsync(AppUser user, Guid? currentWorkspaceId,
+        CancellationToken cancellationToken = default)
+    {
+        await SyncSpaceMembershipsAsync(user, cancellationToken);
+        return currentWorkspaceId is { } id && await GetMembershipAsync(id, user.Id, cancellationToken) is { } current
+            ? current
+            : await DefaultForAsync(user, cancellationToken);
+    }
+
+    /// <summary>
+    /// Pont avec les espaces d'établissement (docs/PLAN-ETABLISSEMENT.md) : la personne rejoint l'espace de travail
+    /// de chaque établissement où elle figure. Responsable et gestionnaires : Admin ; enseignants : Instructor ;
+    /// élèves activés sur la liste : Learner. Appelé à chaque jeton neuf (connexion, renouvellement).
+    /// Les rôles ne sont qu'ajoutés : un retrait dans l'établissement ne retire pas l'adhésion à l'espace de travail
+    /// (l'établissement reste vérifié par ses propres règles, en base, sur ses routes).
+    /// </summary>
+    public async Task SyncSpaceMembershipsAsync(AppUser user, CancellationToken cancellationToken = default)
+    {
+        var schools = db.Organizations.Where(o => o.Type != OrganizationType.Independent).Select(o => o.Id);
+        var members = await db.OrganizationMembers
+            .Where(m => m.UserId == user.Id && m.Status == MemberStatus.Active && schools.Contains(m.OrganizationId))
+            .Select(m => new { m.OrganizationId, m.Role })
+            .ToListAsync(cancellationToken);
+        var studentOf = await db.OrganizationStudents
+            .Where(s => s.UserId == user.Id && s.Status == StudentStatus.Active && schools.Contains(s.OrganizationId))
+            .Select(s => s.OrganizationId)
+            .ToListAsync(cancellationToken);
+
+        var roles = new Dictionary<Guid, HashSet<WorkspaceRole>>();
+        foreach (var member in members)
+            Roles(member.OrganizationId).Add(member.Role == OrganizationRole.Teacher ? WorkspaceRole.Instructor : WorkspaceRole.Admin);
+        foreach (var organizationId in studentOf)
+            Roles(organizationId).Add(WorkspaceRole.Learner);
+
+        foreach (var (organizationId, granted) in roles)
+            await EnsureMembershipAsync(await EnsureOrganizationWorkspaceAsync(organizationId, cancellationToken), user.Id,
+                granted, cancellationToken);
+
+        HashSet<WorkspaceRole> Roles(Guid organizationId) =>
+            roles.TryGetValue(organizationId, out var set) ? set : roles[organizationId] = [];
+    }
+
+    /// <summary>
+    /// Espace de travail d'une classe créée dans un espace d'établissement : celui de l'établissement, ou, pour un
+    /// espace d'enseignant indépendant, l'espace personnel de son responsable.
+    /// </summary>
+    public async Task<Guid> WorkspaceIdForSpaceAsync(Guid organizationId, CancellationToken cancellationToken = default)
+    {
+        if (await IsSchoolAsync(organizationId, cancellationToken))
+            return (await EnsureOrganizationWorkspaceAsync(organizationId, cancellationToken)).Id;
+        var owner = await db.OrganizationMembers
+            .Where(m => m.OrganizationId == organizationId && m.Role == OrganizationRole.Owner && m.Status == MemberStatus.Active)
+            .Select(m => (Guid?)m.UserId)
+            .FirstOrDefaultAsync(cancellationToken);
+        return owner is { } ownerId
+            ? (await EnsurePersonalWorkspaceAsync(ownerId, cancellationToken)).Id
+            : (await EnsureOrganizationWorkspaceAsync(organizationId, cancellationToken)).Id;
+    }
+
+    private Task<bool> IsSchoolAsync(Guid organizationId, CancellationToken cancellationToken) =>
+        db.Organizations.AnyAsync(o => o.Id == organizationId && o.Type != OrganizationType.Independent, cancellationToken);
+
     public async Task<Workspace> EnsureOrganizationWorkspaceAsync(
         Guid organizationId,
         CancellationToken cancellationToken = default)

@@ -32,7 +32,8 @@ public static class SubscriptionEndpoints
 
             return Results.Ok(new MySubscriptionsDto(
                 await subs.GetEntitlementAsync(userId),
-                owned.Select(s => new SubscriptionDto(s, keys.Where(k => k.SubscriptionId == s.Id))).ToList()));
+                owned.Select(s => new SubscriptionDto(s, keys.Where(k => k.SubscriptionId == s.Id))).ToList(),
+                subs.SimulatePayments));
         })
         .WithSummary("Mon accès Premium et mes abonnements")
         .Produces<MySubscriptionsDto>();
@@ -72,14 +73,14 @@ public static class SubscriptionEndpoints
             if (user is null) return Results.Unauthorized();
 
             var workspace = principal.GetWorkspaceContext();
-            var allowed = req.Plan switch
+            var allowed = (req.Plan, user.Role) switch
             {
-                SubscriptionPlan.StudentPremium =>
+                (SubscriptionPlan.StudentPremium, UserRole.Student) =>
                     workspace.HasAnyRole(WorkspaceRoles.Learner),
-                SubscriptionPlan.Family =>
+                (SubscriptionPlan.Family, UserRole.Parent) =>
                     workspace.Kind == WorkspaceKinds.Family &&
                     workspace.HasAnyRole(WorkspaceRoles.Guardian),
-                SubscriptionPlan.Teacher =>
+                (SubscriptionPlan.Teacher, UserRole.Teacher) =>
                     workspace.HasAnyRole(WorkspaceRoles.Instructor),
                 _ => false
             };
@@ -102,6 +103,40 @@ public static class SubscriptionEndpoints
         .WithSummary("Souscrire (en attente de paiement)")
         .Produces<SubscriptionDto>(202)
         .Produces(400);
+
+        // ── POST /subscriptions/simulate-payment ──────────────────────────────────
+        // Tant qu'aucun moyen de paiement réel n'est branché : le « paiement » délivre une clé.
+        // Désactivé par défaut (Subscriptions:SimulatePayments) : n'existe qu'en développement.
+        group.MapPost("/simulate-payment", async (SimulatePaymentRequest req, ClaimsPrincipal principal, UserContext db,
+            SubscriptionService subs, PlanCatalogClient catalog) =>
+        {
+            if (!subs.SimulatePayments) return Results.NotFound();
+
+            var user = await db.CurrentUserAsync(principal);
+            if (user is null) return Results.Unauthorized();
+            if (!SubscriptionService.CanPurchase(req.Plan, user.Role))
+                return Results.BadRequest(new { message = "Cette formule n'est pas disponible pour ce type de compte." });
+
+            var code = SubscriptionService.PlanCode(req.Plan);
+            var seats = (await catalog.GetAsync()).FirstOrDefault(p => p.Code == code)?.Seats ?? 1;
+
+            // Seule la formule familiale reste rattachée au payeur : les autres ne s'activent qu'avec la clé
+            var sub = new Subscription
+            {
+                Plan = req.Plan,
+                Period = req.Period,
+                OwnerUserId = req.Plan == SubscriptionPlan.Family ? user.Id : null,
+                Seats = seats
+            };
+            db.Subscriptions.Add(sub);
+            var key = await subs.ActivateAsync(sub, alwaysIssueKey: true);
+
+            return Results.Ok(new SimulatedPaymentDto(key!.Code, sub.Plan, sub.Period, req.Provider ?? "Simulation", sub.Seats, sub.EndsAt));
+        })
+        .WithSummary("Paiement simulé : délivre une clé d'abonnement (développement uniquement)")
+        .Produces<SimulatedPaymentDto>()
+        .Produces(400)
+        .Produces(404);
 
         // ── POST /subscriptions/trial ─────────────────────────────────────────────
         group.MapPost("/trial", async (ClaimsPrincipal principal, UserContext db, SubscriptionService subs) =>

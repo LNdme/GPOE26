@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Application Windows de GPOE26 (WinUI 3, Windows App SDK).
+    Elle consomme les mêmes API que le site, via les clients de GPOE26.UI (ApiBase, SessionState, modèles),
+    et garde une copie locale (SQLite) des cours et des discussions pour travailler hors connexion.
+    Non empaquetée : se lance comme un .exe ; le runtime Windows App SDK doit être installé sur le poste.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>GPOE26.Desktop</RootNamespace>
+    <AssemblyName>GPOE26</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>x86;x64;ARM64</Platforms>
+    <RuntimeIdentifiers>win-x86;win-x64;win-arm64</RuntimeIdentifiers>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Le plus léger pour le disque : runtime Windows App SDK partagé, pas de copie embarquée -->
+    <WindowsAppSDKSelfContained>false</WindowsAppSDKSelfContained>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.6.5" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2957" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.14" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.14" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.14" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GPOE26.UI\GPOE26.UI.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- KaTeX du site, pour afficher les formules du cours et du tuteur même hors connexion -->
+    <Content Include="..\GPOE26.Web\wwwroot\lib\katex\**\*" Link="Assets\katex\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Polices du cours (les mêmes que le site, licence SIL OFL) : lecture hors connexion -->
+    <Content Include="..\GPOE26.Web\wwwroot\fonts\source-serif-4-*.woff2;..\GPOE26.Web\wwwroot\fonts\fraunces-*.woff2" Link="Assets\fonts\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\reader\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

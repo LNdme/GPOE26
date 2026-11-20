@@ -6,7 +6,7 @@ namespace GPOE26.UI.Components;
 
 /// <summary>
 /// Base des pages de l'espace connecté : restaure la session, renvoie vers /login si besoin
-/// (avec retour à la page demandée), et vers /app si l'espace actif n'a pas accès à la page.
+/// (avec retour à la page demandée), et vers /app si le rôle du compte ou celui de l'espace actif n'a pas accès à la page.
 /// Les pages redéfinissent LoadAsync et n'affichent leur contenu qu'une fois Ready.
 /// </summary>
 public abstract class AppPage : ComponentBase
@@ -14,12 +14,20 @@ public abstract class AppPage : ComponentBase
     [Inject] protected SessionState Session { get; set; } = default!;
     [Inject] protected NavigationManager Nav { get; set; } = default!;
 
+    /// <summary>Rôles du compte autorisés (null = tout utilisateur connecté)</summary>
+    protected virtual UserRole[]? AllowedRoles => null;
+
     /// <summary>Rôles autorisés dans l'espace actif (null = tout utilisateur connecté).</summary>
     protected virtual WorkspaceRole[]? AllowedWorkspaceRoles => null;
 
+    /// <summary>Vrai pour la seule page ouverte à un élève connecté avec le code de sa fiche, qui doit d'abord choisir son mot de passe.</summary>
+    protected virtual bool AllowsPendingPassword => false;
+
     protected bool Ready { get; private set; }
 
-    protected UserProfile Me => Session.Profile!;
+    // Garde le dernier profil connu : un 401 peut fermer la session juste avant la redirection vers /login
+    private UserProfile? _me;
+    protected UserProfile Me => _me = Session.Profile ?? _me!;
 
     protected override async Task OnInitializedAsync()
     {
@@ -30,10 +38,21 @@ public abstract class AppPage : ComponentBase
             Nav.NavigateTo($"/login?retour={Uri.EscapeDataString("/" + back)}");
             return;
         }
-        if (AllowedWorkspaceRoles is { } roles)
+        if (Session.Profile?.MustChangePassword == true && !AllowsPendingPassword)
+        {
+            var back = Nav.ToBaseRelativePath(Nav.Uri);
+            Nav.NavigateTo($"/app/mot-de-passe?retour={Uri.EscapeDataString("/" + back)}");
+            return;
+        }
+        if (AllowedRoles is { } roles && !roles.Contains(Session.Role!.Value))
+        {
+            Nav.NavigateTo(HomeFor(Session.Role));
+            return;
+        }
+        if (AllowedWorkspaceRoles is { } workspaceRoles)
         {
             await Session.WaitForWorkspaceResolutionAsync();
-            if (!roles.Any(role => Session.HasWorkspaceRole(role)))
+            if (!workspaceRoles.Any(role => Session.HasWorkspaceRole(role)))
             {
                 Nav.NavigateTo("/app");
                 return;
@@ -45,7 +64,13 @@ public abstract class AppPage : ComponentBase
 
     protected virtual Task LoadAsync() => Task.CompletedTask;
 
-    /// <summary>Adresse de retour sûre (chemin local uniquement, jamais un autre site).</summary>
-    public static string SafeReturnUrl(string? url) =>
-        !string.IsNullOrEmpty(url) && url.StartsWith('/') && !url.StartsWith("//") && !url.StartsWith("/\\") ? url : "/app";
+    /// <summary>
+    /// Accueil d'un rôle : toujours l'espace /app, qui s'adapte au rôle (plan d'études, classes, suivi des enfants).
+    /// Un administrateur garde son rôle et son espace ; il rejoint l'administration par le menu.
+    /// </summary>
+    public static string HomeFor(UserRole? role) => "/app";
+
+    /// <summary>Adresse de retour sûre (chemin local uniquement, jamais un autre site), sinon l'accueil du rôle.</summary>
+    public static string SafeReturnUrl(string? url, UserRole? role = null) =>
+        !string.IsNullOrEmpty(url) && url.StartsWith('/') && !url.StartsWith("//") && !url.StartsWith("/\\") ? url : HomeFor(role);
 }

@@ -44,7 +44,9 @@ public sealed class UserWorkspaceSchemaTests
 
             await UserSchema.EnsureAsync(db);
             var initialCounts = await ReadCountsAsync(connection);
-            Assert.Equal((9, 11, 20), initialCounts);
+            // L'ancien compte « Admin » devient enseignant avec le droit d'administrer (audit B1) avant le remplissage :
+            // il reçoit Instructor dans son espace personnel, d'où une attribution de plus
+            Assert.Equal((9, 11, 21), initialCounts);
 
             var parentId = LegacyData.ParentId;
             var childId = LegacyData.ActiveChildId;
@@ -67,7 +69,7 @@ public sealed class UserWorkspaceSchemaTests
                 .SingleAsync(membership =>
                     membership.UserId == LegacyData.GlobalAdminId &&
                     membership.Workspace.Kind == WorkspaceKind.Organization);
-            Assert.Contains(organizationAdminMembership.RoleGrants, grant => grant.Role == WorkspaceRole.Member);
+            Assert.Contains(organizationAdminMembership.RoleGrants, grant => grant.Role == WorkspaceRole.Instructor);
             Assert.DoesNotContain(organizationAdminMembership.RoleGrants, grant => grant.Role == WorkspaceRole.Admin);
 
             var teacherPersonalMembership = await db.WorkspaceMemberships
@@ -120,7 +122,7 @@ public sealed class UserWorkspaceSchemaTests
             var (token, _) = new Jwtservice(jwtConfiguration).GenerateToken(
                 child,
                 new Entitlement(false, null, null, null),
-                selectedMembership);
+                activeWorkspace: selectedMembership);
             var claims = new JwtSecurityTokenHandler().ReadJwtToken(token).Claims.ToList();
             Assert.Contains(claims, claim =>
                 claim.Type == WorkspaceClaimTypes.Id && claim.Value == familyMembership.WorkspaceId.ToString());

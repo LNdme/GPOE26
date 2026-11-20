@@ -2,9 +2,8 @@
 
 namespace Chat.Service;
 
+/// <summary>Rédaction d'un brouillon de cours. Les autres échanges passent par LlmClient (tuteur, assistant, mémoire).</summary>
 public interface ILlmService
 {
-    Task<ChatMessageResponse> SendMessageAsync(ChatMessageRequest request, CancellationToken ct);
-    Task<CourseSummaryResponse> GetSummaryAsync(CourseSummaryRequest request, CancellationToken ct);
     Task<string> GenerateDraftAsync(CourseDraftRequest request, CancellationToken ct);
 }

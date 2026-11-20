@@ -1,0 +1,45 @@
+@page "/tarifs"
+@using GPOE26.UI.Services
+@using GPOE26.UI.Models
+@using GPOE26.UI.Components
+@inject IPlanApi PlanApi
+
+<PageTitle>Tarifs – GPOE26</PageTitle>
+
+<div class="ga-app pl-public">
+    <div class="ga-page">
+        <div class="ga-head">
+            <div>
+                <h1>Des formules pour apprendre à votre rythme</h1>
+                <p>Les cours partagés par les enseignants restent gratuits. Choisissez ce dont vous avez besoin en plus.</p>
+            </div>
+        </div>
+
+        <Alert Message="@_error" />
+
+        @if (_plans is null)
+        {
+            <Loading />
+        }
+        else
+        {
+            <PlanComparison Plans="_plans">
+                <Action Context="choice">
+                    <a class="ga-btn secondary small" href="/register">@(choice.Plan.PriceMonthly == 0 ? "Créer un compte" : "Choisir")</a>
+                </Action>
+            </PlanComparison>
+        }
+    </div>
+</div>
+
+@code {
+    private List<PlanInfo>? _plans;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await PlanApi.ListAsync();
+        _plans = result.Value ?? new();
+        _error = result.Error;
+    }
+}

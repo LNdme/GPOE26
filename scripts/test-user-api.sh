@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests de bout en bout du service User (comptes, classes, parents, abonnements) — curl + jq.
+# Tests de bout en bout du service User (comptes, classes, espaces et codes personnels, parents, abonnements) — curl + jq.
 #
 # À lancer sur une base NEUVE, service démarré en Development (données de démonstration) :
 #   ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://localhost:5197 \
@@ -23,7 +23,8 @@ login() { req POST /auth/login "" "{\"email\":\"$1\",\"password\":\"Test1234!\"}
 claim() { echo "$1" | cut -d. -f2 | tr '_-' '/+' | base64 -d 2>/dev/null | jq -r ".$2"; }
 
 echo "── Comptes de démonstration"
-ADMIN=$(login admin@gpoe26.cm);   check "admin a le rôle Admin" "$(claim "$ADMIN" role)" "Admin"
+ADMIN=$(login admin@gpoe26.cm);   check "admin garde son rôle (enseignant)" "$(claim "$ADMIN" role)" "Teacher"
+check "admin a le droit d'administration" "$(claim "$ADMIN" admin)" "true"
 PROF=$(login prof@gpoe26.cm);     check "prof connecté" "$(claim "$PROF" role)" "Teacher"
 PARENT=$(login parent@gpoe26.cm); check "parent connecté" "$(claim "$PARENT" role)" "Parent"
 
@@ -31,25 +32,43 @@ echo "── Validation de l'inscription"
 req POST /auth/register "" '{"email":"court@t.cm","username":"court","password":"123"}'
 check "mot de passe trop court refusé" "$CODE" "400"
 req POST /auth/register "" '{"email":"adm@t.cm","username":"adm","password":"Test1234!","role":"Admin"}'
-check "inscription Admin refusée" "$CODE" "400"
+check "inscription Admin refusée (ce n'est plus un rôle)" "$CODE" "400"
+req POST /auth/register "" '{"email":"adm3@t.cm","username":"adm3","password":"Test1234!","role":3}'
+check "rôle inconnu en nombre refusé" "$CODE" "400"
 req POST /auth/register "" '{"email":"cle@t.cm","username":"clefausse","password":"Test1234!","subscriptionKey":"FAM-XXXX-XXXX"}'
 check "clé inconnue refusée" "$CODE" "400"
 req POST /auth/register "" '{"email":"cle@t.cm","username":"clefausse","password":"Test1234!"}'
 check "…et aucun compte à moitié créé (même email réutilisable)" "$CODE" "201"
 
-echo "── Élève : clé d'établissement + code de classe"
-req POST /auth/register "" '{"email":"aicha@t.cm","username":"aicha","password":"Test1234!","subSystem":"Francophone","level":"Terminale","filiere":"C","examTarget":"Baccalauréat","focusSubjects":["Mathématiques","Physique-Chimie"],"dailyStudyMinutes":30,"subscriptionKey":"etb demo prof","inviteCode":"dem-tlc"}'
+echo "── Élève : inscription, puis code personnel du Lycée de démonstration"
+req POST /auth/register "" '{"email":"aicha@t.cm","username":"aicha","password":"Test1234!","subSystem":"Francophone","level":"Terminale","filiere":"C","examTarget":"Baccalauréat","focusSubjects":["Mathématiques","Physique-Chimie"],"dailyStudyMinutes":30}'
 check "inscription élève" "$CODE" "201"
 AICHA=$(echo "$BODY" | jq -r .token)
-check "Premium via la licence" "$(echo "$BODY" | jq -r .profile.isPremium)" "true"
-check "plan = OrganizationLicense" "$(echo "$BODY" | jq -r .profile.plan)" "OrganizationLicense"
-check "claim JWT premium" "$(claim "$AICHA" premium)" "true"
 check "matières à renforcer enregistrées" "$(echo "$BODY" | jq -r '.profile.focusSubjects|join(",")')" "Mathématiques,Physique-Chimie"
 AICHA_LINK=$(echo "$BODY" | jq -r .profile.linkCode)
 check "code de rattachement parent généré" "$([[ $AICHA_LINK =~ ^[A-Z2-9]{3}-[A-Z2-9]{4}$ ]] && echo oui)" "oui"
+req POST /auth/register "" '{"email":"invite@t.cm","username":"invite","password":"Test1234!","inviteCode":"DEM-TLC"}'
+check "le code de classe commun n'existe plus" "$CODE" "400"
+DEMO=55555555-5555-5555-5555-555555555555
+req GET /classrooms/mine "$PROF"; DEMO_CLASS=$(echo "$BODY" | jq -r '.[]|select(.name=="Terminale C").id')
+req POST "/organizations/$DEMO/students" "$ADMIN" "{\"matricule\":\"TC-AICHA\",\"lastName\":\"AICHA\",\"firstName\":\"Test\",\"classroomId\":\"$DEMO_CLASS\"}"
+check "le responsable inscrit l'élève sur la liste" "$CODE" "201"
+STUDENT=$(echo "$BODY" | jq -r .id)
+req POST "/organizations/$DEMO/students/$STUDENT/code" "$ADMIN"
+AICHA_CODE=$(echo "$BODY" | jq -r .code)
+check "code personnel GP-xxxx-xxxx" "$([[ $AICHA_CODE =~ ^GP-[A-Z2-9]{4}-[A-Z2-9]{4}$ ]] && echo oui)" "oui"
+req POST /auth/codes/check "" "{\"code\":\"$AICHA_CODE\"}"
+check "le code dit à qui il est" "$(echo "$BODY" | jq -r '.studentName + " / " + .className')" "AICHA Test / Terminale C"
+req POST /access-codes/redeem "$AICHA" "{\"code\":\"$AICHA_CODE\"}"
+check "l'élève active son code" "$CODE" "204"
+req POST /access-codes/redeem "$AICHA" "{\"code\":\"$AICHA_CODE\"}"
+check "le code ne resert pas" "$CODE" "400"
+req GET /auth/me "$AICHA"
+check "Premium via la licence" "$(echo "$BODY" | jq -r .isPremium)" "true"
+check "plan = OrganizationLicense" "$(echo "$BODY" | jq -r .plan)" "OrganizationLicense"
 req GET /classrooms/mine "$AICHA"
-check "classe rejointe à l'inscription" "$(echo "$BODY" | jq -r '.[0].name')" "Terminale C"
-check "l'élève ne voit pas le code d'invitation" "$(echo "$BODY" | jq -r '.[0].inviteCode')" "null"
+check "classe rejointe par le code" "$(echo "$BODY" | jq -r '.[0].name')" "Terminale C"
+check "élève de la classe" "$(echo "$BODY" | jq -r '.[0].myRole')" "Student"
 
 echo "── Enseignant (établissement) : classes initiales + essai"
 req POST /auth/register "" '{"email":"ndongo@t.cm","username":"ndongo","password":"Test1234!","role":"Teacher","teachingContext":"School","organizationName":"Lycée de Bonabéri","teachingSubjects":["Mathématiques"],"initialClasses":["Terminale","Form 5"],"startTrial":true}'
@@ -62,7 +81,8 @@ check "2 classes créées" "$(echo "$BODY" | jq length)" "2"
 check "Form 5 = sous-système anglophone" "$(echo "$BODY" | jq -r '.[]|select(.name=="Form 5").subSystem')" "Anglophone"
 check "matière reprise" "$(echo "$BODY" | jq -r '.[0].subject')" "Mathématiques"
 CLASS_ID=$(echo "$BODY" | jq -r '.[]|select(.name=="Terminale").id')
-INVITE=$(echo "$BODY" | jq -r '.[]|select(.name=="Terminale").inviteCode')
+SPACE=$(echo "$BODY" | jq -r '.[]|select(.name=="Terminale").organizationId')
+check "ses classes sont dans son espace personnel" "$(echo "$BODY" | jq -r '.[0].spaceType')" "Independent"
 req POST /subscriptions/trial "$NDONGO"
 check "second essai refusé" "$CODE" "409"
 
@@ -73,23 +93,29 @@ req GET /classrooms/mine "$FORM"
 check "groupe (et non classe)" "$(echo "$BODY" | jq -r '.[0].kind')" "Group"
 check "pas de niveau scolaire" "$(echo "$BODY" | jq -r '.[0].level')" "null"
 
-echo "── Rejoindre une classe / suivi enseignant"
-req POST /classrooms/join "$AICHA" "{\"code\":\"$INVITE\"}"
-check "élève rejoint la classe de M. Ndongo" "$CODE" "200"
-req POST /classrooms/join "$AICHA" "{\"code\":\"$INVITE\"}"
-check "rejoindre deux fois est idempotent" "$(echo "$BODY" | jq -r .memberCount)" "1"
+echo "── Code personnel chez un enseignant / suivi enseignant"
+req POST "/organizations/$SPACE/students" "$NDONGO" "{\"lastName\":\"AICHA\",\"classroomId\":\"$CLASS_ID\"}"
+check "matricule généré AAAA-NNNN" "$([[ $(echo "$BODY" | jq -r .matricule) =~ ^20[0-9]{2}-[0-9]{4}$ ]] && echo oui)" "oui"
+req POST "/organizations/$SPACE/students/$(echo "$BODY" | jq -r .id)/code" "$NDONGO"
+req POST /access-codes/redeem "$AICHA" "{\"code\":\"$(echo "$BODY" | jq -r .code)\"}"
+check "élève rejoint la classe de M. Ndongo" "$CODE" "204"
 req GET "/classrooms/$CLASS_ID/members" "$NDONGO"
 check "l'enseignant voit son élève" "$(echo "$BODY" | jq -r '.[0].username')" "aicha"
 req GET "/classrooms/$CLASS_ID/members" "$PROF"
 check "un autre enseignant ne voit pas la liste" "$CODE" "404"
-req POST /classrooms/join "$AICHA" '{"code":"ZZZ-ZZZ"}'
-check "code invalide" "$CODE" "404"
+req POST /access-codes/redeem "$AICHA" '{"code":"GP-ZZZZ-ZZZZ"}'
+check "code invalide" "$CODE" "400"
+req POST "/organizations/$SPACE/students" "$NDONGO" '{"lastName":"PARENT"}'
+req POST "/organizations/$SPACE/students/$(echo "$BODY" | jq -r .id)/code" "$NDONGO"
+STUDENT_CODE=$(echo "$BODY" | jq -r .code)
 
 echo "── Contrôle des rôles"
 req POST /classrooms "$AICHA" '{"name":"pirate"}'
 check "élève ne peut pas créer de classe" "$CODE" "403"
-req POST /classrooms/join "$PARENT" "{\"code\":\"$INVITE\"}"
-check "parent ne peut pas rejoindre de classe" "$CODE" "403"
+req POST /access-codes/redeem "$PARENT" "{\"code\":\"$STUDENT_CODE\"}"
+check "parent ne peut pas prendre un code élève" "$CODE" "400"
+req GET "/organizations/$SPACE/students" "$AICHA"
+check "un élève ne gère pas l'espace" "$CODE" "403"
 req POST /admin/organizations "$PROF" '{"name":"x"}'
 check "enseignant n'accède pas à l'admin" "$CODE" "403"
 req GET /classrooms/mine ""
@@ -146,18 +172,24 @@ check "réactiver sa propre clé reste OK" "$CODE" "200"
 req GET /subscriptions/me "$CLARISSE"
 check "compteur 3/3" "$(echo "$BODY" | jq -r '.owned[0].keys[0] | "\(.usedCount)/\(.maxUses)"')" "3/3"
 
-echo "── Licence d'institution"
+echo "── Licence d'institution : responsable et code enseignant"
 req POST /admin/organizations "$ADMIN" '{"name":"Startup Kmer Data","type":"Institution","city":"Yaoundé"}'
 ORG=$(echo "$BODY" | jq -r .id)
 req POST "/admin/organizations/$ORG/licenses" "$ADMIN" '{"seats":5,"months":6}'
-ORGKEY=$(echo "$BODY" | jq -r '.keys[0].code')
-check "clé d'institution ORG-…" "${ORGKEY:0:4}" "ORG-"
-req POST /subscriptions/redeem "$FORM" "{\"code\":\"$ORGKEY\"}"
-check "la formatrice active la licence" "$(echo "$BODY" | jq -r .isPremium)" "true"
+check "licence sans clé partagée" "$(echo "$BODY" | jq -r '.keys|length')" "0"
+req POST "/admin/organizations/$ORG/owner-code" "$ADMIN"
+OWNERCODE=$(echo "$BODY" | jq -r .code)
+req POST /access-codes/redeem "$FORM" "{\"code\":\"$OWNERCODE\"}"
+check "la formatrice devient responsable" "$CODE" "204"
+req POST "/organizations/$ORG/codes/teacher" "$FORM"
+TEACHERCODE=$(echo "$BODY" | jq -r .code)
+req POST /access-codes/redeem "$CLARISSE" "{\"code\":\"$TEACHERCODE\"}"
+check "un parent ne peut pas prendre un code enseignant" "$CODE" "400"
+req POST /access-codes/redeem "$FORM" "{\"code\":\"$TEACHERCODE\"}"
+check "…la formatrice, si" "$CODE" "204"
 req GET /auth/me "$FORM"
+check "elle a la licence" "$(echo "$BODY" | jq -r .isPremium)" "true"
 check "rattachée à l'institution" "$(echo "$BODY" | jq -r .organizationId)" "$ORG"
-req POST /subscriptions/redeem "$CLARISSE" "{\"code\":\"$ORGKEY\"}"
-check "un parent ne peut pas utiliser une licence" "$CODE" "400"
 
 echo
 echo "Résultat : $PASS réussis, $FAIL échoués"

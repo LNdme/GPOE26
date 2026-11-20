@@ -140,7 +140,7 @@ public sealed class TutorCourseToolExecutor(
             return Task.FromResult(new AgentToolResult("Le cours actuel n'est pas autorisé.", IsError: true));
         }
 
-        return Task.FromResult(new AgentToolResult(course!.Text()));
+        return Task.FromResult(new AgentToolResult(course!.FullText()));
     }
 
     private async Task<AgentToolResult> ExecuteMcpReadAsync(

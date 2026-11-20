@@ -122,7 +122,7 @@
 
     protected override async Task LoadAsync()
     {
-        if (Session.Profile?.Role != UserRole.Admin)
+        if (Session.Profile?.IsAdmin != true)   // administrer est un droit, pas un rôle (audit B1)
         {
             _error = "Cette page est réservée aux administrateurs de la plateforme.";
             _loading = false;

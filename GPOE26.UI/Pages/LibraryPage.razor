@@ -1,0 +1,335 @@
+@page "/app/bibliotheque"
+@page "/app/bibliotheque/{Id:guid}"
+@layout AppLayout
+@inherits AppPage
+@inject ISpaceApi Spaces
+@inject ICourseApi CourseApi
+@inject IAssessmentApi AssessmentApi
+
+<PageTitle>Bibliothèque — GPOE26</PageTitle>
+
+<div class="ga-page">
+    @if (!Ready || _loading)
+    {
+        <Loading />
+    }
+    else if (_space is null)
+    {
+        <div class="ga-head"><div><h1>Bibliothèque</h1></div></div>
+        <div class="ga-card">
+            <div class="ga-empty">
+                <span>La bibliothèque est celle d'un établissement : ses enseignants y déposent des cours, des devoirs et des épreuves
+                que leurs collègues copient pour leurs classes. Vous n'enseignez encore dans aucun établissement.</span>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="ga-head">
+            <div>
+                <h1>Bibliothèque · @_space.Name</h1>
+                <p>Les enseignants de l'établissement y déposent leurs cours, devoirs et épreuves. Copiez-en un pour l'adapter à vos classes :
+                la copie est à vous, l'original reste à son auteur.</p>
+            </div>
+            @if (_spaces.Count > 1)
+            {
+                <div class="ga-chips" aria-label="Changer d'établissement">
+                    @foreach (var s in _spaces)
+                    {
+                        <a class="ga-chip @(s.Id == _space.Id ? "on" : "")" href="/app/bibliotheque/@s.Id">@s.Name</a>
+                    }
+                </div>
+            }
+        </div>
+
+        <Alert Message="@_error" />
+        @if (_notice is { } notice)
+        {
+            <div class="ga-card" role="status" style="background:var(--ga-blue-pale)">
+                <span>@notice.Text</span>
+                <a class="ga-btn small" href="@notice.Href">@notice.Action</a>
+            </div>
+        }
+
+        <div class="ga-tabs" role="tablist" aria-label="Contenus de la bibliothèque">
+            <button role="tab" aria-selected="@Aria.State(_tab == "cours")" class="@(_tab == "cours" ? "on" : "")" @onclick="@(() => _tab = "cours")">
+                Cours (@(_courses?.Courses.Count ?? 0))
+            </button>
+            <button role="tab" aria-selected="@Aria.State(_tab == "evaluations")" class="@(_tab == "evaluations" ? "on" : "")" @onclick="@(() => _tab = "evaluations")">
+                Devoirs et épreuves (@(_assessments?.Assessments.Count ?? 0))
+            </button>
+        </div>
+
+        @if (_tab == "cours")
+        {
+            @if (IsTeacherHere)
+            {
+                <div class="ga-card">
+                    <label class="ga-label" for="lib-course">Déposer un de mes cours</label>
+                    @if (DepositableCourses.Count == 0)
+                    {
+                        <span class="ga-small ga-muted">Tous vos cours sont déjà dans cette bibliothèque, ou vous n'en avez pas encore.</span>
+                    }
+                    else
+                    {
+                        <div class="ga-row">
+                            <select id="lib-course" class="ga-input" @bind="_courseToDeposit">
+                                <option value="">Choisir un cours…</option>
+                                @foreach (var c in DepositableCourses)
+                                {
+                                    <option value="@c.Id">@c.Subject — @c.Title</option>
+                                }
+                            </select>
+                            <button class="ga-btn small" disabled="@(_busy || _courseToDeposit is null)" @onclick="DepositCourseAsync">Déposer</button>
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (_courses is null || _courses.Courses.Count == 0)
+            {
+                <div class="ga-empty"><span>Aucun cours dans la bibliothèque pour l'instant.</span></div>
+            }
+            else
+            {
+                <div class="ga-grid">
+                    @foreach (var c in _courses.Courses)
+                    {
+                        <article class="ga-card">
+                            <span class="ga-small ga-muted" style="font-weight:700; letter-spacing:.06em">@c.Subject.ToUpperInvariant()</span>
+                            <h2 class="ga-h3">@c.Title</h2>
+                            @if (c.Description is { Length: > 0 }) { <p class="ga-muted" style="margin:0">@c.Description</p> }
+                            <span class="ga-small ga-muted">@(c.Mine ? "Déposé par vous" : $"Par {c.AuthorName}") · @Copies(c.Copies)</span>
+                            <div class="ga-row" style="margin-top:auto">
+                                <a class="ga-btn secondary small" href="/app/cours/@c.Id">Lire</a>
+                                @if (CanCopy)
+                                {
+                                    <button class="ga-btn ghost small" disabled="@_busy" @onclick="() => CopyCourseAsync(c)"><Icon Name="copy" /> Copier dans mes cours</button>
+                                }
+                                @if (c.Mine || _courses.CanManage)
+                                {
+                                    <button class="ga-btn ghost small" disabled="@_busy" @onclick="() => RemoveCourseAsync(c)">Retirer</button>
+                                }
+                            </div>
+                        </article>
+                    }
+                </div>
+            }
+        }
+        else
+        {
+            @if (IsTeacherHere)
+            {
+                <div class="ga-card">
+                    <label class="ga-label" for="lib-assessment">Déposer un de mes devoirs ou épreuves</label>
+                    @if (DepositableAssessments.Count == 0)
+                    {
+                        <span class="ga-small ga-muted">Tous vos devoirs et épreuves sont déjà dans cette bibliothèque, ou vous n'en avez pas encore.</span>
+                    }
+                    else
+                    {
+                        <div class="ga-row">
+                            <select id="lib-assessment" class="ga-input" @bind="_assessmentToDeposit">
+                                <option value="">Choisir…</option>
+                                @foreach (var a in DepositableAssessments)
+                                {
+                                    <option value="@a.Id">@Labels.Of(a.Kind) — @a.Title</option>
+                                }
+                            </select>
+                            <button class="ga-btn small" disabled="@(_busy || _assessmentToDeposit is null)" @onclick="DepositAssessmentAsync">Déposer</button>
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (_assessments is null || _assessments.Assessments.Count == 0)
+            {
+                <div class="ga-empty"><span>Aucun devoir ni aucune épreuve dans la bibliothèque pour l'instant.</span></div>
+            }
+            else
+            {
+                <div class="ga-grid">
+                    @foreach (var a in _assessments.Assessments)
+                    {
+                        <article class="ga-card">
+                            <span class="ga-small ga-muted" style="font-weight:700; letter-spacing:.06em">@Labels.Of(a.Kind).ToUpperInvariant()@(a.Subject is { Length: > 0 } ? $" · {a.Subject.ToUpperInvariant()}" : "")</span>
+                            <h2 class="ga-h3">@a.Title</h2>
+                            @if (a.Description is { Length: > 0 }) { <p class="ga-muted" style="margin:0">@a.Description</p> }
+                            <span class="ga-small ga-muted">
+                                @a.QuestionCount question@(a.QuestionCount > 1 ? "s" : "") · @a.MaxScore.ToString("0.##") point@(a.MaxScore > 1 ? "s" : "")
+                                · @(a.Mine ? "déposé par vous" : $"par {a.AuthorName}") · @Copies(a.Copies)
+                            </span>
+                            <div class="ga-row" style="margin-top:auto">
+                                <button class="ga-btn secondary small" aria-expanded="@Aria.State(_preview?.Id == a.Id)" @onclick="() => TogglePreviewAsync(a)">
+                                    @(_preview?.Id == a.Id ? "Masquer les questions" : "Voir les questions")
+                                </button>
+                                @if (CanCopy)
+                                {
+                                    <button class="ga-btn ghost small" disabled="@_busy" @onclick="() => CopyAssessmentAsync(a)"><Icon Name="copy" /> Copier dans mes évaluations</button>
+                                }
+                                @if (a.Mine || _assessments.CanManage)
+                                {
+                                    <button class="ga-btn ghost small" disabled="@_busy" @onclick="() => RemoveAssessmentAsync(a)">Retirer</button>
+                                }
+                            </div>
+                            @if (_preview?.Id == a.Id)
+                            {
+                                <ol class="ga-stack" style="margin:0; padding-left:20px">
+                                    @foreach (var q in (_preview.Questions ?? []).OrderBy(q => q.Order))
+                                    {
+                                        <li><span>@q.Text</span> <span class="ga-small ga-muted">(@q.Points.ToString("0.##") pt)</span></li>
+                                    }
+                                </ol>
+                            }
+                        </article>
+                    }
+                </div>
+            }
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+
+    private record Notice(string Text, string Href, string Action);
+
+    private bool _loading = true, _busy;
+    private string _tab = "cours";
+    private string? _error;
+    private Notice? _notice;
+    private List<MySpace> _spaces = [];
+    private MySpace? _space;
+    private LibraryCourses? _courses;
+    private LibraryAssessments? _assessments;
+    private List<CourseSummary> _myCourses = [];
+    private List<Assessment> _myAssessments = [];
+    private Guid? _courseToDeposit, _assessmentToDeposit;
+    private Assessment? _preview;
+
+    // Les élèves et les parents n'ont pas de bibliothèque d'établissement
+    protected override UserRole[]? AllowedRoles => [UserRole.Teacher];
+
+    private bool IsTeacherHere => _space?.Roles.Contains(OrganizationRole.Teacher) == true;
+    private bool CanCopy => Session.Role == UserRole.Teacher;
+
+    private List<CourseSummary> DepositableCourses =>
+        _myCourses.Where(c => _space is { } s && !(c.LibraryOrganizationIds ?? []).Contains(s.Id)).OrderBy(c => c.Subject).ThenBy(c => c.Title).ToList();
+
+    private List<Assessment> DepositableAssessments =>
+        _myAssessments.Where(a => _space is { } s && !(a.LibraryOrganizationIds ?? []).Contains(s.Id)).OrderBy(a => a.Title).ToList();
+
+    private static string Copies(int n) => n switch { 0 => "pas encore copié", 1 => "copié 1 fois", _ => $"copié {n} fois" };
+
+    protected override async Task LoadAsync()
+    {
+        // Établissements seulement : l'espace d'un enseignant indépendant n'a pas de collègues avec qui partager
+        _spaces = ((await Spaces.MineAsync()).Value ?? []).Where(s => s.Type != OrganizationType.Independent).ToList();
+        _space = _spaces.FirstOrDefault(s => s.Id == Id) ?? _spaces.FirstOrDefault();
+        if (CanCopy)
+        {
+            _myCourses = (await CourseApi.MineAsync()).Value ?? [];
+            _myAssessments = (await AssessmentApi.MineAsTeacherAsync()).Value ?? [];
+        }
+        await RefreshAsync();
+        _loading = false;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Ready && !_loading && Id is { } id && _space?.Id != id && _spaces.FirstOrDefault(s => s.Id == id) is { } next)
+        {
+            _space = next;
+            _notice = null;
+            _preview = null;
+            await RefreshAsync();
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (_space is null) return;
+        var courses = await CourseApi.LibraryAsync(_space.Id);
+        var assessments = await AssessmentApi.LibraryAsync(_space.Id);
+        _error = courses.Error ?? assessments.Error;
+        _courses = courses.Value;
+        _assessments = assessments.Value;
+    }
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        _busy = true;
+        _error = null;
+        _notice = null;
+        try { await action(); }
+        finally { _busy = false; }
+    }
+
+    private Task DepositCourseAsync() => RunAsync(async () =>
+    {
+        var course = _myCourses.First(c => c.Id == _courseToDeposit);
+        var r = await CourseApi.SetLibrariesAsync(course.Id, [.. course.LibraryOrganizationIds ?? [], _space!.Id]);
+        if (!r.Ok) { _error = r.Error; return; }
+        _myCourses[_myCourses.IndexOf(course)] = r.Value!;
+        _courseToDeposit = null;
+        await RefreshAsync();
+    });
+
+    private Task DepositAssessmentAsync() => RunAsync(async () =>
+    {
+        var assessment = _myAssessments.First(a => a.Id == _assessmentToDeposit);
+        var r = await AssessmentApi.SetLibrariesAsync(assessment.Id, [.. assessment.LibraryOrganizationIds ?? [], _space!.Id]);
+        if (!r.Ok) { _error = r.Error; return; }
+        _myAssessments[_myAssessments.IndexOf(assessment)] = r.Value!;
+        _assessmentToDeposit = null;
+        await RefreshAsync();
+    });
+
+    private Task RemoveCourseAsync(LibraryCourse c) => RunAsync(async () =>
+    {
+        var r = await CourseApi.RemoveFromLibraryAsync(_space!.Id, c.Id);
+        if (!r.Ok) { _error = r.Error; return; }
+        var i = _myCourses.FindIndex(x => x.Id == c.Id);
+        if (i >= 0) _myCourses[i] = _myCourses[i] with { LibraryOrganizationIds = (_myCourses[i].LibraryOrganizationIds ?? []).Where(o => o != _space.Id).ToList() };
+        await RefreshAsync();
+    });
+
+    private Task RemoveAssessmentAsync(LibraryAssessment a) => RunAsync(async () =>
+    {
+        var r = await AssessmentApi.RemoveFromLibraryAsync(_space!.Id, a.Id);
+        if (!r.Ok) { _error = r.Error; return; }
+        var i = _myAssessments.FindIndex(x => x.Id == a.Id);
+        if (i >= 0) _myAssessments[i] = _myAssessments[i] with { LibraryOrganizationIds = (_myAssessments[i].LibraryOrganizationIds ?? []).Where(o => o != _space.Id).ToList() };
+        if (_preview?.Id == a.Id) _preview = null;
+        await RefreshAsync();
+    });
+
+    private Task CopyCourseAsync(LibraryCourse c) => RunAsync(async () =>
+    {
+        var r = await CourseApi.CopyAsync(c.Id);
+        if (!r.Ok) { _error = r.Error; return; }
+        _notice = new($"« {c.Title} » est copié dans vos cours, en brouillon : modifiez-le puis partagez-le avec vos classes.",
+            $"/app/cours/{r.Value!.Id}/modifier", "Modifier ma copie");
+        // La copie fait partie de mes cours : elle peut à son tour être déposée
+        _myCourses = (await CourseApi.MineAsync()).Value ?? _myCourses;
+        await RefreshAsync();
+    });
+
+    private Task CopyAssessmentAsync(LibraryAssessment a) => RunAsync(async () =>
+    {
+        var r = await AssessmentApi.CopyAsync(a.Id);
+        if (!r.Ok) { _error = r.Error; return; }
+        _notice = new($"« {a.Title} » est copié dans vos évaluations, en brouillon : choisissez vos classes et vos dates.",
+            $"/app/evaluations/{r.Value!.Id}/modifier", "Modifier ma copie");
+        _myAssessments.Insert(0, r.Value);
+        await RefreshAsync();
+    });
+
+    private async Task TogglePreviewAsync(LibraryAssessment a)
+    {
+        if (_preview?.Id == a.Id) { _preview = null; return; }
+        var r = await AssessmentApi.GetAsync(a.Id);
+        if (!r.Ok) { _error = r.Error; return; }
+        _preview = r.Value;
+    }
+}

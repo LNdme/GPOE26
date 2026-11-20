@@ -29,8 +29,7 @@ public sealed class TutorConversationService(
             return TutorAskOutcome.Failure(400, "Écris ta question ou joins une photo.");
         if (text.Length > 4000)
             return TutorAskOutcome.Failure(400, "Ta question est trop longue (4 000 caractères au maximum).");
-        if (!await platform.IsPremiumAsync(cancellationToken))
-            return TutorAskOutcome.Failure(403, "Le tuteur IA est réservé aux abonnés Premium.");
+        // Formule et quota d'IA : vérifiés par la route (AiQuota, fonction tutor-ai) avant d'appeler ce service
 
         var course = await platform.CourseAsync(courseId, cancellationToken);
         if (course is null || course.Id != courseId)

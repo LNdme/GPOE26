@@ -4,15 +4,20 @@
 @inject IProgressApi Progress
 @inject IClassroomApi Classrooms
 @inject IFamilyApi Family
+@inject IAgentApi Agent
+@inject ISpaceApi Spaces
+@inject IAccountApi Account
 
 <div class="ga-page">
     <div class="ga-head">
         <div>
             <h1>Plan d'études de @Me.Username</h1>
-            <p>@(Me.Level ?? "Élève")@(Me.Filiere is { Length: > 0 } ? $" {Me.Filiere}" : "")@(Me.ExamTarget is { Length: > 0 } ? $" · prépare le {Me.ExamTarget}" : "")</p>
+            <p>@(Me.Level ?? (Me.Stage == EducationStage.Higher ? "Étudiant" : "Élève"))@(Me.Filiere is { Length: > 0 } ? $" {Me.Filiere}" : "")@(Me.ExamTarget is { Length: > 0 } ? $" · prépare le {Me.ExamTarget}" : "")</p>
         </div>
         <span class="ga-tag amber">@Labels.Today().ToUpperInvariant()</span>
     </div>
+
+    <Alert Message="@_loadError" />
 
     @foreach (var p in _parentRequests)
     {
@@ -34,8 +39,8 @@
         <div class="ga-split">
             <section class="main ga-card sunk" aria-labelledby="h-todo">
                 <div class="ga-tabs" role="tablist">
-                    <button role="tab" class="@(_tab == 0 ? "on" : "")" aria-selected="@(_tab == 0)" @onclick="() => _tab = 0">À faire <span class="count">@_todo.Count</span></button>
-                    <button role="tab" class="@(_tab == 1 ? "on" : "")" aria-selected="@(_tab == 1)" @onclick="() => _tab = 1">Terminées <span class="count">@_finished.Count</span></button>
+                    <button role="tab" class="@(_tab == 0 ? "on" : "")" aria-selected="@Aria.State(_tab == 0)" @onclick="() => _tab = 0">À faire <span class="count">@_todo.Count</span></button>
+                    <button role="tab" class="@(_tab == 1 ? "on" : "")" aria-selected="@Aria.State(_tab == 1)" @onclick="() => _tab = 1">Terminées <span class="count">@_finished.Count</span></button>
                 </div>
                 <h2 id="h-todo" class="ga-sr">Mes évaluations</h2>
 
@@ -108,7 +113,7 @@
                     {
                         <article class="ga-task" style="flex-direction:row; flex-wrap:wrap; align-items:center">
                             <span class="ga-avatar amber" style="border-radius:12px; width:46px; height:46px"><Icon Name="book" /></span>
-                            <div class="ga-stack" style="gap:2px; flex:1 1 220px">
+                            <div class="ga-stack" style="gap:2px; flex:1 1 150px; min-width:0">
                                 <span class="kicker">@c.Subject</span>
                                 <h3>@c.Title</h3>
                             </div>
@@ -154,6 +159,40 @@
                     </div>
                 </div>
 
+                <section class="ga-card" aria-labelledby="h-today">
+                    <h2 id="h-today" class="ga-h3"><Icon Name="calendar" /> Ton plan du jour</h2>
+                    @if (_planLoading)
+                    {
+                        <span class="ga-small ga-muted"><span class="ga-spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:-2px"></span> Préparation de ton plan…</span>
+                    }
+                    else if (_planError)
+                    {
+                        <span class="ga-small ga-muted">Ton plan du jour n'a pas pu être préparé. Actualise la page dans un instant.</span>
+                    }
+                    else if (_plan is not { HasSchedule: true })
+                    {
+                        <span class="ga-small ga-muted">Indique ton emploi du temps : on organisera tes révisions selon ton temps libre.</span>
+                        <a class="ga-btn secondary small" style="align-self:flex-start" href="/app/emploi-du-temps">Renseigner mon emploi du temps</a>
+                    }
+                    else if (_plan.Blocks.Count == 0)
+                    {
+                        <span class="ga-small ga-muted">Rien à planifier pour aujourd'hui.</span>
+                    }
+                    else
+                    {
+                        <span class="ga-small ga-muted">@_plan.AvailableMinutes min disponibles aujourd'hui</span>
+                        <div class="ga-list">
+                            @foreach (var block in _plan.Blocks)
+                            {
+                                <a class="ga-row" style="text-decoration:none; flex-wrap:nowrap" href="@(block.Kind == "assessment" ? $"/app/evaluations/{block.TargetId}/composer" : $"/app/cours/{block.TargetId}")">
+                                    <span class="ga-code">@BlockTime(block.StartMinutes)</span>
+                                    <span>@block.Title</span>
+                                </a>
+                            }
+                        </div>
+                    }
+                </section>
+
                 @if (!Me.IsPremium)
                 {
                     <a class="ga-premium-lock" href="/app/abonnement">
@@ -169,11 +208,13 @@
                         <div class="ga-item"><span class="ga-avatar green">@Labels.Initial(c.Name)</span><span class="grow"><strong>@c.Name</strong><span class="ga-small ga-muted">@c.TeacherName</span></span></div>
                     }
                     <div class="ga-field">
-                        <label for="join-code">Rejoindre une classe</label>
-                        <div class="ga-row" style="flex-wrap:nowrap">
-                            <input id="join-code" class="ga-input" placeholder="Code donné par l'enseignant" @bind="_joinCode" />
-                            <button class="ga-btn" type="submit" disabled="@string.IsNullOrWhiteSpace(_joinCode)">Rejoindre</button>
+                        <label for="join-code">J'ai un code personnel</label>
+                        <div class="ga-row">
+                            <input id="join-code" class="ga-input" style="flex:1 1 170px; min-width:0; font-family:var(--ga-mono); text-transform:uppercase"
+                                   placeholder="GP-XXXX-XXXX" autocomplete="off" spellcheck="false" @bind="_joinCode" @bind:event="oninput" />
+                            <button class="ga-btn" type="submit" disabled="@string.IsNullOrWhiteSpace(_joinCode)">Valider</button>
                         </div>
+                        <span class="ga-small ga-muted">Donné par ton établissement ou ton enseignant : il te place dans ta classe.</span>
                     </div>
                     <Alert Message="@_joinMessage" Kind="@(_joinOk ? "success" : "error")" />
                 </form>
@@ -192,7 +233,9 @@
 </div>
 
 @code {
-    private UserProfile Me => Session.Profile!;
+    // Garde le dernier profil connu : un 401 peut fermer la session juste avant la redirection vers /login
+    private UserProfile? _me;
+    private UserProfile Me => _me = Session.Profile ?? _me!;
     private bool _loading = true;
     private int _tab;
     private List<StudentAssessment> _todo = new(), _finished = new();
@@ -202,28 +245,68 @@
     private StudentProgress? _progress;
     private string? _joinCode, _joinMessage;
     private bool _joinOk;
+    private string? _loadError;
+    private DayPlan? _plan;
+    private bool _planLoading = true, _planError;
+
+    private static string BlockTime(int minutes) => $"{minutes / 60:00}h{minutes % 60:00}";
 
     protected override async Task OnInitializedAsync()
     {
-        var assessments = Assessments.MineAsStudentAsync();
-        var courses = Courses.SharedWithMeAsync();
-        var progress = Progress.MineAsync();
-        var classes = Classrooms.MineAsync();
-        var parents = Family.MyParentsAsync();
-        await Task.WhenAll(assessments, courses, progress, classes, parents);
+        try
+        {
+            var assessments = Assessments.MineAsStudentAsync();
+            var courses = Courses.SharedWithMeAsync();
+            var progress = Progress.MineAsync();
+            var classes = Classrooms.MineAsync();
+            var parents = Family.MyParentsAsync();
+            // Le plan du jour interroge plusieurs services : il arrive après, sans retarder le reste de la page
+            _ = LoadPlanAsync();
+            await Task.WhenAll(assessments, courses, progress, classes, parents);
 
-        var now = DateTime.UtcNow;
-        var all = assessments.Result.Value ?? new();
-        _todo = all.Where(a => a.Status == AssessmentStatus.Published && (a.HasAttemptInProgress || a.AttemptsUsed == 0) && (a.DueAt is null || a.DueAt > now))
-                   .OrderBy(a => a.DueAt ?? DateTime.MaxValue).ToList();
-        _finished = all.Where(a => a.AttemptsUsed > 0 && !a.HasAttemptInProgress).ToList();
-        _courses = courses.Result.Value ?? new();
-        _progress = progress.Result.Value;
-        _classes = classes.Result.Value ?? new();
-        _parentRequests = (parents.Result.Value ?? new()).Where(p => p.Status == LinkStatus.Pending).ToList();
-        _dueDays = all.Where(a => a.DueAt is not null).Select(a => AppTime.ToLocal(a.DueAt!.Value).Date).ToHashSet();
-        _doneDays = (_progress?.Results ?? new()).Where(r => r.SubmittedAt is not null).Select(r => AppTime.ToLocal(r.SubmittedAt!.Value).Date).ToHashSet();
-        _loading = false;
+            var assessmentResult = await assessments;
+            var courseResult = await courses;
+            var progressResult = await progress;
+            var classResult = await classes;
+            var parentResult = await parents;
+            _loadError = assessmentResult.Error ?? courseResult.Error ?? progressResult.Error ?? classResult.Error ?? parentResult.Error;
+
+            var now = DateTime.UtcNow;
+            var all = assessmentResult.Value ?? new();
+            _todo = all.Where(a => a.Status == AssessmentStatus.Published && (a.HasAttemptInProgress || a.AttemptsUsed == 0) && (a.DueAt is null || a.DueAt > now))
+                       .OrderBy(a => a.DueAt ?? DateTime.MaxValue).ToList();
+            _finished = all.Where(a => a.AttemptsUsed > 0 && !a.HasAttemptInProgress).ToList();
+            _courses = courseResult.Value ?? new();
+            _progress = progressResult.Value;
+            _classes = classResult.Value ?? new();
+            _parentRequests = (parentResult.Value ?? new()).Where(p => p.Status == LinkStatus.Pending).ToList();
+            _dueDays = all.Where(a => a.DueAt is not null).Select(a => AppTime.ToLocal(a.DueAt!.Value).Date).ToHashSet();
+            _doneDays = (_progress?.Results ?? new()).Where(r => r.SubmittedAt is not null).Select(r => AppTime.ToLocal(r.SubmittedAt!.Value).Date).ToHashSet();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or InvalidOperationException)
+        {
+            _loadError = "Impossible de charger le plan d'études. Vérifie que les services sont démarrés, puis actualise la page.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadPlanAsync()
+    {
+        try
+        {
+            var result = await Agent.TodayPlanAsync();
+            _plan = result.Value;
+            _planError = !result.Ok;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or InvalidOperationException)
+        {
+            _planError = true;
+        }
+        _planLoading = false;
+        await InvokeAsync(StateHasChanged);
     }
 
     private HashSet<DateTime> _dueDays = new(), _doneDays = new();
@@ -243,15 +326,25 @@
         }
     }
 
+    /// <summary>Code personnel (GP-…) : rattache le compte à l'établissement ou à l'enseignant, et à sa classe.</summary>
     private async Task JoinAsync()
     {
-        var result = await Classrooms.JoinAsync(_joinCode!.Trim());
+        var before = _classes.Select(c => c.Id).ToHashSet();
+        var result = await Spaces.RedeemCodeAsync(_joinCode!.Trim());
         _joinOk = result.Ok;
-        _joinMessage = result.Ok ? $"Tu as rejoint « {result.Value!.Name} »." : result.Error;
+        _joinMessage = result.Error;
         if (result.Ok)
         {
             _joinCode = null;
             _classes = (await Classrooms.MineAsync()).Value ?? _classes;
+            var joined = _classes.FirstOrDefault(c => !before.Contains(c.Id));
+            _joinMessage = joined is null ? "Code validé." : $"Tu as rejoint « {joined.Name} ».";
+            // Lot 11 (P5) : l'établissement couvre maintenant ce que paie l'abonnement personnel ou familial
+            if (result.Value?.Overlap is { } o)
+                _joinMessage += $" {o.CoveredBy} te donne aussi l'accès Premium jusqu'au {Labels.LongDate(o.CoveredUntil)} : "
+                    + (o.PaidKind == EntitlementSourceKind.Family ? "ta place dans la formule Famille n'est pas nécessaire pendant ce temps." : "ton abonnement personnel n'est pas nécessaire pendant ce temps.")
+                    + " Détails dans « Abonnement ».";
+            if ((await Account.MeAsync()).Value is { } profile) await Session.UpdateProfileAsync(profile);
             var assessments = await Assessments.MineAsStudentAsync();
             if (assessments.Ok)
                 _todo = assessments.Value!.Where(a => a.Status == AssessmentStatus.Published && (a.HasAttemptInProgress || a.AttemptsUsed == 0)).ToList();

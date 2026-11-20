@@ -44,7 +44,7 @@
                         var index = i;
                         var q = _d.Questions[i];
                         <li>
-                            <button type="button" class="@(index == _sel ? "on" : "")" aria-current="@(index == _sel)" @onclick="() => _sel = index">
+                            <button type="button" class="@(index == _sel ? "on" : "")" aria-current="@Aria.Current(index == _sel)" @onclick="() => _sel = index">
                                 <span class="num">@(index + 1)</span>
                                 <span class="txt"><small>@Labels.Of(q.Type)</small><span>@(string.IsNullOrWhiteSpace(q.Text) ? "Nouvelle question" : q.Text)</span></span>
                                 <span class="ga-kbd ga-small">@Labels.Number(q.Points) pt</span>
@@ -52,7 +52,7 @@
                         </li>
                     }
                 </ol>
-                <button type="button" class="ga-btn secondary block" style="border-style:dashed" aria-expanded="@_adding" @onclick="() => _adding = !_adding">
+                <button type="button" class="ga-btn secondary block" style="border-style:dashed" aria-expanded="@Aria.State(_adding)" @onclick="() => _adding = !_adding">
                     <Icon Name="plus" /> Ajouter une question
                 </button>
                 @if (_adding)
@@ -91,7 +91,7 @@
                         <div class="ga-chips" role="radiogroup" aria-labelledby="q-type">
                             @foreach (var t in Enum.GetValues<QuestionType>())
                             {
-                                <button type="button" role="radio" aria-checked="@(q.Type == t)" class="ga-chip @(q.Type == t ? "on" : "")" @onclick="() => ChangeType(q, t)">@Labels.Of(t)</button>
+                                <button type="button" role="radio" aria-checked="@Aria.State(q.Type == t)" class="ga-chip @(q.Type == t ? "on" : "")" @onclick="() => ChangeType(q, t)">@Labels.Of(t)</button>
                             }
                         </div>
                     </div>
@@ -113,7 +113,7 @@
                                     var correct = q.CorrectOptions.Contains(oi);
                                     <div class="ed-opt">
                                         <button type="button" class="ed-mark @(q.Type == QuestionType.MultipleChoice ? "square" : "") @(correct ? "on" : "")"
-                                                aria-pressed="@correct" aria-label="Marquer l'option @(oi + 1) comme correcte" @onclick="() => Mark(q, oi)">
+                                                aria-pressed="@Aria.State(correct)" aria-label="Marquer l'option @(oi + 1) comme correcte" @onclick="() => Mark(q, oi)">
                                             <Icon Name="tick" Size="16" Stroke="3" />
                                         </button>
                                         <label for="opt-@oi" class="ga-sr">Option @(oi + 1)</label>
@@ -129,8 +129,8 @@
                             <div class="ga-stack" style="gap:8px">
                                 <span class="ga-label">Bonne réponse</span>
                                 <div class="ga-row">
-                                    <button type="button" class="ga-chip @(q.TrueFalseAnswer == true ? "on" : "")" aria-pressed="@(q.TrueFalseAnswer == true)" @onclick="() => q.TrueFalseAnswer = true">Vrai</button>
-                                    <button type="button" class="ga-chip @(q.TrueFalseAnswer == false ? "on" : "")" aria-pressed="@(q.TrueFalseAnswer == false)" @onclick="() => q.TrueFalseAnswer = false">Faux</button>
+                                    <button type="button" class="ga-chip @(q.TrueFalseAnswer == true ? "on" : "")" aria-pressed="@Aria.State(q.TrueFalseAnswer == true)" @onclick="() => q.TrueFalseAnswer = true">Vrai</button>
+                                    <button type="button" class="ga-chip @(q.TrueFalseAnswer == false ? "on" : "")" aria-pressed="@Aria.State(q.TrueFalseAnswer == false)" @onclick="() => q.TrueFalseAnswer = false">Faux</button>
                                 </div>
                             </div>
                             break;
@@ -186,7 +186,7 @@
                         <div class="ga-chips" role="radiogroup" aria-labelledby="lbl-kind">
                             @foreach (var k in Enum.GetValues<AssessmentKind>())
                             {
-                                <button type="button" role="radio" aria-checked="@(_d.Kind == k)" class="ga-chip @(_d.Kind == k ? "on" : "")" @onclick="() => _d.Kind = k">@Labels.Of(k)</button>
+                                <button type="button" role="radio" aria-checked="@Aria.State(_d.Kind == k)" class="ga-chip @(_d.Kind == k ? "on" : "")" @onclick="() => _d.Kind = k">@Labels.Of(k)</button>
                             }
                         </div>
                         <span class="help ga-small ga-muted">@(_d.Kind == AssessmentKind.Practice ? "Note et correction visibles dès que l'élève rend sa copie." : "Résultats visibles après la date limite ou la clôture.")</span>
@@ -199,7 +199,7 @@
                             @foreach (var c in _classes)
                             {
                                 var on = _d.ClassroomIds.Contains(c.Id);
-                                <button type="button" aria-pressed="@on" class="ga-chip @(on ? "on" : "")" @onclick="() => ToggleClass(c.Id)">@c.Name</button>
+                                <button type="button" aria-pressed="@Aria.State(on)" class="ga-chip @(on ? "on" : "")" @onclick="() => ToggleClass(c.Id)">@c.Name</button>
                             }
                         </div>
                     </div>
@@ -226,7 +226,7 @@
                     @foreach (var (label, get, set) in Toggles())
                     {
                         <div class="ga-row" style="flex-wrap:nowrap">
-                            <button type="button" role="switch" aria-checked="@get()" aria-label="@label" class="ga-switch @(get() ? "on" : "")" @onclick="() => set(!get())"></button>
+                            <button type="button" role="switch" aria-checked="@Aria.State(get())" aria-label="@label" class="ga-switch @(get() ? "on" : "")" @onclick="() => set(!get())"></button>
                             <span class="ga-small">@label</span>
                         </div>
                     }

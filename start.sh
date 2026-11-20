@@ -1,16 +1,27 @@
 #!/bin/bash
 
-export ASPNETCORE_ENVIRONMENT=Development
+# Production par défaut : ni comptes de démonstration, ni paiement simulé, ni Swagger.
+# Pour une démonstration privée :  APP_ENV=Development bash start.sh
+export ASPNETCORE_ENVIRONMENT="${APP_ENV:-Production}"
 
-JWT_KEY="votre_cle_secrete_tres_longue_et_aleatoire_ici_changez_moi_en_production_cle_256_bits"
+# Clé qui signe les jetons de connexion : le secret JWT_KEY, sinon une clé aléatoire
+# créée une seule fois et conservée hors du dépôt (.secrets/ est ignoré par git).
+if [ -z "$JWT_KEY" ]; then
+  mkdir -p .secrets
+  if [ ! -s .secrets/jwt-key ]; then
+    (umask 077; head -c 48 /dev/urandom | base64 | tr -d '\n' > .secrets/jwt-key)
+    echo "Clé de signature des jetons créée dans .secrets/jwt-key"
+  fi
+  JWT_KEY="$(cat .secrets/jwt-key)"
+fi
 JWT_ISSUER="GPOE2026"
 JWT_AUDIENCE="GPOE2026Users"
 
 # Build Npgsql-compatible connection string from Replit PG env vars
 NPGSQL_CONN="Host=${PGHOST};Port=${PGPORT:-5432};Database=${PGDATABASE};Username=${PGUSER};Password=${PGPASSWORD};SSL Mode=Disable"
 
-# Clé du LLM : OpenRouter (LLM_API_KEY), ou l'ancienne variable DeepSeek
-LLM_KEY="${LLM_API_KEY:-$DEEPSEEK_API_KEY}"
+# Clé du LLM : OpenRouter (LLM_API_KEY ou OPENROUTER_API_KEY), ou l'ancienne variable DeepSeek
+LLM_KEY="${LLM_API_KEY:-${OPENROUTER_API_KEY:-$DEEPSEEK_API_KEY}}"
 
 echo "Using connection: Host=${PGHOST};Port=${PGPORT:-5432};Database=${PGDATABASE};Username=${PGUSER}"
 
@@ -18,6 +29,9 @@ echo "Using connection: Host=${PGHOST};Port=${PGPORT:-5432};Database=${PGDATABAS
 echo "Starting ApiService on port 5455..."
 ASPNETCORE_URLS="http://localhost:5455" \
   ConnectionStrings__LyceeDB="$NPGSQL_CONN" \
+  Jwt__Key="$JWT_KEY" \
+  Jwt__Issuer="$JWT_ISSUER" \
+  Jwt__Audience="$JWT_AUDIENCE" \
   dotnet run --project GPOE26.ApiService/GPOE26.ApiService.csproj --no-launch-profile &
 APIPID=$!
 
@@ -28,12 +42,14 @@ ASPNETCORE_URLS="http://localhost:5197" \
   Jwt__Key="$JWT_KEY" \
   Jwt__Issuer="$JWT_ISSUER" \
   Jwt__Audience="$JWT_AUDIENCE" \
+  Admin__Emails="${ADMIN_EMAILS:-}" \
   dotnet run --project User/User.csproj --no-launch-profile &
 USERPID=$!
 
 # Start Cours service (port 5188)
 echo "Starting Cours service on port 5188..."
 ASPNETCORE_URLS="http://localhost:5188" \
+  LLM__ApiKey="$LLM_KEY" \
   ConnectionStrings__CoursDB="$NPGSQL_CONN" \
   Jwt__Key="$JWT_KEY" \
   Jwt__Issuer="$JWT_ISSUER" \
@@ -52,6 +68,7 @@ ASPNETCORE_URLS="http://localhost:5212" \
   Jwt__Audience="$JWT_AUDIENCE" \
   Services__User="http://localhost:5197" \
   Services__Cours="http://localhost:5188" \
+  Services__Quiz="http://localhost:5163" \
   dotnet run --project Chat/Chat.csproj --no-launch-profile &
 CHATPID=$!
 
@@ -64,6 +81,7 @@ ASPNETCORE_URLS="http://localhost:5163" \
   Jwt__Issuer="$JWT_ISSUER" \
   Jwt__Audience="$JWT_AUDIENCE" \
   Services__User="http://localhost:5197" \
+  Services__Cours="http://localhost:5188" \
   dotnet run --project Quiz/Quiz.csproj --no-launch-profile &
 QUIZPID=$!
 

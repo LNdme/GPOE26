@@ -109,7 +109,7 @@ public static class WorkspaceEndpoints
                 return Results.NotFound();
 
             var entitlement = await subscriptions.GetEntitlementAsync(user.Id);
-            var (token, expiresAt) = jwt.GenerateToken(user, entitlement, membership);
+            var (token, expiresAt) = jwt.GenerateToken(user, entitlement, activeWorkspace: membership);
             return Results.Ok(new AuthResponse(token, expiresAt, new UserProfileDto(user, entitlement), membership));
         })
         .WithSummary("Sélectionner un espace accessible et émettre un nouveau JWT limité à ce contexte")

@@ -1,0 +1,76 @@
+@* Notions fragiles relevées par le tuteur dans une classe (lot 12, décision P6).
+   Enseignant de la classe : ses élèves, nommés. Gestionnaire : chiffres d'ensemble, sans nom.
+   Seulement sur les cours publiés pour la classe ; les discussions avec le tuteur ne sont jamais montrées. *@
+@inject IAgentApi Agent
+
+<section class="ga-card" aria-labelledby="h-weak">
+    <div class="ga-card-head">
+        <h2 id="h-weak" class="ga-h2">Notions fragiles relevées par le tuteur</h2>
+    </div>
+    @if (_data is null)
+    {
+        @if (_error is not null) { <span class="ga-small ga-muted">@_error</span> } else { <Loading /> }
+    }
+    else if (_data.Courses.Count == 0)
+    {
+        <div class="ga-empty"><span>Aucun cours n'est encore publié pour cette classe : le tuteur relève les notions fragiles sur les cours de la classe.</span></div>
+    }
+    else
+    {
+        <span class="ga-small ga-muted">
+            @(_data.Named
+                ? "Ce que le tuteur a relevé en aidant vos élèves sur les cours de la classe. Leurs discussions restent privées."
+                : "Chiffres d'ensemble, sans nom d'élève : le détail reste aux enseignants de la classe.")
+        </span>
+        <div class="ga-list">
+            @foreach (var c in _data.Courses)
+            {
+                <div class="ga-stack" style="gap:6px">
+                    <div class="ga-row between">
+                        <strong>@c.Title</strong>
+                        <span class="ga-small ga-muted">@c.Subject · @c.Concerned élève@(c.Concerned > 1 ? "s" : "") sur @c.Students</span>
+                    </div>
+                    @if (c.TopNotions.Count == 0)
+                    {
+                        <span class="ga-small ga-muted">Rien de relevé pour l'instant.</span>
+                    }
+                    else
+                    {
+                        <div class="ga-chips" aria-label="Notions les plus fragiles">
+                            @foreach (var n in c.TopNotions)
+                            {
+                                <span class="ga-tag amber">@n.Notion · @n.Students</span>
+                            }
+                        </div>
+                    }
+                    @if (c.ByStudent.Count > 0)
+                    {
+                        <details>
+                            <summary class="ga-small">Par élève</summary>
+                            <ul class="ga-stack" style="gap:2px; margin:6px 0 0; padding-left:20px">
+                                @foreach (var s in c.ByStudent)
+                                {
+                                    <li><strong>@s.Username</strong> : @string.Join(", ", s.Notions)</li>
+                                }
+                            </ul>
+                        </details>
+                    }
+                </div>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public Guid ClassroomId { get; set; }
+
+    private ClassWeakPoints? _data;
+    private string? _error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var r = await Agent.ClassWeakPointsAsync(ClassroomId);
+        _data = r.Value;
+        _error = r.Ok ? null : "Le suivi du tuteur n'est pas disponible pour le moment.";
+    }
+}

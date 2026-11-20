@@ -1,4 +1,5 @@
-@page "/hierarchy/edit/{Id:int}"
+@page "/admin/equipe/{Id:int}"
+@layout GPOE26.Web.Components.Layout.AdminLayout
 
 <PageTitle>Modifier membre – GPOE26</PageTitle>
 
@@ -6,7 +7,7 @@
     <div class="form-section management-shell">
         <nav aria-label="breadcrumb" class="mb-3">
             <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="/hierarchy" class="text-navy text-decoration-none">Hiérarchie</a></li>
+                <li class="breadcrumb-item"><a href="/admin/equipe" class="text-navy text-decoration-none">Équipe</a></li>
                 <li class="breadcrumb-item active">Modifier</li>
             </ol>
         </nav>
@@ -18,7 +19,7 @@
         else if (_item is null)
         {
             <div class="alert alert-warning">Membre introuvable.</div>
-            <a href="/hierarchy" class="btn btn-outline-secondary">Retour</a>
+            <a href="/admin/equipe" class="btn btn-outline-secondary">Retour</a>
         }
         else
         {
@@ -70,7 +71,7 @@
                 <label class="form-label fw-semibold">Image (URL ou Upload)</label>
                 <div class="input-group">
                     <InputText @bind-Value="_item.ImageUrl" class="form-control" />
-                    <InputFile OnChange="HandleImageUpload" class="form-control" accept="image/*" />
+                    <InputFile OnChange="HandleImageUpload" class="form-control" accept="image/jpeg,image/png,image/gif,image/webp,image/avif,.jfif" />
                 </div>
                 @if (_isUploading)
                 {
@@ -85,7 +86,7 @@
                     <button type="submit" class="btn btn-navy" disabled="@_saving">
                         @if (_saving) { <span class="spinner-border spinner-border-sm me-1"></span> } Enregistrer
                     </button>
-                    <a href="/hierarchy" class="btn btn-outline-secondary">Annuler</a>
+                    <a href="/admin/equipe" class="btn btn-outline-secondary">Annuler</a>
                 </div>
             </EditForm>
         }
@@ -116,7 +117,7 @@
             var url = await Api.UploadImageAsync(stream, file.Name);
             if (url != null && _item != null)
             {
-                _item.ImageUrl = url;
+                _item.ImageUrl = url; _errorMessage = null;
             }
             else _errorMessage = "Erreur upload.";
         }
@@ -140,7 +141,7 @@
         _saving = true; _errorMessage = null;
         var ok = await Api.UpdateHierarchyAsync(Id, _item);
         _saving = false;
-        if (ok) Nav.NavigateTo("/hierarchy");
+        if (ok) Nav.NavigateTo("/admin/equipe");
         else _errorMessage = "Erreur lors de la mise à jour.";
     }
 }

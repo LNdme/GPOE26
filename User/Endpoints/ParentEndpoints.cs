@@ -88,6 +88,10 @@ public static class ParentEndpoints
                 ExamTarget = req.ExamTarget,
                 LinkCode = await UniqueLinkCodeAsync(db)
             };
+            // L'enfant vit d'ordinaire dans le pays et le fuseau de son parent (lot B5)
+            var parent = await db.AppUsers.AsNoTracking().FirstOrDefaultAsync(u => u.Id == parentId);
+            LearningContextRules.ApplyAtRegistration(child, req.Country ?? parent?.Country, req.TimeZone ?? parent?.TimeZone,
+                null, req.LevelBand, null);
             var link = new ParentChildLink
             {
                 ParentId = parentId,
@@ -218,8 +222,14 @@ public static class ParentEndpoints
     {
         // Le parent ne voit le détail de l'enfant qu'une fois le lien accepté
         var active = link.Status == LinkStatus.Active;
-        var premium = active && (await subs.GetEntitlementAsync(child.Id)).IsPremium;
-        return new ChildLinkDto(link.Id, link.Status, child.Id, child.Username,
-            active ? child.Level : null, active ? child.Filiere : null, active ? child.ExamTarget : null, premium);
+        if (!active)
+            return new ChildLinkDto(link.Id, link.Status, child.Id, child.Username, null, null, null, false);
+
+        // Couverture par un établissement ou un enseignant (lot 11, P5) : le parent payeur le voit, et peut ne pas renouveler
+        var entitlement = await subs.GetEntitlementAsync(child.Id);
+        var covering = (entitlement.Sources ?? []).Where(s => EntitlementRules.IsCovering(s.Kind)).MaxBy(s => s.Until);
+        return new ChildLinkDto(link.Id, link.Status, child.Id, child.Username, child.Level, child.Filiere, child.ExamTarget,
+            entitlement.IsPremium, covering?.Label, covering?.Until,
+            (entitlement.Sources ?? []).Any(s => s.Kind == EntitlementSourceKind.Family));
     }
 }

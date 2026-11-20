@@ -1,0 +1,106 @@
+@page "/app/emploi-du-temps"
+@layout AppLayout
+@inherits AppPage
+@inject IAgentApi Agent
+
+<PageTitle>Emploi du temps — GPOE26</PageTitle>
+
+<div class="ga-page narrow">
+    <div class="ga-head">
+        <div>
+            <h1>Mon emploi du temps</h1>
+            <p>Indique tes cours et tes moments d'étude : ton plan du jour et ton tuteur s'adaptent au temps dont tu disposes.</p>
+        </div>
+    </div>
+
+    <Alert Message="@_error" />
+    <Alert Message="@_info" Kind="success" />
+
+    @if (!Ready || _loading)
+    {
+        <Loading />
+    }
+    else
+    {
+        <section class="ga-card">
+            @if (_slots.Count == 0)
+            {
+                <div class="ga-empty"><span>Aucun créneau pour l'instant. Ajoute ton premier cours ci-dessous.</span></div>
+            }
+            @foreach (var slot in _slots)
+            {
+                <div class="sc-row">
+                    <div class="ga-field">
+                        <label>Jour</label>
+                        <select class="ga-select" @bind="slot.Day">
+                            @for (var d = 1; d <= 7; d++) { <option value="@d">@Days[d - 1]</option> }
+                        </select>
+                    </div>
+                    <div class="ga-field">
+                        <label>Début</label>
+                        <input class="ga-input" type="time" value="@Clock(slot.StartMinutes)" @onchange="e => slot.StartMinutes = Parse(e.Value, slot.StartMinutes)" />
+                    </div>
+                    <div class="ga-field">
+                        <label>Fin</label>
+                        <input class="ga-input" type="time" value="@Clock(slot.EndMinutes)" @onchange="e => slot.EndMinutes = Parse(e.Value, slot.EndMinutes)" />
+                    </div>
+                    <div class="ga-field">
+                        <label>Type</label>
+                        <select class="ga-select" @bind="slot.Kind">
+                            <option value="class">Cours en classe</option>
+                            <option value="study">Temps d'étude</option>
+                            <option value="other">Autre activité</option>
+                        </select>
+                    </div>
+                    <div class="ga-field">
+                        <label>Intitulé</label>
+                        <input class="ga-input" maxlength="80" placeholder="ex. Maths" @bind="slot.Label" />
+                    </div>
+                    <button type="button" class="ga-icon-btn" aria-label="Supprimer ce créneau" title="Supprimer ce créneau" @onclick="() => _slots.Remove(slot)"><Icon Name="trash" /></button>
+                </div>
+            }
+            <div class="ga-actions">
+                <button type="button" class="ga-btn secondary" @onclick="() => _slots.Add(new StudySlot())"><Icon Name="plus" /> Ajouter un créneau</button>
+                <button type="button" class="ga-btn" disabled="@_saving" @onclick="SaveAsync">@(_saving ? "Enregistrement…" : "Enregistrer")</button>
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    private static readonly string[] Days = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
+
+    protected override UserRole[]? AllowedRoles => [UserRole.Student];
+
+    private List<StudySlot> _slots = new();
+    private bool _loading = true, _saving;
+    private string? _error, _info;
+
+    private static string Clock(int minutes) => $"{minutes / 60:00}:{minutes % 60:00}";
+
+    private static int Parse(object? value, int fallback) =>
+        TimeOnly.TryParse(value?.ToString(), out var time) ? time.Hour * 60 + time.Minute : fallback;
+
+    protected override async Task LoadAsync()
+    {
+        var result = await Agent.ScheduleAsync();
+        _slots = result.Value ?? new();
+        _error = result.Error;
+        _loading = false;
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = _info = null;
+        if (_slots.Any(s => s.EndMinutes <= s.StartMinutes))
+        {
+            _error = "Chaque créneau doit finir après son début.";
+            return;
+        }
+        _saving = true;
+        var result = await Agent.SaveScheduleAsync(_slots);
+        _saving = false;
+        if (!result.Ok) { _error = result.Error; return; }
+        _info = "Emploi du temps enregistré.";
+    }
+}

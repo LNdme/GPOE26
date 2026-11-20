@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Quiz.Model;
+using Quiz.Service;
 
 namespace Quiz.Data;
 
@@ -10,6 +11,7 @@ public class EvaluationContext(DbContextOptions<EvaluationContext> options) : Db
     public DbSet<Submission> Submissions => Set<Submission>();
     public DbSet<SubmissionAnswer> SubmissionAnswers => Set<SubmissionAnswer>();
     public DbSet<AnswerPhoto> AnswerPhotos => Set<AnswerPhoto>();
+    public DbSet<AiUsage> AiUsage => Set<AiUsage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -19,6 +21,12 @@ public class EvaluationContext(DbContextOptions<EvaluationContext> options) : Db
         modelBuilder.Entity<AssessmentQuestion>().Property(q => q.Id).ValueGeneratedNever();
         modelBuilder.Entity<Submission>().Property(s => s.Id).ValueGeneratedNever();
         modelBuilder.Entity<SubmissionAnswer>().Property(a => a.Id).ValueGeneratedNever();
+        modelBuilder.Entity<AiUsage>(entity =>
+        {
+            entity.ToTable("AiUsage");
+            entity.HasKey(u => new { u.UserId, u.Feature, u.Day });
+        });
+
         modelBuilder.Entity<AnswerPhoto>(entity =>
         {
             entity.Property(p => p.Id).ValueGeneratedNever();

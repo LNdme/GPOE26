@@ -33,26 +33,6 @@ outputType = "webview"
 localPort = 5000
 externalPort = 80
 
-[[ports]]
-localPort = 5163
-externalPort = 3000
-exposeLocalhost = true
-
-[[ports]]
-localPort = 5188
-externalPort = 3003
-exposeLocalhost = true
-
-[[ports]]
-localPort = 5212
-externalPort = 3001
-exposeLocalhost = true
-
-[[ports]]
-localPort = 5455
-externalPort = 3002
-exposeLocalhost = true
-
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 180000

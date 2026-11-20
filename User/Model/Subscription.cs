@@ -29,6 +29,12 @@ namespace User.Model
         /// <summary>Nombre de places : enfants couverts (Family) ou comptes couverts (licence)</summary>
         public int Seats { get; set; } = 1;
 
+        /// <summary>Places élèves occupées (licence d'espace). Remplacera UsedCount de la clé partagée au lot 3.</summary>
+        public int SeatsUsed { get; set; }
+
+        /// <summary>Plafond d'enseignants d'une licence ; vide : sans plafond. Les enseignants ne prennent pas de place élève.</summary>
+        public int? TeacherSeats { get; set; }
+
         public DateTime? StartsAt { get; set; }
 
         public DateTime? EndsAt { get; set; }

@@ -1,0 +1,320 @@
+@* Liste des élèves d'un espace : filtres, ajout, import avec aperçu, codes personnels *@
+@using System.Text
+@inject ISpaceApi Spaces
+
+<Alert Message="@_error" />
+
+<div class="ga-row between" style="flex-wrap:wrap; gap:10px">
+    <div class="ga-row" style="gap:10px; flex-wrap:wrap">
+        <select class="ga-select" aria-label="Filtrer par classe" style="width:auto" @bind="ClassFilter">
+            <option value="">Toutes les classes</option>
+            @foreach (var c in _classes) { <option value="@c.Id">@c.Name</option> }
+        </select>
+        <div class="ga-chips" role="tablist" aria-label="Filtrer par statut">
+            <button role="tab" class="ga-chip @(_status is null ? "on" : "")" aria-selected="@Aria.State(_status is null)" @onclick="() => SetStatusAsync(null)">Tous</button>
+            @foreach (var st in Enum.GetValues<StudentStatus>())
+            {
+                <button role="tab" class="ga-chip @(_status == st ? "on" : "")" aria-selected="@Aria.State(_status == st)" @onclick="() => SetStatusAsync(st)">@Labels.Of(st)</button>
+            }
+        </div>
+    </div>
+    <div class="ga-row" style="gap:8px; flex-wrap:wrap">
+        @if (_classFilter is { } classId)
+        {
+            <button class="ga-btn secondary small" @onclick="() => ClassCodesAsync(classId)"><Icon Name="key" /> Codes de la classe</button>
+        }
+        <a class="ga-btn ghost small" href="/app/etablissement/@Space.Id/fiches@(_classFilter is { } cid ? $"?classe={cid}" : "")"><Icon Name="file" /> Fiches à imprimer</a>
+    </div>
+</div>
+
+<section class="ga-card" aria-labelledby="h-students">
+    <div class="ga-card-head">
+        <h2 id="h-students" class="ga-h2">Élèves <span class="ga-muted ga-small">(@_students.Count)</span></h2>
+    </div>
+    @if (_loading)
+    {
+        <Loading />
+    }
+    else if (_students.Count == 0)
+    {
+        <div class="ga-empty"><span>Aucun élève ici. Inscrivez-les à la main ou importez la liste ci-dessous.</span></div>
+    }
+    else
+    {
+        <div class="ga-table-wrap">
+            <table class="ga-table">
+                <thead>
+                    <tr><th scope="col">Matricule</th><th scope="col">Nom</th><th scope="col">Classe</th><th scope="col">Statut</th><th scope="col">Compte ou code</th><th scope="col"><span class="ga-sr">Actions</span></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var s in _students)
+                    {
+                        <tr>
+                            <td><span class="ga-code" style="white-space:nowrap">@s.Matricule</span></td>
+                            <th scope="row" style="text-align:left">
+                                @s.FullName
+                                @if (s.Email is { } mail || s.Extra is { Count: > 0 })
+                                {
+                                    <span class="ga-small ga-muted" style="display:block; font-weight:400; white-space:normal; max-width:320px">
+                                        @string.Join(" · ", new[] { s.Email }.Concat((s.Extra ?? []).Select(x => $"{x.Key} : {x.Value}")).Where(x => x is { Length: > 0 }))
+                                    </span>
+                                }
+                            </th>
+                            <td>
+                                <select class="ga-select" style="width:auto; min-width:120px" aria-label="Classe de @s.FullName" value="@s.ClassroomId" @onchange="e => MoveAsync(s, e.Value?.ToString())">
+                                    <option value="">Sans classe</option>
+                                    @foreach (var c in _classes) { <option value="@c.Id">@c.Name</option> }
+                                </select>
+                            </td>
+                            <td><span class="ga-tag @Labels.Tone(s.Status)">@Labels.Of(s.Status).ToUpperInvariant()</span></td>
+                            <td>
+                                @if (s.Username is { } u)
+                                {
+                                    <span>@u</span>
+                                    @if (s.Code is { } reset) { <span class="ga-code" style="display:block; margin-top:4px; width:max-content" title="Code de reconnexion">@reset</span> }
+                                }
+                                else if (s.Code is { } pending)
+                                {
+                                    <span class="ga-code">@pending</span>
+                                }
+                                else
+                                {
+                                    <span class="ga-muted">—</span>
+                                }
+                            </td>
+                            <td style="white-space:nowrap; text-align:right">
+                                @switch (s.Status)
+                                {
+                                    case StudentStatus.Pending:
+                                        <button class="ga-btn ghost small" @onclick="() => CodeAsync(s)">@(s.Code is null ? "Donner un code" : "Nouveau code")</button>
+                                        @if (_confirmDelete == s.Id)
+                                        {
+                                            <button class="ga-btn small" @onclick="() => DeleteAsync(s)">Effacer</button>
+                                            <button class="ga-btn ghost small" @onclick="() => _confirmDelete = null">Annuler</button>
+                                        }
+                                        else
+                                        {
+                                            <button class="ga-btn ghost small" aria-label="Effacer @s.FullName (inscrit par erreur)" @onclick="() => _confirmDelete = s.Id"><Icon Name="trash" /></button>
+                                        }
+                                        break;
+                                    case StudentStatus.Active:
+                                        <button class="ga-btn ghost small" title="Mot de passe oublié : un code pour se reconnecter avec son matricule" @onclick="() => CodeAsync(s)">Code de reconnexion</button>
+                                        <button class="ga-btn ghost small" title="A quitté l'établissement : sa place est libérée" @onclick="() => StatusAsync(s, StudentStatus.Left)">Parti</button>
+                                        <button class="ga-btn ghost small" title="Retiré par l'établissement : sa place est libérée" @onclick="() => StatusAsync(s, StudentStatus.Revoked)">Retirer</button>
+                                        break;
+                                    default:
+                                        <button class="ga-btn ghost small" @onclick="() => StatusAsync(s, StudentStatus.Pending)">Réintégrer</button>
+                                        break;
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <p class="ga-small ga-muted">Un élève retiré ou parti garde son compte pour un usage personnel, mais quitte ses classes et libère sa place. Changer la classe d'un élève qui a son compte le déplace aussi.</p>
+    }
+</section>
+
+<div class="ga-split">
+    <form class="main ga-card" @onsubmit="AddAsync" @onsubmit:preventDefault>
+        <h2 class="ga-h3">Inscrire un élève</h2>
+        <div class="ga-form-grid">
+            <div class="ga-field"><label for="st-last">Nom</label><input id="st-last" class="ga-input" @bind="_last" @bind:event="oninput" /></div>
+            <div class="ga-field"><label for="st-first">Prénom(s)</label><input id="st-first" class="ga-input" @bind="_first" /></div>
+            <div class="ga-field"><label for="st-mat">Matricule</label><input id="st-mat" class="ga-input" placeholder="vide : généré" @bind="_matricule" /></div>
+            <div class="ga-field"><label for="st-mail">E-mail (facultatif)</label><input id="st-mail" class="ga-input" type="email" @bind="_email" /></div>
+            <div class="ga-field">
+                <label for="st-class">Classe</label>
+                <select id="st-class" class="ga-select" @bind="_newClass">
+                    <option value="">Sans classe</option>
+                    @foreach (var c in _classes) { <option value="@c.Id">@c.Name</option> }
+                </select>
+            </div>
+        </div>
+        <button type="submit" class="ga-btn secondary" disabled="@string.IsNullOrWhiteSpace(_last)"><Icon Name="plus" /> Inscrire</button>
+    </form>
+
+    <section class="ga-card" aria-labelledby="h-import">
+        <h2 id="h-import" class="ga-h3">Importer une liste</h2>
+        <p class="ga-small ga-muted" style="margin:0">
+            Fichier <strong>Excel</strong> (.xlsx), <strong>Word</strong> (.docx, la liste dans un tableau) ou <strong>CSV</strong>.
+            Une ligne de titres : <strong>Matricule, Nom, Prénom, Classe</strong> (ou <strong>Parcours</strong> pour une entreprise),
+            et si vous les avez <strong>E-mail</strong> et <strong>Date de naissance</strong>. Les autres colonnes (téléphone, parent…)
+            sont gardées dans la fiche de l'élève. Les classes doivent déjà exister cette année.
+        </p>
+        <InputFile OnChange="ReadFileAsync" accept=".xlsx,.docx,.csv,.txt" aria-label="Fichier de la liste des élèves (Excel, Word ou CSV)" />
+        <textarea class="ga-textarea" rows="5" aria-label="Ou collez la liste ici" placeholder="Matricule;Nom;Prénom;Classe" @bind="_csv" @bind:event="oninput"></textarea>
+        <button type="button" class="ga-btn secondary" disabled="@string.IsNullOrWhiteSpace(_csv)" @onclick="() => ImportAsync(false)">Vérifier</button>
+    </section>
+</div>
+
+@if (_preview is { } p)
+{
+    <section class="ga-card" aria-labelledby="h-preview">
+        <div class="ga-card-head">
+            <h2 id="h-preview" class="ga-h2">@(p.Imported ? $"{p.Total} élève(s) inscrit(s)" : $"Aperçu : {p.Valid} ligne(s) correcte(s) sur {p.Total}")</h2>
+            @if (!p.Imported)
+            {
+                <button class="ga-btn" disabled="@(p.Valid < p.Total)" @onclick="() => ImportAsync(true)">Inscrire ces @p.Total élèves</button>
+            }
+        </div>
+        @if (p.ExtraColumns is { Count: > 0 } extra)
+        {
+            <p class="ga-small ga-muted" style="margin:0">Colonnes gardées dans la fiche de chaque élève : @string.Join(", ", extra).</p>
+        }
+        @if (!p.Imported && p.Valid < p.Total)
+        {
+            <p class="ga-small" style="margin:0">Corrigez les lignes en erreur dans le fichier, puis vérifiez de nouveau : rien n'est inscrit tant qu'une ligne est en erreur.</p>
+        }
+        <div class="ga-table-wrap">
+            <table class="ga-table">
+                <thead><tr><th scope="col">Ligne</th><th scope="col">Matricule</th><th scope="col">Nom</th><th scope="col">Classe</th><th scope="col">Autres informations</th><th scope="col">Problème</th></tr></thead>
+                <tbody>
+                    @foreach (var r in p.Rows.OrderByDescending(r => r.Errors.Count).Take(200))
+                    {
+                        <tr>
+                            <td>@r.Line</td>
+                            <td>@(r.Matricule ?? "(généré)")</td>
+                            <th scope="row" style="text-align:left">@r.LastName @r.FirstName</th>
+                            <td>@(r.ClassName ?? "—")</td>
+                            <td class="ga-small">@string.Join(" · ", new[] { r.Email }.Concat((r.Extra ?? []).Select(x => $"{x.Key} : {x.Value}")).Where(x => x is { Length: > 0 }))</td>
+                            <td>@if (r.Errors.Count > 0) { <span class="ga-tag red">@string.Join(" ; ", r.Errors)</span> } else { <span class="ga-tag green">OK</span> }</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired] public MySpace Space { get; set; } = default!;
+    [Parameter] public SpaceOverview? Overview { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private bool _loading = true;
+    private string? _error;
+    private List<SpaceStudent> _students = [];
+    private List<SpaceClass> _classes = [];
+    private Guid? _classFilter;
+    private StudentStatus? _status;
+    private Guid? _confirmDelete;
+    private string _last = "", _first = "", _matricule = "", _email = "", _csv = "";
+    private Guid? _newClass;
+    private ImportResult? _preview;
+    private Guid _loadedFor;
+
+    private Guid? ClassFilter
+    {
+        get => _classFilter;
+        set { _classFilter = value; _ = LoadStudentsAsync(); }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == Space.Id) return;
+        _loadedFor = Space.Id;
+        _classes = (await Spaces.ClassesAsync(Space.Id)).Value ?? [];
+        await LoadStudentsAsync();
+    }
+
+    private async Task LoadStudentsAsync()
+    {
+        var r = await Spaces.StudentsAsync(Space.Id, _classFilter, _status);
+        _students = r.Value ?? [];
+        _error = r.Error;
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task SetStatusAsync(StudentStatus? status)
+    {
+        _status = status;
+        await LoadStudentsAsync();
+    }
+
+    private async Task Replace(ApiResult<SpaceStudent> r)
+    {
+        _error = r.Error;
+        if (r.Value is not { } updated) return;
+        var i = _students.FindIndex(x => x.Id == updated.Id);
+        if (i >= 0) _students[i] = updated;
+        await Changed.InvokeAsync();
+    }
+
+    private async Task CodeAsync(SpaceStudent s) => await Replace(await Spaces.IssueStudentCodeAsync(Space.Id, s.Id));
+    private async Task StatusAsync(SpaceStudent s, StudentStatus status) => await Replace(await Spaces.SetStudentStatusAsync(Space.Id, s.Id, status));
+
+    private async Task MoveAsync(SpaceStudent s, string? value)
+    {
+        Guid? classId = Guid.TryParse(value, out var id) ? id : null;
+        await Replace(await Spaces.UpdateStudentAsync(Space.Id, s.Id, new StudentRequest(s.Matricule, s.LastName, s.FirstName, s.BirthDate, classId)));
+    }
+
+    private async Task DeleteAsync(SpaceStudent s)
+    {
+        var r = await Spaces.DeleteStudentAsync(Space.Id, s.Id);
+        _confirmDelete = null;
+        _error = r.Error;
+        if (!r.Ok) return;
+        _students.Remove(s);
+        await Changed.InvokeAsync();
+    }
+
+    private async Task ClassCodesAsync(Guid classId)
+    {
+        var r = await Spaces.IssueClassCodesAsync(Space.Id, classId);
+        _error = r.Error;
+        if (r.Ok) await LoadStudentsAsync();
+    }
+
+    private async Task AddAsync()
+    {
+        var r = await Spaces.AddStudentAsync(Space.Id, new StudentRequest(
+            string.IsNullOrWhiteSpace(_matricule) ? null : _matricule.Trim(), _last.Trim(), _first.Trim(), null, _newClass,
+            string.IsNullOrWhiteSpace(_email) ? null : _email.Trim()));
+        _error = r.Error;
+        if (!r.Ok) return;
+        _last = _first = _matricule = _email = "";
+        await LoadStudentsAsync();
+        await Changed.InvokeAsync();
+    }
+
+    /// <summary>
+    /// Envoie le fichier tel quel au service (Excel, Word ou CSV, encodage d'Excel compris) pour l'aperçu ;
+    /// le service le remet en CSV, gardé ici pour enregistrer après vérification.
+    /// </summary>
+    private async Task ReadFileAsync(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            using var stream = e.File.OpenReadStream(maxAllowedSize: 5_000_000);
+            using var buffer = new MemoryStream();
+            await stream.CopyToAsync(buffer);
+            _preview = null;
+            var contentType = string.IsNullOrEmpty(e.File.ContentType) ? "application/octet-stream" : e.File.ContentType;
+            var r = await Spaces.ImportStudentsFileAsync(Space.Id, new ImageUpload(e.File.Name, contentType, buffer.ToArray()));
+            _error = r.Error;
+            _preview = r.Value;
+            if (r.Value?.Csv is { } csv) _csv = csv;
+        }
+        catch (IOException)
+        {
+            _error = "Fichier trop gros (5 Mo au plus) : découpez-le, par exemple par niveau.";
+        }
+    }
+
+    private async Task ImportAsync(bool commit)
+    {
+        var r = await Spaces.ImportStudentsAsync(Space.Id, _csv, commit);
+        _error = r.Error;
+        _preview = r.Value;
+        if (r.Value is { Imported: true })
+        {
+            _csv = "";
+            await LoadStudentsAsync();
+            await Changed.InvokeAsync();
+        }
+    }
+}

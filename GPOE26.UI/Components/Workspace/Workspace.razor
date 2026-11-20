@@ -1,0 +1,117 @@
+@* Espace d'étude : grille de panneaux redimensionnables (souris, doigt, clavier), réduction en rail,
+   agrandissement plein écran, fermeture avec rouvraison par pastilles. La disposition est globale à l'espace
+   élève et persistée dans le localStorage ; le glissement est géré par workspace.js sans passer par le circuit. *@
+@using GPOE26.UI.Components.Workspace
+@inject IWorkspaceStore Store
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+@if (!_ready)
+{
+    <div class="ga-page"><Loading /></div>
+}
+else
+{
+    <div class="ws">
+        @if (ShowReopenBar && Ctx.ClosedPanels.Count > 0)
+        {
+            <div class="ws-chips" role="toolbar" aria-label="Rouvrir un panneau">
+                @foreach (var closed in Ctx.ClosedPanels)
+                {
+                    <button type="button" class="ws-chip" data-panel="@closed.Id" @onclick="() => Ctx.OpenPanelAsync(closed.Id)">
+                        <Icon Name="@closed.Icon" Size="16" /> @closed.Title
+                    </button>
+                }
+                <button type="button" class="ws-chip ws-chip-reset" @onclick="Ctx.ResetAsync" title="Remettre la disposition par défaut">
+                    <Icon Name="history" Size="16" /> Réinitialiser
+                </button>
+            </div>
+        }
+        <CascadingValue Value="Ctx" IsFixed="true">
+            <div class="ws-grid" @ref="_grid" style="grid-template-columns: @GridTemplate">
+                @ChildContent
+            </div>
+        </CascadingValue>
+    </div>
+}
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>Prévient la page hôte d'un changement de disposition (ex. bouton « Agent » allumé quand le panneau est ouvert).</summary>
+    [Parameter] public EventCallback LayoutChanged { get; set; }
+
+    /// <summary>Barre « Rouvrir un panneau » au-dessus de la grille ; inutile quand la page a ses propres boutons d'ouverture.</summary>
+    [Parameter] public bool ShowReopenBar { get; set; } = true;
+
+    /// <summary>Clé de la disposition enregistrée : chaque espace (lecture, éditeur…) garde la sienne.</summary>
+    [Parameter] public string? LayoutKey { get; set; }
+
+    private WorkspaceContext Ctx { get; set; } = default!;
+    private ElementReference _grid;
+    private IJSObjectReference? _module;
+    private bool _ready, _shortcutsAttached;
+
+    protected override void OnInitialized()
+    {
+        Ctx = new WorkspaceContext(Store, LayoutKey);
+        Ctx.Changed += OnContextChanged;
+    }
+
+    // Action publique pour rouvrir un panneau depuis la page hôte (bouton « Demander au tuteur IA »)
+    public Task OpenPanelAsync(string id) => Ctx.OpenPanelAsync(id);
+
+    /// <summary>Ouvre le panneau s'il est fermé, le ferme sinon (bouton « Agent » de l'administration).</summary>
+    public Task ToggleOpenAsync(string id) => Ctx.IsOpen(id) ? Ctx.CloseAsync(id) : Ctx.OpenPanelAsync(id);
+
+    /// <summary>Le panneau est-il affiché ?</summary>
+    public bool IsOpen(string id) => Ctx?.IsOpen(id) == true;
+
+    // Action publique pour replier/déplier un panneau depuis la page hôte (bouton « Sommaire »)
+    public Task TogglePanelAsync(string id) => Ctx.TogglePanelAsync(id);
+
+    private string GridTemplate =>
+        WorkspaceSizing.BuildGridTemplate(Ctx.State, Ctx.AllIds);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Ctx.LoadAsync();
+            _ready = true;
+            StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./_content/GPOE26.UI/workspace.js");
+            if (_module is not null)
+            {
+                await _module.InvokeVoidAsync("attachSplitters", _grid, Ctx.DotNetRef);
+                if (!_shortcutsAttached)
+                {
+                    _shortcutsAttached = true;
+                    // Les raccourcis visent l'espace affiché : chaque nouvel espace reprend la main
+                    await _module.InvokeVoidAsync("attachShortcuts", Ctx.DotNetRef, Ctx.ShortcutKeys);
+                }
+            }
+        }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { }
+    }
+
+    private void OnContextChanged() => InvokeAsync(async () =>
+    {
+        StateHasChanged();
+        if (LayoutChanged.HasDelegate) await LayoutChanged.InvokeAsync();
+    });
+
+    public async ValueTask DisposeAsync()
+    {
+        Ctx.Changed -= OnContextChanged;
+        Ctx.DisposeDotNet();
+        try { if (_module is not null) await _module.DisposeAsync(); }
+        catch (JSDisconnectedException) { }
+    }
+}

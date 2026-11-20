@@ -374,3 +374,6 @@ out*.txt
 
 # Secrets locaux
 .env
+
+# Clé de signature des jetons créée par start.sh
+.secrets/

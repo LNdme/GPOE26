@@ -3,11 +3,13 @@
 @inject SessionState Session
 @inject IAccountApi Account
 @inject NavigationManager Nav
+@inject ISpaceApi Spaces
+@inject IJSRuntime JS
 
 <div class="ga-app">
-    <div class="ga-shell">
+    <div class="ga-shell @(Compact ? "side-compact" : "")" style="--ga-side-w: @(_sideWidth)px">
         <header class="ga-topbar">
-            <button type="button" class="ga-icon-btn" aria-label="Ouvrir le menu" aria-expanded="@_open" @onclick="() => _open = true">
+            <button type="button" class="ga-icon-btn" aria-label="Ouvrir le menu" aria-expanded="@Aria.State(_open)" @onclick="() => _open = true">
                 <Icon Name="menu" Size="24" Stroke="2" />
             </button>
             <a class="ga-brand" href="/app"><Icon Name="logo" Size="22" Stroke="2" /><span>GPOE26</span></a>
@@ -17,12 +19,17 @@
         <button type="button" class="ga-scrim @(_open ? "open" : "")" aria-label="Fermer le menu" tabindex="-1" @onclick="() => _open = false"></button>
 
         <nav class="ga-sidebar @(_open ? "open" : "")" aria-label="Navigation principale">
-            <a class="ga-brand" href="/app"><Icon Name="logo" Size="26" Stroke="2" /><span>GPOE26</span></a>
+            <a class="ga-brand" href="/app" aria-label="GPOE26, accueil de mon espace"><Icon Name="logo" Size="26" Stroke="2" /><span>GPOE26</span></a>
+
+            <button type="button" class="ga-icon-btn ga-rail-toggle" title="@(Compact ? "Déplier le menu" : "Réduire le menu")"
+                    aria-label="@(Compact ? "Déplier le menu" : "Réduire le menu")" aria-expanded="@Aria.State(!Compact)" @onclick="ToggleCompactAsync">
+                <Icon Name="sidebar" />
+            </button>
 
             @if (Session.Profile is { } me)
             {
                 <div class="ga-badge-box">
-                    @SpaceLabel(Session)
+                    @(me.Stage == EducationStage.Higher ? "Espace étudiant" : SpaceLabel(me.Role))
                     <small>@(me.IsPremium ? Labels.Of(me.Plan) : "Formule gratuite")</small>
                     @if (_workspaces.Count <= 1 && Session.ActiveWorkspace is { } activeWorkspace)
                     {
@@ -53,18 +60,18 @@
                 }
 
                 <div class="ga-nav">
-                    @foreach (var item in Items(Session))
+                    @foreach (var item in Items(me.Role).Concat(SpaceItems()).Concat(McpItems(me)))
                     {
-                        <NavLink href="@item.Href" Match="@(item.Href == "/app" ? NavLinkMatch.All : NavLinkMatch.Prefix)">
+                        <NavLink href="@item.Href" title="@item.Label" aria-label="@item.Label" Match="@(item.Href == "/app" ? NavLinkMatch.All : NavLinkMatch.Prefix)">
                             <Icon Name="@item.Icon" /> <span>@item.Label</span>
-                            @if (item.Premium && !me.IsPremium)
+                            @if (item.Feature is { } feature && !Session.HasFeature(feature))
                             {
                                 <span class="ga-tag lime">PREMIUM</span>
                             }
                         </NavLink>
                     }
                 </div>
-                @if (!Items(Session).Any())
+                @if (!Items(me.Role).Concat(SpaceItems()).Concat(McpItems(me)).Any())
                 {
                     <p class="ga-small ga-muted">
                         @(_workspaces.Count > 1
@@ -75,21 +82,30 @@
 
                 <div class="ga-nav-title">SITE</div>
                 <div class="ga-nav">
-                    <a href="/"><Icon Name="home" /> <span>Site de l'établissement</span></a>
+                    <a href="/" title="Site de l'établissement" aria-label="Site de l'établissement"><Icon Name="home" /> <span>Site de l'établissement</span></a>
+                    @if (me.CanEditSite)
+                    {
+                        @* Droit ajouté au rôle : un enseignant administrateur garde ses classes et gère aussi le site *@
+                        <a href="/admin" title="@(me.IsAdmin ? "Administration" : "Gérer le site")" aria-label="@(me.IsAdmin ? "Administration" : "Gérer le site")"><Icon Name="shield" /> <span>@(me.IsAdmin ? "Administration" : "Gérer le site")</span></a>
+                    }
                 </div>
 
                 <div class="ga-me">
                     <span class="ga-avatar">@Labels.Initial(me.Username)</span>
-                    <span style="min-width:0">
+                    <a href="/app/profil" class="ga-me__profile" title="Mon profil" aria-label="Mon profil : @me.Username">
                         <strong>@me.Username</strong>
-                        <small>@Labels.Of(me.Role)@(me.Level is { Length: > 0 } ? $" · {me.Level}" : "")</small>
-                    </span>
+                        <small>@(me.Stage == EducationStage.Higher ? "Étudiant" : Labels.Of(me.Role))@(me.Level is { Length: > 0 } ? $" · {me.Level}" : "")</small>
+                    </a>
                     <button type="button" class="ga-icon-btn" aria-label="Se déconnecter" title="Se déconnecter" @onclick="SignOutAsync">
                         <Icon Name="logout" />
                     </button>
                 </div>
             }
         </nav>
+        @* Poignée de la barre latérale : glisser pour élargir ou réduire ; en dessous de 140 px elle se replie en rail *@
+        <div class="ga-side-resizer" @ref="_resizer" role="separator" aria-orientation="vertical" tabindex="0"
+             aria-label="Largeur du menu" aria-valuemin="@CompactWidth" aria-valuemax="@MaxWidth" aria-valuenow="@(Compact ? CompactWidth : _sideWidth)"
+             @onkeydown="OnResizerKeyAsync" @ondblclick="ToggleCompactAsync"></div>
 
         <main class="ga-main" id="contenu">
             @if (Session.IsAuthenticated && Session.ActiveWorkspace is null)
@@ -122,82 +138,180 @@
             }
             else
             {
-                @Body
+                <PageErrorBoundary HomeHref="/app">@Body</PageErrorBoundary>
             }
         </main>
+        <SessionNotice />
     </div>
 </div>
 
 @code {
-    private bool _open;
+    private bool _open, _reading;
     private bool _switchingWorkspace;
     private bool _workspacesLoaded;
     private List<WorkspaceSummary> _workspaces = [];
     private string? _workspaceError;
     private string _selectedWorkspaceId = "";
 
-    private record NavItem(string Href, string Label, string Icon, bool Premium = false);
+    // Largeur de la barre latérale (bureau) : réglée à la souris ou au clavier, retenue dans le navigateur.
+    // Sans préférence enregistrée, la lecture et la rédaction d'un cours démarrent en rail pour laisser la place au contenu.
+    private const int CompactWidth = 68, MinWidth = 200, MaxWidth = 360, DefaultWidth = 256;
+    private int _sideWidth = DefaultWidth;
+    private bool? _compactPref;
+    private bool Compact => _compactPref ?? _reading;
+    private ElementReference _resizer;
+    private IJSObjectReference? _sideModule;
+    private DotNetObjectReference<AppLayout>? _sideRef;
 
-    private static IEnumerable<NavItem> Items(SessionState session)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (session.Profile?.Role == UserRole.Admin)
-            return
-            [
-                new("/app", "Vue d'ensemble", "grid"),
-                new("/app/admin/mcp", "Administration MCP", "key"),
-                new("/app/mcp", "Autorisations MCP", "key"),
-                new("/app/abonnement", "Abonnement", "card"),
-            ];
-        if (session.IsFamilyGuardian)
-            return
-            [
-                new("/app", "Vue d'ensemble", "grid"),
-                new("/app/mcp", "Autorisations MCP", "key"),
-                new("/app/abonnement", "Abonnement et paiements", "card"),
-            ];
-        if (session.CanTeach)
-            return
-            [
-                new("/app", "Mes classes", "users"),
-                new("/app/evaluations", "Épreuves et devoirs", "file"),
-                new("/app/cours", "Mes cours", "book"),
-                new("/app/mcp", "Autorisations MCP", "key"),
-                new("/app/abonnement", "Abonnement", "card"),
-            ];
-        if (session.CanLearn)
-            return
-            [
-                new("/app", "Plan d'études", "compass"),
-                new("/app/cours", "Mes cours", "book"),
-                new("/app/evaluations", "Évaluations", "check"),
-                new("/app/tuteur", "Tuteur IA", "spark", Premium: true),
-                new("/app/mcp", "Autorisations MCP", "key"),
-                new("/app/abonnement", "Abonnement", "card"),
-            ];
-        if (session.CanManageCourses)
-            return
-            [
-                new("/app/cours", "Mes cours", "book"),
-                new("/app/mcp", "Autorisations MCP", "key"),
-                new("/app/abonnement", "Abonnement", "card"),
-            ];
-        return session.ActiveWorkspace is not null
-            ? [new("/app/mcp", "Autorisations MCP", "key")]
-            : [];
+        if (!firstRender) return;
+        try
+        {
+            _sideModule = await JS.InvokeAsync<IJSObjectReference>("import", "./_content/GPOE26.UI/workspace.js");
+            var saved = await _sideModule.InvokeAsync<SidebarPref?>("loadSidebar");
+            if (saved is not null)
+            {
+                _sideWidth = Math.Clamp(saved.Width, MinWidth, MaxWidth);
+                _compactPref = saved.Compact;
+                StateHasChanged();
+            }
+            _sideRef = DotNetObjectReference.Create(this);
+            await _sideModule.InvokeVoidAsync("attachSideResizer", _resizer, _sideRef, CompactWidth, MinWidth, MaxWidth);
+        }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { }
     }
 
-    private static string SpaceLabel(SessionState session) =>
-        session.IsFamilyGuardian ? "Espace familial" :
-        session.CanTeach ? "Espace enseignant" :
-        session.ActiveWorkspace?.Kind == WorkspaceKind.Organization ? "Espace organisation" :
-        session.CanLearn ? "Espace élève" :
-        "Espace actif";
+    public sealed record SidebarPref(int Width, bool Compact);
+
+    /// <summary>Fin du glissement (appelé par workspace.js) : en dessous de 140 px, la barre se replie en rail.</summary>
+    [JSInvokable]
+    public async Task CommitSidebarAsync(double width)
+    {
+        if (width < 140) _compactPref = true;
+        else
+        {
+            _compactPref = false;
+            _sideWidth = (int)Math.Clamp(width, MinWidth, MaxWidth);
+        }
+        await SaveSidebarAsync();
+        StateHasChanged();
+    }
+
+    private async Task ToggleCompactAsync()
+    {
+        _compactPref = !Compact;
+        await SaveSidebarAsync();
+    }
+
+    private async Task OnResizerKeyAsync(KeyboardEventArgs e)
+    {
+        var step = e.ShiftKey ? 48 : 16;
+        if (e.Key == "ArrowLeft")
+        {
+            if (Compact) return;
+            if (_sideWidth - step < MinWidth) _compactPref = true; else _sideWidth -= step;
+        }
+        else if (e.Key == "ArrowRight")
+        {
+            if (Compact) { _compactPref = false; }
+            else _sideWidth = Math.Min(MaxWidth, _sideWidth + step);
+        }
+        else return;
+        await SaveSidebarAsync();
+    }
+
+    private async Task SaveSidebarAsync()
+    {
+        try
+        {
+            if (_sideModule is not null)
+                await _sideModule.InvokeVoidAsync("saveSidebar", new SidebarPref(_sideWidth, Compact));
+        }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { }
+    }
+
+    // Lecture d'un cours : le menu se réduit à un rail d'icônes pour laisser l'écran au texte
+    private static readonly System.Text.RegularExpressions.Regex ReaderPath =
+        new(@"/app/cours/([0-9a-fA-F-]{36}(/modifier)?|nouveau)/?($|[?#])", System.Text.RegularExpressions.RegexOptions.Compiled);   // lecture et rédaction d'un cours : rail compact
+
+    private record NavItem(string Href, string Label, string Icon, string? Feature = null);
+
+    private static IEnumerable<NavItem> Items(UserRole role) => role switch
+    {
+        UserRole.Teacher =>
+        [
+            new("/app", "Mes classes", "users"),
+            new("/app/evaluations", "Épreuves et devoirs", "file"),
+            new("/app/cours", "Mes cours", "book"),
+            new("/app/assistant", "Assistant IA", "spark", "teacher-agent"),
+            new("/app/abonnement", "Abonnement", "card"),
+        ],
+        UserRole.Parent =>
+        [
+            new("/app", "Vue d'ensemble", "grid"),
+            new("/app/abonnement", "Abonnement et paiements", "card"),
+        ],
+        _ =>
+        [
+            new("/app", "Plan d'études", "compass"),
+            new("/app/cours", "Mes cours", "book"),
+            new("/app/evaluations", "Évaluations", "check"),
+            new("/app/emploi-du-temps", "Emploi du temps", "calendar"),
+            new("/app/tuteur", "Tuteur IA", "spark", "tutor-ai"),
+            new("/app/abonnement", "Abonnement", "card"),
+        ]
+    };
+
+    // Espaces que la personne gère (responsable, gestionnaire, enseignant indépendant) : lien « Mon établissement »
+    private List<MySpace> _managed = [];
+    // Établissements où la personne enseigne ou qu'elle gère : lien « Bibliothèque » (lot 8)
+    private bool _inSchool;
+    private Guid? _spacesLoadedFor;
+
+    private IEnumerable<NavItem> SpaceItems()
+    {
+        if (_inSchool) yield return new NavItem("/app/bibliotheque", "Bibliothèque", "book");
+        if (_managed.Count == 0) yield break;
+        var label = _managed.All(s => s.Type == OrganizationType.Independent) ? "Mes élèves et codes" : "Mon établissement";
+        yield return new NavItem("/app/etablissement", label, "building");
+    }
+
+    private async Task LoadSpacesAsync()
+    {
+        var me = Session.Profile;
+        if (!Session.IsAuthenticated || me is null || me.Role == UserRole.Student || _spacesLoadedFor == me.Id) return;
+        _spacesLoadedFor = me.Id;
+        var spaces = (await Spaces.MineAsync()).Value ?? [];
+        _managed = spaces.Where(s => s.CanManage).ToList();
+        _inSchool = spaces.Any(s => s.Type != OrganizationType.Independent);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static string SpaceLabel(UserRole role) => role switch
+    {
+        UserRole.Teacher => "Espace enseignant",
+        UserRole.Parent => "Espace parent",
+        _ => "Espace élève"
+    };
+
+    // Extensions MCP (harnais d'agent) : autorisations dans l'espace de travail actif, administration pour un administrateur
+    private IEnumerable<NavItem> McpItems(UserProfile me)
+    {
+        if (Session.ActiveWorkspace is null) yield break;
+        yield return new NavItem("/app/mcp", "Autorisations MCP", "key");
+        if (me.IsAdmin) yield return new NavItem("/app/admin/mcp", "Administration MCP", "key");
+    }
 
     protected override async Task OnInitializedAsync()
     {
         Session.Changed += OnSessionChanged;
         Nav.LocationChanged += OnLocationChanged;
+        _reading = ReaderPath.IsMatch(Nav.Uri);
         await Session.RestoreAsync();
+        await LoadSpacesAsync();
         if (Session.IsAuthenticated)
         {
             try
@@ -294,14 +408,22 @@
     private void OnSessionChanged()
     {
         if (!Session.IsAuthenticated)
+        {
+            _managed = [];
+            _spacesLoadedFor = null;
             Nav.NavigateTo("/login");
+        }
+        else
+            _ = LoadSpacesAsync();
         InvokeAsync(StateHasChanged);
     }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
-        if (!_open) return;
+        var reading = ReaderPath.IsMatch(e.Location);
+        if (!_open && reading == _reading) return;
         _open = false;
+        _reading = reading;
         InvokeAsync(StateHasChanged);
     }
 
@@ -311,5 +433,6 @@
     {
         Session.Changed -= OnSessionChanged;
         Nav.LocationChanged -= OnLocationChanged;
+        _sideRef?.Dispose();
     }
 }

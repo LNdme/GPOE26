@@ -1,0 +1,26 @@
+@* Anciennes adresses des cours et de l'apprentissage : tout se trouve désormais dans l'espace /app. *@
+@page "/cours"
+@page "/cours/create"
+@page "/cours/edit/{Id:guid}"
+@page "/learning"
+@page "/learning/course/{Id:guid}"
+@page "/learning/quiz/{Id:guid}"
+@inject NavigationManager Nav
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+
+    protected override void OnInitialized()
+    {
+        var path = new Uri(Nav.Uri).AbsolutePath.TrimEnd('/').ToLowerInvariant();
+        var target = path switch
+        {
+            "/cours/create" => "/app/cours/nouveau",
+            _ when path.StartsWith("/cours/edit/") => $"/app/cours/{Id}/modifier",
+            _ when path.StartsWith("/learning/course/") => $"/app/cours/{Id}",
+            _ when path.StartsWith("/learning/quiz/") => $"/app/cours/{Id}/quiz",
+            _ => "/app/cours"
+        };
+        Nav.NavigateTo(target, replace: true);
+    }
+}

@@ -22,6 +22,48 @@ public record LlmMessage(string Role, string Content, IReadOnlyList<LlmImage>? I
 public class LlmUnavailableException(string message, Exception? inner = null) : Exception(message, inner);
 
 /// <summary>
+/// Renseigné par le client après un appel : quel modèle a répondu (la liste est essayée dans l'ordre).
+/// Enregistré avec chaque réponse du tuteur et de l'assistant, pour savoir d'où vient une erreur (H11).
+/// </summary>
+public sealed class LlmCallInfo
+{
+    public string? Model { get; set; }
+
+    /// <summary>
+    /// Modèle choisi par l'utilisateur (sélecteur de l'application) : essayé en premier s'il fait partie
+    /// des modèles configurés, les autres restent en repli. Un modèle hors liste est ignoré.
+    /// </summary>
+    public string? Preferred { get; init; }
+
+    /// <summary>Tokens consommés par la réponse (renvoyés par le fournisseur ; null s'il ne les donne pas).</summary>
+    public LlmUsage? Usage { get; set; }
+}
+
+/// <summary>
+/// Tokens d'un appel : Prompt = ce qui a été envoyé au modèle (consignes, extrait du cours, historique, question),
+/// soit la place occupée dans sa fenêtre de contexte ; Completion = la réponse écrite, dont Reasoning pour la réflexion.
+/// </summary>
+public sealed record LlmUsage(int Prompt, int Completion, int? Reasoning = null, int? Cached = null)
+{
+    /// <summary>Le bloc « usage » d'une réponse compatible OpenAI, s'il est présent.</summary>
+    public static LlmUsage? From(JsonElement root)
+    {
+        if (!root.TryGetProperty("usage", out var u) || u.ValueKind != JsonValueKind.Object) return null;
+        static int? Int(JsonElement e, string name) =>
+            e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : null;
+        var prompt = Int(u, "prompt_tokens");
+        var completion = Int(u, "completion_tokens");
+        if (prompt is null && completion is null) return null;
+        var reasoning = u.TryGetProperty("completion_tokens_details", out var cd) ? Int(cd, "reasoning_tokens") : null;
+        var cached = u.TryGetProperty("prompt_tokens_details", out var pd) ? Int(pd, "cached_tokens") : null;
+        return new LlmUsage(prompt ?? 0, completion ?? 0, reasoning, cached);
+    }
+}
+
+/// <summary>Aucun fournisseur d'IA n'est configuré : réessayer ne servira à rien.</summary>
+public class LlmNotConfiguredException() : LlmUnavailableException("Aucune clé LLM n'est configurée (LLM__ApiKey).");
+
+/// <summary>
 /// Client d'un LLM compatible OpenAI (OpenRouter, DeepSeek, OpenAI, Ollama…).
 /// Configuration (section "LLM") :
 ///   BaseUrl       ex. https://openrouter.ai/api/v1
@@ -39,19 +81,29 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
     public IReadOnlyList<string> VisionModels => config["LLM:VisionModels"] is { Length: > 0 } v ? Split(v) : TextModels;
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(ApiKey) || BaseUrl.Contains("localhost");
+    private bool IsOpenRouter => BaseUrl.Contains("openrouter.ai", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Envoie la conversation et renvoie la réponse du premier modèle qui répond.
     /// Les modèles de vision sont utilisés dès qu'un message contient une image.
     /// </summary>
+    /// <param name="requireComplete">
+    /// Une réponse coupée par la limite de longueur compte comme un échec : le modèle suivant est essayé.
+    /// Pour les retranscriptions, où une fin manquante serait du contenu perdu.
+    /// </param>
+    /// <param name="reasoning">
+    /// False pour une tâche de recopie (retranscription d'une page) : un modèle « raisonnant » y dépense des milliers
+    /// de jetons de réflexion, dépasse le délai ou la limite de longueur, et la page n'est jamais lue.
+    /// </param>
     public async Task<string> CompleteAsync(IReadOnlyList<LlmMessage> messages, int maxTokens = 4000,
-        double temperature = 0.4, CancellationToken ct = default)
+        double temperature = 0.4, CancellationToken ct = default, bool requireComplete = false, bool reasoning = true,
+        LlmCallInfo? info = null)
     {
         if (!IsConfigured)
-            throw new LlmUnavailableException("Aucune clé LLM n'est configurée (LLM__ApiKey).");
+            throw new LlmNotConfiguredException();
 
         var vision = messages.Any(m => m.Images is { Count: > 0 });
-        var models = vision ? VisionModels : TextModels;
+        var models = PreferFirst(vision ? VisionModels : TextModels, info?.Preferred);
         Exception? last = null;
 
         foreach (var model in models)
@@ -61,8 +113,12 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
                 // Délai par modèle : un fournisseur gratuit saturé ne doit pas bloquer les suivants
                 using var attempt = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 attempt.CancelAfter(TimeSpan.FromSeconds(int.TryParse(config["LLM:AttemptTimeoutSeconds"], out var s) ? s : 90));
-                var reply = await CallAsync(model, messages, maxTokens, temperature, attempt.Token);
-                if (!string.IsNullOrWhiteSpace(reply)) return reply.Trim();
+                var (reply, usage) = await CallAsync(model, messages, maxTokens, temperature, requireComplete, reasoning, attempt.Token);
+                if (!string.IsNullOrWhiteSpace(reply))
+                {
+                    if (info is not null) { info.Model = model; info.Usage = usage; }
+                    return reply.Trim();
+                }
                 logger.LogWarning("Réponse vide du modèle {Model}, essai du suivant", model);
                 last = new LlmUnavailableException($"Réponse vide de {model}");
             }
@@ -80,8 +136,224 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
         throw new LlmUnavailableException("Aucun modèle n'a pu répondre. Réessayez dans un instant.", last);
     }
 
-    private async Task<string?> CallAsync(string model, IReadOnlyList<LlmMessage> messages, int maxTokens,
-        double temperature, CancellationToken ct)
+    /// <summary>
+    /// Comme <see cref="CompleteAsync"/>, mais la réponse arrive morceau par morceau, dès que le modèle l'écrit.
+    /// Le modèle suivant n'est essayé que si le précédent échoue avant d'avoir rien écrit ; une coupure
+    /// au milieu de la réponse lève <see cref="LlmUnavailableException"/> (le début déjà reçu reste à l'appelant).
+    /// </summary>
+    public async IAsyncEnumerable<string> StreamAsync(IReadOnlyList<LlmMessage> messages, int maxTokens = 4000,
+        double temperature = 0.4, LlmCallInfo? info = null,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        if (!IsConfigured)
+            throw new LlmNotConfiguredException();
+
+        var vision = messages.Any(m => m.Images is { Count: > 0 });
+        var models = PreferFirst(vision ? VisionModels : TextModels, info?.Preferred);
+        var firstToken = TimeSpan.FromSeconds(int.TryParse(config["LLM:AttemptTimeoutSeconds"], out var s) ? s : 90);
+        Exception? last = null;
+
+        foreach (var model in models)
+        {
+            // Délai jusqu'au premier mot : un fournisseur gratuit saturé ne doit pas bloquer les suivants.
+            // Une fois la réponse commencée, elle a jusqu'à quatre minutes pour se terminer.
+            using var attempt = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            attempt.CancelAfter(firstToken);
+
+            HttpResponseMessage? response = null;
+            Stream? body = null;
+            try
+            {
+                using var request = BuildRequest(model, messages, maxTokens, temperature, reasoning: true, stream: true);
+                response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, attempt.Token);
+                if (!response.IsSuccessStatusCode)
+                    throw new HttpRequestException($"{(int)response.StatusCode} {Truncate(await response.Content.ReadAsStringAsync(attempt.Token))}",
+                        null, response.StatusCode);
+                body = await response.Content.ReadAsStreamAsync(attempt.Token);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                response?.Dispose();
+                throw;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+            {
+                logger.LogWarning("Modèle {Model} indisponible : {Error}", model, ex.Message);
+                response?.Dispose();
+                last = ex;
+                continue;
+            }
+
+            using (response)
+            await using (body)
+            {
+                var reader = new StreamReader(body, Encoding.UTF8);
+                var thinking = new ThinkingFilter();
+                var wrote = false;
+                while (true)
+                {
+                    string? piece;
+                    try
+                    {
+                        var line = await reader.ReadLineAsync(attempt.Token);
+                        if (line is null) break;
+                        piece = ReadStreamLine(line, out var done, out var usage);
+                        if (usage is not null && info is not null) info.Usage = usage;   // dernier morceau du flux
+                        if (done) break;
+                    }
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex) when (ex is IOException or HttpRequestException or OperationCanceledException or JsonException)
+                    {
+                        if (wrote)
+                            throw new LlmUnavailableException("La réponse a été interrompue. Réessayez dans un instant.", ex);
+                        logger.LogWarning("Modèle {Model} interrompu avant de répondre : {Error}", model, ex.Message);
+                        last = ex;
+                        break;
+                    }
+
+                    if (thinking.Visible(piece) is not { Length: > 0 } visible) continue;
+                    if (!wrote)
+                    {
+                        wrote = true;
+                        attempt.CancelAfter(TimeSpan.FromMinutes(4));
+                        if (info is not null) info.Model = model;
+                    }
+                    yield return visible;
+                }
+
+                if (wrote) yield break;
+                if (last is null)
+                    logger.LogWarning("Réponse vide du modèle {Model}, essai du suivant", model);
+                last ??= new LlmUnavailableException($"Réponse vide de {model}");
+            }
+        }
+
+        throw new LlmUnavailableException("Aucun modèle n'a pu répondre. Réessayez dans un instant.", last);
+    }
+
+    /// <summary>
+    /// Une ligne du flux « server-sent events » d'une API compatible OpenAI : renvoie le texte ajouté (ou null),
+    /// et <paramref name="done"/> à la fin du flux. Une erreur du fournisseur dans le flux lève HttpRequestException.
+    /// </summary>
+    public static string? ReadStreamLine(string line, out bool done) => ReadStreamLine(line, out done, out _);
+
+    /// <summary>Même lecture, avec les tokens consommés quand le fournisseur les joint (dernier morceau du flux).</summary>
+    public static string? ReadStreamLine(string line, out bool done, out LlmUsage? usage)
+    {
+        done = false;
+        usage = null;
+        if (!line.StartsWith("data:", StringComparison.Ordinal)) return null;   // commentaires « : OPENROUTER PROCESSING », lignes vides
+        var data = line[5..].Trim();
+        if (data == "[DONE]") { done = true; return null; }
+        if (data.Length == 0) return null;
+
+        using var doc = JsonDocument.Parse(data);
+        if (doc.RootElement.TryGetProperty("error", out var error))
+            throw new HttpRequestException(Truncate(error.ToString()), null, HttpStatusCode.BadGateway);
+        usage = LlmUsage.From(doc.RootElement);
+        if (!doc.RootElement.TryGetProperty("choices", out var choices) || choices.GetArrayLength() == 0) return null;
+        return choices[0].TryGetProperty("delta", out var delta)
+               && delta.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.String
+            ? content.GetString()
+            : null;
+    }
+
+    /// <summary>
+    /// Au fil du flux, cache la réflexion qu'un modèle « raisonnant » écrit entre &lt;think&gt; et &lt;/think&gt;
+    /// au début de sa réponse (l'équivalent de <see cref="StripThinking"/> pour une réponse en morceaux).
+    /// </summary>
+    public sealed class ThinkingFilter
+    {
+        private readonly StringBuilder _pending = new();
+        private bool _decided, _inside;
+
+        public string? Visible(string? piece)
+        {
+            if (string.IsNullOrEmpty(piece)) return null;
+            if (_decided && !_inside) return piece;
+
+            _pending.Append(piece);
+            var text = _pending.ToString();
+            if (!_decided)
+            {
+                var start = text.TrimStart();
+                // Pas encore assez de texte pour savoir si la réponse commence par <think>
+                if (start.Length < "<think>".Length && "<think>".StartsWith(start, StringComparison.OrdinalIgnoreCase)) return null;
+                _decided = true;
+                _inside = start.StartsWith("<think>", StringComparison.OrdinalIgnoreCase);
+                if (!_inside) { _pending.Clear(); return text; }
+            }
+
+            var end = text.IndexOf("</think>", StringComparison.OrdinalIgnoreCase);
+            if (end < 0) return null;
+            _inside = false;
+            _pending.Clear();
+            var rest = text[(end + "</think>".Length)..].TrimStart();
+            return rest.Length > 0 ? rest : null;
+        }
+    }
+
+    /// <summary>Modèle de vecteurs de sens configuré (LLM:EmbeddingModel), ou null : la recherche se fait alors par les mots.</summary>
+    public string? EmbeddingModel => IsConfigured && config["LLM:EmbeddingModel"] is { Length: > 0 } model ? model : null;
+
+    /// <summary>Vecteur de sens d'un texte (réglage LLM:EmbeddingModel). Null si aucun modèle n'est configuré ou en cas d'échec.</summary>
+    public async Task<float[]?> EmbedAsync(string text, CancellationToken ct = default) =>
+        (await EmbedManyAsync([text], ct))?[0];
+
+    /// <summary>
+    /// Vecteurs de sens de plusieurs textes, dans l'ordre, par lots de 32 (une requête par lot).
+    /// Null si aucun modèle n'est configuré, ou si un lot échoue.
+    /// </summary>
+    public async Task<float[][]?> EmbedManyAsync(IReadOnlyList<string> texts, CancellationToken ct = default)
+    {
+        if (EmbeddingModel is not { } model || texts.Count == 0) return null;
+        var vectors = new float[texts.Count][];
+        try
+        {
+            for (var start = 0; start < texts.Count; start += 32)
+            {
+                var batch = texts.Skip(start).Take(32).ToList();
+                // Un seul texte part tel quel (comme avant) : un fournisseur qui refuserait une liste ne casse pas la mémoire
+                JsonNode input = batch.Count == 1
+                    ? JsonValue.Create(batch[0])!
+                    : new JsonArray(batch.Select(t => (JsonNode)JsonValue.Create(t)!).ToArray());
+                using var request = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/embeddings")
+                {
+                    Content = new StringContent(new JsonObject { ["model"] = model, ["input"] = input }.ToJsonString(), Encoding.UTF8, "application/json")
+                };
+                if (!string.IsNullOrWhiteSpace(ApiKey))
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ApiKey);
+                using var response = await http.SendAsync(request, ct);
+                if (!response.IsSuccessStatusCode)
+                {
+                    logger.LogWarning("Embedding indisponible : {Status}", (int)response.StatusCode);
+                    return null;
+                }
+                using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+                var data = doc.RootElement.GetProperty("data").EnumerateArray().ToList();
+                if (data.Count != batch.Count) return null;
+                for (var k = 0; k < data.Count; k++)
+                {
+                    // « index » donne la place du texte dans le lot ; absent, l'ordre de la réponse fait foi
+                    var index = data[k].TryGetProperty("index", out var i) && i.ValueKind == JsonValueKind.Number ? i.GetInt32() : k;
+                    vectors[start + index] = data[k].GetProperty("embedding").EnumerateArray().Select(v => v.GetSingle()).ToArray();
+                }
+            }
+            return vectors.Any(v => v is null) ? null : vectors;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or KeyNotFoundException
+                                       or InvalidOperationException or IndexOutOfRangeException or ArgumentOutOfRangeException)
+        {
+            logger.LogWarning("Embedding indisponible : {Error}", ex.Message);
+            return null;
+        }
+    }
+
+    private HttpRequestMessage BuildRequest(string model, IReadOnlyList<LlmMessage> messages, int maxTokens,
+        double temperature, bool reasoning, bool stream)
     {
         var body = new JsonObject
         {
@@ -90,8 +362,17 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
             ["temperature"] = temperature,
             ["messages"] = new JsonArray(messages.Select(ToJson).ToArray())
         };
+        if (stream)
+        {
+            body["stream"] = true;
+            // Les tokens consommés arrivent dans le dernier morceau du flux (option standard des API compatibles OpenAI)
+            body["stream_options"] = new JsonObject { ["include_usage"] = true };
+        }
+        // Paramètre propre à OpenRouter : d'autres fournisseurs compatibles OpenAI refuseraient un champ inconnu
+        if (!reasoning && IsOpenRouter)
+            body["reasoning"] = new JsonObject { ["enabled"] = false };
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/chat/completions")
+        var request = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/chat/completions")
         {
             Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")
         };
@@ -99,7 +380,13 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ApiKey);
         // En-têtes recommandés par OpenRouter (ignorés par les autres fournisseurs)
         request.Headers.TryAddWithoutValidation("X-Title", "GPOE26");
+        return request;
+    }
 
+    private async Task<(string? Reply, LlmUsage? Usage)> CallAsync(string model, IReadOnlyList<LlmMessage> messages, int maxTokens,
+        double temperature, bool requireComplete, bool reasoning, CancellationToken ct)
+    {
+        using var request = BuildRequest(model, messages, maxTokens, temperature, reasoning, stream: false);
         using var response = await http.SendAsync(request, ct);
         var json = await response.Content.ReadAsStringAsync(ct);
         if (!response.IsSuccessStatusCode)
@@ -110,9 +397,13 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
         if (doc.RootElement.TryGetProperty("error", out var error))
             throw new HttpRequestException(Truncate(error.ToString()), null, HttpStatusCode.BadGateway);
 
-        var message = doc.RootElement.GetProperty("choices")[0].GetProperty("message");
+        var choice = doc.RootElement.GetProperty("choices")[0];
+        if (requireComplete && choice.TryGetProperty("finish_reason", out var finish) && finish.ValueKind == JsonValueKind.String && finish.GetString() == "length")
+            throw new InvalidOperationException("Réponse coupée par la limite de longueur");
+
+        var message = choice.GetProperty("message");
         var content = message.TryGetProperty("content", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString() : null;
-        return StripThinking(content);
+        return (StripThinking(content), LlmUsage.From(doc.RootElement));
     }
 
     private static JsonNode ToJson(LlmMessage m)
@@ -130,12 +421,61 @@ public class LlmClient(HttpClient http, IConfiguration config, ILogger<LlmClient
         return new JsonObject { ["role"] = m.Role, ["content"] = parts };
     }
 
+    private static readonly SemaphoreSlim ContextLock = new(1, 1);
+    private static (DateTime At, IReadOnlyDictionary<string, int> Lengths)? _contextLengths;
+
+    /// <summary>
+    /// Taille de la fenêtre de contexte de chaque modèle retenu (en tokens), lue dans la liste publique des modèles
+    /// d'OpenRouter et gardée six heures. Vide pour un autre fournisseur ou si la liste est injoignable.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<string, int>> ContextLengthsAsync(CancellationToken ct = default)
+    {
+        if (!IsOpenRouter) return new Dictionary<string, int>();
+        if (_contextLengths is { } cached && DateTime.UtcNow - cached.At < TimeSpan.FromHours(6)) return cached.Lengths;
+
+        await ContextLock.WaitAsync(ct);
+        try
+        {
+            if (_contextLengths is { } again && DateTime.UtcNow - again.At < TimeSpan.FromHours(6)) return again.Lengths;
+            using var attempt = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            attempt.CancelAfter(TimeSpan.FromSeconds(10));
+            using var response = await http.GetAsync($"{BaseUrl}/models", attempt.Token);
+            response.EnsureSuccessStatusCode();
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(attempt.Token));
+            var wanted = TextModels.Concat(VisionModels).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var lengths = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var m in doc.RootElement.GetProperty("data").EnumerateArray())
+                if (m.TryGetProperty("id", out var id) && id.GetString() is { } name && wanted.Contains(name)
+                    && m.TryGetProperty("context_length", out var length) && length.ValueKind == JsonValueKind.Number)
+                    lengths[name] = length.GetInt32();
+            _contextLengths = (DateTime.UtcNow, lengths);
+            return lengths;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            logger.LogWarning("Liste des modèles indisponible : {Error}", ex.Message);
+            return new Dictionary<string, int>();
+        }
+        finally { ContextLock.Release(); }
+    }
+
     /// <summary>Certains modèles « raisonnants » placent leur réflexion dans la réponse : on ne garde que la réponse.</summary>
     public static string? StripThinking(string? content)
     {
         if (content is null) return null;
         var end = content.LastIndexOf("</think>", StringComparison.OrdinalIgnoreCase);
         return end >= 0 ? content[(end + "</think>".Length)..] : content;
+    }
+
+    /// <summary>
+    /// Place le modèle préféré en tête de liste, s'il y figure déjà ; sinon la liste reste telle quelle
+    /// (l'utilisateur ne peut pas faire appeler un modèle que le serveur n'a pas retenu).
+    /// </summary>
+    public static IReadOnlyList<string> PreferFirst(IReadOnlyList<string> models, string? preferred)
+    {
+        if (string.IsNullOrWhiteSpace(preferred)) return models;
+        var match = models.FirstOrDefault(m => string.Equals(m, preferred.Trim(), StringComparison.OrdinalIgnoreCase));
+        return match is null ? models : [match, .. models.Where(m => !ReferenceEquals(m, match))];
     }
 
     private static IReadOnlyList<string> Split(string value) =>
