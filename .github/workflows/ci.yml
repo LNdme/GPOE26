@@ -46,4 +46,4 @@ jobs:
         run: dotnet build GPOE26.slnx --no-restore
 
       - name: Test
-        run: dotnet test GPOE26.slnx --no-build --no-restore
+        run: dotnet test GPOE26.slnx --no-build --no-restore --filter "Category!=Integration"

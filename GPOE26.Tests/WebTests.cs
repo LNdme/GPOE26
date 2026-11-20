@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 
 namespace GPOE26.Tests;
 
+[Trait("Category", "Integration")]
 public class WebTests
 {
     private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(180);
