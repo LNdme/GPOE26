@@ -14,6 +14,7 @@ public static class EvaluationSchema
         @"CREATE TABLE IF NOT EXISTS ""Assessments"" (
             ""Id"" uuid NOT NULL,
             ""TeacherId"" uuid NOT NULL,
+            ""WorkspaceId"" uuid,
             ""Title"" character varying(200) NOT NULL,
             ""Description"" text,
             ""Kind"" text NOT NULL,
@@ -36,6 +37,8 @@ public static class EvaluationSchema
             CONSTRAINT ""PK_Assessments"" PRIMARY KEY (""Id"")
         )",
         @"CREATE INDEX IF NOT EXISTS ""IX_Assessments_TeacherId"" ON ""Assessments"" (""TeacherId"")",
+        @"ALTER TABLE ""Assessments"" ADD COLUMN IF NOT EXISTS ""WorkspaceId"" uuid",
+        @"CREATE INDEX IF NOT EXISTS ""IX_Assessments_WorkspaceId"" ON ""Assessments"" (""WorkspaceId"")",
         @"CREATE INDEX IF NOT EXISTS ""IX_Assessments_ClassroomIds"" ON ""Assessments"" USING gin (""ClassroomIds"")",
 
         @"CREATE TABLE IF NOT EXISTS ""AssessmentQuestions"" (

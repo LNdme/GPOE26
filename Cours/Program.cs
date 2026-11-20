@@ -8,6 +8,7 @@ using Cours.Helpers;
 using Cours.Model;
 using Cours.Service;
 using GPOE26.ServiceDefaults.Llm;
+using GPOE26.Workspaces.Abstractions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -78,6 +79,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 builder.Services.AddControllers();
+builder.Services.AddWorkspaceContextValidation(new Uri(
+    builder.Configuration["Services:User"] ?? "http://localhost:5197"));
 
 var app = builder.Build();
 
@@ -124,6 +127,10 @@ using (var scope = app.Services.CreateScope())
         @"ALTER TABLE ""Courses"" ADD COLUMN IF NOT EXISTS ""ClassroomIds"" uuid[] NOT NULL DEFAULT ARRAY[]::uuid[]");
     await db.Database.ExecuteSqlRawAsync(
         @"ALTER TABLE ""Courses"" ADD COLUMN IF NOT EXISTS ""PublishedAt"" timestamp with time zone");
+    await db.Database.ExecuteSqlRawAsync(
+        @"ALTER TABLE ""Courses"" ADD COLUMN IF NOT EXISTS ""WorkspaceId"" uuid");
+    await db.Database.ExecuteSqlRawAsync(
+        @"CREATE INDEX IF NOT EXISTS ""IX_Courses_WorkspaceId"" ON ""Courses"" (""WorkspaceId"")");
     await db.Database.ExecuteSqlRawAsync(
         @"CREATE INDEX IF NOT EXISTS ""IX_Courses_ClassroomIds"" ON ""Courses"" USING gin (""ClassroomIds"")");
     await db.Database.ExecuteSqlRawAsync(
@@ -181,7 +188,8 @@ app.UseStaticFiles();
 // ─── Groupe /cours ────────────────────────────────────────────────────────────
 var cours = app.MapGroup("/cours")
     .WithTags("Cours")
-    .RequireAuthorization();
+    .RequireAuthorization()
+    .RequireWorkspaceContext();
 
 // ── GET /cours ────────────────────────────────────────────────────────────────
 cours.MapGet("", async (
@@ -192,7 +200,8 @@ cours.MapGet("", async (
     var ownerId = ClaimsHelper.GetUserId(principal);
     if (ownerId is null) return Results.Unauthorized();
 
-    var query = db.Courses.Where(c => c.OwnerId == ownerId);
+    var workspace = principal.GetWorkspaceContext();
+    var query = db.Courses.OwnedByInWorkspace(ownerId.Value, workspace);
 
     if (!string.IsNullOrWhiteSpace(subject))
         query = query.Where(c => c.Subject == subject);
@@ -254,12 +263,13 @@ cours.MapGet("/{id:guid}", async (Guid id, ClaimsPrincipal principal, CoursConte
 {
     var userId = ClaimsHelper.GetUserId(principal);
     if (userId is null) return Results.Unauthorized();
+    var workspace = principal.GetWorkspaceContext();
 
     var course = await db.Courses
         .Include(c => c.Sections.OrderBy(s => s.Order))
         .FirstOrDefaultAsync(c => c.Id == id);
 
-    return !await CanReadAsync(course, userId.Value, users)
+    return !await CanReadAsync(course, userId.Value, users, workspace)
         ? Results.NotFound(new { message = "Cours introuvable." })
         : Results.Ok(new CourseDto(course!));
 })
@@ -274,7 +284,7 @@ cours.MapGet("/{id:guid}/feedback", async (Guid id, ClaimsPrincipal principal, C
     var userId = ClaimsHelper.GetUserId(principal);
     if (userId is null) return Results.Unauthorized();
     var course = await db.Courses.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id);
-    if (!await CanReadAsync(course, userId.Value, users)) return Results.NotFound(new { message = "Cours introuvable." });
+    if (!await CanReadAsync(course, userId.Value, users, principal.GetWorkspaceContext())) return Results.NotFound(new { message = "Cours introuvable." });
     return Results.Ok(await FeedbackAsync(db, course!, userId.Value));
 })
 .WithSummary("Avis « utile » : le mien, et les totaux pour l'auteur")
@@ -285,7 +295,7 @@ cours.MapPut("/{id:guid}/feedback", async (Guid id, CourseFeedbackRequest req, C
     var userId = ClaimsHelper.GetUserId(principal);
     if (userId is null) return Results.Unauthorized();
     var course = await db.Courses.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id);
-    if (!await CanReadAsync(course, userId.Value, users)) return Results.NotFound(new { message = "Cours introuvable." });
+    if (!await CanReadAsync(course, userId.Value, users, principal.GetWorkspaceContext())) return Results.NotFound(new { message = "Cours introuvable." });
     if (course!.OwnerId == userId) return Results.BadRequest(new { message = "L'auteur d'un cours ne donne pas d'avis sur son propre cours." });
 
     var feedback = await db.Feedback.FindAsync(id, userId.Value);
@@ -315,6 +325,13 @@ cours.MapPost("", async (
 {
     var ownerId = ClaimsHelper.GetUserId(principal);
     if (ownerId is null) return Results.Unauthorized();
+    var workspace = principal.GetWorkspaceContext();
+    if (!workspace.HasAnyRole(
+            WorkspaceRoles.Owner,
+            WorkspaceRoles.Admin,
+            WorkspaceRoles.Guardian,
+            WorkspaceRoles.Instructor))
+        return Results.Forbid();
 
     var course = new Course
     {
@@ -322,6 +339,7 @@ cours.MapPost("", async (
         Subject = req.Subject.Length > 100 ? req.Subject[..100] : req.Subject,
         Description = req.Description,
         OwnerId = ownerId.Value,
+        WorkspaceId = workspace.WorkspaceId,
         ContentType = ContentType.Text,
     };
 
@@ -364,10 +382,13 @@ cours.MapPost("/{id:guid}/upload", async (
 {
     var ownerId = ClaimsHelper.GetUserId(principal);
     if (ownerId is null) return Results.Unauthorized();
+    var workspace = principal.GetWorkspaceContext();
+    if (!workspace.CanManageCourses()) return Results.Forbid();
 
     var course = await db.Courses
         .Include(c => c.Sections)
-        .FirstOrDefaultAsync(c => c.Id == id && c.OwnerId == ownerId);
+        .OwnedByInWorkspace(ownerId.Value, workspace)
+        .FirstOrDefaultAsync(c => c.Id == id);
 
     if (course is null)
         return Results.NotFound(new { message = "Cours introuvable." });
@@ -580,10 +601,13 @@ cours.MapPut("/{id:guid}", async (
 {
     var ownerId = ClaimsHelper.GetUserId(principal);
     if (ownerId is null) return Results.Unauthorized();
+    var workspace = principal.GetWorkspaceContext();
+    if (!workspace.CanManageCourses()) return Results.Forbid();
 
     var course = await db.Courses
         .Include(c => c.Sections)
-        .FirstOrDefaultAsync(c => c.Id == id && c.OwnerId == ownerId);
+        .OwnedByInWorkspace(ownerId.Value, workspace)
+        .FirstOrDefaultAsync(c => c.Id == id);
 
     if (course is null)
         return Results.NotFound(new { message = "Cours introuvable." });
@@ -636,10 +660,13 @@ cours.MapPatch("/{id:guid}", async (
 {
     var ownerId = ClaimsHelper.GetUserId(principal);
     if (ownerId is null) return Results.Unauthorized();
+    var workspace = principal.GetWorkspaceContext();
+    if (!workspace.CanManageCourses()) return Results.Forbid();
 
     var course = await db.Courses
         .Include(c => c.Sections)
-        .FirstOrDefaultAsync(c => c.Id == id && c.OwnerId == ownerId);
+        .OwnedByInWorkspace(ownerId.Value, workspace)
+        .FirstOrDefaultAsync(c => c.Id == id);
 
     if (course is null)
         return Results.NotFound(new { message = "Cours introuvable." });
@@ -663,8 +690,11 @@ cours.MapPut("/{id:guid}/sharing", async (Guid id, ShareCourseRequest req, Claim
 {
     var ownerId = ClaimsHelper.GetUserId(principal);
     if (ownerId is null) return Results.Unauthorized();
+    var workspace = principal.GetWorkspaceContext();
+    if (!workspace.CanManageCourses()) return Results.Forbid();
 
-    var course = await db.Courses.FirstOrDefaultAsync(c => c.Id == id && c.OwnerId == ownerId);
+    var course = await db.Courses.OwnedByInWorkspace(ownerId.Value, workspace)
+        .FirstOrDefaultAsync(c => c.Id == id);
     if (course is null) return Results.NotFound(new { message = "Cours introuvable." });
 
     var classroomIds = req.ClassroomIds?.Distinct().ToList() ?? new();
@@ -699,9 +729,11 @@ cours.MapDelete("/{id:guid}", async (
 {
     var ownerId = ClaimsHelper.GetUserId(principal);
     if (ownerId is null) return Results.Unauthorized();
+    var workspace = principal.GetWorkspaceContext();
+    if (!workspace.CanManageCourses()) return Results.Forbid();
 
-    var course = await db.Courses.FirstOrDefaultAsync(
-        c => c.Id == id && c.OwnerId == ownerId);
+    var course = await db.Courses.OwnedByInWorkspace(ownerId.Value, workspace)
+        .FirstOrDefaultAsync(c => c.Id == id);
 
     if (course is null)
         return Results.NotFound(new { message = "Cours introuvable." });
@@ -744,9 +776,10 @@ app.Run();
 
 // L'auteur, un membre d'une classe avec laquelle le cours est publié, ou un enseignant ou gestionnaire
 // d'un établissement dans la bibliothèque duquel il est déposé
-static async Task<bool> CanReadAsync(Course? course, Guid userId, UserDirectoryClient users) =>
+// L'auteur dans l'espace de travail du cours, un membre d'une classe où il est publié, ou la bibliothèque de l'établissement
+static async Task<bool> CanReadAsync(Course? course, Guid userId, UserDirectoryClient users, WorkspaceTokenContext workspace) =>
     course is not null
-    && (course.OwnerId == userId
+    && ((course.OwnerId == userId && course.IsInWorkspace(workspace))
         || (course.Status == CourseStatus.Published
             && course.ClassroomIds.Count > 0
             && (await users.MyClassroomIdsAsync()).Overlaps(course.ClassroomIds))

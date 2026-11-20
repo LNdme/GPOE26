@@ -5,6 +5,7 @@ using User.DTOs;
 using User.Helper;
 using User.Model;
 using User.Service;
+using GPOE26.Workspaces.Abstractions;
 
 namespace User.Endpoints;
 
@@ -13,11 +14,20 @@ public static class ParentEndpoints
     public static void MapParentEndpoints(this IEndpointRouteBuilder app)
     {
         // ═══ Côté parent ═══════════════════════════════════════════════════════════
-        var parents = app.MapGroup("/parents/children").WithTags("Parents").RequireAuthorization(Policies.Parent);
+        var parents = app.MapGroup("/parents/children")
+            .WithTags("Parents")
+            .RequireAuthorization()
+            .RequireCurrentWorkspaceMembership();
 
         // ── POST /parents/children/link ───────────────────────────────────────────
         // Le parent saisit le code personnel de l'élève → demande en attente de l'accord de l'élève.
-        parents.MapPost("/link", async (LinkChildRequest req, ClaimsPrincipal principal, UserContext db, SubscriptionService subs) =>
+        parents.MapPost("/link", async (
+            LinkChildRequest req,
+            ClaimsPrincipal principal,
+            UserContext db,
+            SubscriptionService subs,
+            WorkspaceService workspaces,
+            CancellationToken cancellationToken) =>
         {
             var parentId = principal.GetUserId()!.Value;
             var code = CodeGenerator.Normalize(req.Code);
@@ -36,10 +46,15 @@ public static class ParentEndpoints
                 link.Status = LinkStatus.Pending;
                 link.RespondedAt = null;
             }
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(cancellationToken);
+            await workspaces.EnsureFamilyWorkspaceAsync(
+                parentId,
+                link.Status == LinkStatus.Active ? child.Id : null,
+                cancellationToken);
 
             return Results.Ok(await ToChildDtoAsync(link, child, subs));
         })
+        .RequireUserWorkspaceKindAndRoles(WorkspaceKind.Family, WorkspaceRole.Guardian)
         .WithSummary("Rattacher un enfant avec son code (en attente de son accord)")
         .Produces<ChildLinkDto>()
         .Produces(404);
@@ -47,7 +62,13 @@ public static class ParentEndpoints
         // ── POST /parents/children ────────────────────────────────────────────────
         // Le parent crée le compte de son enfant : le lien est actif tout de suite
         // et l'enfant reçoit une place de l'abonnement familial s'il en reste.
-        parents.MapPost("", async (CreateChildRequest req, ClaimsPrincipal principal, UserContext db, SubscriptionService subs) =>
+        parents.MapPost("", async (
+            CreateChildRequest req,
+            ClaimsPrincipal principal,
+            UserContext db,
+            SubscriptionService subs,
+            WorkspaceService workspaces,
+            CancellationToken cancellationToken) =>
         {
             var parentId = principal.GetUserId()!.Value;
             if (await db.AppUsers.AnyAsync(u => u.Email == req.Email.ToLower()))
@@ -80,11 +101,14 @@ public static class ParentEndpoints
             };
             db.AppUsers.Add(child);
             db.ParentChildLinks.Add(link);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(cancellationToken);
+            await workspaces.EnsurePersonalWorkspaceAsync(child.Id, cancellationToken);
+            await workspaces.EnsureFamilyWorkspaceAsync(parentId, child.Id, cancellationToken);
 
             await subs.TryAssignFamilySeatAsync(parentId, child);
             return Results.Created($"/parents/children/{link.Id}", await ToChildDtoAsync(link, child, subs));
         })
+        .RequireUserWorkspaceKindAndRoles(WorkspaceKind.Family, WorkspaceRole.Guardian)
         .WithSummary("Créer le compte de son enfant")
         .Produces<ChildLinkDto>(201)
         .Produces(409);
@@ -104,22 +128,37 @@ public static class ParentEndpoints
                 result.Add(await ToChildDtoAsync(r.Link, r.Child, subs));
             return Results.Ok(result);
         })
+        .RequireUserWorkspaceKindAndRoles(WorkspaceKind.Family, WorkspaceRole.Guardian)
         .WithSummary("Mes enfants")
         .Produces<List<ChildLinkDto>>();
 
         // ── DELETE /parents/children/{linkId} ─────────────────────────────────────
-        parents.MapDelete("/{linkId:guid}", async (Guid linkId, ClaimsPrincipal principal, UserContext db) =>
+        parents.MapDelete("/{linkId:guid}", async (
+            Guid linkId,
+            ClaimsPrincipal principal,
+            UserContext db,
+            WorkspaceService workspaces,
+            CancellationToken cancellationToken) =>
         {
             var parentId = principal.GetUserId();
-            var deleted = await db.ParentChildLinks
-                .Where(l => l.Id == linkId && l.ParentId == parentId)
-                .ExecuteDeleteAsync();
-            return deleted == 0 ? Results.NotFound() : Results.NoContent();
+            var link = await db.ParentChildLinks.FirstOrDefaultAsync(
+                item => item.Id == linkId && item.ParentId == parentId,
+                cancellationToken);
+            if (link is null) return Results.NotFound();
+
+            db.ParentChildLinks.Remove(link);
+            await db.SaveChangesAsync(cancellationToken);
+            await workspaces.RemoveFamilyMembershipAsync(parentId!.Value, link.ChildId, cancellationToken);
+            return Results.NoContent();
         })
+        .RequireUserWorkspaceKindAndRoles(WorkspaceKind.Family, WorkspaceRole.Guardian)
         .WithSummary("Retirer le rattachement d'un enfant");
 
         // ═══ Côté élève ════════════════════════════════════════════════════════════
-        var mine = app.MapGroup("/me/parents").WithTags("Parents").RequireAuthorization(Policies.Student);
+        var mine = app.MapGroup("/me/parents")
+            .WithTags("Parents")
+            .RequireAuthorization()
+            .RequireCurrentWorkspaceMembership();
 
         // ── GET /me/parents ───────────────────────────────────────────────────────
         mine.MapGet("", async (ClaimsPrincipal principal, UserContext db) =>
@@ -132,12 +171,20 @@ public static class ParentEndpoints
                 .ToListAsync();
             return Results.Ok(links);
         })
+        .RequireUserWorkspaceRoles(WorkspaceRole.Learner)
         .WithSummary("Mes parents rattachés et demandes en attente")
         .Produces<List<ParentLinkDto>>();
 
         // ── POST /me/parents/{linkId}/approve | reject ────────────────────────────
         mine.MapPost("/{linkId:guid}/{decision:regex(^(approve|reject)$)}",
-            async (Guid linkId, string decision, ClaimsPrincipal principal, UserContext db, SubscriptionService subs) =>
+            async (
+                Guid linkId,
+                string decision,
+                ClaimsPrincipal principal,
+                UserContext db,
+                SubscriptionService subs,
+                WorkspaceService workspaces,
+                CancellationToken cancellationToken) =>
         {
             var child = await db.CurrentUserAsync(principal);
             if (child is null) return Results.Unauthorized();
@@ -149,12 +196,16 @@ public static class ParentEndpoints
 
             link.Status = decision == "approve" ? LinkStatus.Active : LinkStatus.Rejected;
             link.RespondedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(cancellationToken);
 
             if (link.Status == LinkStatus.Active)
+            {
+                await workspaces.EnsureFamilyWorkspaceAsync(link.ParentId, child.Id, cancellationToken);
                 await subs.TryAssignFamilySeatAsync(link.ParentId, child);
+            }
             return Results.NoContent();
         })
+        .RequireUserWorkspaceRoles(WorkspaceRole.Learner)
         .WithSummary("Accepter ou refuser la demande d'un parent");
     }
 

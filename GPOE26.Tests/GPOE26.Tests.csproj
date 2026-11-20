@@ -10,6 +10,8 @@
 
 
   <ItemGroup>
+    <PackageReference Include="Npgsql" Version="10.0.3" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.14" />
     <PackageReference Include="Aspire.Hosting.Testing" Version="13.6.5" />
     <PackageReference Include="coverlet.collector" Version="10.1.0">
       <PrivateAssets>all</PrivateAssets>
@@ -25,6 +27,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\GPOE26.AppHost\GPOE26.AppHost.csproj" />
+    <ProjectReference Include="..\Chat\Chat.csproj" />
+    <ProjectReference Include="..\GPOE26.Agent.Runtime.Maf\GPOE26.Agent.Runtime.Maf.csproj" />
+    <ProjectReference Include="..\GPOE26.Agent.Runtime.Mcp\GPOE26.Agent.Runtime.Mcp.csproj" />
+    <ProjectReference Include="..\User\User.csproj" />
+    <ProjectReference Include="..\GPOE26.Workspaces.Abstractions\GPOE26.Workspaces.Abstractions.csproj" />
   </ItemGroup>
 
   <ItemGroup>

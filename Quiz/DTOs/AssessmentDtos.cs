@@ -67,7 +67,7 @@ public record AssessmentQuestionDto(
 }
 
 public record AssessmentDto(
-    Guid Id, string Title, string? Description, AssessmentKind Kind, AssessmentStatus Status,
+    Guid Id, Guid? WorkspaceId, string Title, string? Description, AssessmentKind Kind, AssessmentStatus Status,
     string? Subject, Guid? CourseId, List<Guid> ClassroomIds,
     DateTime? OpensAt, DateTime? DueAt, int? DurationMinutes, int MaxAttempts,
     bool Shuffle, bool ShowCorrection, bool AllowOffline, bool AiAssistedGrading, int ScaleTo,
@@ -75,7 +75,7 @@ public record AssessmentDto(
     List<AssessmentQuestionDto>? Questions, List<Guid>? LibraryOrganizationIds = null, Guid? SourceAssessmentId = null)
 {
     public AssessmentDto(Assessment a, bool withQuestions) : this(
-        a.Id, a.Title, a.Description, a.Kind, a.Status, a.Subject, a.CourseId, a.ClassroomIds,
+        a.Id, a.WorkspaceId, a.Title, a.Description, a.Kind, a.Status, a.Subject, a.CourseId, a.ClassroomIds,
         a.OpensAt, a.DueAt, a.DurationMinutes, a.MaxAttempts,
         a.Shuffle, a.ShowCorrection, a.AllowOffline, a.AiAssistedGrading, a.ScaleTo,
         a.MaxScore, a.Questions.Count, a.CreatedAt, a.UpdatedAt, a.PublishedAt,

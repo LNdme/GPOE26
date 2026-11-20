@@ -9,6 +9,7 @@ public class TutorConversation
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid UserId { get; set; }
+    public Guid? WorkspaceId { get; set; }
     public Guid CourseId { get; set; }
 
     /// <summary>Copie du titre et de la matière : la liste des discussions s'affiche sans interroger le service Cours</summary>
@@ -113,7 +114,8 @@ public record ConversationSummaryDto(Guid Id, Guid CourseId, string CourseTitle,
 public record ConversationDto(Guid? Id, Guid CourseId, string? CourseTitle, List<TutorMessageDto> Messages);
 
 /// <param name="Model">Modèle choisi dans le sélecteur ; null ou absent : ordre du serveur (« Automatique »).</param>
-public record AskTutorRequest(string? Message, Guid? ImageId, string? Model = null);
+/// <param name="ProfileId">Profil d'agent demandé (routage des profils, harnais d'agent).</param>
+public record AskTutorRequest(string? Message, Guid? ImageId, string? Model = null, string? ProfileId = null);
 
 /// <summary>Modèles proposés par le serveur, dans leur ordre de repli : texte, et lecture de photos.</summary>
 /// <param name="Context">Taille de la fenêtre de contexte de chaque modèle, en tokens (quand le fournisseur la publie).</param>

@@ -1,0 +1,239 @@
+@page "/app/admin/mcp"
+@layout AppLayout
+@inherits AppPage
+@inject IAdminMcpApi AdminMcp
+
+<PageTitle>Administration MCP — GPOE26</PageTitle>
+
+<div class="ga-page narrow">
+    <div class="ga-head">
+        <div>
+            <h1>Administration MCP</h1>
+            <p>Enregistre une configuration, puis approuve son utilisation sous les restrictions Docker configurées.</p>
+        </div>
+    </div>
+
+    <Alert Message="@_error" />
+    <Alert Message="@_info" Kind="success" />
+
+    @if (!Ready || _loading)
+    {
+        <Loading />
+    }
+    else
+    {
+        <section class="ga-card">
+            <h2 class="ga-h3">Nouvelle configuration</h2>
+            <div class="ga-stack">
+                <label>
+                    Utilisateur cible
+                    <input class="ga-input" @bind="_userId" placeholder="UUID utilisateur" />
+                </label>
+                <label>
+                    Workspace
+                    <input class="ga-input" @bind="_workspaceId" placeholder="UUID workspace" />
+                </label>
+                <label>
+                    Identifiant de l'extension
+                    <input class="ga-input" @bind="_extensionId" placeholder="research-mcp" />
+                </label>
+                <label>
+                    Image OCI épinglée
+                    <input class="ga-input" @bind="_imageReference" placeholder="registry.example/image@sha256:..." />
+                </label>
+                <label>
+                    Arguments Docker de l'entrée MCP
+                    <input class="ga-input" @bind="_arguments" placeholder="Séparés par des espaces" />
+                </label>
+                <label>
+                    Variables d'environnement
+                    <textarea class="ga-input" rows="4" @bind="_environmentVariables"
+                              placeholder="RESEARCH_API_KEY=valeur&#10;SOURCE_URL=https://..."></textarea>
+                </label>
+                <button type="button" class="ga-btn" disabled="@_busy || !CanConfigure" @onclick="ConfigureAsync">
+                    @(_busy ? "Enregistrement…" : "Enregistrer sans vérification")
+                </button>
+            </div>
+        </section>
+
+        <section class="ga-card">
+            <div class="ga-row between">
+                <h2 class="ga-h3">Configurations enregistrées</h2>
+                <button type="button" class="ga-btn secondary" disabled="@_busy" @onclick="RefreshAsync">Actualiser</button>
+            </div>
+
+            @if (_configurations.Count == 0)
+            {
+                <p class="ga-muted">Aucune configuration MCP enregistrée.</p>
+            }
+            else
+            {
+                <div class="ga-list">
+                    @foreach (var configuration in _configurations)
+                    {
+                        <div class="ga-stack" style="gap:8px">
+                            <div class="ga-row between">
+                                <strong>@configuration.ExtensionId</strong>
+                                <span class="ga-tag @(configuration.IsVerified && configuration.IsSandboxed ? "green" : "amber")">
+                                    @(configuration.IsVerified && configuration.IsSandboxed ? "APPROUVÉE" : "NON APPROUVÉE")
+                                </span>
+                            </div>
+                            <span class="ga-small ga-muted">
+                                Utilisateur @configuration.UserId · Workspace @configuration.WorkspaceId
+                            </span>
+                            <span class="ga-small ga-muted">Mise à jour @configuration.UpdatedAt.ToLocalTime().ToString("g")</span>
+                            <div class="ga-row">
+                                @if (!configuration.IsVerified)
+                                {
+                                    <button type="button" class="ga-btn"
+                                            disabled="@_busy"
+                                            @onclick="() => VerifyAsync(configuration)">
+                                        Approuver pour le sandbox
+                                    </button>
+                                }
+                                <button type="button" class="ga-btn secondary"
+                                        disabled="@_busy"
+                                        @onclick="() => RevokeAsync(configuration)">
+                                    Retirer
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private bool _loading = true;
+    private bool _busy;
+    private string? _error;
+    private string? _info;
+    private string _userId = "";
+    private string _workspaceId = "";
+    private string _extensionId = "";
+    private string _imageReference = "";
+    private string _arguments = "";
+    private string _environmentVariables = "";
+    private List<McpProcessConfigurationSummary> _configurations = [];
+
+    protected override WorkspaceRole[]? AllowedWorkspaceRoles => null;
+
+    protected override async Task LoadAsync()
+    {
+        if (Session.Profile?.IsAdmin != true)   // administrer est un droit, pas un rôle (audit B1)
+        {
+            _error = "Cette page est réservée aux administrateurs de la plateforme.";
+            _loading = false;
+            return;
+        }
+        await LoadConfigurationsAsync();
+    }
+
+    private bool CanConfigure =>
+        Guid.TryParse(_userId, out _) &&
+        Guid.TryParse(_workspaceId, out _) &&
+        !string.IsNullOrWhiteSpace(_extensionId) &&
+        !string.IsNullOrWhiteSpace(_imageReference);
+
+    private async Task LoadConfigurationsAsync()
+    {
+        _loading = true;
+        var result = await AdminMcp.ListAsync();
+        _loading = false;
+        if (!result.Ok || result.Value is null)
+        {
+            _error = result.Error ?? "Impossible de charger les configurations MCP.";
+            return;
+        }
+        _configurations = result.Value;
+    }
+
+    private async Task RefreshAsync()
+    {
+        await LoadConfigurationsAsync();
+    }
+
+    private async Task ConfigureAsync()
+    {
+        if (!Guid.TryParse(_userId, out var userId) ||
+            !Guid.TryParse(_workspaceId, out var workspaceId) ||
+            string.IsNullOrWhiteSpace(_extensionId) ||
+            string.IsNullOrWhiteSpace(_imageReference))
+            return;
+
+        _busy = true;
+        _error = _info = null;
+        var environment = ParseEnvironment(_environmentVariables);
+        var arguments = string.IsNullOrWhiteSpace(_arguments)
+            ? []
+            : _arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var result = await AdminMcp.ConfigureAsync(new ConfigureMcpProcessRequest(
+            userId,
+            workspaceId,
+            _extensionId.Trim(),
+            _imageReference.Trim(),
+            arguments,
+            environment));
+        _busy = false;
+        if (!result.Ok)
+        {
+            _error = result.Error ?? "Impossible d'enregistrer la configuration.";
+            return;
+        }
+
+        _info = "Configuration enregistrée. Elle reste inactive jusqu'à sa vérification.";
+        _arguments = _environmentVariables = "";
+        await LoadConfigurationsAsync();
+    }
+
+    private async Task VerifyAsync(McpProcessConfigurationSummary configuration)
+    {
+        _busy = true;
+        _error = _info = null;
+        var result = await AdminMcp.VerifyAsync(
+            configuration.WorkspaceId,
+            configuration.UserId,
+            configuration.ExtensionId);
+        _busy = false;
+        if (!result.Ok)
+        {
+            _error = result.Error ?? "Impossible de vérifier la configuration.";
+            return;
+        }
+        _info = "Configuration approuvée. Le lancement vérifiera aussi l'image allowlistée et appliquera les restrictions Docker.";
+        await LoadConfigurationsAsync();
+    }
+
+    private async Task RevokeAsync(McpProcessConfigurationSummary configuration)
+    {
+        _busy = true;
+        _error = _info = null;
+        var result = await AdminMcp.RevokeAsync(
+            configuration.WorkspaceId,
+            configuration.UserId,
+            configuration.ExtensionId);
+        _busy = false;
+        if (!result.Ok)
+        {
+            _error = result.Error ?? "Impossible de retirer la configuration.";
+            return;
+        }
+        _info = "Configuration MCP retirée.";
+        await LoadConfigurationsAsync();
+    }
+
+    private static Dictionary<string, string?> ParseEnvironment(string value)
+    {
+        var environment = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var line in value.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var separator = line.IndexOf('=');
+            if (separator <= 0)
+                continue;
+            environment[line[..separator].Trim()] = line[(separator + 1)..];
+        }
+        return environment;
+    }
+}

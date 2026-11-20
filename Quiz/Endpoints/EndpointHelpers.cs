@@ -1,10 +1,12 @@
 using System.Security.Claims;
+using GPOE26.Workspaces.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Quiz.Data;
 using Quiz.Model;
 
 namespace Quiz.Endpoints;
 
+/// <summary>Rôles du compte (claim "role"), vérifiés en plus des rôles de l'espace de travail.</summary>
 public static class Roles
 {
     public const string Student = "Student";
@@ -30,8 +32,20 @@ public static class EndpointHelpers
             : throw new UnauthorizedAccessException();
 
     /// <summary>Évaluation avec ses questions, appartenant à l'enseignant (null sinon)</summary>
-    public static Task<Assessment?> OwnedAssessmentAsync(this EvaluationContext db, Guid id, Guid teacherId) =>
-        db.Assessments.Include(a => a.Questions).FirstOrDefaultAsync(a => a.Id == id && a.TeacherId == teacherId);
+    public static Task<Assessment?> OwnedAssessmentAsync(
+        this EvaluationContext db,
+        Guid id,
+        Guid teacherId,
+        WorkspaceTokenContext workspace) =>
+        db.Assessments.Include(a => a.Questions).FirstOrDefaultAsync(a =>
+            a.Id == id &&
+            a.TeacherId == teacherId &&
+            (a.WorkspaceId == workspace.WorkspaceId ||
+             (workspace.IsPersonal && a.WorkspaceId == null)));
+
+    public static bool IsInWorkspace(this Assessment assessment, WorkspaceTokenContext workspace) =>
+        assessment.WorkspaceId == workspace.WorkspaceId ||
+        (workspace.IsPersonal && assessment.WorkspaceId is null);
 
     public static IResult Error(int status, string message) => Results.Json(new { message }, statusCode: status);
 }

@@ -59,7 +59,8 @@ namespace Cours.DTOs
         string? StructuringStatus = null,
         string? SourceUrl = null,
         List<Guid>? LibraryOrganizationIds = null,
-        Guid? SourceCourseId = null
+        Guid? SourceCourseId = null,
+        Guid? WorkspaceId = null
     )
     {
         public CourseDto(Course c) : this(
@@ -82,7 +83,8 @@ namespace Cours.DTOs
             c.StructuringStatus,
             c.SourceUrl,
             c.LibraryOrganizationIds,
-            c.SourceCourseId
+            c.SourceCourseId,
+            c.WorkspaceId
         )
         { }
     }
@@ -113,7 +115,8 @@ namespace Cours.DTOs
         List<Guid> ClassroomIds,
         Guid OwnerId,
         List<Guid>? LibraryOrganizationIds = null,
-        Guid? SourceCourseId = null
+        Guid? SourceCourseId = null,
+        Guid? WorkspaceId = null
     )
     {
         public CourseSummaryDto(Course c) : this(
@@ -127,7 +130,8 @@ namespace Cours.DTOs
             c.ClassroomIds,
             c.OwnerId,
             c.LibraryOrganizationIds,
-            c.SourceCourseId
+            c.SourceCourseId,
+            c.WorkspaceId
         )
         { }
     }

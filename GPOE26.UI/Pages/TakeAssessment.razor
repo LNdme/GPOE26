@@ -179,7 +179,7 @@ else
 @code {
     [Parameter] public Guid Id { get; set; }
 
-    protected override UserRole[]? AllowedRoles => [UserRole.Student];
+    protected override WorkspaceRole[]? AllowedWorkspaceRoles => [WorkspaceRole.Learner];
 
     private bool _loading = true, _busy, _confirm;
     private string? _error;

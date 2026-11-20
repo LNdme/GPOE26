@@ -59,6 +59,9 @@ namespace Cours.Model
         /// </summary>
         public Guid OwnerId { get; set; }
 
+        /// <summary>Espace actif au moment de la création ; null uniquement pour les cours historiques.</summary>
+        public Guid? WorkspaceId { get; set; }
+
         // ─── Partage ──────────────────────────────────────────────────────────────
 
         /// <summary>Brouillon : visible du seul auteur. Publié : visible des classes ci-dessous.</summary>

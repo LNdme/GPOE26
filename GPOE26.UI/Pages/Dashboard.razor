@@ -10,10 +10,31 @@
 }
 else
 {
-    @switch (Session.Role)
+    @if (Session.IsFamilyGuardian)
     {
-        case UserRole.Teacher: <TeacherHome /> break;
-        case UserRole.Parent: <ParentHome /> break;
-        default: <StudentHome /> break;
+        <ParentHome />
+    }
+    else if (Session.CanTeach)
+    {
+        <TeacherHome />
+    }
+    else if (Session.CanLearn)
+    {
+        <StudentHome />
+    }
+    else if (Session.CanManageCourses)
+    {
+        <div class="ga-page">
+            <section class="ga-card">
+                <h1 class="ga-h1">Espace actif</h1>
+                <p>Tu peux gérer les cours de cet espace depuis la rubrique « Mes cours ».</p>
+            </section>
+        </div>
+    }
+    else
+    {
+        <div class="ga-page">
+            <Alert Message="Aucune capacité ne permet d'accéder aux pages de cet espace. Choisis un autre espace ou contacte son administrateur." />
+        </div>
     }
 }

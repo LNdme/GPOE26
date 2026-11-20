@@ -142,7 +142,7 @@
 
     private class GradeForm { public decimal Points { get; set; } public string? Feedback { get; set; } }
 
-    private bool IsTeacher => Session.Role == UserRole.Teacher;
+    private bool IsTeacher => Session.CanTeach;
     private bool _loading = true, _busy, _aiEnabled;
     private Guid? _aiFor;
     private string? _error;

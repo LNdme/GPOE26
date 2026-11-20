@@ -216,7 +216,7 @@ else
         if (result.Ok) _feedback = (await Courses.FeedbackAsync(Id)).Value;
 
         // Évaluations d'entraînement ouvertes : proposées à l'élève à la fin du cours
-        if (Session.Role == UserRole.Student)
+        if (Session.CanLearn)
         {
             StartStudyClock();
             var mine = await Assessments.MineAsStudentAsync();

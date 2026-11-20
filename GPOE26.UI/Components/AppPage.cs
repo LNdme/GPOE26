@@ -6,7 +6,7 @@ namespace GPOE26.UI.Components;
 
 /// <summary>
 /// Base des pages de l'espace connecté : restaure la session, renvoie vers /login si besoin
-/// (avec retour à la page demandée), et vers /app si le rôle n'a pas accès à la page.
+/// (avec retour à la page demandée), et vers /app si le rôle du compte ou celui de l'espace actif n'a pas accès à la page.
 /// Les pages redéfinissent LoadAsync et n'affichent leur contenu qu'une fois Ready.
 /// </summary>
 public abstract class AppPage : ComponentBase
@@ -14,8 +14,11 @@ public abstract class AppPage : ComponentBase
     [Inject] protected SessionState Session { get; set; } = default!;
     [Inject] protected NavigationManager Nav { get; set; } = default!;
 
-    /// <summary>Rôles autorisés (null = tout utilisateur connecté)</summary>
+    /// <summary>Rôles du compte autorisés (null = tout utilisateur connecté)</summary>
     protected virtual UserRole[]? AllowedRoles => null;
+
+    /// <summary>Rôles autorisés dans l'espace actif (null = tout utilisateur connecté).</summary>
+    protected virtual WorkspaceRole[]? AllowedWorkspaceRoles => null;
 
     /// <summary>Vrai pour la seule page ouverte à un élève connecté avec le code de sa fiche, qui doit d'abord choisir son mot de passe.</summary>
     protected virtual bool AllowsPendingPassword => false;
@@ -45,6 +48,15 @@ public abstract class AppPage : ComponentBase
         {
             Nav.NavigateTo(HomeFor(Session.Role));
             return;
+        }
+        if (AllowedWorkspaceRoles is { } workspaceRoles)
+        {
+            await Session.WaitForWorkspaceResolutionAsync();
+            if (!workspaceRoles.Any(role => Session.HasWorkspaceRole(role)))
+            {
+                Nav.NavigateTo("/app");
+                return;
+            }
         }
         Ready = true;
         await LoadAsync();

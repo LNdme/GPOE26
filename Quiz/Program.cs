@@ -7,6 +7,7 @@ using Quiz.Endpoints;
 using Quiz.Service;
 using Microsoft.Extensions.Http.Resilience;
 using GPOE26.ServiceDefaults.Llm;
+using GPOE26.Workspaces.Abstractions;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -32,6 +33,7 @@ builder.Services.AddScoped<ProgressService>();
 builder.AddLlmClient();
 builder.Services.AddScoped<AiGradingService>();
 builder.Services.AddScoped<AiQuota>();
+builder.Services.AddRolePolicies();
 builder.Services.AddSingleton<TranscriptionQueue>();
 builder.Services.AddHostedService<TranscriptionWorker>();
 builder.Services.AddHostedService<ExpiredAttemptsWorker>();   // copies abandonnées rendues après l'heure limite (A8)
@@ -48,6 +50,7 @@ var userServiceUrl = builder.Configuration["Services:User"] ?? "http://localhost
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient<UserDirectoryClient>(client => client.BaseAddress = new Uri(userServiceUrl))
     .AddStandardResilienceHandler();
+builder.Services.AddWorkspaceContextValidation(new Uri(userServiceUrl));
 
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
@@ -75,8 +78,6 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
         options.MapInboundClaims = false;
     });
-builder.Services.AddRolePolicies();
-
 var app = builder.Build();
 
 app.MapDefaultEndpoints();

@@ -1,0 +1,392 @@
+@page "/app/mcp"
+@layout AppLayout
+@inherits AppPage
+@inject ITutorApi Tutor
+@inject IMcpConsentApi Consent
+
+<PageTitle>Autorisations MCP — GPOE26</PageTitle>
+
+<div class="ga-page narrow">
+    <div class="ga-head">
+        <div>
+            <h1>Autorisations des outils externes</h1>
+            <p>Choisis les capacités que le tuteur peut utiliser pour toi ou pour les membres que tu gères dans cet espace.</p>
+        </div>
+    </div>
+
+    <Alert Message="@_error" />
+    <Alert Message="@_info" Kind="success" />
+
+    @if (!Ready || _loading)
+    {
+        <Loading />
+    }
+    else if (Session.ActiveWorkspace is not { } workspace)
+    {
+        <section class="ga-card"><p>Aucun espace actif n'est sélectionné.</p></section>
+    }
+    else
+    {
+        <section class="ga-card">
+            <h2 class="ga-h3">Espace : @workspace.Name</h2>
+            <p class="ga-muted">
+                Une autorisation n'installe pas un serveur. L'opérateur doit aussi avoir configuré et vérifié
+                l'extension dans un sandbox avant qu'elle puisse être utilisée par le tuteur.
+            </p>
+        </section>
+
+        @if (_canManageOthers && workspace.Kind == WorkspaceKind.Organization)
+        {
+            <form class="ga-card" @onsubmit="SearchMembersAsync" @onsubmit:preventDefault>
+                <label for="mcp-member-search" class="ga-h3">Rechercher un membre</label>
+                <div class="ga-row">
+                    <input id="mcp-member-search" class="ga-input" @bind="_memberSearch" placeholder="Nom d'utilisateur" />
+                    <button class="ga-btn secondary" type="submit" disabled="@_membersLoading">Rechercher</button>
+                </div>
+                @if (_members.Count == 100)
+                {
+                    <span class="ga-small ga-muted">100 premiers résultats affichés. Affine la recherche pour trouver un autre membre.</span>
+                }
+            </form>
+        }
+
+        @if (_members.Count > 0)
+        {
+            <section class="ga-card">
+                <label for="mcp-member" class="ga-h3">Personne concernée</label>
+                <select id="mcp-member" class="ga-select" value="@_targetUserId" @onchange="SelectMemberAsync">
+                    @foreach (var member in _members)
+                    {
+                        <option value="@member.UserId">@member.Username@(member.UserId == Me.Id ? " (toi)" : "")</option>
+                    }
+                </select>
+                @if (!_canApproveSelected)
+                {
+                    <p class="ga-small ga-muted">Tu peux consulter et révoquer tes propres autorisations. Seul un Guardian ou un Admin de cet espace peut en accorder.</p>
+                }
+            </section>
+        }
+        else if (!_membersLoading)
+        {
+            <section class="ga-card"><p>Aucun membre gérable n'a été trouvé dans cet espace.</p></section>
+        }
+
+        @if (_extensions.Count == 0 && _catalogLoaded)
+        {
+            <section class="ga-card">
+                <h2 class="ga-h3">Aucune extension disponible</h2>
+                <p class="ga-muted">Aucune extension MCP n'est actuellement déclarée par l'opérateur de la plateforme.</p>
+            </section>
+        }
+        else
+        {
+            @foreach (var extension in _extensions)
+            {
+                var state = StateFor(extension);
+                <section class="ga-card" aria-labelledby="@($"mcp-{extension.Id}")">
+                    <div class="ga-row between">
+                        <div>
+                            <h2 id="@($"mcp-{extension.Id}")" class="ga-h3">@extension.Name</h2>
+                            <span class="ga-small ga-muted">Publié par @extension.PublisherName</span>
+                        </div>
+                        @if (state.Grant is not null)
+                        {
+                            <span class="ga-tag green">AUTORISÉ</span>
+                        }
+                    </div>
+                    <p class="ga-muted">@extension.Description</p>
+
+                    <h3 class="ga-h3">Capacités</h3>
+                    @foreach (var capability in extension.Capabilities)
+                    {
+                        <label class="ga-consent-choice">
+                            <input type="checkbox"
+                                   checked="@state.CapabilityIds.Contains(capability.Id)"
+                                   disabled="@(!_canApproveSelected || state.Busy)"
+                                   @onchange="args => SetCapability(state, capability.Id, args)" />
+                            <span><strong>@capability.Id</strong><br />@capability.Description</span>
+                        </label>
+                    }
+
+                    @if (extension.Permissions.Count > 0)
+                    {
+                        <h3 class="ga-h3" style="margin-top:16px">Permissions demandées</h3>
+                        @foreach (var permission in extension.Permissions)
+                        {
+                            var required = IsPermissionRequired(extension, state, permission);
+                            <label class="ga-consent-choice">
+                                <input type="checkbox"
+                                       checked="@(required || state.PermissionIds.Contains(permission.Id))"
+                                       disabled="@(!_canApproveSelected || required || state.Busy)"
+                                       @onchange="args => SetPermission(state, permission.Id, args)" />
+                                <span>
+                                    <strong>@permission.Id@(required ? " · obligatoire" : "")</strong><br />
+                                    @permission.Description
+                                </span>
+                            </label>
+                        }
+                    }
+
+                    @if (state.Grant is not null)
+                    {
+                        <p class="ga-small ga-muted">
+                            Autorisé le @state.Grant.ApprovedAt.ToLocalTime().ToString("d")
+                            — @state.Grant.CapabilityIds.Count capacité(s).
+                        </p>
+                    }
+
+                    <div class="ga-row">
+                        @if (_canApproveSelected)
+                        {
+                            <button type="button" class="ga-btn" disabled="@(!CanSave(state) || state.Busy)"
+                                    @onclick="() => ApproveAsync(extension, state)">
+                                @(state.Busy ? "Enregistrement…" : "Enregistrer les autorisations")
+                            </button>
+                        }
+                        @if (state.Grant is not null && (_canApproveSelected || _targetUserId == Me.Id.ToString()))
+                        {
+                            <button type="button" class="ga-btn secondary" disabled="@state.Busy"
+                            @onclick="() => RevokeAsync(extension.Id, state)">
+                                Révoquer
+                            </button>
+                        }
+                    </div>
+                </section>
+            }
+        }
+
+        @foreach (var orphan in OrphanGrantStates)
+        {
+            <section class="ga-card">
+                <h2 class="ga-h3">Extension retirée du catalogue</h2>
+                <p class="ga-muted">L'autorisation <code>@orphan.Key</code> reste enregistrée, mais cette extension n'est plus proposée.</p>
+                @if (_canApproveSelected || _targetUserId == Me.Id.ToString())
+                {
+                    <button type="button" class="ga-btn secondary" disabled="@orphan.Value.Busy"
+                            @onclick="() => RevokeAsync(orphan.Key, orphan.Value)">
+                        Révoquer l'autorisation
+                    </button>
+                }
+            </section>
+        }
+    }
+</div>
+
+@code {
+    private bool _loading = true;
+    private bool _membersLoading;
+    private bool _catalogLoaded;
+    private string? _error;
+    private string? _info;
+    private string _targetUserId = "";
+    private string? _memberSearch;
+    private List<McpExtensionSummary> _extensions = [];
+    private List<McpWorkspaceMember> _members = [];
+    private readonly Dictionary<string, ExtensionGrantState> _states = new(StringComparer.Ordinal);
+    private IEnumerable<KeyValuePair<string, ExtensionGrantState>> OrphanGrantStates =>
+        _states.Where(pair =>
+            pair.Value.Grant is not null &&
+            _extensions.All(extension => !string.Equals(extension.Id, pair.Key, StringComparison.Ordinal)));
+
+    private bool _canManageOthers => Session.ActiveWorkspace?.Kind switch
+    {
+        WorkspaceKind.Family => Session.IsFamilyGuardian,
+        WorkspaceKind.Organization => Session.HasWorkspaceRole(WorkspaceRole.Admin),
+        _ => false
+    };
+
+    private bool _canApproveSelected => Session.ActiveWorkspace?.Kind switch
+    {
+        WorkspaceKind.Personal =>
+            Session.HasWorkspaceRole(WorkspaceRole.Owner) && _targetUserId == Me.Id.ToString(),
+        WorkspaceKind.Family => Session.IsFamilyGuardian,
+        WorkspaceKind.Organization => Session.HasWorkspaceRole(WorkspaceRole.Admin),
+        _ => false
+    };
+
+    protected override async Task LoadAsync()
+    {
+        if (Session.ActiveWorkspace is not { } workspace)
+        {
+            _loading = false;
+            return;
+        }
+
+        var catalogTask = Tutor.McpExtensionsAsync();
+        var membersTask = Consent.MembersAsync(workspace.Id);
+        await Task.WhenAll(catalogTask, membersTask);
+
+        var catalog = await catalogTask;
+        var members = await membersTask;
+        _catalogLoaded = catalog.Ok;
+        _extensions = catalog.Value ?? [];
+        _members = members.Value ?? [];
+        _error = catalog.Error ?? members.Error;
+        if (_members.FirstOrDefault(member => member.UserId == Me.Id) is { } self)
+            _targetUserId = self.UserId.ToString();
+        else if (_members.FirstOrDefault() is { } first)
+            _targetUserId = first.UserId.ToString();
+
+        if (Guid.TryParse(_targetUserId, out var targetUserId))
+            await LoadGrantsAsync(workspace.Id, targetUserId);
+        _loading = false;
+    }
+
+    private async Task SearchMembersAsync()
+    {
+        if (Session.ActiveWorkspace is not { } workspace)
+            return;
+        _membersLoading = true;
+        _error = null;
+        var result = await Consent.MembersAsync(workspace.Id, _memberSearch);
+        _membersLoading = false;
+        if (!result.Ok || result.Value is null)
+        {
+            _error = result.Error ?? "Impossible de rechercher les membres.";
+            return;
+        }
+
+        _members = result.Value;
+        _targetUserId = _members.FirstOrDefault()?.UserId.ToString() ?? "";
+        _states.Clear();
+        if (Guid.TryParse(_targetUserId, out var targetUserId))
+            await LoadGrantsAsync(workspace.Id, targetUserId);
+    }
+
+    private async Task SelectMemberAsync(ChangeEventArgs args)
+    {
+        _targetUserId = args.Value?.ToString() ?? "";
+        _states.Clear();
+        if (Session.ActiveWorkspace is { } workspace &&
+            Guid.TryParse(_targetUserId, out var targetUserId))
+            await LoadGrantsAsync(workspace.Id, targetUserId);
+    }
+
+    private async Task LoadGrantsAsync(Guid workspaceId, Guid targetUserId)
+    {
+        var result = await Consent.GrantsAsync(workspaceId, targetUserId);
+        if (!result.Ok || result.Value is null)
+        {
+            _error = result.Error ?? "Impossible de charger les autorisations actuelles.";
+            return;
+        }
+
+        foreach (var grant in result.Value)
+        {
+            var state = new ExtensionGrantState(grant);
+            _states[grant.ExtensionId] = state;
+        }
+    }
+
+    private ExtensionGrantState StateFor(McpExtensionSummary extension)
+    {
+        if (_states.TryGetValue(extension.Id, out var existing))
+        {
+            existing.CapabilityIds.IntersectWith(extension.Capabilities.Select(capability => capability.Id));
+            existing.PermissionIds.IntersectWith(extension.Permissions.Select(permission => permission.Id));
+            return existing;
+        }
+        var state = new ExtensionGrantState();
+        _states.Add(extension.Id, state);
+        return state;
+    }
+
+    private static void SetCapability(ExtensionGrantState state, string id, ChangeEventArgs args)
+    {
+        if (args.Value is not bool selected)
+            return;
+        if (selected) state.CapabilityIds.Add(id);
+        else state.CapabilityIds.Remove(id);
+    }
+
+    private static void SetPermission(ExtensionGrantState state, string id, ChangeEventArgs args)
+    {
+        if (args.Value is not bool selected)
+            return;
+        if (selected) state.PermissionIds.Add(id);
+        else state.PermissionIds.Remove(id);
+    }
+
+    private static bool IsPermissionRequired(
+        McpExtensionSummary extension,
+        ExtensionGrantState state,
+        McpPermissionSummary permission) =>
+        permission.Required || extension.Capabilities.Any(capability =>
+            state.CapabilityIds.Contains(capability.Id) &&
+            capability.RequiredPermissionIds.Contains(permission.Id, StringComparer.Ordinal));
+
+    private static bool CanSave(ExtensionGrantState state) =>
+        !state.Busy && state.CapabilityIds.Count > 0;
+
+    private async Task ApproveAsync(McpExtensionSummary extension, ExtensionGrantState state)
+    {
+        if (Session.ActiveWorkspace is not { } workspace ||
+            !Guid.TryParse(_targetUserId, out var targetUserId) ||
+            !_canApproveSelected ||
+            !CanSave(state))
+            return;
+
+        state.Busy = true;
+        _error = _info = null;
+        var permissions = extension.Permissions
+            .Where(permission => IsPermissionRequired(extension, state, permission) ||
+                                 state.PermissionIds.Contains(permission.Id))
+            .Select(permission => permission.Id)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var result = await Consent.ApproveAsync(
+            workspace.Id,
+            targetUserId,
+            extension.Id,
+            state.CapabilityIds.ToArray(),
+            permissions);
+        state.Busy = false;
+        if (!result.Ok)
+        {
+            _error = result.Error ?? "Impossible d'enregistrer l'autorisation.";
+            return;
+        }
+
+        _info = "Autorisation enregistrée. L'extension doit aussi être configurée et vérifiée par l'opérateur pour devenir utilisable.";
+        await LoadGrantsAsync(workspace.Id, targetUserId);
+    }
+
+    private async Task RevokeAsync(string extensionId, ExtensionGrantState state)
+    {
+        if (Session.ActiveWorkspace is not { } workspace ||
+            !Guid.TryParse(_targetUserId, out var targetUserId) ||
+            (!_canApproveSelected && targetUserId != Me.Id) ||
+            state.Grant is null)
+            return;
+
+        state.Busy = true;
+        _error = _info = null;
+        var result = await Consent.RevokeAsync(workspace.Id, targetUserId, extensionId);
+        state.Busy = false;
+        if (!result.Ok)
+        {
+            _error = result.Error ?? "Impossible de révoquer l'autorisation.";
+            return;
+        }
+
+        _states.Remove(extensionId);
+        _info = "Autorisation révoquée.";
+    }
+
+    private sealed class ExtensionGrantState
+    {
+        public ExtensionGrantState() { }
+
+        public ExtensionGrantState(McpActiveGrant grant)
+        {
+            Grant = grant;
+            CapabilityIds.UnionWith(grant.CapabilityIds);
+            PermissionIds.UnionWith(grant.PermissionIds);
+        }
+
+        public HashSet<string> CapabilityIds { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> PermissionIds { get; } = new(StringComparer.Ordinal);
+        public McpActiveGrant? Grant { get; set; }
+        public bool Busy { get; set; }
+    }
+}
