@@ -15,8 +15,14 @@ public abstract class AppPage : ComponentBase
     [Inject] protected NavigationManager Nav { get; set; } = default!;
     [Inject] private IAccountApi Account { get; set; } = default!;
 
-    /// <summary>Rôles autorisés (null = tout utilisateur connecté)</summary>
+    /// <summary>Rôles autorisés (null = tout utilisateur connecté). Ancien contrôle : préférer <see cref="RequiredHats"/>.</summary>
     protected virtual UserRole[]? AllowedRoles => null;
+
+    /// <summary>
+    /// Casquettes dont l'une suffit pour ouvrir la page (UserHats ; null = tout utilisateur connecté). Lot P3 :
+    /// un parent porte aussi la casquette « learner » et peut donc apprendre.
+    /// </summary>
+    protected virtual string[]? RequiredHats => null;
 
     /// <summary>Vrai pour la seule page ouverte à un élève connecté avec le code de sa fiche, qui doit d'abord choisir son mot de passe.</summary>
     protected virtual bool AllowsPendingPassword => false;
@@ -45,7 +51,8 @@ public abstract class AppPage : ComponentBase
             Nav.NavigateTo($"/app/mot-de-passe?retour={Uri.EscapeDataString("/" + back)}");
             return;
         }
-        if (AllowedRoles is { } roles && !roles.Contains(Session.Role!.Value))
+        if ((AllowedRoles is { } roles && !roles.Contains(Session.Role!.Value))
+            || (RequiredHats is { } hats && !hats.Any(Session.HasHat)))
         {
             Nav.NavigateTo(HomeFor(Session.Role));
             return;

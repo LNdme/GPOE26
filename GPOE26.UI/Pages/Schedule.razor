@@ -70,7 +70,7 @@
 @code {
     private static readonly string[] Days = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
 
-    protected override UserRole[]? AllowedRoles => [UserRole.Student];
+    protected override string[]? RequiredHats => [UserHats.Learner];
 
     private List<StudySlot> _slots = new();
     private bool _loading = true, _saving;

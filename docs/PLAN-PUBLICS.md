@@ -208,7 +208,15 @@ Toutes validées telles que proposées le 21 novembre 2026.
   - **Règles** : regroupées dans `GPOE26.UI/Services/OnboardingRules.cs` et testées.
   - **Serveur** : aucun changement, il enregistrait déjà l'objectif pour tous.
   - **Écart avec le plan** : « qui t'ouvre l'accès » est demandé avant le profil, et non après. Avec un code, on évite de remplir le profil pour rien.
-- **Prochain lot : P3** (casquettes).
+- **P3 (casquettes), découpé le 21 novembre 2026 :**
+
+  | Sous-lot | Contenu | Fichiers |
+  |---|---|---|
+  | **P3a** Calcul | `HatRules` (règles pures, testées) et `ProfileService` (lecture en base). Les règles : `learner` pour tous ; `guardian` pour un parent ou un lien parent actif ; `teacher` pour un enseignant ou un membre `Teacher` d'un espace ; `manager` pour un responsable ou gestionnaire actif ; `payer` pour qui a une formule Famille en cours ou en attente. `Hats` est ajouté au profil renvoyé par l'inscription, la connexion, le renouvellement et `/auth/me`, et un claim `hats` est ajouté au jeton. | `User/Service/HatRules.cs`, `ProfileService.cs`, `AuthDto.cs`, `Jwtservice.cs`, `Program.cs`, `AccessCodeEndpoints.cs`, `ProfileEndpoints.cs` |
+  | **P3b** Interface | `UserProfile.Hats`. Pour une session enregistrée avant P3, les casquettes sont déduites du rôle. `SessionState.HasHat`. `AppPage.RequiredHats` remplace `AllowedRoles` dans les 16 pages. Le menu de `AppLayout` est fait par sections : « Apprendre » pour tous, puis « Enseigner » et « Mes enfants » selon les casquettes. **Un parent peut apprendre.** L'accueil `/app` garde la vue du rôle. | `GPOE26.UI` |
+  | **P3c** Règles du serveur | `CanPurchase`, `CanRedeem`, `FeatureAllowedFor` et les politiques `Policies.*` lues sur le claim `hats`, avec repli sur `role` pour les anciens jetons. Les politiques de Quiz suivent le même principe. | `User/Service/SubscriptionService.cs`, `User/Endpoints/Policies.cs`, `Quiz/Endpoints/EndpointHelpers.cs` |
+  | **P3a et P3b faits le 21 novembre 2026** | Vérifié dans le navigateur avec un compte parent. Le serveur renvoie `['learner', 'guardian']`. Le menu affiche une section « APPRENDRE » (Mes cours, Tuteur IA, Emploi du temps), et les trois pages s'ouvrent pour un parent. **Écarts :** `Assessments`, `SubmissionView` et `TakeAssessment` gardent le contrôle par rôle, car Quiz réserve ces routes au rôle élève (à revoir en P3c). Le vocabulaire « classe / plan d'études » reste scolaire pour un parent (P5). | — |
+  | **P3d** Autres clients | Menu du site (`GPOE26.Web/NavMenu.razor`) et application Windows, sur les casquettes. Choix de la vue d'accueil comme préférence d'affichage. | `GPOE26.Web`, `GPOE26.Windows` |
 
 ## 7. Hors de ce plan
 

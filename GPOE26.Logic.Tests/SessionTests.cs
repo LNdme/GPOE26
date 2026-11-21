@@ -183,6 +183,24 @@ public class SessionProfileRefreshTests
     }
 
     [Fact]
+    public async Task Un_profil_enregistre_avant_les_casquettes_les_deduit_du_role()
+    {
+        // Profil d'élève sans « Hats » (session ouverte avant le lot P3) : il apprend, il n'enseigne pas
+        var (session, _) = await RestoredFreeSessionAsync();
+        Assert.True(session.HasHat(UI.Models.UserHats.Learner));
+        Assert.False(session.HasHat(UI.Models.UserHats.Teacher));
+    }
+
+    [Fact]
+    public async Task Les_casquettes_envoyees_par_le_serveur_l_emportent()
+    {
+        var (session, _) = await RestoredFreeSessionAsync();
+        await session.RefreshProfileAsync(() => Task.FromResult<UserProfile?>(
+            Profile(premium: false) with { Hats = [UI.Models.UserHats.Learner, UI.Models.UserHats.Manager] }));
+        Assert.True(session.HasHat(UI.Models.UserHats.Manager));
+    }
+
+    [Fact]
     public async Task Une_deconnexion_pendant_la_relecture_reste_une_deconnexion()
     {
         var (session, _) = await RestoredFreeSessionAsync();

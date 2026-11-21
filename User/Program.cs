@@ -59,6 +59,7 @@ builder.Services.AddSwaggerGen(c =>
 
 builder.Services.AddScoped<Jwtservice>();
 builder.Services.AddScoped<SubscriptionService>();
+builder.Services.AddScoped<ProfileService>();   // profil et jeton : droits et casquettes (lot P3)
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient<PlanCatalogClient>(client =>
     client.BaseAddress = new Uri(builder.Configuration["Services:ApiService"] ?? "http://localhost:5455"));
@@ -156,7 +157,7 @@ var auth = app.MapGroup("/auth").WithTags("Auth");
 // ── POST /auth/register ───────────────────────────────────────────────────────
 // Inscription guidée (élève, enseignant ou parent). Les clés et codes sont vérifiés
 // AVANT la création du compte : une clé invalide ne laisse pas de compte à moitié créé.
-auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice jwt,
+auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice jwt, ProfileService profiles,
     SubscriptionService subs, ClassroomService classrooms, SpaceService spaces) =>
 {
     // L'administration est un droit donné par un administrateur, jamais un rôle choisi à l'inscription.
@@ -250,9 +251,7 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
     if (req.StartTrial)
         await subs.StartTrialAsync(user.Id, SubscriptionPlan.Teacher);
 
-    var entitlement = await subs.GetEntitlementAsync(user.Id);
-    var (token, expiresAt) = jwt.GenerateToken(user, entitlement);
-    return Results.Created("/auth/me", new AuthResponse(token, expiresAt, new UserProfileDto(user, entitlement)));
+    return Results.Created("/auth/me", await profiles.AuthAsync(user));
 })
 .WithSummary("Créer un compte")
 .Produces<AuthResponse>(201)
@@ -260,7 +259,7 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
 .Produces(400);
 
 // ── POST /auth/login ──────────────────────────────────────────────────────────
-auth.MapPost("/login", async (LoginRequest req, UserContext db, Jwtservice jwt, SubscriptionService subs) =>
+auth.MapPost("/login", async (LoginRequest req, UserContext db, Jwtservice jwt, ProfileService profiles, SubscriptionService subs) =>
 {
     // Adresse e-mail ou nom d'utilisateur (élève entré par son code, sans adresse)
     var login = req.Email.Trim();
@@ -282,9 +281,7 @@ auth.MapPost("/login", async (LoginRequest req, UserContext db, Jwtservice jwt, 
     user.LastLoginAt = DateTime.UtcNow;
     await db.SaveChangesAsync();
 
-    var entitlement = await subs.GetEntitlementAsync(user.Id);
-    var (token, expiresAt) = jwt.GenerateToken(user, entitlement);
-    return Results.Ok(new AuthResponse(token, expiresAt, new UserProfileDto(user, entitlement)));
+    return Results.Ok(await profiles.AuthAsync(user));
 })
 .WithSummary("Se connecter")
 .Produces<AuthResponse>()
@@ -295,7 +292,7 @@ auth.MapPost("/login", async (LoginRequest req, UserContext db, Jwtservice jwt, 
 // Sans cela, la session tombait 60 minutes après la connexion, même en pleine épreuve.
 // Le rôle, les droits et la formule sont relus en base : un changement s'applique au renouvellement suivant.
 // La session reste bornée (Jwt:MaxSessionHours) : au-delà, il faut se reconnecter.
-auth.MapPost("/refresh", async (ClaimsPrincipal principal, UserContext db, Jwtservice jwt, SubscriptionService subs) =>
+auth.MapPost("/refresh", async (ClaimsPrincipal principal, UserContext db, Jwtservice jwt, ProfileService profiles, SubscriptionService subs) =>
 {
     var user = await db.CurrentUserAsync(principal);
     if (user is null) return Results.Unauthorized();
@@ -304,9 +301,7 @@ auth.MapPost("/refresh", async (ClaimsPrincipal principal, UserContext db, Jwtse
     if (!Jwtservice.CanRenew(signedInAt, DateTime.UtcNow, jwt.MaxSession))
         return Results.Unauthorized();
 
-    var entitlement = await subs.GetEntitlementAsync(user.Id);
-    var (token, expiresAt) = jwt.GenerateToken(user, entitlement, signedInAt);
-    return Results.Ok(new AuthResponse(token, expiresAt, new UserProfileDto(user, entitlement)));
+    return Results.Ok(await profiles.AuthAsync(user, signedInAt));
 })
 .RequireAuthorization()
 .WithSummary("Prolonger la session (jeton neuf, profil à jour)")
@@ -316,12 +311,12 @@ auth.MapPost("/refresh", async (ClaimsPrincipal principal, UserContext db, Jwtse
 // ── GET /auth/me ──────────────────────────────────────────────────────────────
 // Endpoint protégé : le client envoie le JWT dans le header Authorization: Bearer <token>
 // On lit les claims du token pour retrouver l'utilisateur
-auth.MapGet("/me", async (ClaimsPrincipal principal, UserContext db, SubscriptionService subs) =>
+auth.MapGet("/me", async (ClaimsPrincipal principal, UserContext db, ProfileService profiles) =>
 {
     var user = await db.CurrentUserAsync(principal);
     return user is null
         ? Results.NotFound()
-        : Results.Ok(new UserProfileDto(user, await subs.GetEntitlementAsync(user.Id)));
+        : Results.Ok(await profiles.ProfileAsync(user));
 })
 .RequireAuthorization()
 .WithSummary("Profil de l'utilisateur connecté")

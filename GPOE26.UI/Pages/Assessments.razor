@@ -115,7 +115,7 @@
 </div>
 
 @code {
-    // Espace d'apprentissage : un parent n'y a rien à faire (il suit ses enfants depuis son accueil)
+    // Épreuves de classe : le service Quiz les réserve aux rôles élève et enseignant ; passeront aux casquettes avec le lot P3c
     protected override UserRole[]? AllowedRoles => [UserRole.Student, UserRole.Teacher];
 
     private bool IsTeacher => Session.Role == UserRole.Teacher;

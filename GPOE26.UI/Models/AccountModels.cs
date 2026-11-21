@@ -111,11 +111,35 @@ public record UserProfile(
     bool SiteEditor = false,
     bool IsAdmin = false,
     bool MustChangePassword = false,
-    LearningContext? LearningContext = null
+    LearningContext? LearningContext = null,
+    List<string>? Hats = null
 )
 {
     /// <summary>Peut gérer le contenu du site de l'établissement (administrateur ou éditeur).</summary>
     public bool CanEditSite => IsAdmin || SiteEditor;
+
+    /// <summary>
+    /// Casquettes (docs/PLAN-PUBLICS.md, lot P3). Un profil enregistré avant P3 n'en a pas : elles sont alors
+    /// déduites du rôle, comme le fait le service User (HatRules.FromRole).
+    /// </summary>
+    public IReadOnlyList<string> EffectiveHats => Hats is { Count: > 0 } hats ? hats : UserHats.FromRole(Role);
+}
+
+/// <summary>Casquettes d'une personne : toute personne apprend, et peut en plus suivre des enfants, enseigner, gérer, payer.</summary>
+public static class UserHats
+{
+    public const string Learner = "learner";
+    public const string Guardian = "guardian";
+    public const string Teacher = "teacher";
+    public const string Manager = "manager";
+    public const string Payer = "payer";
+
+    public static IReadOnlyList<string> FromRole(UserRole role) => role switch
+    {
+        UserRole.Teacher => [Learner, Teacher],
+        UserRole.Parent => [Learner, Guardian],
+        _ => [Learner]
+    };
 }
 
 public record AuthResponse(string Token, DateTime ExpiresAt, UserProfile Profile);

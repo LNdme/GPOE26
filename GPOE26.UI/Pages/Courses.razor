@@ -57,8 +57,8 @@
 </div>
 
 @code {
-    // Espace d'apprentissage : un parent n'y a rien à faire (il suit ses enfants depuis son accueil)
-    protected override UserRole[]? AllowedRoles => [UserRole.Student, UserRole.Teacher];
+    // Espace d'apprentissage : toute personne qui apprend, parent compris (casquette « learner », lot P3)
+    protected override string[]? RequiredHats => [UserHats.Learner];
 
     private RenderFragment DocumentCard(CourseSummary c) =>
         @<article class="ga-card">

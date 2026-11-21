@@ -90,7 +90,7 @@
 </div>
 
 @code {
-    protected override UserRole[]? AllowedRoles => [UserRole.Student, UserRole.Teacher];
+    protected override string[]? RequiredHats => [UserHats.Learner];
 
     private List<AgentMemoryItem> _memories = new();
     private bool _loading = true, _enabled = true, _confirmClear;

@@ -135,7 +135,7 @@ public static class ProfileEndpoints
             .Produces<IReadOnlyList<CountryPreset>>();
 
         // ── PUT /auth/me/profile ──────────────────────────────────────────────────
-        me.MapPut("/profile", async (EditProfileRequest req, ClaimsPrincipal principal, UserContext db, SubscriptionService subs) =>
+        me.MapPut("/profile", async (EditProfileRequest req, ClaimsPrincipal principal, UserContext db, ProfileService profiles) =>
         {
             var user = await db.CurrentUserAsync(principal);
             if (user is null) return Results.Unauthorized();
@@ -150,7 +150,7 @@ public static class ProfileEndpoints
                 return Results.BadRequest(new { message = error });
 
             await db.SaveChangesAsync();
-            return Results.Ok(new UserProfileDto(user, await subs.GetEntitlementAsync(user.Id)));
+            return Results.Ok(await profiles.ProfileAsync(user));
         })
         .WithSummary("Modifier son profil (champs selon le rôle)")
         .Produces<UserProfileDto>()

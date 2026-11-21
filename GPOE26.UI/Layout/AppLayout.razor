@@ -45,6 +45,24 @@
                     }
                 </div>
 
+                @* Lot P3 : toute personne apprend. Un enseignant ou un parent retrouve ici ce que son menu n'a pas déjà *@
+                @if (LearnItems(me).ToList() is { Count: > 0 } learn)
+                {
+                    <div class="ga-nav-title">APPRENDRE</div>
+                    <div class="ga-nav">
+                        @foreach (var item in learn)
+                        {
+                            <NavLink href="@item.Href" title="@item.Label" aria-label="@item.Label" Match="NavLinkMatch.Prefix">
+                                <Icon Name="@item.Icon" /> <span>@item.Label</span>
+                                @if (item.Feature is { } feature && !Session.HasFeature(feature))
+                                {
+                                    <span class="ga-tag lime">PREMIUM</span>
+                                }
+                            </NavLink>
+                        }
+                    </div>
+                }
+
                 <div class="ga-nav-title">SITE</div>
                 <div class="ga-nav">
                     <a href="/" title="Site de l'établissement" aria-label="Site de l'établissement"><Icon Name="home" /> <span>Site de l'établissement</span></a>
@@ -193,6 +211,23 @@
             new("/app/abonnement", "Abonnement", "card"),
         ]
     };
+
+    /// <summary>
+    /// Entrées d'apprentissage pour qui porte la casquette « learner » sans être élève (enseignant, parent) :
+    /// seulement celles que le menu de son rôle n'a pas déjà.
+    /// </summary>
+    private IEnumerable<NavItem> LearnItems(UserProfile me)
+    {
+        if (me.Role == UserRole.Student || !Session.HasHat(UserHats.Learner)) return [];
+        var present = Items(me.Role).Select(i => i.Href).ToHashSet();
+        NavItem[] learn =
+        [
+            new("/app/cours", "Mes cours", "book"),
+            new("/app/tuteur", "Tuteur IA", "spark", "tutor-ai"),
+            new("/app/emploi-du-temps", "Emploi du temps", "calendar"),
+        ];
+        return learn.Where(i => !present.Contains(i.Href));
+    }
 
     // Espaces que la personne gère (responsable, gestionnaire, enseignant indépendant) : lien « Mon établissement »
     private List<MySpace> _managed = [];

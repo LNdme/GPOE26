@@ -26,7 +26,9 @@ namespace User.Service
         /// Date de la connexion par mot de passe. Conservée d'un renouvellement à l'autre :
         /// c'est elle, pas la date du jeton, qui borne la durée de la session.
         /// </param>
-        public (string token, DateTime expiresAt) GenerateToken(AppUser user, Entitlement entitlement, DateTime? signedInAt = null)
+        /// <param name="hats">Casquettes (lot P3), une claim « hats » par casquette ; déduites du rôle si absentes.</param>
+        public (string token, DateTime expiresAt) GenerateToken(AppUser user, Entitlement entitlement, DateTime? signedInAt = null,
+            IReadOnlyList<string>? hats = null)
         {
             var jwtKey = config["Jwt:Key"]
                 ?? throw new InvalidOperationException("Jwt:Key manquant dans la configuration.");
@@ -63,7 +65,10 @@ namespace User.Service
             new Claim("admin", user.IsAdmin ? "true" : "false"),
             new Claim("auth_time", new DateTimeOffset(DateTime.SpecifyKind(signedInAt ?? DateTime.UtcNow, DateTimeKind.Utc)).ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-        };
+        }
+            // "hats" → casquettes (lot P3) : les autres services pourront les lire sans interroger la base
+            .Concat((hats ?? HatRules.FromRole(user.Role)).Select(h => new Claim("hats", h)))
+            .ToArray();
 
             var expiresAt = DateTime.UtcNow.AddMinutes(
                 config.GetValue<int>("Jwt:ExpirationMinutes", 60));

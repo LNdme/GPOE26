@@ -54,6 +54,9 @@ public class SessionState(ISessionStore store)
     /// <summary>La formule de l'utilisateur inclut-elle cette fonctionnalité ?</summary>
     public bool HasFeature(string code) => Profile?.Features?.Any(f => f.Code == code) == true;
 
+    /// <summary>La personne porte-t-elle cette casquette (UserHats) ? Faux si personne n'est connecté.</summary>
+    public bool HasHat(string hat) => IsAuthenticated && Profile?.EffectiveHats.Contains(hat) == true;
+
     /// <summary>Déclenché à chaque connexion, déconnexion ou mise à jour du profil.</summary>
     public event Action? Changed;
 

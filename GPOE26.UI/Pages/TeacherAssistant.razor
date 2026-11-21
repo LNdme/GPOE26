@@ -141,7 +141,7 @@
 @code {
     private record Exchange(string Question, string Answer);
 
-    protected override UserRole[]? AllowedRoles => [UserRole.Teacher];
+    protected override string[]? RequiredHats => [UserHats.Teacher];
 
     private List<Classroom> _classes = new();
     private readonly List<Exchange> _exchanges = new();

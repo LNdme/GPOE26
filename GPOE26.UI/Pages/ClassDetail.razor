@@ -135,7 +135,7 @@
 @code {
     [Parameter] public Guid Id { get; set; }
     // Gestionnaire d'un établissement (enseignant ou non) : il suit toutes les évaluations de la classe
-    protected override UserRole[]? AllowedRoles => [UserRole.Teacher, UserRole.Parent];
+    protected override string[]? RequiredHats => [UserHats.Teacher, UserHats.Guardian];
     private bool ManagerView => _class?.IsManager == true;
 
     private bool _loading = true, _onlyHelp;

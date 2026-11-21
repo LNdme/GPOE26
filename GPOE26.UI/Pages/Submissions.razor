@@ -78,7 +78,7 @@
 
 @code {
     [Parameter] public Guid Id { get; set; }
-    protected override UserRole[]? AllowedRoles => [UserRole.Teacher];
+    protected override string[]? RequiredHats => [UserHats.Teacher];
 
     private bool _loading = true;
     private string? _error;

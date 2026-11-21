@@ -101,10 +101,12 @@ public record UserProfileDto(
     bool SiteEditor = false,
     bool IsAdmin = false,
     bool MustChangePassword = false,
-    LearningContextDto? LearningContext = null
+    LearningContextDto? LearningContext = null,
+    // Casquettes (docs/PLAN-PUBLICS.md, lot P3) : learner, guardian, teacher, manager, payer
+    IReadOnlyList<string>? Hats = null
 )
 {
-    public UserProfileDto(AppUser user, Entitlement? entitlement = null) : this(
+    public UserProfileDto(AppUser user, Entitlement? entitlement = null, IReadOnlyList<string>? hats = null) : this(
         user.Id,
         user.Email,
         user.Username,
@@ -132,7 +134,8 @@ public record UserProfileDto(
         user.SiteEditor,
         user.IsAdmin,
         user.MustChangePassword,
-        LearningContextRules.Resolve(user)
+        LearningContextRules.Resolve(user),
+        hats ?? HatRules.FromRole(user.Role)
     )
     { }
 }

@@ -208,7 +208,7 @@
     private Assessment? _preview;
 
     // Les élèves et les parents n'ont pas de bibliothèque d'établissement
-    protected override UserRole[]? AllowedRoles => [UserRole.Teacher];
+    protected override string[]? RequiredHats => [UserHats.Teacher];
 
     private bool IsTeacherHere => _space?.Roles.Contains(OrganizationRole.Teacher) == true;
     private bool CanCopy => Session.Role == UserRole.Teacher;
