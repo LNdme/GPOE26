@@ -196,7 +196,19 @@ Toutes validées telles que proposées le 21 novembre 2026.
   - **Reste à faire** :
     - l'application Windows n'affiche pas encore la discussion libre (elle la masque) ;
     - plusieurs discussions libres viendront avec les projets (A6).
-- **Prochain lot : P2** (inscription par objectif).
+- **P2 fait le 21 novembre 2026.**
+  - **Parcours** : un seul choix « Apprendre » remplace élève, étudiant et adulte. Viennent ensuite :
+    1. qui ouvre l'accès : moi, une clé familiale, ou un code d'école ou d'entreprise (qui mène tout de suite à `/code`) ;
+    2. le prénom, puis le pays ;
+    3. où en est la personne : collège ou lycée, supérieur, vie active ou autre ;
+    4. pourquoi elle apprend : examen, compétence ou curiosité ;
+    5. les étapes propres au niveau ;
+    6. gratuit ou Premium, puis la création du compte.
+  - **Questions d'examen** : posées seulement pour l'objectif « examen ».
+  - **Règles** : regroupées dans `GPOE26.UI/Services/OnboardingRules.cs` et testées.
+  - **Serveur** : aucun changement, il enregistrait déjà l'objectif pour tous.
+  - **Écart avec le plan** : « qui t'ouvre l'accès » est demandé avant le profil, et non après. Avec un code, on évite de remplir le profil pour rien.
+- **Prochain lot : P3** (casquettes).
 
 ## 7. Hors de ce plan
 
