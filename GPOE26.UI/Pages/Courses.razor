@@ -141,7 +141,7 @@
         _courses = courses.Value ?? new();
         if (IsTeacher)
         {
-            _classes = (await Classrooms.MineAsync()).Value ?? new();
+            _classes = (await Classrooms.MineAsync("teacher")).Value ?? new();
             _spaceNames = ((await Spaces.MineAsync()).Value ?? []).ToDictionary(s => s.Id, s => s.Name);
         }
         else _documents = (await CourseApi.MineAsync()).Value ?? new();

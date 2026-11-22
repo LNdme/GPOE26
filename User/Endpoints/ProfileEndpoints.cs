@@ -33,7 +33,9 @@ public record EditProfileRequest(
     string? TimeZone = null,
     GradeScale? GradeScale = null,
     LevelBand? LevelBand = null,
-    LearningGoal? Goal = null);
+    LearningGoal? Goal = null,
+    // Lot J3 (choix T3) : année de naissance facultative ; 0 l'efface
+    int? BirthYear = null);
 
 public record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 
@@ -67,6 +69,8 @@ public static class ProfileRules
             return "Fuseau horaire inconnu.";
         if (req.EducationSystem?.Trim().Length > 100)
             return "Un des champs est trop long.";
+        if (req.BirthYear is { } year && year != 0 && (year < 1900 || year > DateTime.UtcNow.Year))
+            return "Année de naissance invalide.";
 
         if (username is { Length: > 0 }) user.Username = username;
         if (country is not null) user.Country = country.Length > 0 ? country : null;
@@ -74,6 +78,7 @@ public static class ProfileRules
         if (req.EducationSystem is not null) user.EducationSystem = Clean(req.EducationSystem);
         if (req.GradeScale is { } scale) user.GradeScale = scale;
         if (req.Language is { } language) user.Language = language;
+        if (req.BirthYear is { } birthYear) user.BirthYear = birthYear == 0 ? null : birthYear;
 
         switch (user.Role)
         {

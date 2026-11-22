@@ -92,6 +92,12 @@
         /// <summary>Fuseau IANA de la personne (ex. « America/Mexico_City »).</summary>
         public string? TimeZone { get; set; }
 
+        /// <summary>
+        /// Année de naissance, facultative (lot J3, choix T3) : sert seulement à savoir si la personne peut retirer
+        /// elle-même un partage. Sans réponse, la majorité est réputée (VisibilityRules.IsDeemedAdult).
+        /// </summary>
+        public int? BirthYear { get; set; }
+
         // ─── Profil enseignant ────────────────────────────────────────────────────
 
         public List<string> TeachingSubjects { get; set; } = new();

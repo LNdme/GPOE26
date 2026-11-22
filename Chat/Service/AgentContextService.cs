@@ -117,7 +117,8 @@ public class AgentContextService(TutorContext db, PlatformClients platform, Agen
         if (profile.Summary is { Length: > 0 }) lines.Add($"Portrait : {profile.Summary}");
 
         // Classes et progression demandées en même temps ; le plan du jour réutilise la progression (cache d'une minute)
-        var classesTask = platform.GetJsonAsync<List<ClassroomRef>>("user", "/classrooms/mine", ct);
+        // Classes où la personne apprend (lot J1 : un enseignant qui suit une classe y est apprenant)
+        var classesTask = platform.GetJsonAsync<List<ClassroomRef>>("user", "/classrooms/mine?as=learner", ct);
         var progressTask = platform.GetJsonAsync<ProgressRef>("quiz", "/progress/me", ct);
 
         var states = await db.CourseMastery.AsNoTracking().Where(m => m.UserId == userId).OrderByDescending(m => m.LastStudiedAt).Take(12).ToListAsync(ct);

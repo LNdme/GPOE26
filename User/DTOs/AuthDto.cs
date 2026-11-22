@@ -103,7 +103,9 @@ public record UserProfileDto(
     bool MustChangePassword = false,
     LearningContextDto? LearningContext = null,
     // Casquettes (docs/PLAN-PUBLICS.md, lot P3) : learner, guardian, teacher, manager, payer
-    IReadOnlyList<string>? Hats = null
+    IReadOnlyList<string>? Hats = null,
+    // Lot J3 : année de naissance facultative (majorité réputée pour retirer un partage)
+    int? BirthYear = null
 )
 {
     public UserProfileDto(AppUser user, Entitlement? entitlement = null, IReadOnlyList<string>? hats = null) : this(
@@ -135,7 +137,8 @@ public record UserProfileDto(
         user.IsAdmin,
         user.MustChangePassword,
         LearningContextRules.Resolve(user),
-        hats ?? HatRules.FromRole(user.Role)
+        hats ?? HatRules.FromRole(user.Role),
+        user.BirthYear
     )
     { }
 }

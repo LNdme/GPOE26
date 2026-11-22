@@ -179,7 +179,8 @@ else
 @code {
     [Parameter] public Guid Id { get; set; }
 
-    protected override UserRole[]? AllowedRoles => [UserRole.Student];
+    // Lot J1 : tout compte peut apprendre ; Quiz vérifie que l'évaluation lui est assignée comme apprenant
+    protected override string[]? RequiredHats => [UserHats.Learner];
 
     private bool _loading = true, _busy, _confirm;
     private string? _error;

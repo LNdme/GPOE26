@@ -91,6 +91,8 @@ public static class StudentEndpoints
                 case StudentStatus.Pending when row.Status is StudentStatus.Revoked or StudentStatus.Left:
                     row.Status = StudentStatus.Pending;
                     row.ActivatedAt = null;
+                    // Réintégré : plus de date de départ (contrainte statut et date) ; son code le réactive (lot J2)
+                    row.LeftAt = null;
                     break;
                 case var same when same == row.Status:
                     break;

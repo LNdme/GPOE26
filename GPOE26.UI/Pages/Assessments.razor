@@ -75,8 +75,12 @@
             </div>
         }
     }
-    else
+    @if (Ready && !_loading && (!IsTeacher || _student.Count > 0))
     {
+        @if (IsTeacher)
+        {
+            <h2 class="ga-h3" style="margin-top:24px">À composer dans vos classes</h2>
+        }
         <div class="ga-tabs" role="tablist">
             <button role="tab" class="@(_tab == 0 ? "on" : "")" aria-selected="@Aria.State(_tab == 0)" @onclick="() => _tab = 0">Disponibles <span class="count">@Open.Count()</span></button>
             <button role="tab" class="@(_tab == 1 ? "on" : "")" aria-selected="@Aria.State(_tab == 1)" @onclick="() => _tab = 1">Rendues <span class="count">@Done.Count()</span></button>
@@ -86,7 +90,10 @@
             {
                 <article class="ga-card">
                     <div class="ga-row between">
-                        <span class="ga-tag">@Labels.Of(a.Kind).ToUpperInvariant()</span>
+                        <span class="ga-row" style="gap:6px">
+                            <span class="ga-tag">@Labels.Of(a.Kind).ToUpperInvariant()</span>
+                            @if (a.Former) { <span class="ga-tag grey">CLASSE QUITTÉE</span> }
+                        </span>
                         @if (a.BestScoreScaled is not null) { <span class="ga-tag green">@Labels.Score(a.BestScoreScaled, a.ScaleTo)</span> }
                     </div>
                     <h2 class="ga-h3">@a.Title</h2>
@@ -115,8 +122,8 @@
 </div>
 
 @code {
-    // Épreuves de classe : le service Quiz les réserve aux rôles élève et enseignant ; passeront aux casquettes avec le lot P3c
-    protected override UserRole[]? AllowedRoles => [UserRole.Student, UserRole.Teacher];
+    // Lot J1 : tout compte peut apprendre (élève, parent, enseignant qui suit une classe)
+    protected override string[]? RequiredHats => [UserHats.Learner];
 
     private bool IsTeacher => Session.Role == UserRole.Teacher;
     private bool _loading = true;
@@ -137,6 +144,8 @@
 
     protected override async Task LoadAsync()
     {
+        // Un enseignant voit ses évaluations d'auteur, et aussi celles qu'il compose dans une classe rejointe (lot J1)
+        var learner = Api.MineAsStudentAsync();
         if (IsTeacher)
         {
             var r = await Api.MineAsTeacherAsync();
@@ -144,11 +153,9 @@
             // Lot 13 : où chaque évaluation est déposée (bibliothèques d'établissement)
             _spaceNames = ((await Spaces.MineAsync()).Value ?? []).ToDictionary(s => s.Id, s => s.Name);
         }
-        else
-        {
-            var r = await Api.MineAsStudentAsync();
-            _student = r.Value ?? new(); _error = r.Error;
-        }
+        var mine = await learner;
+        _student = mine.Value ?? new();
+        if (!IsTeacher) _error = mine.Error;
         _loading = false;
     }
 

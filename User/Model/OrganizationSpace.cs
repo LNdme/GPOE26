@@ -104,6 +104,11 @@ namespace User.Model
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         public DateTime? ActivatedAt { get; set; }
+        /// <summary>
+        /// Départ (statut Left ou Revoked) : posé par RemoveStudentAsync, effacé à la réintégration (lot J2).
+        /// Une contrainte CHECK l'impose avec le statut ; la conservation des résultats part de cette date.
+        /// </summary>
+        public DateTime? LeftAt { get; set; }
     }
 
     public enum StudentStatus

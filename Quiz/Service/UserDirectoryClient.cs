@@ -7,8 +7,12 @@ namespace Quiz.Service;
 /// Classe renvoyée par le service User. MyRole : place de l'utilisateur dans la classe (« Teacher », « Manager »,
 /// « Student ») ; une classe peut avoir plusieurs enseignants, TeacherId n'est que le professeur principal.
 /// </summary>
-public record ClassroomRef(Guid Id, string Name, string? InviteCode, Guid TeacherId, string? MyRole = null, bool IsManager = false)
+public record ClassroomRef(Guid Id, string Name, string? InviteCode, Guid TeacherId, string? MyRole = null, bool IsManager = false,
+    List<PeriodRef>? MyPeriods = null)
 {
+    /// <summary>Classe actuelle de l'apprenant : sans périodes (vue sans include=former) ou avec une période en cours.</summary>
+    public bool IsCurrent => MyPeriods is null || MyPeriods.Any(p => p.LeftAt is null);
+
     /// <summary>
     /// Le suivi d'une classe montre toutes ses évaluations au gestionnaire de l'espace (lot 6), et seulement
     /// les siennes à un enseignant : chacun suit sa matière.
@@ -34,8 +38,25 @@ public record LibrarySpaceRef(Guid Id, string Name, bool CanManage, List<Library
     public bool IsTeacher(Guid userId) => Teachers.Any(t => t.UserId == userId);
 }
 
-public record MemberRef(Guid Id, string Username, string? Level, DateTime? LastLoginAt);
-public record ChildRef(Guid ChildId, string Username, string Status);
+/// <summary>Une période d'appartenance à une classe (service User, lot J2) ; LeftAt vide : en cours.</summary>
+public record PeriodRef(DateTime JoinedAt, DateTime? LeftAt);
+
+/// <summary>
+/// Élève d'une classe. LeftAt : ancien élève encore visible (include=former) ; Periods : ses périodes dans la classe ;
+/// Scopes : ce qu'il partage (OfficialResults, Progress, WeakPoints), décidé par le service User (lot J3).
+/// </summary>
+public record MemberRef(Guid Id, string Username, string? Level, DateTime? LastLoginAt,
+    DateTime? LeftAt = null, DateTime? VisibleUntil = null, List<PeriodRef>? Periods = null, List<string>? Scopes = null)
+{
+    /// <summary>Sans Scopes (service User antérieur au lot J3), tout est partagé comme avant.</summary>
+    public bool Shares(string scope) => Scopes is null || Scopes.Contains(scope);
+}
+
+/// <summary>Enfant rattaché ; Scopes : ce qu'il partage avec ce parent (lot J3).</summary>
+public record ChildRef(Guid ChildId, string Username, string Status, List<string>? Scopes = null)
+{
+    public bool Shares(string scope) => Scopes is null || Scopes.Contains(scope);
+}
 public record EntitledFeatureRef(string Code, int? Limit);
 public record EntitlementRef(List<EntitledFeatureRef>? Features);
 public record MySubscriptionsRef(EntitlementRef Entitlement);
@@ -51,9 +72,17 @@ public class UserServiceUnavailableException(Exception inner)
 /// </summary>
 public class UserDirectoryClient(HttpClient http, IHttpContextAccessor context)
 {
-    /// <summary>Enseignant : ses classes (InviteCode renseigné). Élève : les classes qu'il a rejointes.</summary>
-    public async Task<List<ClassroomRef>> MyClassroomsAsync() =>
-        await GetAsync<List<ClassroomRef>>("/classrooms/mine") ?? new();
+    /// <summary>Classes où l'utilisateur enseigne (lot J1 : demandé explicitement, quel que soit le rôle du compte).</summary>
+    public async Task<List<ClassroomRef>> TaughtClassroomsAsync() =>
+        await GetAsync<List<ClassroomRef>>("/classrooms/mine?as=teacher") ?? new();
+
+    /// <summary>Classes que l'utilisateur a rejointes pour apprendre (élève, mais aussi enseignant ou parent qui apprend).</summary>
+    public async Task<List<ClassroomRef>> JoinedClassroomsAsync() =>
+        await GetAsync<List<ClassroomRef>>("/classrooms/mine?as=learner") ?? new();
+
+    /// <summary>Classes rejointes, actuelles et passées, avec les périodes de l'apprenant (historique, lot J4).</summary>
+    public async Task<List<ClassroomRef>> JoinedClassroomsWithHistoryAsync() =>
+        await GetAsync<List<ClassroomRef>>("/classrooms/mine?as=learner&include=former") ?? new();
 
     /// <summary>Une classe vue par l'utilisateur (place, gestionnaire ou non) ; null s'il n'y a pas accès.</summary>
     public Task<ClassroomRef?> ClassroomAsync(Guid classroomId) => GetAsync<ClassroomRef>($"/classrooms/{classroomId}");
@@ -61,6 +90,10 @@ public class UserDirectoryClient(HttpClient http, IHttpContextAccessor context)
     /// <summary>Élèves d'une classe, pour ses enseignants et les gestionnaires de son espace (null sinon).</summary>
     public Task<List<MemberRef>?> MembersAsync(Guid classroomId) =>
         GetAsync<List<MemberRef>>($"/classrooms/{classroomId}/members");
+
+    /// <summary>Élèves actuels et anciens encore visibles pour l'utilisateur (conservation, affectation : service User).</summary>
+    public Task<List<MemberRef>?> MembersWithFormerAsync(Guid classroomId) =>
+        GetAsync<List<MemberRef>>($"/classrooms/{classroomId}/members?include=former");
 
     /// <summary>Le parent connecté est-il rattaché (lien accepté) à cet élève ?</summary>
     public async Task<ChildRef?> ActiveChildAsync(Guid childId)

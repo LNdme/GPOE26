@@ -133,8 +133,8 @@
 </div>
 
 @code {
-    // Épreuves de classe : le service Quiz les réserve aux rôles élève et enseignant ; passeront aux casquettes avec le lot P3c
-    protected override UserRole[]? AllowedRoles => [UserRole.Student, UserRole.Teacher];
+    // Lot J1 : tout compte peut apprendre ; Quiz ne rend la copie qu'à son auteur et à l'auteur de l'évaluation
+    protected override string[]? RequiredHats => [UserHats.Learner];
 
     [Parameter] public Guid Id { get; set; }
     [Parameter] public Guid SubmissionId { get; set; }
@@ -142,7 +142,9 @@
 
     private class GradeForm { public decimal Points { get; set; } public string? Feedback { get; set; } }
 
-    private bool IsTeacher => Session.Role == UserRole.Teacher;
+    // Vue de correction : la copie d'un autre (on est alors l'auteur de l'évaluation), pas le rôle du compte.
+    // Un enseignant qui apprend voit sa propre copie comme un élève.
+    private bool IsTeacher => _review is { } r ? r.StudentId != Session.Profile?.Id : Student is not null;
     private bool _loading = true, _busy, _aiEnabled;
     private Guid? _aiFor;
     private string? _error;

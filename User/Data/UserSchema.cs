@@ -77,7 +77,9 @@ public static class UserSchema
             ""ClassroomId"" uuid NOT NULL REFERENCES ""Classrooms"" (""Id"") ON DELETE CASCADE,
             ""StudentId"" uuid NOT NULL REFERENCES ""AppUsers"" (""Id"") ON DELETE CASCADE,
             ""JoinedAt"" timestamp with time zone NOT NULL,
-            CONSTRAINT ""PK_ClassroomMembers"" PRIMARY KEY (""ClassroomId"", ""StudentId"")
+            ""Id"" uuid NOT NULL DEFAULT gen_random_uuid(),
+            ""LeftAt"" timestamp with time zone,
+            CONSTRAINT ""PK_ClassroomMembers"" PRIMARY KEY (""Id"")
         )",
         @"CREATE INDEX IF NOT EXISTS ""IX_ClassroomMembers_StudentId"" ON ""ClassroomMembers"" (""StudentId"")",
 
@@ -263,6 +265,36 @@ public static class UserSchema
 
         // Le code de classe commun ne sert plus (lot 7) : les nouvelles classes n'en ont pas
         @"ALTER TABLE ""Classrooms"" ALTER COLUMN ""InviteCode"" DROP NOT NULL",
+
+        // Lot J2 (docs/PLAN-APPRENANT-AU-CENTRE.md) : une ligne par période d'appartenance, le départ ne supprime plus rien.
+        // Clé primaire sur Id au lieu de (ClassroomId, StudentId) ; au plus une période en cours par élève et par classe.
+        @"ALTER TABLE ""ClassroomMembers"" ADD COLUMN IF NOT EXISTS ""Id"" uuid NOT NULL DEFAULT gen_random_uuid()",
+        @"ALTER TABLE ""ClassroomMembers"" ADD COLUMN IF NOT EXISTS ""LeftAt"" timestamp with time zone",
+        @"DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'PK_ClassroomMembers' AND array_length(conkey, 1) = 2) THEN
+                ALTER TABLE ""ClassroomMembers"" DROP CONSTRAINT ""PK_ClassroomMembers"";
+                ALTER TABLE ""ClassroomMembers"" ADD CONSTRAINT ""PK_ClassroomMembers"" PRIMARY KEY (""Id"");
+            END IF;
+        END $$",
+        @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_ClassroomMembers_ClassroomId_StudentId"" ON ""ClassroomMembers"" (""ClassroomId"", ""StudentId"") WHERE ""LeftAt"" IS NULL",
+        // Départ d'un élève de la liste d'un espace ; la contrainte (statut <=> date) est posée par la reprise v5, après remplissage
+        @"ALTER TABLE ""OrganizationStudents"" ADD COLUMN IF NOT EXISTS ""LeftAt"" timestamp with time zone",
+        // Lot J3 : année de naissance facultative (majorité réputée, choix T3)
+        @"ALTER TABLE ""AppUsers"" ADD COLUMN IF NOT EXISTS ""BirthYear"" integer",
+        // Lot J3 : ce qu'une personne majeure ne partage plus avec un espace ou un parent (jamais les résultats officiels)
+        @"CREATE TABLE IF NOT EXISTS ""SharingOptOuts"" (
+            ""Id"" uuid NOT NULL,
+            ""LearnerId"" uuid NOT NULL REFERENCES ""AppUsers"" (""Id"") ON DELETE CASCADE,
+            ""OrganizationId"" uuid REFERENCES ""Organizations"" (""Id"") ON DELETE CASCADE,
+            ""GuardianId"" uuid REFERENCES ""AppUsers"" (""Id"") ON DELETE CASCADE,
+            ""Scope"" text NOT NULL,
+            ""CreatedAt"" timestamp with time zone NOT NULL,
+            CONSTRAINT ""PK_SharingOptOuts"" PRIMARY KEY (""Id""),
+            CONSTRAINT ""CK_SharingOptOuts_OneTarget"" CHECK ((""OrganizationId"" IS NULL) <> (""GuardianId"" IS NULL)),
+            CONSTRAINT ""CK_SharingOptOuts_Scope"" CHECK (""Scope"" IN ('Progress', 'WeakPoints'))
+        )",
+        @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_SharingOptOuts_Organization"" ON ""SharingOptOuts"" (""LearnerId"", ""OrganizationId"", ""Scope"") WHERE ""OrganizationId"" IS NOT NULL",
+        @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_SharingOptOuts_Guardian"" ON ""SharingOptOuts"" (""LearnerId"", ""GuardianId"", ""Scope"") WHERE ""GuardianId"" IS NOT NULL",
 
         // Reprises de données à ne jouer qu'une fois (cf. UserDataMigrations)
         @"CREATE TABLE IF NOT EXISTS ""SchemaVersions"" (

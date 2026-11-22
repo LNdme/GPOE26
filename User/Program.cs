@@ -66,6 +66,7 @@ builder.Services.AddHttpClient<PlanCatalogClient>(client =>
 builder.Services.AddScoped<ClassroomService>();
 builder.Services.AddScoped<SpaceService>();
 builder.Services.AddScoped<AccessCodeService>();
+builder.Services.AddScoped<VisibilityService>();   // lot J3 : qui voit quoi, retraits de partage
 
 // Applique les [Required], [MinLength]… des DTOs aux Minimal APIs (sinon ils sont ignorés)
 builder.Services.AddValidation();
@@ -326,6 +327,7 @@ auth.MapGet("/me", async (ClaimsPrincipal principal, UserContext db, ProfileServ
 // ─── Classes, parents, abonnements, administration ────────────────────────────
 app.MapClassroomEndpoints();
 app.MapParentEndpoints();
+app.MapSharingEndpoints();   // lot J3 : /me/history, /me/sharing
 app.MapSubscriptionEndpoints();
 app.MapAdminEndpoints();
 app.MapProfileEndpoints();

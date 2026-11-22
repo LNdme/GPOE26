@@ -11,5 +11,6 @@
   <Project Path="GPOE26.Web/GPOE26.Web.csproj" />
   <Project Path="Quiz/Quiz.csproj" />
   <Project Path="Quiz.Tests/Quiz.Tests.csproj" />
+  <Project Path="User.Tests/User.Tests.csproj" />
   <Project Path="User/User.csproj" />
 </Solution>

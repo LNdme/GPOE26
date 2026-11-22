@@ -176,7 +176,8 @@ public class AccessCodeRulesTests
 
     [Theory]
     [InlineData(User.Model.AccessCodeKind.Student, User.Model.UserRole.Student, true)]
-    [InlineData(User.Model.AccessCodeKind.Student, User.Model.UserRole.Teacher, false)]
+    [InlineData(User.Model.AccessCodeKind.Student, User.Model.UserRole.Teacher, true)]   // lot J1 : un enseignant peut apprendre
+    [InlineData(User.Model.AccessCodeKind.Student, User.Model.UserRole.Parent, true)]
     [InlineData(User.Model.AccessCodeKind.Teacher, User.Model.UserRole.Teacher, true)]
     [InlineData(User.Model.AccessCodeKind.Teacher, User.Model.UserRole.Student, false)]
     [InlineData(User.Model.AccessCodeKind.Owner, User.Model.UserRole.Parent, true)]

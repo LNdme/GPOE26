@@ -20,6 +20,7 @@ namespace User.Data
         public DbSet<ClassroomTeacher> ClassroomTeachers { get; set; }
         public DbSet<OrganizationStudent> OrganizationStudents { get; set; }
         public DbSet<AccessCode> AccessCodes { get; set; }
+        public DbSet<SharingOptOut> SharingOptOuts { get; set; }
         public DbSet<SchemaVersion> SchemaVersions { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -71,9 +72,14 @@ namespace User.Data
 
             modelBuilder.Entity<ClassroomMember>(entity =>
             {
-                entity.HasKey(m => new { m.ClassroomId, m.StudentId });
+                // Une ligne par période (lot J2) : au plus une période en cours par (classe, élève), index unique partiel
+                entity.HasKey(m => m.Id);
+                entity.HasIndex(m => new { m.ClassroomId, m.StudentId }).IsUnique().HasFilter(@"""LeftAt"" IS NULL");
                 entity.HasIndex(m => m.StudentId);
                 entity.HasOne(m => m.Classroom).WithMany(c => c.Members).HasForeignKey(m => m.ClassroomId);
+                // Toutes les requêtes ne voient que les membres actuels ; l'oubli d'un filtre aurait laissé à un ancien
+                // élève l'accès à la classe. Historique et visibilité : IgnoreQueryFilters().
+                entity.HasQueryFilter(m => m.LeftAt == null);
             });
 
             modelBuilder.Entity<ParentChildLink>(entity =>
@@ -159,6 +165,12 @@ namespace User.Data
             });
 
             modelBuilder.Entity<SchemaVersion>(entity => entity.HasKey(v => v.Version));
+
+            modelBuilder.Entity<SharingOptOut>(entity =>
+            {
+                entity.Property(o => o.Scope).HasConversion<string>();
+                entity.HasIndex(o => o.LearnerId);
+            });
         }
     }
 }

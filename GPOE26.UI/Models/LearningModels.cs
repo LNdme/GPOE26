@@ -170,10 +170,13 @@ public record StudentAssessment(
     Guid Id, string Title, string? Description, AssessmentKind Kind, AssessmentStatus Status, string? Subject,
     DateTime? OpensAt, DateTime? DueAt, int? DurationMinutes, int MaxAttempts, int AttemptsUsed,
     bool HasAttemptInProgress, int QuestionCount, decimal MaxScore, bool AllowOffline,
-    decimal? BestScoreScaled, int ScaleTo, Guid? LastSubmissionId = null)
+    decimal? BestScoreScaled, int ScaleTo, Guid? LastSubmissionId = null,
+    // Lot J4 : évaluation d'une classe quittée, gardée dans l'historique ; on n'y compose plus
+    bool Former = false)
 {
     public bool CanStart(DateTime now) =>
-        Status == AssessmentStatus.Published
+        !Former
+        && Status == AssessmentStatus.Published
         && (OpensAt is null || OpensAt <= now)
         && (DueAt is null || DueAt > now)
         && (HasAttemptInProgress || AttemptsUsed < MaxAttempts);
@@ -228,8 +231,16 @@ public record AssessmentResult(Guid AssessmentId, string Title, AssessmentKind K
 
 public record CourseMastery(Guid CourseId, decimal Earned, decimal Max, double Percent);
 
+/// <summary>
+/// Lot J4 : LeftAt / VisibleUntil pour un ancien élève ; OutOfPeriod : évaluations hors de sa période ;
+/// ProgressHidden : la personne ne partage plus sa maîtrise.
+/// </summary>
 public record StudentProgress(Guid StudentId, string? Username, DateTime? LastLoginAt, double? AverageOn20,
-    List<AssessmentResult> Results, List<CourseMastery> Mastery);
+    List<AssessmentResult> Results, List<CourseMastery> Mastery,
+    DateTime? LeftAt = null, DateTime? VisibleUntil = null, List<Guid>? OutOfPeriod = null, bool ProgressHidden = false)
+{
+    public bool IsFormer => LeftAt is not null;
+}
 
 public record AssessmentHeader(Guid Id, string Title, AssessmentKind Kind, DateTime? DueAt, Guid? CourseId, string? Subject = null);
 

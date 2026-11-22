@@ -124,6 +124,8 @@ public static class Labels
 
     public static string Date(DateTime? d) => d is null ? "—" : AppTime.ToLocal(d.Value).ToString("ddd d MMM", Fr);
     public static string When(DateTime? d) => d is null ? "—" : AppTime.ToLocal(d.Value).ToString("ddd d MMM · HH'h'mm", Fr);
+    /// <summary>Date avec l'année (historique, conservation) : « 30 juin 2026 ».</summary>
+    public static string FullDate(DateTime? d) => d is null ? "—" : AppTime.ToLocal(d.Value).ToString("d MMMM yyyy", Fr);
     public static string Today() => AppTime.Now.ToString("dddd d MMMM", Fr);
 
     public static string Score(decimal? value, int scaleTo) =>

@@ -258,7 +258,7 @@
             var assessments = Assessments.MineAsStudentAsync();
             var courses = Courses.SharedWithMeAsync();
             var progress = Progress.MineAsync();
-            var classes = Classrooms.MineAsync();
+            var classes = Classrooms.MineAsync("learner");
             var parents = Family.MyParentsAsync();
             // Le plan du jour interroge plusieurs services : il arrive après, sans retarder le reste de la page
             _ = LoadPlanAsync();
@@ -336,7 +336,7 @@
         if (result.Ok)
         {
             _joinCode = null;
-            _classes = (await Classrooms.MineAsync()).Value ?? _classes;
+            _classes = (await Classrooms.MineAsync("learner")).Value ?? _classes;
             var joined = _classes.FirstOrDefault(c => !before.Contains(c.Id));
             _joinMessage = joined is null ? "Code validé." : $"Tu as rejoint « {joined.Name} ».";
             // Lot 11 (P5) : l'établissement couvre maintenant ce que paie l'abonnement personnel ou familial

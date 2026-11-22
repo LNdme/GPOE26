@@ -42,14 +42,24 @@ namespace User.Model
         public List<ClassroomMember> Members { get; set; } = new();
     }
 
+    /// <summary>
+    /// Une période d'appartenance d'un élève à une classe (docs/PLAN-APPRENANT-AU-CENTRE.md, lot J2). Le départ ne
+    /// supprime plus la ligne : LeftAt est posé, et un retour crée une nouvelle période. Un filtre EF ne garde que les
+    /// périodes en cours (LeftAt vide) ; l'historique et la visibilité lisent les autres avec IgnoreQueryFilters().
+    /// </summary>
     public class ClassroomMember
     {
+        public Guid Id { get; set; } = Guid.NewGuid();
+
         public Guid ClassroomId { get; set; }
         public Classroom Classroom { get; set; } = null!;
 
         public Guid StudentId { get; set; }
 
         public DateTime JoinedAt { get; set; } = DateTime.UtcNow;
+
+        /// <summary>Fin de la période (départ, changement de classe, retrait) ; vide tant que l'élève est dans la classe.</summary>
+        public DateTime? LeftAt { get; set; }
     }
 
     public enum ClassroomKind

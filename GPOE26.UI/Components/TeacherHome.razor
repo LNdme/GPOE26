@@ -154,7 +154,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var classes = Classrooms.MineAsync();
+        var classes = Classrooms.MineAsync("teacher");
         var assessments = Assessments.MineAsTeacherAsync();
         var spaces = Spaces.MineAsync();
         await Task.WhenAll(classes, assessments, spaces);

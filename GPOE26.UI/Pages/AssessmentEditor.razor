@@ -272,7 +272,7 @@
 
     protected override async Task LoadAsync()
     {
-        var classes = Classrooms.MineAsync();
+        var classes = Classrooms.MineAsync("teacher");
         var courses = Courses.MineAsync();
         await Task.WhenAll(classes, courses);
         _classes = classes.Result.Value ?? new();

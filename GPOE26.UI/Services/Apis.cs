@@ -68,7 +68,8 @@ public interface IPlanApi
 
 public interface IClassroomApi
 {
-    Task<ApiResult<List<Classroom>>> MineAsync();
+    /// <summary>view : « learner » (classes rejointes), « teacher » (classes enseignées) ou null (les deux), lot J1.</summary>
+    Task<ApiResult<List<Classroom>>> MineAsync(string? view = null);
     Task<ApiResult<Classroom>> GetAsync(Guid id);
     Task<ApiResult<Classroom>> CreateAsync(CreateClassroomRequest request);
     Task<ApiResult<List<ClassroomMember>>> MembersAsync(Guid id);
@@ -236,7 +237,8 @@ public class PlanApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiCl
 
 public class ClassroomApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.User), IClassroomApi
 {
-    public Task<ApiResult<List<Classroom>>> MineAsync() => GetAsync<List<Classroom>>("/classrooms/mine");
+    public Task<ApiResult<List<Classroom>>> MineAsync(string? view = null) =>
+        GetAsync<List<Classroom>>(view is null ? "/classrooms/mine" : $"/classrooms/mine?as={view}");
     public Task<ApiResult<Classroom>> GetAsync(Guid id) => GetAsync<Classroom>($"/classrooms/{id}");
     public Task<ApiResult<Classroom>> CreateAsync(CreateClassroomRequest request) => PostAsync<Classroom>("/classrooms", request);
     public Task<ApiResult<List<ClassroomMember>>> MembersAsync(Guid id) => GetAsync<List<ClassroomMember>>($"/classrooms/{id}/members");
@@ -299,7 +301,7 @@ public class PracticeQuizApi(IHttpClientFactory f, SessionState s) : ApiBase(f, 
 
 public class AssessmentApi(IHttpClientFactory f, SessionState s) : ApiBase(f, s, ApiClients.Quiz), IAssessmentApi
 {
-    public Task<ApiResult<List<Assessment>>> MineAsTeacherAsync() => GetAsync<List<Assessment>>("/assessments/mine");
+    public Task<ApiResult<List<Assessment>>> MineAsTeacherAsync() => GetAsync<List<Assessment>>("/assessments/authored");
     public Task<ApiResult<List<StudentAssessment>>> MineAsStudentAsync() => GetAsync<List<StudentAssessment>>("/assessments/mine");
     public Task<ApiResult<Assessment>> GetAsync(Guid id) => GetAsync<Assessment>($"/assessments/{id}");
     public Task<ApiResult<Assessment>> CreateAsync(AssessmentDraft draft) => PostAsync<Assessment>("/assessments", ToInput(draft));

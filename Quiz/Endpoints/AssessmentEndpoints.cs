@@ -28,24 +28,30 @@ public static class AssessmentEndpoints
         .WithSummary("Créer une évaluation (brouillon)")
         .Produces<AssessmentDto>(201);
 
+        // ── GET /assessments/authored ─────────────────────────────────────────────
+        // Les évaluations dont l'utilisateur est l'auteur (lot J1 : séparé de /mine, qui est la vue de l'apprenant).
+        group.MapGet("/authored", async (ClaimsPrincipal principal, EvaluationContext db) =>
+        {
+            var userId = principal.UserId();
+            var own = await db.Assessments.Include(a => a.Questions)
+                .Where(a => a.TeacherId == userId)
+                .OrderByDescending(a => a.UpdatedAt)
+                .AsNoTracking()
+                .ToListAsync();
+            return Results.Ok(own.Select(a => new AssessmentDto(a, withQuestions: false)));
+        })
+        .RequireAuthorization(Roles.Teacher)
+        .WithSummary("Mes évaluations d'auteur")
+        .Produces<List<AssessmentDto>>();
+
         // ── GET /assessments/mine ─────────────────────────────────────────────────
-        // Enseignant : ses évaluations. Élève : celles publiées pour ses classes, avec son avancement.
+        // Celles publiées pour les classes que l'utilisateur a rejointes, avec son avancement. Tout compte peut apprendre
+        // (élève, parent, enseignant qui suit une classe) : la réponse a toujours la même forme (lot J1).
         group.MapGet("/mine", async (ClaimsPrincipal principal, EvaluationContext db, UserDirectoryClient users) =>
         {
             var userId = principal.UserId();
-            if (principal.IsInRole(Roles.Teacher))
-            {
-                var own = await db.Assessments.Include(a => a.Questions)
-                    .Where(a => a.TeacherId == userId)
-                    .OrderByDescending(a => a.UpdatedAt)
-                    .AsNoTracking()
-                    .ToListAsync();
-                return Results.Ok(own.Select(a => new AssessmentDto(a, withQuestions: false)));
-            }
-
-            if (!principal.IsInRole(Roles.Student)) return Results.Forbid();
-
-            var assigned = await AssignedToStudentAsync(db, users);
+            // Lot J4 : les évaluations des classes quittées restent dans « Rendues », marquées Former (plus de tentative)
+            var (assigned, former) = await LearnerHistoryAsync(db, users, userId);
             var ids = assigned.Select(a => a.Id).ToList();
             var attempts = await db.Submissions
                 .Where(s => s.StudentId == userId && ids.Contains(s.AssessmentId))
@@ -65,11 +71,11 @@ public static class AssessmentEndpoints
                     mine.Any(s => s.Status == SubmissionStatus.InProgress),
                     a.Questions.Count, a.MaxScore, a.AllowOffline,
                     best is null ? null : ProgressService.Scale(best.Score, best.MaxScore, a.ScaleTo), a.ScaleTo,
-                    mine.Where(s => s.Status != SubmissionStatus.InProgress).MaxBy(s => s.SubmittedAt)?.Id);
+                    mine.Where(s => s.Status != SubmissionStatus.InProgress).MaxBy(s => s.SubmittedAt)?.Id,
+                    former.Contains(a.Id));
             }));
         })
-        .WithSummary("Mes évaluations")
-        .Produces<List<AssessmentDto>>()
+        .WithSummary("Mes évaluations à composer (vue de l'apprenant)")
         .Produces<List<StudentAssessmentDto>>();
 
         // ── GET /assessments/{id} ─────────────────────────────────────────────────
@@ -85,8 +91,7 @@ public static class AssessmentEndpoints
             if (await LibraryEndpoints.ReadableFromLibraryAsync(db, id, users) is { } deposited)
                 return Results.Ok(new AssessmentDto(deposited, withQuestions: true));
 
-            if (!principal.IsInRole(Roles.Student)) return Results.NotFound();
-            var assigned = (await AssignedToStudentAsync(db, users)).FirstOrDefault(a => a.Id == id);
+            var assigned = (await AssignedToLearnerAsync(db, users, userId)).FirstOrDefault(a => a.Id == id);
             return assigned is null ? Results.NotFound() : Results.Ok(new AssessmentDto(assigned, withQuestions: false));
         })
         .WithSummary("Détail d'une évaluation")
@@ -187,7 +192,7 @@ public static class AssessmentEndpoints
 
     /// <summary>Classes où l'utilisateur connecté enseigne (une classe peut avoir plusieurs enseignants).</summary>
     private static async Task<HashSet<Guid>> OwnedClassroomIdsAsync(ClaimsPrincipal principal, UserDirectoryClient users) =>
-        ClassroomRef.TaughtBy(await users.MyClassroomsAsync(), principal.UserId());
+        ClassroomRef.TaughtBy(await users.TaughtClassroomsAsync(), principal.UserId());
 
     /// <summary>Refus si l'évaluation vise une classe dont l'enseignant n'est pas le propriétaire, sinon null.</summary>
     private static async Task<IResult?> ForeignClassroomsAsync(AssessmentInput input, ClaimsPrincipal principal, UserDirectoryClient users)
@@ -200,17 +205,56 @@ public static class AssessmentEndpoints
             : EndpointHelpers.Error(400, "Vous ne pouvez assigner l'évaluation qu'à vos propres classes.");
     }
 
-    /// <summary>Évaluations publiées (ou clôturées) pour au moins une classe de l'élève connecté.</summary>
-    public static async Task<List<Assessment>> AssignedToStudentAsync(EvaluationContext db, UserDirectoryClient users)
+    /// <summary>
+    /// Évaluations publiées (ou clôturées) pour au moins une classe que l'utilisateur a rejointe pour apprendre,
+    /// sauf les siennes (AssignmentRules).
+    /// </summary>
+    public static async Task<List<Assessment>> AssignedToLearnerAsync(EvaluationContext db, UserDirectoryClient users, Guid userId)
     {
-        var classIds = (await users.MyClassroomsAsync()).Select(c => c.Id).ToList();
+        var classIds = (await users.JoinedClassroomsAsync()).Select(c => c.Id).ToList();
         if (classIds.Count == 0) return new();
 
-        return await db.Assessments.Include(a => a.Questions)
+        var assigned = await db.Assessments.Include(a => a.Questions)
             .Where(a => a.Status != AssessmentStatus.Draft && a.ClassroomIds.Any(c => classIds.Contains(c)))
             .OrderBy(a => a.DueAt ?? a.PublishedAt)
             .AsNoTracking()
             .ToListAsync();
+        return AssignmentRules.ForLearner(assigned, userId);
+    }
+
+    /// <summary>
+    /// Historique de l'apprenant (lot J4) : les évaluations de ses classes actuelles, plus celles des classes quittées
+    /// qui comptaient pour sa période (AssignmentRules.CountsFor). Former : seulement par une classe quittée ; on ne
+    /// peut plus y composer (les tentatives passent par AssignedToLearnerAsync, classes actuelles seulement).
+    /// </summary>
+    public static async Task<(List<Assessment> Assessments, HashSet<Guid> Former)> LearnerHistoryAsync(
+        EvaluationContext db, UserDirectoryClient users, Guid userId)
+    {
+        var classes = await users.JoinedClassroomsWithHistoryAsync();
+        if (classes.Count == 0) return (new(), new());
+        var classIds = classes.Select(c => c.Id).ToList();
+        var currentIds = classes.Where(c => c.IsCurrent).Select(c => c.Id).ToHashSet();
+
+        var candidates = AssignmentRules.ForLearner(await db.Assessments.Include(a => a.Questions)
+            .Where(a => a.Status != AssessmentStatus.Draft && a.ClassroomIds.Any(c => classIds.Contains(c)))
+            .OrderBy(a => a.DueAt ?? a.PublishedAt)
+            .AsNoTracking()
+            .ToListAsync(), userId);
+        var candidateIds = candidates.Select(a => a.Id).ToList();
+        var submitted = (await db.Submissions.Where(s => s.StudentId == userId && candidateIds.Contains(s.AssessmentId))
+            .Select(s => s.AssessmentId).Distinct().ToListAsync()).ToHashSet();
+
+        var result = new List<Assessment>();
+        var former = new HashSet<Guid>();
+        foreach (var a in candidates)
+        {
+            if (a.ClassroomIds.Any(currentIds.Contains)) { result.Add(a); continue; }
+            var periods = classes.Where(c => a.ClassroomIds.Contains(c.Id)).SelectMany(c => c.MyPeriods ?? []).ToList();
+            if (!AssignmentRules.CountsFor(a, periods, submitted.Contains(a.Id))) continue;
+            result.Add(a);
+            former.Add(a.Id);
+        }
+        return (result, former);
     }
 
     private static void Apply(Assessment a, AssessmentInput input)

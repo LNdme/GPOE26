@@ -33,14 +33,14 @@ public static class SubmissionEndpoints
     {
         var group = app.MapGroup("/assessments/{id:guid}").WithTags("Copies").RequireAuthorization();
 
-        // ═══ Élève ════════════════════════════════════════════════════════════════
+        // ═══ Apprenant : tout compte (lot J1) ; chaque route vérifie que l'évaluation ou la copie est la sienne ═══
 
         // ── POST /assessments/{id}/attempts ───────────────────────────────────────
         // Démarre une tentative, ou reprend celle en cours.
         group.MapPost("/attempts", async (Guid id, ClaimsPrincipal principal, EvaluationContext db, UserDirectoryClient users) =>
         {
             var studentId = principal.UserId();
-            var assessment = (await AssessmentEndpoints.AssignedToStudentAsync(db, users)).FirstOrDefault(a => a.Id == id);
+            var assessment = (await AssessmentEndpoints.AssignedToLearnerAsync(db, users, studentId)).FirstOrDefault(a => a.Id == id);
             if (assessment is null) return Results.NotFound();
 
             var attempts = await db.Submissions.Where(s => s.AssessmentId == id && s.StudentId == studentId).ToListAsync();
@@ -82,7 +82,6 @@ public static class SubmissionEndpoints
             await db.SaveChangesAsync();
             return Results.Created($"/assessments/{id}/submissions/{submission.Id}", ToAttempt(submission, assessment, new()));
         })
-        .RequireAuthorization(Roles.Student)
         .WithSummary("Commencer (ou reprendre) une tentative")
         .Produces<AttemptDto>(201)
         .Produces(409);
@@ -109,7 +108,6 @@ public static class SubmissionEndpoints
                 ? EndpointHelpers.Error(409, "Cette copie n'est plus en cours de composition.")
                 : Results.NoContent();
         })
-        .RequireAuthorization(Roles.Student)
         .WithSummary("Enregistrer le brouillon de sa copie")
         .Produces(204)
         .Produces(409);
@@ -137,7 +135,6 @@ public static class SubmissionEndpoints
             await db.SaveChangesAsync();
             return Results.Ok(ToDto(submission, assessment, teacherView: false, await PhotosAsync(db, submission.Id)));
         })
-        .RequireAuthorization(Roles.Student)
         .WithSummary("Rendre sa copie (correction automatique immédiate)")
         .Produces<SubmissionDto>()
         .Produces(409);
@@ -176,7 +173,8 @@ public static class SubmissionEndpoints
 
             var names = new Dictionary<Guid, string>();
             foreach (var classroomId in assessment.ClassroomIds)
-                foreach (var m in await users.MembersAsync(classroomId) ?? new())
+                // Lot J4 : les anciens élèves encore visibles gardent leur nom sur leurs copies
+                foreach (var m in await users.MembersWithFormerAsync(classroomId) ?? new())
                     names[m.Id] = m.Username;
 
             return Results.Ok(submissions.Select(s => new SubmissionRowDto(
@@ -302,7 +300,6 @@ public static class SubmissionEndpoints
             return Results.Ok(new AnswerPhotoDto(photo));
         })
         .DisableAntiforgery()
-        .RequireAuthorization(Roles.Student)
         .WithSummary("Joindre la photo d'une copie à une réponse ouverte (lue ensuite par l'IA, en arrière-plan)")
         .Produces<AnswerPhotoDto>();
 
@@ -315,7 +312,6 @@ public static class SubmissionEndpoints
                 return Results.NotFound();
             return Results.Ok((await PhotosAsync(db, submissionId)).Select(p => new AnswerPhotoDto(p)));
         })
-        .RequireAuthorization(Roles.Student)
         .WithSummary("Photos de ma tentative et leur lecture par l'IA")
         .Produces<List<AnswerPhotoDto>>();
 
@@ -340,7 +336,6 @@ public static class SubmissionEndpoints
             await db.SaveChangesAsync();
             return Results.NoContent();
         })
-        .RequireAuthorization(Roles.Student)
         .WithSummary("Retirer une photo (avant de rendre la copie)");
 
         // ── GET /assessments/{id}/submissions/{submissionId}/photos/{photoId} ─────
@@ -400,7 +395,6 @@ public static class SubmissionEndpoints
                 return EndpointHelpers.Error(502, "L'IA n'a pas pu analyser ta copie. Réessaie dans un instant.");
             }
         })
-        .RequireAuthorization(Roles.Student)
         .WithSummary("Analyse de ma démarche par l'IA (après publication des résultats)")
         .Produces<AiFeedbackDto>();
     }

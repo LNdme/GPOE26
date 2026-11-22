@@ -79,10 +79,13 @@ public class AccessCodeService(UserContext db, SpaceService spaces)
         return (CodeError.None, new CodeInfo(code, org, student, classroom));
     }
 
-    /// <summary>Le rôle du compte convient-il au code ? Élève ↔ code élève, enseignant ↔ code enseignant, pas d'élève responsable.</summary>
+    /// <summary>
+    /// Le rôle du compte convient-il au code ? Tout compte peut apprendre : un code élève est accepté par un enseignant
+    /// ou un parent qui rejoint une classe pour apprendre (lot J1). Code enseignant ↔ enseignant, pas d'élève responsable.
+    /// </summary>
     public static bool RoleFits(AccessCodeKind kind, UserRole role) => kind switch
     {
-        AccessCodeKind.Student => role == UserRole.Student,
+        AccessCodeKind.Student => true,
         AccessCodeKind.Teacher => role == UserRole.Teacher,
         AccessCodeKind.Owner => role != UserRole.Student,
         _ => false
@@ -115,9 +118,15 @@ public class AccessCodeService(UserContext db, SpaceService spaces)
                 if (row?.UserId is { } owner)
                 {
                     if (owner != user.Id) return CodeError.ResetCode;
-                    MarkUsed(code, user);
-                    await db.SaveChangesAsync();
-                    return CodeError.None;
+                    if (row.Status == StudentStatus.Active)
+                    {
+                        MarkUsed(code, user);
+                        await db.SaveChangesAsync();
+                        return CodeError.None;
+                    }
+                    // Réintégré après un départ (Pending, compte déjà lié) : le code le réactive comme une première
+                    // activation, place recomptée sous verrou et retour en classe. Avant le lot J2, le code était
+                    // seulement marqué utilisé et l'élève restait en attente.
                 }
 
                 // Un compte ne figure qu'une fois sur la liste d'un espace
@@ -149,17 +158,24 @@ public class AccessCodeService(UserContext db, SpaceService spaces)
                 row.UserId = user.Id;
                 row.Status = StudentStatus.Active;
                 row.ActivatedAt = DateTime.UtcNow;
+                row.LeftAt = null;
                 // E-mail donné par l'établissement : recopié sur un compte qui n'en a pas, s'il est libre (Q12)
                 if (user.Email is null && row.Email is { } email && !await db.AppUsers.AnyAsync(u => u.Email == email && u.Id != user.Id))
                     user.Email = email;
                 if (row.ClassroomId is { } classId)
                 {
+                    // Seules les périodes en cours sont vues (filtre EF) : un retour ouvre une nouvelle période
                     if (!await db.ClassroomMembers.AnyAsync(m => m.ClassroomId == classId && m.StudentId == user.Id))
                         db.ClassroomMembers.Add(new ClassroomMember { ClassroomId = classId, StudentId = user.Id });
-                    user.Level ??= info.Classroom?.Level;
-                    user.SubSystem ??= info.Classroom?.SubSystem;
+                    // Le niveau de la classe ne remplace pas le profil d'un enseignant ou d'un parent qui apprend
+                    if (user.Role == UserRole.Student)
+                    {
+                        user.Level ??= info.Classroom?.Level;
+                        user.SubSystem ??= info.Classroom?.SubSystem;
+                    }
                 }
-                if (school) user.OrganizationId = orgId;
+                // Un enseignant qui apprend garde son établissement : ses classes y sont créées (lot J1)
+                if (school && (user.Role == UserRole.Student || user.OrganizationId is null)) user.OrganizationId = orgId;
                 break;
             }
             case AccessCodeKind.Teacher:
@@ -212,7 +228,14 @@ public class AccessCodeService(UserContext db, SpaceService spaces)
         {
             var user = await db.AppUsers.FirstOrDefaultAsync(u => u.Id == userId);
             if (user is null) return (null, CodeError.None);
-            if (code is not null)
+            if (code is not null && row.Status != StudentStatus.Active)
+            {
+                // Réintégré après un départ : le code le réactive (place, classe), comme sur la page « J'ai un code »
+                var reactivated = await ReactivateAsync(code.Code, user);
+                if (reactivated != CodeError.None) return (null, reactivated);
+                user.MustChangePassword = true;
+            }
+            else if (code is not null)
             {
                 MarkUsed(code, user);
                 user.MustChangePassword = true;
@@ -260,6 +283,25 @@ public class AccessCodeService(UserContext db, SpaceService spaces)
         });
     }
 
+    /// <summary>Applique le code d'un élève réintégré dans sa propre transaction (ApplyAsync attend celle de l'appelant).</summary>
+    private async Task<CodeError> ReactivateAsync(string code, AppUser user)
+    {
+        var strategy = db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var tx = await db.Database.BeginTransactionAsync();
+            var applied = await ApplyAsync(code, user);
+            if (applied != CodeError.None)
+            {
+                await tx.RollbackAsync();
+                db.ChangeTracker.Clear();
+                return applied;
+            }
+            await tx.CommitAsync();
+            return CodeError.None;
+        });
+    }
+
     private async Task<string> UniqueLinkCodeAsync()
     {
         while (true)
@@ -275,11 +317,16 @@ public class AccessCodeService(UserContext db, SpaceService spaces)
     /// </summary>
     public async Task RemoveStudentAsync(OrganizationStudent row, StudentStatus status)
     {
+        var now = DateTime.UtcNow;
         row.Status = status;
+        // Seul endroit qui pose la date de départ ; la contrainte CK_OrganizationStudents_LeftAt l'impose avec le statut
+        row.LeftAt = now;
         if (row.UserId is { } userId)
         {
+            // Lot J2 : les périodes sont closes, plus supprimées ; l'élève garde son historique, l'espace ses résultats
             var classIds = await db.Classrooms.Where(c => c.OrganizationId == row.OrganizationId).Select(c => c.Id).ToListAsync();
-            await db.ClassroomMembers.Where(m => m.StudentId == userId && classIds.Contains(m.ClassroomId)).ExecuteDeleteAsync();
+            await db.ClassroomMembers.Where(m => m.StudentId == userId && classIds.Contains(m.ClassroomId))
+                .ExecuteUpdateAsync(s => s.SetProperty(m => m.LeftAt, now));
         }
         await db.AccessCodes.Where(c => c.OrganizationStudentId == row.Id && c.Status == AccessCodeStatus.Issued)
             .ExecuteUpdateAsync(s => s.SetProperty(c => c.Status, AccessCodeStatus.Revoked));
@@ -292,7 +339,8 @@ public class AccessCodeService(UserContext db, SpaceService spaces)
         if (row.UserId is { } userId && row.Status == StudentStatus.Active)
         {
             if (row.ClassroomId is { } old)
-                await db.ClassroomMembers.Where(m => m.ClassroomId == old && m.StudentId == userId).ExecuteDeleteAsync();
+                await db.ClassroomMembers.Where(m => m.ClassroomId == old && m.StudentId == userId)
+                    .ExecuteUpdateAsync(s => s.SetProperty(m => m.LeftAt, DateTime.UtcNow));
             if (classroomId is { } next && !await db.ClassroomMembers.AnyAsync(m => m.ClassroomId == next && m.StudentId == userId))
                 db.ClassroomMembers.Add(new ClassroomMember { ClassroomId = next, StudentId = userId });
         }

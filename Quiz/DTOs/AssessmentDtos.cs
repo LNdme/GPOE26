@@ -114,7 +114,9 @@ public record StudentAssessmentDto(
     Guid Id, string Title, string? Description, AssessmentKind Kind, AssessmentStatus Status, string? Subject,
     DateTime? OpensAt, DateTime? DueAt, int? DurationMinutes, int MaxAttempts, int AttemptsUsed,
     bool HasAttemptInProgress, int QuestionCount, decimal MaxScore, bool AllowOffline,
-    decimal? BestScoreScaled, int ScaleTo, Guid? LastSubmissionId);
+    decimal? BestScoreScaled, int ScaleTo, Guid? LastSubmissionId,
+    // Lot J4 : évaluation d'une classe quittée, gardée dans l'historique ; plus de tentative possible
+    bool Former = false);
 
 /// <summary>Draft : réponses déjà saisies lors d'une tentative reprise (vide pour une tentative neuve).</summary>
 public record AttemptDto(
@@ -160,9 +162,14 @@ public record AssessmentResultDto(
 /// <summary>Part des points obtenus sur les questions liées à un cours</summary>
 public record CourseMasteryDto(Guid CourseId, decimal Earned, decimal Max, double Percent);
 
+/// <summary>
+/// Lot J4 : LeftAt / VisibleUntil pour un ancien élève (suivi de la classe) ; OutOfPeriod : évaluations publiées hors de
+/// sa période (cellule « Hors période ») ; ProgressHidden : la personne ne partage plus sa maîtrise.
+/// </summary>
 public record StudentProgressDto(
     Guid StudentId, string? Username, DateTime? LastLoginAt, double? AverageOn20,
-    List<AssessmentResultDto> Results, List<CourseMasteryDto> Mastery);
+    List<AssessmentResultDto> Results, List<CourseMasteryDto> Mastery,
+    DateTime? LeftAt = null, DateTime? VisibleUntil = null, List<Guid>? OutOfPeriod = null, bool ProgressHidden = false);
 
 /// <summary>Subject : matière de l'évaluation (utile au gestionnaire, qui voit celles de tous les enseignants).</summary>
 public record AssessmentHeaderDto(Guid Id, string Title, AssessmentKind Kind, DateTime? DueAt, Guid? CourseId, string? Subject = null);

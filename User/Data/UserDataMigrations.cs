@@ -23,6 +23,31 @@ public static class UserDataMigrations
         await ApplyAsync(db, logger, 4,
             "Connexion par matricule : un code court pour chaque établissement et espace d'enseignant",
             () => ShortCodesV4Async(db));
+        await ApplyAsync(db, logger, 5,
+            "Départs datés : date de départ des élèves déjà partis ou retirés, contrainte statut et date (lot J2)",
+            () => DepartureDatesV5Async(db, at));
+    }
+
+    /// <summary>
+    /// Version 5 (docs/PLAN-APPRENANT-AU-CENTRE.md, lot J2, choix T5). Les fiches déjà parties ou retirées n'avaient
+    /// pas de date : elles prennent celle de la reprise, et la conservation de leurs résultats part de ce jour.
+    /// Ensuite, une contrainte impose la date avec le statut (une seule source de vérité). Les appartenances aux
+    /// classes déjà supprimées avant cette version ne peuvent pas être retrouvées.
+    /// </summary>
+    private static async Task DepartureDatesV5Async(UserContext db, DateTime now)
+    {
+        await db.Database.ExecuteSqlRawAsync(
+            """UPDATE "OrganizationStudents" SET "LeftAt" = {0} WHERE "Status" IN ('Left', 'Revoked') AND "LeftAt" IS NULL""", now);
+        await db.Database.ExecuteSqlRawAsync(
+            """UPDATE "OrganizationStudents" SET "LeftAt" = NULL WHERE "Status" NOT IN ('Left', 'Revoked') AND "LeftAt" IS NOT NULL""");
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'CK_OrganizationStudents_LeftAt') THEN
+                    ALTER TABLE "OrganizationStudents" ADD CONSTRAINT "CK_OrganizationStudents_LeftAt"
+                        CHECK (("LeftAt" IS NOT NULL) = ("Status" IN ('Left', 'Revoked')));
+                END IF;
+            END $$
+            """);
     }
 
     /// <summary>Version 4 (phase 2, lot 10). Les espaces créés ensuite reçoivent leur code à la création.</summary>

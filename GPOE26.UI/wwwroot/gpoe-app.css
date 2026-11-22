@@ -233,6 +233,18 @@
 .ga-heat .mid { background: #AFC3EE; color: var(--ga-navy); }
 .ga-heat .lo { background: var(--ga-amber-soft); color: #6B3A00; box-shadow: inset 0 0 0 1px #E0B565; }
 .ga-heat .none { background: #F1EFE8; color: var(--ga-muted); font-weight: 400; }
+/* Lot J5 : évaluation hors de la période d'un ancien élève (hachures + texte, pas seulement une couleur) */
+.ga-heat .out { background: repeating-linear-gradient(135deg, #F1EFE8 0 6px, #E4E2DA 6px 12px); color: #3D4560; font-weight: 400; font-size: 12px; }
+.ga-heat .unshared { background: #F7F6F2; color: #3D4560; font-weight: 400; font-style: italic; font-size: 12px; }
+.ga-former { margin-top: 12px; }
+.ga-former > summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+.ga-history { display: flex; flex-direction: column; gap: 16px; }
+.ga-share-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--ga-line-2); }
+.ga-share-row:last-child { border-bottom: none; }
+.ga-share-row > span:first-child { display: inline-flex; align-items: center; gap: 6px; }
+.ga-share-row > span:first-child svg { flex: 0 0 auto; }
+.ga-confirm { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-radius: 8px; background: var(--ga-amber-soft); }
+@media (max-width: 480px) { .ga-share-row { align-items: flex-start; } .ga-share-row .ga-small { text-align: right; } }
 .ga-legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: #3D4560; }
 .ga-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .ga-legend i { width: 14px; height: 14px; border-radius: 4px; display: inline-block; }

@@ -90,7 +90,7 @@ public static class ParentEndpoints
         .Produces(409);
 
         // ── GET /parents/children ─────────────────────────────────────────────────
-        parents.MapGet("", async (ClaimsPrincipal principal, UserContext db, SubscriptionService subs) =>
+        parents.MapGet("", async (ClaimsPrincipal principal, UserContext db, SubscriptionService subs, VisibilityService visibility) =>
         {
             var parentId = principal.GetUserId()!.Value;
             var rows = await db.ParentChildLinks
@@ -99,9 +99,16 @@ public static class ParentEndpoints
                 .OrderBy(r => r.Link.CreatedAt)
                 .ToListAsync();
 
+            // Lot J3 : ce que chaque enfant partage avec ce parent (Quiz et Chat s'y conforment)
+            var optOuts = await visibility.GuardianOptOutsAsync(parentId, rows.Select(r => r.Child.Id).ToList());
             var result = new List<ChildLinkDto>();
             foreach (var r in rows)
-                result.Add(await ToChildDtoAsync(r.Link, r.Child, subs));
+            {
+                var scopes = r.Link.Status == LinkStatus.Active
+                    ? VisibilityRules.VisibleScopes(ViewerKind.Guardian, true, true, optOuts.GetValueOrDefault(r.Child.Id) ?? [])
+                    : [];
+                result.Add(await ToChildDtoAsync(r.Link, r.Child, subs) with { Scopes = VisibilityService.Names(scopes) });
+            }
             return Results.Ok(result);
         })
         .WithSummary("Mes enfants")

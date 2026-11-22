@@ -98,7 +98,9 @@ Aucun secret ne doit être commité. Copiez `.env.example` en `.env` (ignoré pa
 ## Structure du dépôt
 
 ```
-GPOE26.slnx                 Solution
+GPOE26.slnx                 Solution (serveur, interface, tests ; se construit aussi sous Linux)
+GPOE26.Windows.slnx         Application Windows (WinUI) : `dotnet build GPOE26.Windows.slnx`, sous Windows seulement
+GPOE26.Windows/             Application Windows : étude hors connexion (SQLite), hôte de GPOE26.UI
 GPOE26.AppHost/             Orchestrateur Aspire
 GPOE26.ServiceDefaults/     Configuration commune des services
 GPOE26.UI/                  Espace d'apprentissage (bibliothèque Razor partagée Web / Windows)
@@ -155,7 +157,8 @@ L'interface des élèves, enseignants et parents est une **bibliothèque Razor**
 | Authentification | `POST /auth/register` (inscription guidée : profil, classes initiales, clé d'abonnement familiale ou individuelle, essai), `POST /auth/login` (e-mail **ou nom d'utilisateur**), `POST /auth/refresh` (prolonger la session), `GET /auth/me`, `PUT /auth/me/profile` (champs selon le rôle), `POST /auth/me/password` |
 | Codes personnels | `POST /auth/codes/check` (sans compte : à qui est ce code), `POST /auth/codes/activate` (crée le compte élève ou enseignant ; e-mail facultatif), `POST /access-codes/redeem` (compte existant) |
 | Espaces (établissement, enseignant indépendant) | `GET /organizations/mine` ; responsable et gestionnaires : `GET /organizations/{id}` (tableau de bord), `…/members`, `…/teachers`, `…/managers` (responsable seulement), `…/years`, `…/classes` et `…/classes/{cid}/teachers` (affectation par matière), `…/students` (liste, `…/import` CSV avec aperçu, `…/{sid}/status`), `…/codes` (élève, classe, `…/blank`, `…/teacher`) |
-| Classes et groupes | `POST /classrooms` (groupe personnel de l'enseignant), `GET /classrooms/mine` (avec `myRole`, `mySubjects`, `teachers`), `GET /classrooms/{id}`, `GET /classrooms/{id}/members`, `DELETE /classrooms/{id}`, `DELETE /classrooms/{id}/members/{studentId}` |
+| Classes et groupes | `POST /classrooms` (groupe personnel de l'enseignant), `GET /classrooms/mine?as=learner\|teacher\|all[&include=former]` (avec `myRole`, `mySubjects`, `teachers`, `myPeriods`), `GET /classrooms/{id}`, `GET /classrooms/{id}/members[?include=former]` (périodes, portées partagées), `DELETE /classrooms/{id}`, `DELETE /classrooms/{id}/members/{studentId}` (clôt la période) |
+| Historique et partage | `GET /me/history` (classes et espaces actuels et passés, ce que chacun voit), `DELETE` ou `PUT /me/sharing/{organization\|guardian}/{id}/{progress\|weak-points}` (ne plus partager, partager à nouveau ; personne réputée majeure) |
 | Parents | `POST /parents/children/link` (code de l'élève), `POST /parents/children` (créer le compte de l'enfant), `GET /parents/children`, `DELETE /parents/children/{linkId}` ; côté élève `GET /me/parents`, `POST /me/parents/{linkId}/approve` ou `/reject` |
 | Abonnements | `GET /subscriptions/me`, `POST /subscriptions/redeem`, `POST /subscriptions/checkout`, `POST /subscriptions/trial` |
 | Administration (droit d'administrateur, vérifié en base à chaque appel) | `GET /admin/users`, `PUT /admin/users/{id}/access` (administrateur, éditeur du site), `GET /admin/subscriptions?status=…` (en attente de paiement par défaut), `POST /admin/subscriptions/{id}/activate`, `POST/GET /admin/organizations`, `POST /admin/organizations/{id}/licenses`, `PUT/DELETE /admin/organizations/{id}/owners` (responsable), `POST /admin/organizations/{id}/owner-code` |
@@ -211,11 +214,26 @@ Les anciens comptes de rôle « Admin » sont convertis au démarrage : ils gard
 
 ---
 
+## Historique et visibilité (l'apprenant au centre)
+
+Détail : `docs/PLAN-APPRENANT-AU-CENTRE.md`. **Le départ ne détruit rien** :
+- **Appartenances datées.** Quitter une classe (retrait, changement, départ de l'établissement) pose `LeftAt` au lieu de supprimer la ligne, et un retour ouvre une nouvelle période. Un filtre EF ne montre que les périodes en cours. L'historique les lit toutes avec `IgnoreQueryFilters()`.
+- **Reprise v5** (`User/Data/UserDataMigrations.cs`). Les fiches déjà parties prennent la date de la reprise, puis une contrainte relie `LeftAt` au statut (`Left`, `Revoked`). La v6 est réservée au lot P4 du plan des publics.
+- **Visibilité** (`User/Service/VisibilityRules.cs`, règles pures) :
+  - la personne voit tout, toujours ;
+  - un espace voit la période où elle était là, jusqu'à `Visibility__RetentionMonths` mois après son départ (12 par défaut) ;
+  - les notions fragiles ne sont montrées que pour les membres actuels ;
+  - une personne réputée majeure peut retirer sa maîtrise et ses notions fragiles, jamais les résultats des évaluations assignées ;
+  - les discussions avec le tuteur ne sont partagées avec personne.
+- **Interface.** La page « Mon historique » (`/app/historique`) regroupe classes, espaces et partage. Dans la grille d'une classe, les anciens élèves sont à part, avec des cellules « Hors période ».
+- **Retour arrière.** `Visibility__Enabled=false` cache les anciens élèves sans rien changer en base. En dernier recours seulement : `scripts/rollback-v5.sql`, après export et sauvegarde.
+
 ## Tests
 
 ```bash
 dotnet test --project Quiz.Tests/Quiz.Tests.csproj
 dotnet test --project GPOE26.Logic.Tests/GPOE26.Logic.Tests.csproj
+dotnet test --project User.Tests/User.Tests.csproj   # service User sur une vraie base PostgreSQL (Docker requis)
 dotnet test --solution GPOE26.slnx   # tout, y compris le test d'intégration (Docker requis)
 ```
 

@@ -29,14 +29,14 @@ public class UserDirectoryClient(HttpClient http, IHttpContextAccessor context)
 {
     /// <summary>Classes de l'utilisateur, animées ou rejointes : sert à savoir quels cours il peut LIRE.</summary>
     public async Task<HashSet<Guid>> MyClassroomIdsAsync() =>
-        (await MyClassroomsAsync()).Select(c => c.Id).ToHashSet();
+        (await MyClassroomsAsync("all")).Select(c => c.Id).ToHashSet();
 
     /// <summary>
     /// Classes où l'utilisateur enseigne : les seules avec lesquelles il peut PARTAGER un cours.
     /// Un élève est membre de sa classe, pas son enseignant : il ne peut rien y publier.
     /// </summary>
     public async Task<HashSet<Guid>> OwnedClassroomIdsAsync(Guid userId) =>
-        OwnedBy(await MyClassroomsAsync(), userId);
+        OwnedBy(await MyClassroomsAsync("teacher"), userId);
 
     /// <summary>Sans MyRole (service User antérieur au lot 2), on retombe sur le professeur principal.</summary>
     public static HashSet<Guid> OwnedBy(IEnumerable<ClassroomRef> classrooms, Guid userId) =>
@@ -78,9 +78,10 @@ public class UserDirectoryClient(HttpClient http, IHttpContextAccessor context)
         return request;
     }
 
-    private async Task<List<ClassroomRef>> MyClassroomsAsync()
+    /// <summary>view : learner, teacher ou all (lot J1 : on demande explicitement, quel que soit le rôle du compte).</summary>
+    private async Task<List<ClassroomRef>> MyClassroomsAsync(string view)
     {
-        using var request = Authorized(HttpMethod.Get, "/classrooms/mine");
+        using var request = Authorized(HttpMethod.Get, $"/classrooms/mine?as={view}");
 
         using var response = await http.SendAsync(request);
         response.EnsureSuccessStatusCode();

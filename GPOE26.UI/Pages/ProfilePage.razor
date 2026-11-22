@@ -165,6 +165,13 @@
                         </datalist>
                     </div>
                     <div class="ga-field">
+                        @* Lot J3 : facultatif ; sert seulement à savoir qui peut retirer un partage (Mon historique) *@
+                        <label for="pf-birth">Année de naissance <span class="ga-muted">(facultatif)</span></label>
+                        <input id="pf-birth" class="ga-input" type="number" inputmode="numeric" min="1900" max="@DateTime.UtcNow.Year"
+                               aria-describedby="pf-birth-help" @bind="_birthYear" />
+                        <span id="pf-birth-help" class="ga-small ga-muted">Une personne majeure peut choisir ce que ses espaces voient de ses résultats.</span>
+                    </div>
+                    <div class="ga-field">
                         <label for="pf-scale">Échelle de notes</label>
                         <select id="pf-scale" class="ga-select" @bind="_gradeScale">
                             <option value="@GradeScale.Over20">Sur 20</option>
@@ -257,6 +264,7 @@
     private const string OtherCountry = "ZZ";
     private List<CountryPreset> _presets = [];
     private string? _country, _timeZone, _educationSystem;
+    private int? _birthYear;
     private GradeScale _gradeScale = GradeScale.Over20;
     private LevelBand? _levelBand;
     private LearningGoal? _goal;
@@ -291,6 +299,7 @@
         _country = context?.Country;
         _timeZone = context?.TimeZone;
         _educationSystem = context?.EducationSystem;
+        _birthYear = me.BirthYear;
         _gradeScale = context?.GradeScale ?? GradeScale.Over20;
         _levelBand = context?.LevelBand;
         _goal = context?.Goal;
@@ -363,6 +372,8 @@
             EducationSystem = Me.Role == UserRole.Parent ? null : _educationSystem?.Trim() ?? "",
             LevelBand = student ? _levelBand : null,
             Goal = student ? _goal : null,
+            // 0 : efface l'année
+            BirthYear = _birthYear ?? 0,
         };
 
         _savingProfile = true;

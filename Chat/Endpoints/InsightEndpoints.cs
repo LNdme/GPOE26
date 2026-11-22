@@ -32,9 +32,16 @@ public record ChildCourseWeakPointsDto(Guid CourseId, string Title, string? Subj
 public static class InsightEndpoints
 {
     private record ClassroomRef(Guid Id, string Name, string? MyRole, bool IsManager);
-    private record MemberRef(Guid Id, string Username);
+    /// <summary>Scopes : ce que l'élève partage avec l'espace (lot J3) ; sans Scopes (User plus ancien), tout.</summary>
+    private record MemberRef(Guid Id, string Username, List<string>? Scopes = null)
+    {
+        public bool SharesWeakPoints => Scopes is null || Scopes.Contains("WeakPoints");
+    }
     private record ClassCourseRef(Guid Id, string Title, string Subject);
-    private record ChildRef(Guid ChildId, string Username, string Status);
+    private record ChildRef(Guid ChildId, string Username, string Status, List<string>? Scopes = null)
+    {
+        public bool SharesWeakPoints => Scopes is null || Scopes.Contains("WeakPoints");
+    }
 
     public static void MapInsightEndpoints(this IEndpointRouteBuilder app)
     {
@@ -52,7 +59,9 @@ public static class InsightEndpoints
 
             var members = await platform.GetJsonAsync<List<MemberRef>>("user", $"/classrooms/{classroomId}/members", ct, useCache: false) ?? [];
             var courses = await platform.GetJsonAsync<List<ClassCourseRef>>("cours", $"/cours/classrooms/{classroomId}", ct, useCache: false) ?? [];
-            var students = await WithMemoryAsync(db, members.Select(m => m.Id).ToList(), ct);
+            // Membres actuels seulement (les anciens n'y sont pas : leurs notions fragiles ne se datent pas, H3),
+            // et seulement ceux qui partagent leurs notions fragiles avec l'espace (lot J3)
+            var students = await WithMemoryAsync(db, members.Where(m => m.SharesWeakPoints).Select(m => m.Id).ToList(), ct);
             var courseIds = courses.Select(c => c.Id).ToList();
 
             var states = await db.CourseMastery.AsNoTracking()
@@ -83,7 +92,10 @@ public static class InsightEndpoints
         group.MapGet("/children/{childId:guid}/weak-points", async (Guid childId, TutorContext db, PlatformClients platform, CancellationToken ct) =>
         {
             var children = await platform.GetJsonAsync<List<ChildRef>>("user", "/parents/children", ct, useCache: false) ?? [];
-            if (!children.Any(c => c.ChildId == childId && c.Status == "Active")) return Error(404, "Enfant introuvable.");
+            var child = children.FirstOrDefault(c => c.ChildId == childId && c.Status == "Active");
+            if (child is null) return Error(404, "Enfant introuvable.");
+            // Lot J3 : un enfant majeur peut ne plus partager ses notions fragiles avec ce parent
+            if (!child.SharesWeakPoints) return Results.Ok(new List<ChildCourseWeakPointsDto>());
             if ((await WithMemoryAsync(db, [childId], ct)).Count == 0) return Results.Ok(new List<ChildCourseWeakPointsDto>());
 
             var states = await db.CourseMastery.AsNoTracking()

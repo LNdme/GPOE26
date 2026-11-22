@@ -99,11 +99,11 @@
                                         break;
                                     case StudentStatus.Active:
                                         <button class="ga-btn ghost small" title="Mot de passe oublié : un code pour se reconnecter avec son matricule" @onclick="() => CodeAsync(s)">Code de reconnexion</button>
-                                        <button class="ga-btn ghost small" title="A quitté l'établissement : sa place est libérée" @onclick="() => StatusAsync(s, StudentStatus.Left)">Parti</button>
-                                        <button class="ga-btn ghost small" title="Retiré par l'établissement : sa place est libérée" @onclick="() => StatusAsync(s, StudentStatus.Revoked)">Retirer</button>
+                                        <button class="ga-btn ghost small" title="A quitté l'établissement : sa place est libérée ; il garde son historique, et vous ses résultats de la période (12 mois par défaut)" @onclick="() => StatusAsync(s, StudentStatus.Left)">Parti</button>
+                                        <button class="ga-btn ghost small" title="Retiré par l'établissement : sa place est libérée ; il garde son historique, et vous ses résultats de la période (12 mois par défaut)" @onclick="() => StatusAsync(s, StudentStatus.Revoked)">Retirer</button>
                                         break;
                                     default:
-                                        <button class="ga-btn ghost small" @onclick="() => StatusAsync(s, StudentStatus.Pending)">Réintégrer</button>
+                                        <button class="ga-btn ghost small" title="Il retrouve sa place et sa classe en activant le nouveau code que vous lui donnerez" @onclick="() => StatusAsync(s, StudentStatus.Pending)">Réintégrer</button>
                                         break;
                                 }
                             </td>

@@ -208,6 +208,7 @@
             new("/app/evaluations", "Évaluations", "check"),
             new("/app/emploi-du-temps", "Emploi du temps", "calendar"),
             new("/app/tuteur", "Tuteur IA", "spark", "tutor-ai"),
+            new("/app/historique", "Mon historique", "history"),
             new("/app/abonnement", "Abonnement", "card"),
         ]
     };
@@ -224,7 +225,11 @@
         [
             new("/app/cours", "Mes cours", "book"),
             new("/app/tuteur", "Tuteur IA", "spark", "tutor-ai"),
+            // Lot J1 : un parent qui a rejoint une classe y compose aussi (un enseignant les trouve sur sa propre page)
+            new("/app/evaluations", "Évaluations", "check"),
             new("/app/emploi-du-temps", "Emploi du temps", "calendar"),
+            // Lot J5 : l'historique et le partage, pour toute personne qui apprend
+            new("/app/historique", "Mon historique", "history"),
         ];
         return learn.Where(i => !present.Contains(i.Href));
     }

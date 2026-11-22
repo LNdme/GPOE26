@@ -1,0 +1,5 @@
+<Solution>
+  <!-- Application Windows (WinUI) : hors de GPOE26.slnx, que construisent aussi Linux et scripts/post-merge.sh -->
+  <Project Path="GPOE26.Windows/GPOE26.Windows.csproj" />
+  <Project Path="GPOE26.UI/GPOE26.UI.csproj" />
+</Solution>

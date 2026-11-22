@@ -154,7 +154,7 @@
     {
         if (Session.HasFeature("teacher-agent"))
         {
-            _classes = (await Classrooms.MineAsync()).Value ?? new();
+            _classes = (await Classrooms.MineAsync("teacher")).Value ?? new();
             var profile = await Agent.TeacherProfileAsync();
             _tone = profile.Value?.Tone;
             _detail = profile.Value?.DetailLevel;

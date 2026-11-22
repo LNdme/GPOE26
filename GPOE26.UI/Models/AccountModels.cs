@@ -69,6 +69,8 @@ public record EditProfileRequest
     public GradeScale? GradeScale { get; init; }
     public LevelBand? LevelBand { get; init; }
     public LearningGoal? Goal { get; init; }
+    /// <summary>Lot J3 : année de naissance facultative ; 0 l'efface.</summary>
+    public int? BirthYear { get; init; }
 }
 
 /// <summary>
@@ -112,7 +114,8 @@ public record UserProfile(
     bool IsAdmin = false,
     bool MustChangePassword = false,
     LearningContext? LearningContext = null,
-    List<string>? Hats = null
+    List<string>? Hats = null,
+    int? BirthYear = null
 )
 {
     /// <summary>Peut gérer le contenu du site de l'établissement (administrateur ou éditeur).</summary>
@@ -168,7 +171,12 @@ public record Classroom(
     public int SpaceOrder => SpaceType switch { OrganizationType.Independent => 1, null => 2, _ => 0 };
 }
 
-public record ClassroomMember(Guid Id, string Username, string? Level, string? Filiere, DateTime JoinedAt, DateTime? LastLoginAt);
+/// <summary>Une période d'appartenance à une classe (lot J2) ; LeftAt vide : en cours.</summary>
+public record MemberPeriod(DateTime JoinedAt, DateTime? LeftAt);
+
+/// <summary>LeftAt / VisibleUntil : ancien élève encore visible ; Scopes : ce qu'il partage (lot J3).</summary>
+public record ClassroomMember(Guid Id, string Username, string? Level, string? Filiere, DateTime JoinedAt, DateTime? LastLoginAt,
+    DateTime? LeftAt = null, DateTime? VisibleUntil = null, List<MemberPeriod>? Periods = null, List<string>? Scopes = null);
 
 public record CreateClassroomRequest(string Name, string? Level = null, SchoolSubSystem? SubSystem = null, string? Subject = null);
 
@@ -176,7 +184,28 @@ public record CreateClassroomRequest(string Name, string? Level = null, SchoolSu
 
 /// <summary>CoveredBy / CoveredUntil : établissement ou enseignant qui couvre déjà l'enfant ; UsesFamilySeat : il a une place de la formule Famille.</summary>
 public record ChildLink(Guid LinkId, LinkStatus Status, Guid ChildId, string Username, string? Level, string? Filiere,
-    string? ExamTarget, bool IsPremium, string? CoveredBy = null, DateTime? CoveredUntil = null, bool UsesFamilySeat = false);
+    string? ExamTarget, bool IsPremium, string? CoveredBy = null, DateTime? CoveredUntil = null, bool UsesFamilySeat = false,
+    List<string>? Scopes = null);
+
+// ─── Historique et partage (lot J3) ────────────────────────────────────────────
+
+/// <summary>Ce qu'un espace ou un parent peut voir. OfficialResults ne se retire pas pendant l'inscription.</summary>
+public static class SharingScopes
+{
+    public const string OfficialResults = "OfficialResults";
+    public const string Progress = "Progress";
+    public const string WeakPoints = "WeakPoints";
+}
+
+public record HistoryClass(Guid Id, string Name, List<MemberPeriod> Periods);
+
+public record HistorySpace(Guid OrganizationId, string Name, OrganizationType Type, bool Current, DateTime? Since,
+    DateTime? LeftAt, DateTime? VisibleUntil, List<string> Scopes, List<string> OptedOut, List<HistoryClass> Classes);
+
+public record HistoryGuardian(Guid GuardianId, string Name, List<string> Scopes, List<string> OptedOut);
+
+/// <summary>CanChangeSharing : réputé majeur ; sinon c'est au parent de changer le partage.</summary>
+public record LearnerHistory(bool CanChangeSharing, int RetentionMonths, List<HistorySpace> Spaces, List<HistoryGuardian> Guardians);
 
 public record ParentLink(Guid LinkId, LinkStatus Status, Guid ParentId, string ParentName, DateTime CreatedAt);
 

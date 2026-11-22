@@ -44,16 +44,30 @@ public record ClassroomDto(
     Guid? SchoolYearId = null,
     OrganizationType? SpaceType = null,
     bool IsManager = false,
-    string? OrganizationName = null
+    string? OrganizationName = null,
+    // Lot J3 : avec ?include=former, les périodes de l'utilisateur dans la classe (actuelle et passées)
+    List<MemberPeriodDto>? MyPeriods = null
 );
 
+/// <summary>Une période d'appartenance à une classe (lot J2) ; LeftAt vide : en cours.</summary>
+public record MemberPeriodDto(DateTime JoinedAt, DateTime? LeftAt);
+
+/// <summary>
+/// Élève d'une classe vu par un enseignant ou un gestionnaire. Lot J3 : LeftAt renseigné pour un ancien élève encore
+/// visible (?include=former), sans niveau ni dernière connexion ; Periods : ses périodes dans la classe ;
+/// Scopes : ce qu'il partage (OfficialResults, Progress, WeakPoints) selon VisibilityRules.
+/// </summary>
 public record ClassroomMemberDto(
     Guid Id,
     string Username,
     string? Level,
     string? Filiere,
     DateTime JoinedAt,
-    DateTime? LastLoginAt
+    DateTime? LastLoginAt,
+    DateTime? LeftAt = null,
+    DateTime? VisibleUntil = null,
+    List<MemberPeriodDto>? Periods = null,
+    List<string>? Scopes = null
 );
 
 // ─── Parents ──────────────────────────────────────────────────────────────────
@@ -86,7 +100,9 @@ public record ChildLinkDto(
     bool IsPremium,
     string? CoveredBy = null,
     DateTime? CoveredUntil = null,
-    bool UsesFamilySeat = false
+    bool UsesFamilySeat = false,
+    // Lot J3 : ce que l'enfant partage avec ce parent (une personne majeure peut retirer Progress et WeakPoints)
+    List<string>? Scopes = null
 );
 
 public record ParentLinkDto(Guid LinkId, LinkStatus Status, Guid ParentId, string ParentName, DateTime CreatedAt);
