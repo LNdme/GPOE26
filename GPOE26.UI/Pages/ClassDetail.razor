@@ -20,13 +20,32 @@
     {
         <div class="ga-head">
             <div>
-                <a class="ga-back" href="/app"><Icon Name="left" /> Mes classes</a>
+                @if (ManagerView)
+                {
+                    <a class="ga-back" href="/app/etablissement/@_class.OrganizationId?onglet=classes"><Icon Name="left" /> Mon établissement</a>
+                }
+                else
+                {
+                    <a class="ga-back" href="/app"><Icon Name="left" /> Mes classes</a>
+                }
                 <h1>@_class.Name</h1>
-                <p>@_members.Count @(_class.Kind == ClassroomKind.Group ? "apprenant(s)" : "élève(s)")@(_class.Subject is { Length: > 0 } ? $" · {_class.Subject}" : "") · code d'invitation <span class="ga-code">@_class.InviteCode</span></p>
+                <p>
+                    @_members.Count @(_class.Kind == ClassroomKind.Group ? "apprenant(s)" : "élève(s)")@(_class.Subject is { Length: > 0 } ? $" · {_class.Subject}" : "")
+                    @if (_class.Teachers is { Count: > 1 } teachers)
+                    {
+                        <br /><span class="ga-small">Enseignants : @string.Join(" · ", teachers.Select(t => t.Subject.Length > 0 ? $"{t.Username} ({t.Subject})" : t.Username))</span>
+                    }
+                </p>
             </div>
             <div class="ga-actions">
-                <button class="ga-btn secondary" @onclick="RegenerateAsync">Nouveau code</button>
-                <a class="ga-btn" href="/app/evaluations/nouvelle">Nouvelle épreuve</a>
+                @if (_class.OrganizationId is { } space && (_class.IsManager || _class.SpaceType == OrganizationType.Independent))
+                {
+                    <a class="ga-btn secondary" href="/app/etablissement/@space?onglet=eleves">Élèves et codes</a>
+                }
+                @if (_class.MyRole != ClassroomRole.Manager)
+                {
+                    <a class="ga-btn" href="/app/evaluations/nouvelle">Nouvelle épreuve</a>
+                }
             </div>
         </div>
         <Alert Message="@_error" />
@@ -35,65 +54,69 @@
             <div class="ga-stat"><span class="lbl">Moyenne de la classe</span><span class="val">@Labels.Number(ClassAverage)<small>/20</small></span></div>
             <div class="ga-stat green"><span class="lbl">Actifs cette semaine</span><span class="val">@_members.Count(m => m.LastLoginAt > DateTime.UtcNow.AddDays(-7))<small>/@_members.Count</small></span></div>
             <div class="ga-stat purple"><span class="lbl">Évaluations publiées</span><span class="val">@(_progress?.Assessments.Count ?? 0)</span></div>
-            <div class="ga-stat amber"><span class="lbl">À accompagner</span><span class="val">@Students.Count(NeedsHelp)</span></div>
+            <div class="ga-stat amber"><span class="lbl">À accompagner</span><span class="val">@Current.Count(NeedsHelp)</span></div>
         </div>
 
         <section class="ga-card" aria-labelledby="h-grid">
             <div class="ga-card-head">
                 <h2 id="h-grid" class="ga-h2">Résultats et maîtrise</h2>
                 <div class="ga-chips" role="tablist">
-                    <button role="tab" class="ga-chip @(!_onlyHelp ? "on" : "")" aria-selected="@(!_onlyHelp)" @onclick="() => _onlyHelp = false">Tous</button>
-                    <button role="tab" class="ga-chip @(_onlyHelp ? "on" : "")" aria-selected="@_onlyHelp" @onclick="() => _onlyHelp = true">À accompagner</button>
+                    <button role="tab" class="ga-chip @(!_onlyHelp ? "on" : "")" aria-selected="@Aria.State(!_onlyHelp)" @onclick="() => _onlyHelp = false">Tous</button>
+                    <button role="tab" class="ga-chip @(_onlyHelp ? "on" : "")" aria-selected="@Aria.State(_onlyHelp)" @onclick="() => _onlyHelp = true">À accompagner</button>
                 </div>
             </div>
-            @if (_members.Count == 0)
+            @if (_members.Count == 0 && Former.Count == 0)
             {
-                <div class="ga-empty"><span>Aucun élève pour l'instant : partagez le code <strong>@_class.InviteCode</strong>.</span></div>
+                <div class="ga-empty"><span>Aucun élève pour l'instant : chacun arrive en activant son code personnel (« Élèves et codes »).</span></div>
             }
             else
             {
-                <div class="ga-table-wrap">
+                @if (_members.Count == 0)
+                {
+                    @* Classe sans élève actuel mais avec d'anciens élèves encore visibles (lot J5) *@
+                    <div class="ga-empty"><span>Aucun élève actuel. Les anciens élèves restent visibles ci-dessous, le temps de la conservation.</span></div>
+                }
+                <div class="ga-table-wrap" hidden="@(_members.Count == 0)">
                     <table class="ga-table ga-heat">
-                        <thead>
-                            <tr>
-                                <th scope="col">Élève</th>
-                                <th scope="col">Dernière connexion</th>
-                                @foreach (var a in _progress?.Assessments ?? []) { <th scope="col" style="text-align:center" title="@a.Title">@Short(a.Title)</th> }
-                                @foreach (var c in CourseIds) { <th scope="col" style="text-align:center">Maîtrise · @Short(CourseTitle(c))</th> }
-                                <th scope="col">Moyenne</th>
-                            </tr>
-                        </thead>
+                        @Head()
                         <tbody>
-                            @foreach (var s in Students.Where(s => !_onlyHelp || NeedsHelp(s)))
+                            @foreach (var s in Current.Where(s => !_onlyHelp || NeedsHelp(s)))
                             {
-                                <tr>
-                                    <th scope="row" style="text-align:left; white-space:nowrap">@s.Username</th>
-                                    <td style="white-space:nowrap" class="ga-muted">@Labels.Date(s.LastLoginAt)</td>
-                                    @foreach (var a in _progress?.Assessments ?? [])
-                                    {
-                                        var r = s.Results.FirstOrDefault(x => x.AssessmentId == a.Id);
-                                        var pct = r?.ScoreScaled is { } v ? (double)(v / r.ScaleTo * 100) : (double?)null;
-                                        <td class="cell @Bucket(pct)">@(r?.ScoreScaled is not null ? Labels.Score(r.ScoreScaled, r.ScaleTo) : r?.Status == SubmissionStatus.Submitted ? "à corriger" : "—")</td>
-                                    }
-                                    @foreach (var c in CourseIds)
-                                    {
-                                        var m = s.Mastery.FirstOrDefault(x => x.CourseId == c);
-                                        <td class="cell @Bucket(m?.Percent)">@(m is null ? "—" : $"{Labels.Number(m.Percent)} %")</td>
-                                    }
-                                    <td><strong>@Labels.Number(s.AverageOn20)</strong></td>
-                                </tr>
+                                @Row(s)
                             }
                         </tbody>
                     </table>
                 </div>
+                @* Lot J5 : les anciens élèves restent visibles le temps de la conservation, à part : ni moyennes ni « à accompagner » *@
+                @if (Former.Count > 0)
+                {
+                    <details class="ga-former" open="@(_members.Count == 0)">
+                        <summary>Anciens élèves (@Former.Count)</summary>
+                        <div class="ga-table-wrap">
+                            <table class="ga-table ga-heat">
+                                <caption class="ga-sr">Anciens élèves : résultats de leur période seulement</caption>
+                                @Head()
+                                <tbody>
+                                    @foreach (var s in Former) { @Row(s) }
+                                </tbody>
+                            </table>
+                        </div>
+                    </details>
+                }
                 <div class="ga-legend">
                     <span><i style="background:var(--ga-navy)"></i>Maîtrisé (70 % et plus)</span>
                     <span><i style="background:#AFC3EE"></i>En cours (50 à 69 %)</span>
                     <span><i style="background:var(--ga-amber-soft); box-shadow:inset 0 0 0 1px #E0B565"></i>Fragile (moins de 50 %)</span>
                     <span><i style="background:#F1EFE8"></i>Pas encore évalué</span>
+                    @if (Former.Count > 0)
+                    {
+                        <span><i style="background:repeating-linear-gradient(135deg, #F1EFE8 0 3px, #E4E2DA 3px 6px)"></i>Hors période (publiée après le départ)</span>
+                    }
                 </div>
             }
         </section>
+
+        <ClassWeakPointsPanel ClassroomId="Id" />
 
         <section class="ga-card" aria-labelledby="h-members">
             <h2 id="h-members" class="ga-h2">Membres</h2>
@@ -103,7 +126,20 @@
                     <div class="ga-item">
                         <span class="ga-avatar">@Labels.Initial(m.Username)</span>
                         <span class="grow"><strong>@m.Username</strong><span class="ga-small ga-muted">@(m.Level ?? "")@(m.Filiere is { Length: > 0 } ? $" {m.Filiere}" : "") · a rejoint le @Labels.Date(m.JoinedAt)</span></span>
-                        <button class="ga-btn ghost small" aria-label="Retirer @m.Username de la classe" @onclick="() => RemoveAsync(m)">Retirer</button>
+                        @if (_confirmRemove == m.Id)
+                        {
+                            <span class="ga-confirm" role="group" aria-label="Confirmer le retrait de @m.Username">
+                                <span class="ga-small">@m.Username quitte la classe ; ses résultats restent visibles un temps limité (12 mois par défaut), puis plus rien.</span>
+                                <span class="ga-row" style="gap:6px">
+                                    <button class="ga-btn small" @onclick="() => RemoveAsync(m)">Retirer</button>
+                                    <button class="ga-btn ghost small" @onclick="() => _confirmRemove = null">Annuler</button>
+                                </span>
+                            </span>
+                        }
+                        else
+                        {
+                            <button class="ga-btn ghost small" aria-label="Retirer @m.Username de la classe" @onclick="() => _confirmRemove = m.Id">Retirer</button>
+                        }
                     </div>
                 }
             </div>
@@ -113,9 +149,13 @@
 
 @code {
     [Parameter] public Guid Id { get; set; }
+    // Gestionnaire d'un établissement (enseignant ou non) : il suit toutes les évaluations de la classe
+    protected override string[]? RequiredHats => [UserHats.Teacher, UserHats.Guardian];
+    private bool ManagerView => _class?.IsManager == true;
     protected override WorkspaceRole[]? AllowedWorkspaceRoles => [WorkspaceRole.Instructor, WorkspaceRole.Admin];
 
     private bool _loading = true, _onlyHelp;
+    private Guid? _confirmRemove;
     private string? _error;
     private Classroom? _class;
     private List<ClassroomMember> _members = new();
@@ -123,12 +163,15 @@
     private Dictionary<Guid, string> _courseTitles = new();
 
     private List<StudentProgress> Students => _progress?.Students ?? new();
+    // Lot J5 : moyennes, filtres et « à accompagner » sur les élèves actuels seulement
+    private List<StudentProgress> Current => Students.Where(s => !s.IsFormer).ToList();
+    private List<StudentProgress> Former => Students.Where(s => s.IsFormer).ToList();
     private List<Guid> CourseIds => Students.SelectMany(s => s.Mastery.Select(m => m.CourseId)).Distinct().ToList();
     private double? ClassAverage
     {
         get
         {
-            var averages = Students.Where(s => s.AverageOn20 is not null).Select(s => s.AverageOn20!.Value).ToList();
+            var averages = Current.Where(s => s.AverageOn20 is not null).Select(s => s.AverageOn20!.Value).ToList();
             return averages.Count == 0 ? null : Math.Round(averages.Average(), 2);
         }
     }
@@ -153,15 +196,64 @@
         _loading = false;
     }
 
-    private async Task RegenerateAsync()
+    private RenderFragment Head() => __builder =>
     {
-        var r = await Classrooms.RegenerateCodeAsync(Id);
-        if (!r.Ok) { _error = r.Error; return; }
-        _class = (await Classrooms.GetAsync(Id)).Value ?? _class;
-    }
+        <thead>
+            <tr>
+                <th scope="col">Élève</th>
+                <th scope="col">Dernière connexion</th>
+                @foreach (var a in _progress?.Assessments ?? []) { <th scope="col" style="text-align:center" title="@(a.Subject is { Length: > 0 } s ? $"{a.Title} · {s}" : a.Title)">@Short(a.Title)@if (ManagerView && a.Subject is { Length: > 0 } subject) { <br /><small class="ga-muted">@subject</small> }</th> }
+                @foreach (var c in CourseIds) { <th scope="col" style="text-align:center">Maîtrise · @Short(CourseTitle(c))</th> }
+                <th scope="col">Moyenne</th>
+            </tr>
+        </thead>
+    };
+
+    /// <summary>
+    /// Une ligne de la grille. Hors période : évaluation publiée après le départ d'un ancien élève (texte, pas seulement
+    /// des hachures). Maîtrise non partagée : une seule cellule, sans reproche.
+    /// </summary>
+    private RenderFragment Row(StudentProgress s) => __builder =>
+    {
+        <tr>
+            <th scope="row" style="text-align:left; white-space:nowrap">
+                @s.Username
+                @if (s.IsFormer)
+                {
+                    <br /><small class="ga-muted">Parti le @Labels.FullDate(s.LeftAt) · visible jusqu'au @Labels.FullDate(s.VisibleUntil)</small>
+                }
+            </th>
+            <td style="white-space:nowrap" class="ga-muted">@(s.IsFormer ? "—" : Labels.Date(s.LastLoginAt))</td>
+            @foreach (var a in _progress?.Assessments ?? [])
+            {
+                if (s.OutOfPeriod?.Contains(a.Id) == true)
+                {
+                    <td class="cell out" aria-label="Hors période">Hors période</td>
+                    continue;
+                }
+                var r = s.Results.FirstOrDefault(x => x.AssessmentId == a.Id);
+                var pct = r?.ScoreScaled is { } v ? (double)(v / r.ScaleTo * 100) : (double?)null;
+                <td class="cell @Bucket(pct)">@(r?.ScoreScaled is not null ? Labels.Score(r.ScoreScaled, r.ScaleTo) : r?.Status == SubmissionStatus.Submitted ? "à corriger" : "—")</td>
+            }
+            @if (s.ProgressHidden && CourseIds.Count > 0)
+            {
+                <td class="cell unshared" colspan="@CourseIds.Count">Maîtrise non partagée par l'élève</td>
+            }
+            else
+            {
+                @foreach (var c in CourseIds)
+                {
+                    var m = s.Mastery.FirstOrDefault(x => x.CourseId == c);
+                    <td class="cell @Bucket(m?.Percent)">@(m is null ? "—" : $"{Labels.Number(m.Percent)} %")</td>
+                }
+            }
+            <td><strong>@Labels.Number(s.AverageOn20)</strong></td>
+        </tr>
+    };
 
     private async Task RemoveAsync(ClassroomMember m)
     {
+        _confirmRemove = null;
         var r = await Classrooms.RemoveMemberAsync(Id, m.Id);
         if (!r.Ok) { _error = r.Error; return; }
         _members.Remove(m);

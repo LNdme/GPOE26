@@ -1,4 +1,5 @@
 @page "/activities"
+@inject GPOE26.UI.Services.SessionState Session
 
 <PageTitle>Activités – GPOE26</PageTitle>
 
@@ -10,9 +11,12 @@
                 <h1 class="listing-title">Clubs et activités</h1>
                 <p class="listing-description">Explorez vos passions, rencontrez d’autres élèves et lancez-vous dans un nouveau projet.</p>
             </div>
-            <a href="/activities/create" class="listing-create-button">
-                <i class="bi bi-plus-lg" aria-hidden="true"></i> Nouvelle activité
-            </a>
+            @if (CanEditSite)
+            {
+                <a href="/admin/activites" class="listing-create-button">
+                    <i class="bi bi-pencil" aria-hidden="true"></i> Gérer les activités
+                </a>
+            }
         </header>
 
         <div class="listing-filters" aria-label="Filtrer les activités">
@@ -75,15 +79,6 @@
                                     <a href="@($"/activities/details/{a.Id}")" class="content-card__primary-link">
                                         Découvrir l’activité <i class="bi bi-arrow-right" aria-hidden="true"></i>
                                     </a>
-                                    <a href="@($"/activities/edit/{a.Id}")" class="content-card__icon-action"
-                                       title="Modifier l’activité" aria-label="@($"Modifier {a.Name}")">
-                                        <i class="bi bi-pencil" aria-hidden="true"></i>
-                                    </a>
-                                    <button class="content-card__icon-action content-card__icon-action--danger"
-                                            title="Supprimer l’activité" aria-label="@($"Supprimer {a.Name}")"
-                                            @onclick="() => ConfirmDel(a)">
-                                        <i class="bi bi-trash" aria-hidden="true"></i>
-                                    </button>
                                 </div>
                             </div>
                         </article>
@@ -94,44 +89,22 @@
     </div>
 </div>
 
-@if (_toDel is not null)
-{
-    <div class="modal d-block" tabindex="-1" style="background: rgba(0,0,0,0.4);">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header"><h5 class="modal-title">Confirmer la suppression</h5><button type="button" class="btn-close" @onclick="CancelDel"></button></div>
-                <div class="modal-body"><p>Supprimer <strong>@_toDel.Name</strong> ?</p></div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary" @onclick="CancelDel">Annuler</button>
-                    <button class="btn btn-danger" @onclick="Del" disabled="@_deleting">
-                        @if (_deleting) { <span class="spinner-border spinner-border-sm me-1"></span> } Supprimer
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-}
 
 @code {
-    private bool _loading = true, _deleting;
+    private bool CanEditSite => Session.IsAuthenticated && Session.Profile?.CanEditSite == true;
+
+    private bool _loading = true;
     private List<SchoolActivity> _items = new();
-    private SchoolActivity? _toDel;
     private string? _selCat;
     private readonly string[] _cats = { "Sport", "Art", "Science", "Club" };
 
-    protected override async Task OnInitializedAsync() => await Load();
-    private async Task Load() { _loading = true; _items = await Api.GetActiveActivitiesAsync(_selCat); _loading = false; }
-    private async Task Filter(string? c) { _selCat = c; await Load(); }
-    private void ConfirmDel(SchoolActivity a) => _toDel = a;
-    private void CancelDel() => _toDel = null;
-    private async Task Del()
+    protected override async Task OnInitializedAsync()
     {
-        if (_toDel is null) return;
-        _deleting = true;
-        await Api.DeleteActivityAsync(_toDel.Id);
-        _toDel = null; _deleting = false;
+        await Session.RestoreAsync();
         await Load();
     }
+    private async Task Load() { _loading = true; _items = await Api.GetActiveActivitiesAsync(_selCat); _loading = false; }
+    private async Task Filter(string? c) { _selCat = c; await Load(); }
 
     private static string ActivityImage(SchoolActivity activity)
     {

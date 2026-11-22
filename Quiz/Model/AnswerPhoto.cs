@@ -18,5 +18,8 @@ public class AnswerPhoto
     /// <summary>Lecture de la copie par l'IA (texte et formules LaTeX), null si l'IA n'a pas pu la lire</summary>
     public string? Transcription { get; set; }
 
+    /// <summary>Lecture par l'IA pas encore faite (elle se fait en arrière-plan, cf. TranscriptionWorker)</summary>
+    public bool TranscriptionPending { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

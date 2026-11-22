@@ -17,9 +17,15 @@ public record CreateClassroomRequest(
     string? Subject = null
 );
 
-public record JoinClassroomRequest([Required] string Code);
-
-/// <summary>InviteCode n'est renseigné que pour l'enseignant propriétaire.</summary>
+/// <summary>
+/// Classe vue par l'utilisateur connecté.
+/// TeacherId / TeacherName : professeur principal (Guid.Empty et "" si la classe n'en a pas).
+/// MyRole : ce que l'utilisateur y est (enseignant affecté, gestionnaire de l'espace, élève) — c'est ce que
+/// Quiz et Cours lisent pour savoir s'il peut y publier. MySubjects : ses matières dans la classe.
+/// SpaceType : établissement (les élèves entrent par leur code personnel) ou enseignant indépendant (code de classe accepté).
+/// IsManager (détail d'une classe seulement) : l'utilisateur gère l'espace de la classe, même s'il y enseigne aussi —
+/// le suivi lui montre alors toutes les évaluations de la classe, pas seulement les siennes.
+/// </summary>
 public record ClassroomDto(
     Guid Id,
     string Name,
@@ -27,20 +33,41 @@ public record ClassroomDto(
     string? Level,
     SchoolSubSystem? SubSystem,
     string? Subject,
-    string? InviteCode,
     Guid TeacherId,
     string TeacherName,
     int MemberCount,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    ClassroomRole? MyRole = null,
+    List<string>? MySubjects = null,
+    List<ClassTeacherDto>? Teachers = null,
+    Guid? OrganizationId = null,
+    Guid? SchoolYearId = null,
+    OrganizationType? SpaceType = null,
+    bool IsManager = false,
+    string? OrganizationName = null,
+    // Lot J3 : avec ?include=former, les périodes de l'utilisateur dans la classe (actuelle et passées)
+    List<MemberPeriodDto>? MyPeriods = null
 );
 
+/// <summary>Une période d'appartenance à une classe (lot J2) ; LeftAt vide : en cours.</summary>
+public record MemberPeriodDto(DateTime JoinedAt, DateTime? LeftAt);
+
+/// <summary>
+/// Élève d'une classe vu par un enseignant ou un gestionnaire. Lot J3 : LeftAt renseigné pour un ancien élève encore
+/// visible (?include=former), sans niveau ni dernière connexion ; Periods : ses périodes dans la classe ;
+/// Scopes : ce qu'il partage (OfficialResults, Progress, WeakPoints) selon VisibilityRules.
+/// </summary>
 public record ClassroomMemberDto(
     Guid Id,
     string Username,
     string? Level,
     string? Filiere,
     DateTime JoinedAt,
-    DateTime? LastLoginAt
+    DateTime? LastLoginAt,
+    DateTime? LeftAt = null,
+    DateTime? VisibleUntil = null,
+    List<MemberPeriodDto>? Periods = null,
+    List<string>? Scopes = null
 );
 
 // ─── Parents ──────────────────────────────────────────────────────────────────
@@ -55,7 +82,11 @@ public record CreateChildRequest(
     SchoolSubSystem? SubSystem = null,
     string? Level = null,
     string? Filiere = null,
-    string? ExamTarget = null
+    string? ExamTarget = null,
+    // Lot B5 : pays et fuseau de l'enfant (ceux du parent par défaut), tranche de niveau hors Cameroun
+    string? Country = null,
+    string? TimeZone = null,
+    LevelBand? LevelBand = null
 );
 
 public record ChildLinkDto(
@@ -66,7 +97,12 @@ public record ChildLinkDto(
     string? Level,
     string? Filiere,
     string? ExamTarget,
-    bool IsPremium
+    bool IsPremium,
+    string? CoveredBy = null,
+    DateTime? CoveredUntil = null,
+    bool UsesFamilySeat = false,
+    // Lot J3 : ce que l'enfant partage avec ce parent (une personne majeure peut retirer Progress et WeakPoints)
+    List<string>? Scopes = null
 );
 
 public record ParentLinkDto(Guid LinkId, LinkStatus Status, Guid ParentId, string ParentName, DateTime CreatedAt);
@@ -74,6 +110,9 @@ public record ParentLinkDto(Guid LinkId, LinkStatus Status, Guid ParentId, strin
 // ─── Abonnements ──────────────────────────────────────────────────────────────
 
 public record RedeemKeyRequest([Required] string Code);
+
+/// <summary>Code personnel accepté. Overlap : la personne paie déjà un abonnement que l'espace rend inutile.</summary>
+public record RedeemCodeResultDto(CoverageOverlap? Overlap);
 
 public record CheckoutRequest(SubscriptionPlan Plan, BillingPeriod Period = BillingPeriod.Monthly);
 
@@ -100,7 +139,12 @@ public record SubscriptionDto(
     { }
 }
 
-public record MySubscriptionsDto(Entitlement Entitlement, List<SubscriptionDto> Owned);
+public record MySubscriptionsDto(Entitlement Entitlement, List<SubscriptionDto> Owned, bool PaymentSimulation);
+
+public record SimulatePaymentRequest(SubscriptionPlan Plan, BillingPeriod Period = BillingPeriod.Monthly, string? Provider = null);
+
+/// <summary>Reçu du paiement simulé : la clé à saisir pour activer la formule.</summary>
+public record SimulatedPaymentDto(string Code, SubscriptionPlan Plan, BillingPeriod Period, string Provider, int Seats, DateTime? EndsAt);
 
 // ─── Administration ───────────────────────────────────────────────────────────
 
@@ -114,4 +158,9 @@ public record CreateLicenseRequest([Range(1, 100000)] int Seats, [Range(1, 36)] 
 
 public record ActivateSubscriptionRequest([Range(1, 36)] int? Months = null);
 
-public record OrganizationDto(Guid Id, string Name, OrganizationType Type, string? City, List<SubscriptionDto> Licenses);
+/// <summary>Owners : responsables de l'espace (vide tant que l'administration n'en a pas désigné).</summary>
+public record OrganizationDto(Guid Id, string Name, OrganizationType Type, string? City, List<SubscriptionDto> Licenses, List<SpaceOwnerDto>? Owners = null,
+    string? ShortCode = null);
+
+/// <summary>Code de l'établissement : 4 à 10 lettres ou chiffres.</summary>
+public record ShortCodeRequest([Required, MaxLength(10)] string Code);

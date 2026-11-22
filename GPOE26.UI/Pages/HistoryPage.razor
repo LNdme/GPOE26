@@ -1,0 +1,205 @@
+@page "/app/historique"
+@layout AppLayout
+@inherits AppPage
+@inject IHistoryApi Api
+
+<PageTitle>Mon historique — GPOE26</PageTitle>
+
+@* Lot J5 (docs/PLAN-APPRENANT-AU-CENTRE.md, §5) : une carte par espace et par parent, le partage en haut de chaque carte.
+   La personne garde tout ; un espace ne voit que la période où elle y était, jusqu'à la fin de la conservation. *@
+<div class="ga-page">
+    <div class="ga-head">
+        <div>
+            <h1>Mon historique</h1>
+            <p>@(Adult ? "Vos classes et vos espaces, actuels et passés. Vous gardez tout ; chaque espace ne voit que la période où vous y étiez."
+                       : "Tes classes et tes espaces, actuels et passés. Tu gardes tout ; chaque espace ne voit que la période où tu y étais.")</p>
+        </div>
+        <div class="ga-actions">
+            <a class="ga-btn secondary" href="/app/evaluations"><Icon Name="check" /> @(Adult ? "Mes évaluations" : "Mes évaluations rendues")</a>
+        </div>
+    </div>
+
+    <Alert Message="@_error" />
+    <Alert Message="@_info" Kind="success" />
+
+    @if (!Ready || _loading)
+    {
+        <Loading />
+    }
+    else if (_history is null)
+    {
+        <div class="ga-empty">
+            <strong>Historique indisponible pour le moment.</strong>
+            <button type="button" class="ga-btn secondary small" @onclick="LoadAsync">Réessayer</button>
+        </div>
+    }
+    else if (_history.Spaces.Count == 0 && _history.Guardians.Count == 0)
+    {
+        <div class="ga-empty">
+            <strong>@(Adult ? "Vous n'avez pas encore rejoint de classe ou d'espace." : "Tu n'as pas encore rejoint de classe ou d'espace.")</strong>
+            <span>@(Adult ? "Votre historique apparaîtra ici." : "Ton historique apparaîtra ici.")</span>
+        </div>
+    }
+    else
+    {
+        @if (!_history.CanChangeSharing)
+        {
+            <div class="ga-alert">Ton parent peut changer ce que tes espaces voient. Demande-lui si tu veux retirer un partage.</div>
+        }
+
+        <div class="ga-history">
+            @foreach (var space in _history.Spaces)
+            {
+                var expired = !space.Current && space.VisibleUntil is { } until && until <= DateTime.UtcNow;
+                <article class="ga-card" aria-labelledby="space-@space.OrganizationId">
+                    <div class="ga-row between">
+                        <h2 class="ga-h3" id="space-@space.OrganizationId">@space.Name</h2>
+                        @if (space.Current)
+                        {
+                            <span class="ga-tag green">Actuel</span>
+                        }
+                        else
+                        {
+                            <span class="ga-tag grey">Parti le @Labels.FullDate(space.LeftAt)</span>
+                        }
+                    </div>
+                    <span class="ga-small ga-muted">
+                        @string.Join(" · ", space.Classes.Select(c => c.Name))@(space.Since is { } since ? $" · depuis le {Labels.FullDate(since)}" : "")
+                    </span>
+
+                    <section aria-label="Ce que @space.Name voit">
+                        <h3 class="ga-label">Ce que @space.Name voit</h3>
+                        @if (expired)
+                        {
+                            <p class="ga-small">@space.Name ne voit plus rien depuis le @Labels.FullDate(space.VisibleUntil).</p>
+                        }
+                        else
+                        {
+                            <div class="ga-share-row">
+                                <span><Icon Name="shield" Size="16" /> Résultats des évaluations assignées</span>
+                                <span class="ga-small ga-muted">@OfficialText(space)</span>
+                            </div>
+                            @ShareRow("organization", space.OrganizationId, space.Name, SharingScopes.Progress, "Maîtrise", space.Scopes, space.OptedOut, true)
+                            @if (space.Current)
+                            {
+                                @ShareRow("organization", space.OrganizationId, space.Name, SharingScopes.WeakPoints, "Notions fragiles", space.Scopes, space.OptedOut, true)
+                            }
+                            else
+                            {
+                                <div class="ga-share-row"><span>Notions fragiles</span><span class="ga-small ga-muted">plus partagées depuis ton départ</span></div>
+                            }
+                        }
+                    </section>
+
+                    <details>
+                        <summary>Mes classes (@space.Classes.Count)</summary>
+                        <ul class="ga-small">
+                            @foreach (var c in space.Classes)
+                            {
+                                <li><strong>@c.Name</strong> : @string.Join(" ; ", c.Periods.Select(Period))</li>
+                            }
+                        </ul>
+                    </details>
+                </article>
+            }
+
+            @foreach (var g in _history.Guardians)
+            {
+                <article class="ga-card" aria-labelledby="guardian-@g.GuardianId">
+                    <div class="ga-row between">
+                        <h2 class="ga-h3" id="guardian-@g.GuardianId">@g.Name</h2>
+                        <span class="ga-tag">Parent</span>
+                    </div>
+                    <section aria-label="Ce que @g.Name voit">
+                        <h3 class="ga-label">Ce que @g.Name voit</h3>
+                        <div class="ga-share-row">
+                            <span><Icon Name="shield" Size="16" /> Résultats des évaluations</span>
+                            <span class="ga-small ga-muted">toujours partagés avec un parent rattaché</span>
+                        </div>
+                        @ShareRow("guardian", g.GuardianId, g.Name, SharingScopes.Progress, "Maîtrise", g.Scopes, g.OptedOut, true)
+                        @ShareRow("guardian", g.GuardianId, g.Name, SharingScopes.WeakPoints, "Notions fragiles", g.Scopes, g.OptedOut, true)
+                    </section>
+                </article>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private bool _loading = true, _busy;
+    private string? _error, _info;
+    private LearnerHistory? _history;
+    // Changement en attente de confirmation : (kind, id, scope, partager ?)
+    private (string Kind, Guid Id, string Scope, bool Share, string Name, string Label)? _pending;
+
+    /// <summary>Vouvoiement pour un adulte qui n'est pas élève (enseignant, parent) ; tutoiement pour l'élève.</summary>
+    private bool Adult => Session.Role is not UserRole.Student;
+
+    protected override async Task LoadAsync()
+    {
+        _loading = true;
+        var r = await Api.HistoryAsync();
+        _history = r.Value;
+        _error = r.Error;
+        _loading = false;
+    }
+
+    private string OfficialText(HistorySpace space) => space.Current
+        ? $"partagés pendant {(Adult ? "votre" : "ton")} inscription, puis gardés {_history!.RetentionMonths} mois"
+        : $"gardés jusqu'au {Labels.FullDate(space.VisibleUntil)}";
+
+    private static string Period(MemberPeriod p) => p.LeftAt is { } left
+        ? $"du {Labels.FullDate(p.JoinedAt)} au {Labels.FullDate(left)}"
+        : $"depuis le {Labels.FullDate(p.JoinedAt)}";
+
+    private RenderFragment ShareRow(string kind, Guid id, string name, string scope, string label,
+        List<string> scopes, List<string> optedOut, bool changeable) => __builder =>
+    {
+        var shared = scopes.Contains(scope);
+        var pending = _pending is { } p && p.Kind == kind && p.Id == id && p.Scope == scope;
+        <div class="ga-share-row">
+            <span id="@($"lbl-{kind}-{id}-{scope}")">@label</span>
+            @if (_history!.CanChangeSharing && changeable)
+            {
+                <button type="button" role="switch" class="ga-switch @(shared ? "on" : "")" disabled="@_busy"
+                        aria-checked="@Aria.State(shared)" aria-label="@($"Partager {label.ToLowerInvariant()} avec {name}")"
+                        @onclick="() => Ask(kind, id, scope, !shared, name, label)"></button>
+            }
+            else
+            {
+                <span class="ga-small ga-muted">@(shared ? "partagée" : optedOut.Contains(scope) ? "plus partagée" : "non partagée")</span>
+            }
+        </div>
+        @if (pending && _pending is { } ask)
+        {
+            <div class="ga-confirm" role="group" aria-label="Confirmer le changement">
+                <span class="ga-small">@(ask.Share
+                    ? $"{name} verra à nouveau {(Adult ? "votre" : "ta")} {label.ToLowerInvariant()}."
+                    : $"{name} ne verra plus {(Adult ? "votre" : "ta")} {label.ToLowerInvariant()} à partir de maintenant. {(Adult ? "Vous pourrez" : "Tu pourras")} la partager à nouveau quand {(Adult ? "vous voudrez" : "tu voudras")}.")</span>
+                <span class="ga-row" style="gap:6px">
+                    <button type="button" class="ga-btn small" disabled="@_busy" @onclick="ConfirmAsync">@(ask.Share ? "Partager" : "Ne plus partager")</button>
+                    <button type="button" class="ga-btn ghost small" @onclick="() => _pending = null">Annuler</button>
+                </span>
+            </div>
+        }
+    };
+
+    private void Ask(string kind, Guid id, string scope, bool share, string name, string label)
+    {
+        _error = _info = null;
+        _pending = (kind, id, scope, share, name, label);
+    }
+
+    private async Task ConfirmAsync()
+    {
+        if (_pending is not { } p) return;
+        _busy = true; _error = _info = null;
+        var r = await Api.SetSharingAsync(p.Kind, p.Id, p.Scope, p.Share);
+        _busy = false;
+        _pending = null;
+        if (!r.Ok) { _error = r.Error; return; }
+        _info = p.Share ? $"{p.Name} voit à nouveau : {p.Label.ToLowerInvariant()}." : $"{p.Name} ne voit plus : {p.Label.ToLowerInvariant()}.";
+        var reloaded = await Api.HistoryAsync();
+        _history = reloaded.Value ?? _history;
+    }
+}

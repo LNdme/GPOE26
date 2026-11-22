@@ -531,30 +531,6 @@ a {
     }
 
 /* ═══════════════════════════════════════════════════════════════
-   BLAZOR ERROR
-═══════════════════════════════════════════════════════════════ */
-#blazor-error-ui {
-    background: #fff5f5;
-    border-top: 2px solid #fc8181;
-    color: #742a2a;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    padding: 12px 20px;
-    position: fixed;
-    z-index: 1000;
-    display: none;
-    font-size: 13px;
-}
-
-    #blazor-error-ui .dismiss {
-        cursor: pointer;
-        position: absolute;
-        right: 12px;
-        top: 10px;
-    }
-
-/* ═══════════════════════════════════════════════════════════════
    RESPONSIVE
 ═══════════════════════════════════════════════════════════════ */
 @media (max-width: 960px) {

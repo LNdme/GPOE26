@@ -9,7 +9,7 @@ def call(method,url,body=None,tok=None):
     except urllib.error.HTTPError as e: sys.exit(f"{method} {url} -> {e.code} {e.read()[:300]}")
 login=lambda e: call('POST',U+'/auth/login',{'email':e,'password':'Test1234!'})['token']
 prof=login('prof@gpoe26.cm'); admin=login('admin@gpoe26.cm'); eleve=login('eleve@gpoe26.cm')
-cls=[c for c in call('GET',U+'/classrooms/mine',tok=prof) if c['inviteCode']=='DEM-TLC'][0]['id']
+cls=[c for c in call('GET',U+'/classrooms/mine',tok=prof) if c['name']=='Terminale C'][0]['id']
 md=[
  (0,'Le mouvement rectiligne uniformément varié (MRUV)',1),
  (1,"Un mobile est en **MRUV** lorsque sa trajectoire est une droite et que son accélération $a$ est constante.",0),

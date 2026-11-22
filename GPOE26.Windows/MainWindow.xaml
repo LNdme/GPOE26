@@ -1,0 +1,466 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="GPOE26.Desktop.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:GPOE26.Desktop.Controls"
+    xmlns:models="using:GPOE26.UI.Models"
+    Title="GPOE26">
+
+    <Window.SystemBackdrop>
+        <MicaBackdrop />
+    </Window.SystemBackdrop>
+
+    <!-- Toute l'interface hérite de la police de terminal et de la petite taille (Shell.FontSize suit le réglage) -->
+    <UserControl x:Name="Shell" FontFamily="{StaticResource AppFont}" FontSize="12">
+    <Grid x:Name="Root">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="34" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- ═══ Barre de titre (dans celle de Windows) : menu, nom, connexion — rien d'autre ═══ -->
+        <Grid x:Name="TitleBarArea" Padding="4,0,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition x:Name="CaptionColumn" Width="138" />
+            </Grid.ColumnDefinitions>
+            <Button x:Name="MenuToggle" Style="{StaticResource IconButton}" Click="OnMenuToggle" Visibility="Collapsed"
+                    VerticalAlignment="Center" ToolTipService.ToolTip="Menu (Ctrl+B)" AutomationProperties.Name="Menu">
+                <FontIcon Glyph="&#xE700;" FontSize="13" />
+            </Button>
+            <Grid x:Name="TitleBarDrag" Grid.Column="1" Background="Transparent">
+                <TextBlock Text="GPOE26" Margin="8,0" VerticalAlignment="Center"
+                           Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </Grid>
+            <!-- État de la connexion : un point ; le texte n'apparaît que hors connexion -->
+            <Button x:Name="ConnectionButton" Grid.Column="2" Style="{StaticResource IconButton}" Visibility="Collapsed"
+                    VerticalAlignment="Center" AutomationProperties.Name="État de la connexion">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Ellipse x:Name="ConnectionDot" Width="7" Height="7" VerticalAlignment="Center" />
+                    <TextBlock x:Name="ConnectionText" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+                <Button.Flyout>
+                    <Flyout Placement="BottomEdgeAlignedRight">
+                        <StackPanel Width="260" Spacing="8">
+                            <TextBlock x:Name="ConnectionTitle" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                            <TextBlock x:Name="SyncDetails" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <Button x:Name="SyncButton" Content="Synchroniser maintenant" Click="OnSyncClick" />
+                        </StackPanel>
+                    </Flyout>
+                </Button.Flyout>
+            </Button>
+        </Grid>
+
+        <!-- ════════════════════ Connexion ════════════════════ -->
+        <ScrollViewer x:Name="LoginView" Grid.Row="1" Visibility="Collapsed">
+            <Border MaxWidth="400" Margin="24,48" Padding="28" VerticalAlignment="Center"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8">
+                <StackPanel Spacing="12">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Border Width="26" Height="26" CornerRadius="6" Background="{ThemeResource AccentFillColorDefaultBrush}">
+                            <TextBlock Text="G" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
+                        </Border>
+                        <TextBlock Text="GPOE26" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <TextBlock Text="Ton espace d'étude, même hors connexion." Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+
+                    <StackPanel x:Name="SignInForm" Spacing="10">
+                        <SelectorBar x:Name="LoginMode" SelectionChanged="OnLoginModeChanged">
+                            <SelectorBarItem x:Name="EmailMode" Text="E-mail" IsSelected="True" />
+                            <SelectorBarItem x:Name="MatriculeMode" Text="Établissement" />
+                        </SelectorBar>
+
+                        <StackPanel x:Name="EmailFields" Spacing="8">
+                            <TextBox x:Name="EmailBox" Header="Adresse e-mail" InputScope="EmailSmtpAddress" />
+                        </StackPanel>
+                        <StackPanel x:Name="MatriculeFields" Spacing="8" Visibility="Collapsed">
+                            <TextBox x:Name="SchoolBox" Header="Code de l'établissement" />
+                            <TextBox x:Name="MatriculeBox" Header="Matricule" />
+                        </StackPanel>
+                        <PasswordBox x:Name="PasswordInput" Header="Mot de passe (ou code de ta fiche)" KeyDown="OnPasswordKeyDown" />
+
+                        <InfoBar x:Name="LoginError" Severity="Error" IsClosable="False" />
+                        <Grid>
+                            <Button x:Name="LoginButton" Content="Se connecter" Style="{StaticResource AccentButtonStyle}"
+                                    HorizontalAlignment="Stretch" Click="OnLoginClick" />
+                            <ProgressRing x:Name="LoginProgress" Width="14" Height="14" IsActive="False"
+                                          HorizontalAlignment="Right" Margin="0,0,10,0" IsHitTestVisible="False" />
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- Premier mot de passe (élève connecté avec le code de sa fiche) -->
+                    <StackPanel x:Name="FirstPasswordForm" Spacing="8" Visibility="Collapsed">
+                        <TextBlock Text="Choisis ton mot de passe" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBlock Text="Tu t'es connecté avec le code de ta fiche : choisis maintenant un mot de passe personnel (8 caractères au moins)."
+                                   TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <PasswordBox x:Name="NewPassword" Header="Nouveau mot de passe" />
+                        <PasswordBox x:Name="NewPasswordAgain" Header="Encore une fois" />
+                        <Button Content="Enregistrer et continuer" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Stretch" Click="OnFirstPasswordClick" />
+                    </StackPanel>
+
+                    <!-- Lecture hors connexion du dernier élève connecté sur ce poste -->
+                    <Border x:Name="OfflineCard" Visibility="Collapsed" Padding="12" CornerRadius="6"
+                            Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="Pas de connexion ?" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                            <TextBlock x:Name="OfflineCardText" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <Button x:Name="OfflineButton" Click="OnOfflineClick" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
+        </ScrollViewer>
+
+        <!-- ════════════════════ Espace d'étude : menu | lecture (toujours au milieu) | tuteur ════════════════════ -->
+        <Grid x:Name="WorkspaceView" Grid.Row="1" Visibility="Collapsed">
+            <Grid x:Name="Panes">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition x:Name="MenuColumn" Width="248" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" MinWidth="360" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition x:Name="AgentColumn" Width="380" />
+                </Grid.ColumnDefinitions>
+
+                <!-- ── Menu : navigation (nouvelle question, créer un cours, outils), cours, discussions, compte ── -->
+                <Grid x:Name="MenuPane" Padding="6,0,2,6">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <StackPanel Spacing="1">
+                        <Button x:Name="NewQuestionButton" Style="{StaticResource ToolRow}" Click="OnNewQuestion">
+                            <Grid ColumnSpacing="10"><Grid.ColumnDefinitions><ColumnDefinition Width="18" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <FontIcon Glyph="&#xE710;" FontSize="13" /><TextBlock Grid.Column="1" Text="Nouvelle question" /></Grid>
+                        </Button>
+                        <Button x:Name="CreateCourseRow" Style="{StaticResource ToolRow}" Tag="create" Click="OnToolClick">
+                            <Grid ColumnSpacing="10"><Grid.ColumnDefinitions><ColumnDefinition Width="18" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <FontIcon Glyph="&#xE8A5;" FontSize="13" /><TextBlock Grid.Column="1" Text="Créer un cours" /></Grid>
+                        </Button>
+                        <AutoSuggestBox x:Name="CourseSearch" Margin="4,6,4,2" PlaceholderText="Rechercher…"
+                                        QueryIcon="Find" TextChanged="OnCourseSearch" />
+                    </StackPanel>
+
+                    <ScrollViewer Grid.Row="1">
+                        <StackPanel Spacing="1" Padding="0,0,0,8">
+                            <Button Style="{StaticResource SectionToggle}" Click="OnSectionToggle" Tag="tools">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Text="OUTILS" />
+                                    <FontIcon x:Name="ToolsChevron" Glyph="&#xE70D;" FontSize="9" />
+                                </StackPanel>
+                            </Button>
+                            <StackPanel x:Name="ToolsList" Spacing="1">
+                                <Button x:Name="QuizRow" Style="{StaticResource ToolRow}" Tag="quiz" Click="OnToolClick">
+                                    <Grid ColumnSpacing="10"><Grid.ColumnDefinitions><ColumnDefinition Width="18" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="&#xE9D5;" FontSize="13" /><TextBlock Grid.Column="1" Text="Quiz" /></Grid>
+                                </Button>
+                                <Button x:Name="ProblemsRow" Style="{StaticResource ToolRow}" Tag="problems" Click="OnToolClick">
+                                    <Grid ColumnSpacing="10"><Grid.ColumnDefinitions><ColumnDefinition Width="18" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="&#xE70F;" FontSize="13" /><TextBlock Grid.Column="1" Text="Exercices corrigés" /></Grid>
+                                </Button>
+                                <Button x:Name="AssessmentsRow" Style="{StaticResource ToolRow}" Tag="assessments" Click="OnToolClick">
+                                    <Grid ColumnSpacing="10"><Grid.ColumnDefinitions><ColumnDefinition Width="18" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="&#xE7C3;" FontSize="13" /><TextBlock x:Name="AssessmentsLabel" Grid.Column="1" Text="Devoirs" />
+                                        <TextBlock x:Name="AssessmentsBadge" Grid.Column="2" Style="{StaticResource RowHint}" /></Grid>
+                                </Button>
+                                <Button x:Name="PinnedRow" Style="{StaticResource ToolRow}" Tag="pinned" Click="OnToolClick">
+                                    <Grid ColumnSpacing="10"><Grid.ColumnDefinitions><ColumnDefinition Width="18" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="&#xE718;" FontSize="13" /><TextBlock Grid.Column="1" Text="Fiches épinglées" />
+                                        <TextBlock x:Name="PinnedBadge" Grid.Column="2" Style="{StaticResource RowHint}" /></Grid>
+                                </Button>
+                                <Button x:Name="PlanRow" Style="{StaticResource ToolRow}" Tag="plan" Click="OnToolClick">
+                                    <Grid ColumnSpacing="10"><Grid.ColumnDefinitions><ColumnDefinition Width="18" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="&#xE787;" FontSize="13" /><TextBlock Grid.Column="1" Text="Plan du jour" /></Grid>
+                                </Button>
+                                <Button x:Name="ProgressRow" Style="{StaticResource ToolRow}" Tag="progress" Click="OnToolClick">
+                                    <Grid ColumnSpacing="10"><Grid.ColumnDefinitions><ColumnDefinition Width="18" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="&#xE9D2;" FontSize="13" /><TextBlock Grid.Column="1" Text="Mes progrès" /></Grid>
+                                </Button>
+                                <Button x:Name="MemoryRow" Style="{StaticResource ToolRow}" Tag="memory" Click="OnToolClick">
+                                    <Grid ColumnSpacing="10"><Grid.ColumnDefinitions><ColumnDefinition Width="18" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="&#xEA80;" FontSize="13" /><TextBlock Grid.Column="1" Text="Mémoire du tuteur" /></Grid>
+                                </Button>
+                            </StackPanel>
+
+                            <Button Style="{StaticResource SectionToggle}" Click="OnSectionToggle" Tag="courses" Margin="0,8,0,0">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Text="MES COURS" />
+                                    <FontIcon x:Name="CoursesChevron" Glyph="&#xE70D;" FontSize="9" />
+                                </StackPanel>
+                            </Button>
+                            <StackPanel x:Name="CoursesSection">
+                                <ListView x:Name="CourseList" SelectionMode="Single" SelectionChanged="OnCourseSelected"
+                                          ScrollViewer.VerticalScrollMode="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                                    <ListView.ItemTemplate>
+                                        <DataTemplate x:DataType="models:CourseSummary">
+                                            <StackPanel Padding="0,4">
+                                                <TextBlock Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+                                                <TextBlock Text="{x:Bind Subject}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="NoWrap"
+                                                           Foreground="{ThemeResource TextFillColorTertiaryBrush}" TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ListView.ItemTemplate>
+                                </ListView>
+                                <TextBlock x:Name="CourseListEmpty" Visibility="Collapsed" Margin="10" TextWrapping="Wrap"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+
+                            <Button Style="{StaticResource SectionToggle}" Click="OnSectionToggle" Tag="discussions" Margin="0,8,0,0">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Text="DISCUSSIONS" />
+                                    <FontIcon x:Name="DiscussionsChevron" Glyph="&#xE70D;" FontSize="9" />
+                                </StackPanel>
+                            </Button>
+                            <StackPanel x:Name="DiscussionsList" Spacing="1" />
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- Compte et réglages -->
+                    <Grid Grid.Row="2" Padding="6,8,0,0" ColumnSpacing="8" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <PersonPicture x:Name="Avatar" Width="24" Height="24" />
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <TextBlock x:Name="UserName" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+                            <TextBlock x:Name="UserDetail" Style="{StaticResource CaptionTextBlockStyle}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
+                                       Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                        </StackPanel>
+                        <Button Grid.Column="2" Style="{StaticResource IconButton}" AutomationProperties.Name="Réglages"
+                                ToolTipService.ToolTip="Réglages">
+                            <FontIcon Glyph="&#xE713;" FontSize="13" />
+                            <Button.Flyout>
+                                <MenuFlyout Placement="TopEdgeAlignedRight">
+                                    <MenuFlyoutSubItem Text="Thème">
+                                        <RadioMenuFlyoutItem x:Name="ThemeSystem" Text="Celui de Windows" GroupName="theme" Click="OnThemeClick" Tag="system" />
+                                        <RadioMenuFlyoutItem x:Name="ThemeLight" Text="Clair" GroupName="theme" Click="OnThemeClick" Tag="light" />
+                                        <RadioMenuFlyoutItem x:Name="ThemeDark" Text="Sombre" GroupName="theme" Click="OnThemeClick" Tag="dark" />
+                                    </MenuFlyoutSubItem>
+                                    <!-- Pour qui a du mal à lire petit : un ou deux points de plus, partout (cours compris) -->
+                                    <MenuFlyoutSubItem x:Name="TextSizeMenu" Text="Taille du texte" />
+                                    <MenuFlyoutItem Text="Réinitialiser la disposition" Click="OnResetLayout" />
+                                    <MenuFlyoutSeparator />
+                                    <MenuFlyoutItem Text="Se déconnecter" Click="OnSignOut" />
+                                </MenuFlyout>
+                            </Button.Flyout>
+                        </Button>
+                    </Grid>
+                </Grid>
+
+                <controls:PaneSplitter x:Name="MenuSplitter" Grid.Column="1" />
+
+                <!-- ── Lecture du cours : toujours au milieu ─────────────── -->
+                <Grid x:Name="ReadingPane" Grid.Column="2" Margin="0,0,0,6" CornerRadius="8"
+                      Background="{ThemeResource LayerFillColorDefaultBrush}"
+                      BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <!-- En-tête sur une ligne : matière › titre, puis trois icônes -->
+                    <Grid Padding="12,4,4,4" ColumnSpacing="2" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap">
+                            <Run x:Name="CourseMeta" Foreground="{ThemeResource TextFillColorTertiaryBrush}" /><Run x:Name="CourseTitle" Text="Choisis un cours" FontWeight="SemiBold" />
+                        </TextBlock>
+                        <Button x:Name="TocButton" Grid.Column="1" Style="{StaticResource IconButton}" IsEnabled="False"
+                                ToolTipService.ToolTip="Sommaire" AutomationProperties.Name="Sommaire">
+                            <FontIcon Glyph="&#xE8FD;" FontSize="13" />
+                            <Button.Flyout>
+                                <MenuFlyout x:Name="TocFlyout" Placement="BottomEdgeAlignedRight" />
+                            </Button.Flyout>
+                        </Button>
+                        <Button x:Name="FocusButton" Grid.Column="2" Style="{StaticResource IconButton}" Click="OnFocusToggle"
+                                ToolTipService.ToolTip="Mode lecture : le cours seul (Ctrl+Maj+F)" AutomationProperties.Name="Mode lecture">
+                            <FontIcon x:Name="FocusIcon" Glyph="&#xE740;" FontSize="13" />
+                        </Button>
+                        <Button x:Name="AgentButton" Grid.Column="3" Style="{StaticResource IconButton}" Click="OnAgentToggle"
+                                ToolTipService.ToolTip="Tuteur IA (Ctrl+J)" AutomationProperties.Name="Afficher ou masquer le tuteur IA">
+                            <FontIcon Glyph="&#xE8BD;" FontSize="13" />
+                        </Button>
+                    </Grid>
+                    <InfoBar x:Name="ReadingNotice" Grid.Row="1" IsOpen="False" IsClosable="True" Margin="10,6,10,0" />
+                    <controls:ReaderView x:Name="CourseReader" Grid.Row="2" />
+                </Grid>
+
+                <controls:PaneSplitter x:Name="AgentSplitter" Grid.Column="3" TargetIsAfter="True" />
+
+                <!-- ── Tuteur IA : la discussion sur le cours ouvert ─────────── -->
+                <Grid x:Name="AgentPane" Grid.Column="4" Margin="0,0,6,6" CornerRadius="8"
+                      Background="{ThemeResource LayerFillColorDefaultBrush}"
+                      BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid Padding="12,4,4,4" ColumnSpacing="2" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Ellipse x:Name="AgentBusyDot" Width="7" Height="7" Margin="0,0,8,0" Visibility="Collapsed"
+                                 Fill="{ThemeResource AccentFillColorDefaultBrush}" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="1" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap">
+                            <Run Text="Tuteur IA" FontWeight="SemiBold" /><Run x:Name="AgentSubtitle" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                        </TextBlock>
+                        <Button x:Name="ClearChatButton" Grid.Column="2" Style="{StaticResource IconButton}" Click="OnClearChat"
+                                ToolTipService.ToolTip="Effacer la discussion sur ce cours" AutomationProperties.Name="Effacer la discussion">
+                            <FontIcon Glyph="&#xE74D;" FontSize="12" />
+                        </Button>
+                        <Button Grid.Column="3" Style="{StaticResource IconButton}" Click="OnCloseAgent"
+                                ToolTipService.ToolTip="Fermer le panneau (Ctrl+J)" AutomationProperties.Name="Fermer le tuteur">
+                            <FontIcon Glyph="&#xE711;" FontSize="12" />
+                        </Button>
+                    </Grid>
+
+                    <controls:ReaderView x:Name="ChatView" Grid.Row="1" />
+
+                    <InfoBar x:Name="AgentNotice" Grid.Row="2" IsOpen="False" IsClosable="True" Margin="10,0,10,4" />
+
+                    <!-- Zone de saisie : la question, puis photo · tokens et contexte · modèle · envoi -->
+                    <Border x:Name="Composer" Grid.Row="3" Margin="8,2,8,8" CornerRadius="12" Padding="10,8,8,8"
+                            Background="{ThemeResource ControlFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}" BorderThickness="1">
+                        <Grid RowSpacing="6">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Border x:Name="AttachmentChip" Visibility="Collapsed" HorizontalAlignment="Left" CornerRadius="6" Padding="6,1,1,1"
+                                    Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE722;" FontSize="11" VerticalAlignment="Center" />
+                                    <TextBlock x:Name="AttachmentName" VerticalAlignment="Center" MaxWidth="200" TextTrimming="CharacterEllipsis"
+                                               Style="{StaticResource CaptionTextBlockStyle}" />
+                                    <Button Style="{StaticResource IconButton}" Padding="4" Click="OnRemoveAttachment" AutomationProperties.Name="Retirer la photo">
+                                        <FontIcon Glyph="&#xE711;" FontSize="9" />
+                                    </Button>
+                                </StackPanel>
+                            </Border>
+                            <TextBox x:Name="QuestionBox" Grid.Row="1" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="40" MaxHeight="180"
+                                     BorderThickness="0" Background="Transparent" Padding="2,2"
+                                     PlaceholderText="Pose ta question…  « / » pour les commandes"
+                                     PreviewKeyDown="OnQuestionKeyDown" TextChanged="OnQuestionTextChanged"
+                                     AutomationProperties.Name="Question au tuteur">
+                                <!-- Pas de cadre ni de fond qui change au focus : c'est la bordure arrondie autour qui sert de champ -->
+                                <TextBox.Resources>
+                                    <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="Transparent" />
+                                    <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="Transparent" />
+                                    <SolidColorBrush x:Key="TextControlBackgroundDisabled" Color="Transparent" />
+                                    <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="Transparent" />
+                                    <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="Transparent" />
+                                    <Thickness x:Key="TextControlBorderThemeThicknessFocused">0</Thickness>
+                                </TextBox.Resources>
+                            </TextBox>
+                            <Grid Grid.Row="2" ColumnSpacing="2">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Button x:Name="AttachButton" Style="{StaticResource IconButton}" Click="OnAttachPhoto"
+                                        AutomationProperties.Name="Joindre une photo">
+                                    <FontIcon Glyph="&#xE710;" FontSize="13" />
+                                </Button>
+                                <TextBlock x:Name="AgentStatus" Grid.Column="1" VerticalAlignment="Center" Margin="6,0"
+                                           Style="{StaticResource CaptionTextBlockStyle}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
+                                           Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                                <!-- Tokens consommés et place prise dans le contexte du modèle (tourne pendant la réponse) -->
+                                <Button x:Name="UsageButton" Grid.Column="2" Style="{StaticResource IconButton}" Padding="5"
+                                        AutomationProperties.Name="Tokens et contexte">
+                                    <ProgressRing x:Name="ContextRing" Width="16" Height="16" IsIndeterminate="False" Value="0" Minimum="0" Maximum="100"
+                                                  Background="{ThemeResource ControlStrokeColorDefaultBrush}" />
+                                    <Button.Flyout>
+                                        <Flyout Placement="TopEdgeAlignedRight" Opening="OnUsageOpening">
+                                            <StackPanel x:Name="UsagePanel" Width="280" Spacing="0" />
+                                        </Flyout>
+                                    </Button.Flyout>
+                                </Button>
+                                <!-- Choix du modèle d'IA qui répond -->
+                                <DropDownButton x:Name="ModelButton" Grid.Column="3" Padding="6,3" Background="Transparent" BorderThickness="0"
+                                                AutomationProperties.Name="Choix du modèle">
+                                    <TextBlock x:Name="ModelLabel" Text="Automatique" MaxWidth="150" TextTrimming="CharacterEllipsis"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    <DropDownButton.Flyout>
+                                        <MenuFlyout x:Name="ModelFlyout" Placement="TopEdgeAlignedRight" />
+                                    </DropDownButton.Flyout>
+                                </DropDownButton>
+                                <Button x:Name="SendButton" Grid.Column="4" Style="{StaticResource SendButton}" Click="OnSendClick"
+                                        AutomationProperties.Name="Envoyer">
+                                    <FontIcon x:Name="SendIcon" Glyph="&#xE74A;" FontSize="12" />
+                                </Button>
+                            </Grid>
+                        </Grid>
+                    </Border>
+                </Grid>
+
+                <!-- ── Scène des outils : quiz et exercices en plein écran, pages au milieu, création de cours ── -->
+                <Grid x:Name="Stage" Grid.Column="2" Visibility="Collapsed" Margin="0,0,0,6" CornerRadius="8"
+                      Background="{ThemeResource LayerFillColorDefaultBrush}"
+                      BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid Padding="4,4,8,4" ColumnSpacing="6" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Button x:Name="StageBack" Style="{StaticResource IconButton}" Padding="8,5" Click="OnStageClose"
+                                AutomationProperties.Name="Retour au cours">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xE72B;" FontSize="12" />
+                                <TextBlock Text="Retour au cours" />
+                            </StackPanel>
+                        </Button>
+                        <TextBlock Grid.Column="1" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap">
+                            <Run x:Name="StageTitle" FontWeight="SemiBold" /><Run x:Name="StageSubtitle" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                        </TextBlock>
+                        <ToggleButton x:Name="TwoSpacesToggle" Grid.Column="2" Visibility="Collapsed" Padding="8,3" Click="OnTwoSpacesToggle"
+                                      AutomationProperties.Name="Deux espaces de création">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xE89F;" FontSize="12" />
+                                <TextBlock Text="Deux espaces" />
+                            </StackPanel>
+                        </ToggleButton>
+                    </Grid>
+                    <controls:ReaderView x:Name="ToolView" Grid.Row="1" />
+                    <!-- Création de cours : un ou deux espaces côte à côte, chacun avec son agent -->
+                    <Grid x:Name="CreateView" Grid.Row="1" Visibility="Collapsed" ColumnSpacing="0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition x:Name="SecondSpaceColumn" Width="0" />
+                        </Grid.ColumnDefinitions>
+                        <Border x:Name="FirstSpaceHost" />
+                        <Border x:Name="SecondSpaceHost" Grid.Column="1" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="1,0,0,0" />
+                    </Grid>
+                </Grid>
+            </Grid>
+        </Grid>
+    </Grid>
+    </UserControl>
+</Window>

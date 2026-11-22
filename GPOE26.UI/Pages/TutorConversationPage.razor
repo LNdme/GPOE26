@@ -20,6 +20,9 @@
 </div>
 
 @code {
+    // Espace d'apprentissage : toute personne qui apprend, parent compris (casquette « learner », lot P3)
+    protected override string[]? RequiredHats => [UserHats.Learner];
+
     [Parameter] public Guid CourseId { get; set; }
     [SupplyParameterFromQuery(Name = "message")] public Guid? Message { get; set; }
 
@@ -28,6 +31,12 @@
 
     protected override async Task LoadAsync()
     {
+        // Discussion libre (lot P1) : pas de cours à charger
+        if (CourseId == TutorPanel.FreeCourseId)
+        {
+            _title = TutorPanel.FreeTitle;
+            return;
+        }
         // Le cours peut avoir été retiré de la classe : la discussion reste lisible
         var course = await Courses.GetAsync(CourseId);
         _courseAvailable = course.Ok;

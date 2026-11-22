@@ -1,0 +1,284 @@
+@using GPOE26.UI.Components
+@inject ApiClient Api
+@inject SiteAgentExecutor Executor
+@inject IJSRuntime JS
+
+@* Conversation avec l'agent du site, dans le panneau gauche de l'administration.
+   L'agent lit le contenu du site et peut PROPOSER des modifications : chacune s'affiche en carte
+   et ne s'exécute qu'après un clic sur « Confirmer », avec les droits de la personne connectée. *@
+<section class="sa" aria-label="Agent du site">
+    <div class="sa-scroll" @ref="_scroll" aria-live="polite">
+        @if (_turns.Count == 0)
+        {
+            <div class="sa-intro">
+                <p><strong>Bonjour @(Session.Profile?.Username) !</strong> Je connais le contenu du site : actualités (brouillons compris), événements, activités et équipe.</p>
+                <p class="ga-small ga-muted">Je liste, résume et rédige. Je peux aussi préparer des modifications : vous les confirmez une par une, rien ne change sans votre clic.</p>
+            </div>
+            <div class="sa-suggest">
+                @foreach (var s in Suggestions)
+                {
+                    <button type="button" class="sa-chip" disabled="@_busy" @onclick="() => AskAsync(s)">@s</button>
+                }
+            </div>
+        }
+        @foreach (var t in _turns)
+        {
+            <div class="sa-msg @(t.Role == "user" ? "me" : "bot")">
+                @if (t.Role == "user")
+                {
+                    <p class="sa-text">@t.Content</p>
+                }
+                else
+                {
+                    @if (!string.IsNullOrWhiteSpace(t.Content))
+                    {
+                        <div class="sa-md">@((MarkupString)GPOE26.UI.Services.MarkdownRenderer.Render(t.Content).Html)</div>
+                    }
+                    @foreach (var card in t.Cards)
+                    {
+                        <div class="sa-action @(card.Action.Destructive ? "is-danger" : "") is-@card.State.ToString().ToLowerInvariant()">
+                            <div class="sa-action__head">
+                                <Icon Name="@(card.Action.Destructive ? "trash" : "edit")" Size="16" />
+                                <strong>@card.Action.Summary</strong>
+                            </div>
+                            @if (Details(card.Action) is { Count: > 0 } details)
+                            {
+                                <details class="sa-action__details">
+                                    <summary>Voir le détail</summary>
+                                    <dl>
+                                        @foreach (var (label, value) in details)
+                                        {
+                                            <dt>@label</dt>
+                                            <dd>@value</dd>
+                                        }
+                                    </dl>
+                                </details>
+                            }
+                            @switch (card.State)
+                            {
+                                case CardState.Pending:
+                                    <div class="sa-action__buttons">
+                                        <button type="button" class="site-btn site-btn--sm @(card.Action.Destructive ? "site-btn--danger" : "site-btn--primary")"
+                                                disabled="@_executing" @onclick="() => ConfirmAsync(t, card)">
+                                            @(card.Action.Destructive ? "Confirmer la suppression" : "Confirmer")
+                                        </button>
+                                        <button type="button" class="site-btn site-btn--quiet site-btn--sm" disabled="@_executing" @onclick="() => Cancel(card)">Annuler</button>
+                                    </div>
+                                    break;
+                                case CardState.Running:
+                                    <span class="sa-action__status" role="status"><span class="spinner-border spinner-border-sm"></span> En cours…</span>
+                                    break;
+                                case CardState.Done:
+                                    <span class="sa-action__status ok" role="status"><Icon Name="tick" Size="16" Stroke="2.2" /> Fait</span>
+                                    break;
+                                case CardState.Cancelled:
+                                    <span class="sa-action__status" role="status">Annulée</span>
+                                    break;
+                                case CardState.Failed:
+                                    <span class="sa-action__status err" role="alert">@card.Message</span>
+                                    break;
+                            }
+                        </div>
+                    }
+                    @if (t.Rejected.Count > 0)
+                    {
+                        <ul class="sa-rejected">
+                            @foreach (var r in t.Rejected) { <li>@r</li> }
+                        </ul>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(t.Content))
+                    {
+                        <button type="button" class="sa-copy" title="Copier la réponse" @onclick="() => CopyAsync(t.Content)"><Icon Name="copy" Size="14" /> Copier</button>
+                    }
+                }
+            </div>
+        }
+        @if (_busy)
+        {
+            <div class="sa-msg bot typing" role="status"><span></span><span></span><span></span><span class="visually-hidden">L'agent écrit…</span></div>
+        }
+        @if (_error is not null)
+        {
+            <div class="alert alert-danger sa-error" role="alert">@_error</div>
+        }
+    </div>
+
+    <form class="sa-input" @onsubmit="SendAsync" @onsubmit:preventDefault>
+        <label for="sa-text" class="visually-hidden">Votre demande à l'agent</label>
+        <textarea id="sa-text" rows="2" placeholder="Demandez une liste, un texte, une modification…" @bind="_draft" @bind:event="oninput"
+                  @onkeydown="OnKeyDownAsync" disabled="@_busy"></textarea>
+        <div class="sa-input-actions">
+            @if (_turns.Count > 0)
+            {
+                <button type="button" class="site-btn site-btn--quiet site-btn--sm" @onclick="Clear" disabled="@(_busy || _executing)">Nouvelle conversation</button>
+            }
+            <button type="submit" class="site-btn site-btn--primary site-btn--sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_draft))">
+                <Icon Name="send" Size="16" /> Envoyer
+            </button>
+        </div>
+    </form>
+</section>
+
+@code {
+    [Inject] private GPOE26.UI.Services.SessionState Session { get; set; } = default!;
+
+    /// <summary>Notifie l'hôte quand l'agent travaille (pastille d'état dans l'en-tête du panneau).</summary>
+    [Parameter] public EventCallback<bool> BusyChanged { get; set; }
+
+    private enum CardState { Pending, Running, Done, Cancelled, Failed }
+
+    private sealed class Card(SiteAgentAction action)
+    {
+        public SiteAgentAction Action { get; } = action;
+        public CardState State { get; set; } = CardState.Pending;
+        public string? Message { get; set; }
+    }
+
+    private sealed class Turn(string role, string content)
+    {
+        public string Role { get; } = role;
+        public string Content { get; } = content;
+        public List<Card> Cards { get; init; } = new();
+        public List<string> Rejected { get; init; } = new();
+    }
+
+    private static readonly string[] Suggestions =
+    [
+        "Quels articles sont encore en brouillon ?",
+        "Liste les événements à venir ce mois-ci",
+        "Qu'est-ce qui manque sur le site (images, lieux, horaires) ?",
+        "Prépare un article en brouillon pour annoncer les portes ouvertes",
+    ];
+
+    private readonly List<Turn> _turns = new();
+    private string _draft = "";
+    private string? _error;
+    private bool _busy, _executing, _scrollPending;
+    private ElementReference _scroll;
+    private IJSObjectReference? _module;
+
+    private Task SendAsync() => AskAsync(_draft);
+
+    private async Task AskAsync(string text)
+    {
+        var message = text.Trim();
+        if (message.Length == 0 || _busy) return;
+        var history = History();
+        _turns.Add(new Turn("user", message));
+        _draft = "";
+        _error = null;
+        await SetBusyAsync(true);
+
+        var (answer, error) = await Api.AskSiteAgentAsync(message, history);
+        if (answer is not null)
+        {
+            _turns.Add(new Turn("assistant", answer.Reply)
+            {
+                Cards = (answer.Actions ?? []).Select(a => new Card(a)).ToList(),
+                Rejected = answer.Rejected ?? [],
+            });
+        }
+        else
+        {
+            _error = error;
+            _turns.RemoveAt(_turns.Count - 1);   // la question reste à renvoyer
+            _draft = message;
+        }
+        await SetBusyAsync(false);
+    }
+
+    /// <summary>
+    /// Historique renvoyé à l'agent : ses réponses portent aussi le sort de chaque proposition,
+    /// pour qu'il sache ce qui a vraiment été fait (et ne le repropose pas).
+    /// </summary>
+    private List<SiteAgentTurn> History() => _turns.Select(t => new SiteAgentTurn(t.Role,
+        t.Cards.Count == 0 ? t.Content
+            : t.Content + "\n\n(Propositions : " + string.Join(" ; ", t.Cards.Select(c => $"{c.Action.Summary} — {StateLabel(c.State)}")) + ")"))
+        .ToList();
+
+    private static string StateLabel(CardState s) => s switch
+    {
+        CardState.Done => "faite",
+        CardState.Cancelled => "annulée",
+        CardState.Failed => "échouée",
+        _ => "en attente de confirmation"
+    };
+
+    private async Task ConfirmAsync(Turn turn, Card card)
+    {
+        if (_executing || card.State != CardState.Pending) return;
+        _executing = true;
+        card.State = CardState.Running;
+        StateHasChanged();
+
+        var (ok, message) = await Executor.ExecuteAsync(card.Action);
+        card.State = ok ? CardState.Done : CardState.Failed;
+        card.Message = ok ? null : message;
+        _executing = false;
+    }
+
+    private static void Cancel(Card card) => card.State = CardState.Cancelled;
+
+    /// <summary>Champs de la proposition, lisibles, pour vérifier avant de confirmer.</summary>
+    private static List<(string Label, string Value)> Details(SiteAgentAction action) =>
+        action.Data.Where(kv => kv.Key != "id")
+            .Select(kv => (Label(kv.Key), Value(kv.Value)))
+            .Where(x => x.Item2.Length > 0)
+            .ToList();
+
+    private static string Value(System.Text.Json.JsonElement v) => v.ValueKind switch
+    {
+        System.Text.Json.JsonValueKind.String => v.GetString() ?? "",
+        System.Text.Json.JsonValueKind.True => "oui",
+        System.Text.Json.JsonValueKind.False => "non",
+        _ => v.GetRawText()
+    };
+
+    private static string Label(string field) => field switch
+    {
+        "title" => "Titre", "content" => "Contenu", "excerpt" => "Résumé", "category" => "Catégorie", "publish" => "Publier",
+        "startDate" => "Début", "endDate" => "Fin", "location" => "Lieu", "type" => "Type", "description" => "Description",
+        "isPublic" => "Public", "name" => "Nom", "schedule" => "Horaires", "responsibleTeacher" => "Responsable",
+        "isActive" => "Visible sur le site", "role" => "Fonction", "preName" => "Prénom", "department" => "Service",
+        "email" => "E-mail", "specialization" => "Spécialité", _ => field
+    };
+
+    private async Task SetBusyAsync(bool busy)
+    {
+        _busy = busy;
+        _scrollPending = true;
+        if (BusyChanged.HasDelegate) await BusyChanged.InvokeAsync(busy);
+        StateHasChanged();
+    }
+
+    private async Task OnKeyDownAsync(KeyboardEventArgs e)
+    {
+        // Entrée envoie, Maj+Entrée va à la ligne (comme le tuteur)
+        if (e.Key == "Enter" && !e.ShiftKey && !string.IsNullOrWhiteSpace(_draft)) await SendAsync();
+    }
+
+    private void Clear()
+    {
+        _turns.Clear();
+        _error = null;
+    }
+
+    private async Task CopyAsync(string text)
+    {
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", text); }
+        catch (JSException) { }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_scrollPending) return;
+        _scrollPending = false;
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./_content/GPOE26.UI/gpoe-app.js");
+            await _module.InvokeVoidAsync("scrollToEnd", _scroll);
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
+}

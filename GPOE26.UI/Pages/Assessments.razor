@@ -2,6 +2,7 @@
 @layout AppLayout
 @inherits AppPage
 @inject IAssessmentApi Api
+@inject ISpaceApi Spaces
 
 <PageTitle>Évaluations — GPOE26</PageTitle>
 
@@ -45,7 +46,8 @@
                             @foreach (var a in _teacher)
                             {
                                 <tr>
-                                    <td><strong>@a.Title</strong>@if (a.Subject is { Length: > 0 }) { <br /><span class="ga-small ga-muted">@a.Subject</span> }</td>
+                                    <td><strong>@a.Title</strong>@if (a.Subject is { Length: > 0 }) { <br /><span class="ga-small ga-muted">@a.Subject</span> }
+                                        @if (Libraries(a.LibraryOrganizationIds) is { } libs) { <br /><span class="ga-small ga-muted">Bibliothèque : @libs</span> }</td>
                                     <td>@Labels.Of(a.Kind)</td>
                                     <td>@a.QuestionCount · @Labels.Number(a.MaxScore) pts</td>
                                     <td><span class="ga-tag @(a.Status switch { AssessmentStatus.Published => "green", AssessmentStatus.Closed => "purple", _ => "grey" })">@Labels.Of(a.Status).ToUpperInvariant()</span></td>
@@ -73,18 +75,25 @@
             </div>
         }
     }
-    else
+    @if (Ready && !_loading && (!IsTeacher || _student.Count > 0))
     {
+        @if (IsTeacher)
+        {
+            <h2 class="ga-h3" style="margin-top:24px">À composer dans vos classes</h2>
+        }
         <div class="ga-tabs" role="tablist">
-            <button role="tab" class="@(_tab == 0 ? "on" : "")" aria-selected="@(_tab == 0)" @onclick="() => _tab = 0">Disponibles <span class="count">@Open.Count()</span></button>
-            <button role="tab" class="@(_tab == 1 ? "on" : "")" aria-selected="@(_tab == 1)" @onclick="() => _tab = 1">Rendues <span class="count">@Done.Count()</span></button>
+            <button role="tab" class="@(_tab == 0 ? "on" : "")" aria-selected="@Aria.State(_tab == 0)" @onclick="() => _tab = 0">Disponibles <span class="count">@Open.Count()</span></button>
+            <button role="tab" class="@(_tab == 1 ? "on" : "")" aria-selected="@Aria.State(_tab == 1)" @onclick="() => _tab = 1">Rendues <span class="count">@Done.Count()</span></button>
         </div>
         <div class="ga-grid">
             @foreach (var a in _tab == 0 ? Open : Done)
             {
                 <article class="ga-card">
                     <div class="ga-row between">
-                        <span class="ga-tag">@Labels.Of(a.Kind).ToUpperInvariant()</span>
+                        <span class="ga-row" style="gap:6px">
+                            <span class="ga-tag">@Labels.Of(a.Kind).ToUpperInvariant()</span>
+                            @if (a.Former) { <span class="ga-tag grey">CLASSE QUITTÉE</span> }
+                        </span>
                         @if (a.BestScoreScaled is not null) { <span class="ga-tag green">@Labels.Score(a.BestScoreScaled, a.ScaleTo)</span> }
                     </div>
                     <h2 class="ga-h3">@a.Title</h2>
@@ -113,6 +122,10 @@
 </div>
 
 @code {
+    // Lot J1 : tout compte peut apprendre (élève, parent, enseignant qui suit une classe)
+    protected override string[]? RequiredHats => [UserHats.Learner];
+
+    // Vue d'auteur selon le rôle dans l'espace de travail actif (enseignant ou administrateur), comme le service Quiz
     private bool IsTeacher => Session.CanTeach;
     private bool _loading = true;
     private int _tab;
@@ -124,18 +137,26 @@
     // Une évaluation à plusieurs tentatives peut figurer dans les deux onglets
     private IEnumerable<StudentAssessment> Done => _student.Where(a => a.LastSubmissionId is not null);
 
+    private Dictionary<Guid, string> _spaceNames = new();
+
+    /// <summary>Noms des bibliothèques où le contenu est déposé, ou null s'il n'est déposé nulle part.</summary>
+    private string? Libraries(List<Guid>? ids) =>
+        ids is { Count: > 0 } ? string.Join(", ", ids.Select(id => _spaceNames.GetValueOrDefault(id, "un établissement"))) : null;
+
     protected override async Task LoadAsync()
     {
+        // Un enseignant voit ses évaluations d'auteur, et aussi celles qu'il compose dans une classe rejointe (lot J1)
+        var learner = Api.MineAsStudentAsync();
         if (IsTeacher)
         {
             var r = await Api.MineAsTeacherAsync();
             _teacher = r.Value ?? new(); _error = r.Error;
+            // Lot 13 : où chaque évaluation est déposée (bibliothèques d'établissement)
+            _spaceNames = ((await Spaces.MineAsync()).Value ?? []).ToDictionary(s => s.Id, s => s.Name);
         }
-        else
-        {
-            var r = await Api.MineAsStudentAsync();
-            _student = r.Value ?? new(); _error = r.Error;
-        }
+        var mine = await learner;
+        _student = mine.Value ?? new();
+        if (!IsTeacher) _error = mine.Error;
         _loading = false;
     }
 

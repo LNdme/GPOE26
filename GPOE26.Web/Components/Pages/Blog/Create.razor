@@ -1,4 +1,5 @@
-@page "/blog/create"
+@page "/admin/actualites/nouveau"
+@layout GPOE26.Web.Components.Layout.AdminLayout
 
 <PageTitle>Créer un article – GPOE26</PageTitle>
 
@@ -6,7 +7,7 @@
     <div class="form-section management-shell">
         <nav aria-label="breadcrumb" class="mb-3">
             <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="/blog" class="text-navy text-decoration-none">Actualités</a></li>
+                <li class="breadcrumb-item"><a href="/admin/actualites" class="text-navy text-decoration-none">Actualités</a></li>
                 <li class="breadcrumb-item active">Nouvel article</li>
             </ol>
         </nav>
@@ -53,7 +54,7 @@
                 <label class="form-label fw-semibold">Image (URL ou Upload)</label>
                 <div class="input-group">
                     <InputText @bind-Value="_article.ImageUrl" class="form-control" placeholder="https://..." />
-                    <InputFile OnChange="HandleImageUpload" class="form-control" accept="image/*" />
+                    <InputFile OnChange="HandleImageUpload" class="form-control" accept="image/jpeg,image/png,image/gif,image/webp,image/avif,.jfif" />
                 </div>
                 @if (_isUploading)
                 {
@@ -81,7 +82,7 @@
                     @if (_saving) { <span class="spinner-border spinner-border-sm me-1"></span> }
                     Créer l'article
                 </button>
-                <a href="/blog" class="btn btn-outline-secondary">Annuler</a>
+                <a href="/admin/actualites" class="btn btn-outline-secondary">Annuler</a>
             </div>
         </EditForm>
     </div>
@@ -109,7 +110,7 @@
             var url = await Api.UploadImageAsync(stream, file.Name);
             if (url != null)
             {
-                _article.ImageUrl = url;
+                _article.ImageUrl = url; _errorMessage = null;
             }
             else _errorMessage = "Erreur upload.";
         }
@@ -159,7 +160,7 @@
         if (ok)
         {
             _success = true;
-            Nav.NavigateTo("/blog");
+            Nav.NavigateTo("/admin/actualites");
         }
         else
         {

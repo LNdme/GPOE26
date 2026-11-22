@@ -20,7 +20,7 @@ public class AuthService(SessionState session)
     public string? Token => session.Token;
 
     public UserProfileDto? Profile => session.Profile is { } p
-        ? new UserProfileDto(p.Id, p.Email, p.Username, p.Role.ToString(), p.Level, p.Specialite, p.Filiere, p.Language, p.CreatedAt)
+        ? new UserProfileDto(p.Id, p.Email ?? "", p.Username, p.Role.ToString(), p.Level, p.Specialite, p.Filiere, p.Language, p.CreatedAt)
         : null;
 
     public Task LogoutAsync() => session.SignOutAsync();

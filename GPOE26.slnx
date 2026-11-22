@@ -7,11 +7,14 @@
   <Project Path="GPOE26.Agent.Runtime.Mcp/GPOE26.Agent.Runtime.Mcp.csproj" />
   <Project Path="GPOE26.ApiService/GPOE26.ApiService.csproj" />
   <Project Path="GPOE26.AppHost/GPOE26.AppHost.csproj" />
+  <Project Path="GPOE26.Evals/GPOE26.Evals.csproj" />
+  <Project Path="GPOE26.Logic.Tests/GPOE26.Logic.Tests.csproj" />
   <Project Path="GPOE26.ServiceDefaults/GPOE26.ServiceDefaults.csproj" />
   <Project Path="GPOE26.Tests/GPOE26.Tests.csproj" />
   <Project Path="GPOE26.UI/GPOE26.UI.csproj" />
   <Project Path="GPOE26.Web/GPOE26.Web.csproj" />
   <Project Path="Quiz/Quiz.csproj" />
   <Project Path="Quiz.Tests/Quiz.Tests.csproj" />
+  <Project Path="User.Tests/User.Tests.csproj" />
   <Project Path="User/User.csproj" />
 </Solution>

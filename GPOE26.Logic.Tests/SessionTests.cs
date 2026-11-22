@@ -1,0 +1,265 @@
+using System.Security.Claims;
+using GPOE26.UI.Models;
+using GPOE26.UI.Services;
+using Microsoft.Extensions.Configuration;
+using User.Model;
+using User.Service;
+
+namespace GPOE26.Logic.Tests;
+
+/// <summary>Renouvellement de la session : elle suit l'activité au lieu de tomber 60 minutes après la connexion.</summary>
+public class SessionRenewalTests
+{
+    private sealed class MemoryStore : ISessionStore
+    {
+        public StoredSession? Saved;
+        public Task<StoredSession?> LoadAsync() => Task.FromResult(Saved);
+        public Task SaveAsync(StoredSession session) { Saved = session; return Task.CompletedTask; }
+        public Task ClearAsync() { Saved = null; return Task.CompletedTask; }
+    }
+
+    private static AuthResponse Auth(string token, int minutes = 60) => new(token, DateTime.UtcNow.AddMinutes(minutes), null!);
+
+    [Theory]
+    [InlineData(0, false)]    // jeton neuf
+    [InlineData(19, false)]
+    [InlineData(20, true)]    // un tiers de la durée de vie écoulé
+    [InlineData(59, true)]
+    [InlineData(60, false)]   // expiré : il n'y a plus rien à renouveler
+    public void Le_jeton_d_une_heure_se_renouvelle_apres_vingt_minutes(int minutesElapsed, bool expected)
+    {
+        var received = new DateTime(2026, 11, 10, 8, 0, 0, DateTimeKind.Utc);
+        Assert.Equal(expected, SessionState.DueForRenewal(received, received.AddMinutes(60), received.AddMinutes(minutesElapsed)));
+    }
+
+    [Fact]
+    public async Task Un_jeton_neuf_n_est_pas_renouvele()
+    {
+        var session = new SessionState(new MemoryStore());
+        await session.SignInAsync(Auth("jeton-1"));
+        Assert.False(session.ShouldRenew);
+    }
+
+    [Fact]
+    public async Task Le_renouvellement_remplace_le_jeton_et_l_enregistre()
+    {
+        var store = new MemoryStore();
+        var session = new SessionState(store);
+        await session.SignInAsync(Auth("jeton-1"));
+
+        await session.RenewAsync(current => Task.FromResult<AuthResponse?>(Auth(current + "-renouvelé")));
+
+        Assert.Equal("jeton-1-renouvelé", session.Token);
+        Assert.Equal("jeton-1-renouvelé", store.Saved!.Token);
+        Assert.True(session.IsAuthenticated);
+    }
+
+    [Fact]
+    public async Task Un_renouvellement_refuse_ne_deconnecte_pas()
+    {
+        var session = new SessionState(new MemoryStore());
+        await session.SignInAsync(Auth("jeton-1"));
+
+        await session.RenewAsync(_ => Task.FromResult<AuthResponse?>(null));
+        await session.RenewAsync(_ => throw new HttpRequestException("service injoignable"));
+
+        Assert.Equal("jeton-1", session.Token);
+        Assert.True(session.IsAuthenticated);
+    }
+
+    [Fact]
+    public async Task Plusieurs_appels_simultanes_ne_demandent_qu_un_seul_jeton()
+    {
+        var session = new SessionState(new MemoryStore());
+        await session.SignInAsync(Auth("jeton-1"));
+        var gate = new TaskCompletionSource<AuthResponse?>();
+        var calls = 0;
+        Task<AuthResponse?> Request(string _) { calls++; return gate.Task; }
+
+        var first = session.RenewAsync(Request);
+        var second = session.RenewAsync(Request);
+        gate.SetResult(Auth("jeton-2"));
+        await Task.WhenAll(first, second);
+
+        Assert.Equal(1, calls);
+        Assert.Equal("jeton-2", session.Token);
+    }
+
+    [Fact]
+    public async Task Une_deconnexion_pendant_le_renouvellement_reste_une_deconnexion()
+    {
+        var session = new SessionState(new MemoryStore());
+        await session.SignInAsync(Auth("jeton-1"));
+        var gate = new TaskCompletionSource<AuthResponse?>();
+
+        var renewal = session.RenewAsync(_ => gate.Task);
+        await session.SignOutAsync();
+        gate.SetResult(Auth("jeton-2"));
+        await renewal;
+
+        Assert.Null(session.Token);
+        Assert.False(session.IsAuthenticated);
+    }
+}
+
+/// <summary>
+/// Droits à jour dans l'interface : le profil gardé par le navigateur datait de la connexion, et un abonnement
+/// activé ensuite laissait le tuteur verrouillé (« ABONNEMENT ACTIF » sur la page Abonnement, verrou dans le cours).
+/// </summary>
+public class SessionProfileRefreshTests
+{
+    private sealed class MemoryStore : ISessionStore
+    {
+        public StoredSession? Saved;
+        public Task<StoredSession?> LoadAsync() => Task.FromResult(Saved);
+        public Task SaveAsync(StoredSession session) { Saved = session; return Task.CompletedTask; }
+        public Task ClearAsync() { Saved = null; return Task.CompletedTask; }
+    }
+
+    private static readonly Guid Id = Guid.NewGuid();
+
+    private static UserProfile Profile(bool premium) => new(Id, "eleve@exemple.test", "Élève", UI.Models.UserRole.Student,
+        null, null, null, "fr", DateTime.UtcNow, null, null, null, null, null, null, null, null, null, null,
+        premium, premium ? UI.Models.SubscriptionPlan.StudentPremium : null, null,
+        premium ? [new UI.Models.EntitledFeature("tutor-ai", null)] : [new UI.Models.EntitledFeature("quiz-ai", 3)]);
+
+    /// <summary>Session gratuite enregistrée dans le navigateur, puis restaurée (rechargement de la page).</summary>
+    private static async Task<(SessionState Session, MemoryStore Store)> RestoredFreeSessionAsync()
+    {
+        var store = new MemoryStore { Saved = new StoredSession("jeton-1", DateTime.UtcNow.AddMinutes(60), Profile(premium: false)) };
+        var session = new SessionState(store);
+        await session.RestoreAsync();
+        return (session, store);
+    }
+
+    [Fact]
+    public async Task Un_abonnement_active_apres_la_connexion_deverrouille_le_tuteur_au_rechargement()
+    {
+        var (session, store) = await RestoredFreeSessionAsync();
+        Assert.False(session.HasFeature("tutor-ai"));
+
+        await session.RefreshProfileAsync(() => Task.FromResult<UserProfile?>(Profile(premium: true)));
+
+        Assert.True(session.HasFeature("tutor-ai"));
+        Assert.True(store.Saved!.Profile.IsPremium);   // le prochain rechargement repart du profil à jour
+        Assert.Equal("jeton-1", session.Token);
+    }
+
+    [Fact]
+    public async Task Le_profil_n_est_pas_relu_a_chaque_page()
+    {
+        var (session, _) = await RestoredFreeSessionAsync();
+        var calls = 0;
+        Task<UserProfile?> Fetch() { calls++; return Task.FromResult<UserProfile?>(Profile(premium: true)); }
+
+        await session.RefreshProfileAsync(Fetch);
+        await session.RefreshProfileAsync(Fetch);
+
+        Assert.Equal(1, calls);
+    }
+
+    [Fact]
+    public async Task Un_profil_recu_a_la_connexion_n_est_pas_relu_aussitot()
+    {
+        var session = new SessionState(new MemoryStore());
+        await session.SignInAsync(new AuthResponse("jeton-1", DateTime.UtcNow.AddMinutes(60), Profile(premium: true)));
+        var calls = 0;
+
+        await session.RefreshProfileAsync(() => { calls++; return Task.FromResult<UserProfile?>(null); });
+
+        Assert.Equal(0, calls);
+    }
+
+    [Fact]
+    public async Task Un_service_injoignable_garde_le_profil_connu()
+    {
+        var (session, _) = await RestoredFreeSessionAsync();
+
+        await session.RefreshProfileAsync(() => throw new HttpRequestException("hors connexion"));
+        await session.RefreshProfileAsync(() => Task.FromResult<UserProfile?>(null));
+
+        Assert.True(session.IsAuthenticated);
+        Assert.Equal("Élève", session.Profile!.Username);
+    }
+
+    [Fact]
+    public async Task Un_profil_enregistre_avant_les_casquettes_les_deduit_du_role()
+    {
+        // Profil d'élève sans « Hats » (session ouverte avant le lot P3) : il apprend, il n'enseigne pas
+        var (session, _) = await RestoredFreeSessionAsync();
+        Assert.True(session.HasHat(UI.Models.UserHats.Learner));
+        Assert.False(session.HasHat(UI.Models.UserHats.Teacher));
+    }
+
+    [Fact]
+    public async Task Les_casquettes_envoyees_par_le_serveur_l_emportent()
+    {
+        var (session, _) = await RestoredFreeSessionAsync();
+        await session.RefreshProfileAsync(() => Task.FromResult<UserProfile?>(
+            Profile(premium: false) with { Hats = [UI.Models.UserHats.Learner, UI.Models.UserHats.Manager] }));
+        Assert.True(session.HasHat(UI.Models.UserHats.Manager));
+    }
+
+    [Fact]
+    public async Task Une_deconnexion_pendant_la_relecture_reste_une_deconnexion()
+    {
+        var (session, _) = await RestoredFreeSessionAsync();
+        var gate = new TaskCompletionSource<UserProfile?>();
+
+        var refresh = session.RefreshProfileAsync(() => gate.Task);
+        await session.SignOutAsync();
+        gate.SetResult(Profile(premium: true));
+        await refresh;
+
+        Assert.Null(session.Profile);
+        Assert.False(session.IsAuthenticated);
+    }
+}
+
+/// <summary>Côté service des comptes : le jeton garde la date de la vraie connexion, qui borne la session.</summary>
+public class SessionLimitTests
+{
+    private static readonly TimeSpan TwelveHours = TimeSpan.FromHours(12);
+
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(11, true)]
+    [InlineData(12, false)]
+    [InlineData(48, false)]
+    public void Une_session_se_prolonge_jusqu_a_douze_heures(int hoursSinceSignIn, bool expected)
+    {
+        var now = new DateTime(2026, 11, 10, 20, 0, 0, DateTimeKind.Utc);
+        Assert.Equal(expected, Jwtservice.CanRenew(now.AddHours(-hoursSinceSignIn), now, TwelveHours));
+    }
+
+    [Fact]
+    public void Une_date_de_connexion_dans_le_futur_est_refusee()
+    {
+        var now = new DateTime(2026, 11, 10, 20, 0, 0, DateTimeKind.Utc);
+        Assert.False(Jwtservice.CanRenew(now.AddMinutes(5), now, TwelveHours));
+    }
+
+    [Fact]
+    public void Le_jeton_renouvele_garde_la_date_de_la_connexion_d_origine()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Jwt:Key"] = "une-cle-secrete-de-plus-de-trente-deux-caracteres",
+            ["Jwt:Issuer"] = "GPOE2026",
+            ["Jwt:Audience"] = "GPOE2026Users"
+        }).Build();
+        var jwt = new Jwtservice(config);
+        var user = new AppUser { Email = "eleve@exemple.cm", Username = "Élève", PasswordHash = "x" };
+        var signedInAt = new DateTime(2026, 11, 10, 8, 0, 0, DateTimeKind.Utc);
+
+        var (token, _) = jwt.GenerateToken(user, new User.Service.Entitlement(false, null, null, null), signedInAt);
+
+        var claims = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().ReadJwtToken(token).Claims;
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(claims));
+        Assert.Equal(signedInAt, Jwtservice.SignedInAt(principal));
+    }
+
+    [Fact]
+    public void Un_ancien_jeton_sans_date_de_connexion_est_reconnu() =>
+        Assert.Null(Jwtservice.SignedInAt(new ClaimsPrincipal(new ClaimsIdentity())));
+}

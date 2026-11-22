@@ -1,0 +1,110 @@
+@using GPOE26.UI.Components
+@inject GPOE26.UI.Services.SessionState Session
+
+@* Présentation du produit : la plateforme d'apprentissage GPOE26 (accueil et page /plateforme) *@
+<section class="platform" id="plateforme" aria-labelledby="platform-title">
+    <div class="container">
+        <div class="platform__intro">
+            <div class="platform__copy">
+                <span class="home-eyebrow home-eyebrow--dark">La plateforme GPOE26</span>
+                <h2 id="platform-title">Tout l’apprentissage du lycée, au même endroit.</h2>
+                <p>
+                    Des cours clairs, un tuteur disponible à toute heure, des évaluations corrigées et un suivi
+                    partagé avec la famille. Un seul espace pour les élèves, les enseignants et les parents.
+                </p>
+                <div class="platform__actions">
+                    @if (Session.IsAuthenticated)
+                    {
+                        <a href="/app" class="site-btn site-btn--primary site-btn--lg">Ouvrir mon espace <Icon Name="right" Size="18" Stroke="2" /></a>
+                    }
+                    else
+                    {
+                        <a href="/register" class="site-btn site-btn--primary site-btn--lg">Créer un compte gratuit <Icon Name="right" Size="18" Stroke="2" /></a>
+                    }
+                    <a href="/tarifs" class="site-btn site-btn--ghost site-btn--lg">Voir les tarifs</a>
+                </div>
+                <p class="platform__note"><Icon Name="tick" Size="16" Stroke="2.2" /> Les cours partagés par les enseignants restent gratuits.</p>
+            </div>
+
+            @* Aperçu de l'application : décoratif *@
+            <div class="platform-mock" aria-hidden="true">
+                <div class="platform-mock__window">
+                    <div class="platform-mock__chrome"><i></i><i></i><i></i><span>gpoe26 · Mon espace</span></div>
+                    <div class="platform-mock__body">
+                        <div class="platform-mock__side">
+                            <span class="platform-mock__logo"><Icon Name="logo" Size="18" Stroke="2" /> GPOE26</span>
+                            <span class="is-on"><Icon Name="grid" Size="15" /> Accueil</span>
+                            <span><Icon Name="book" Size="15" /> Mes cours</span>
+                            <span><Icon Name="chat" Size="15" /> Tuteur</span>
+                            <span><Icon Name="check" Size="15" /> Évaluations</span>
+                            <span><Icon Name="calendar" Size="15" /> Emploi du temps</span>
+                        </div>
+                        <div class="platform-mock__main">
+                            <div class="platform-mock__course">
+                                <small>Physique · Terminale F3</small>
+                                <strong>Ch. 3 · Mouvement rectiligne</strong>
+                                <div class="platform-mock__lines"><i></i><i></i><i class="short"></i></div>
+                                <div class="platform-mock__formula">v = v₀ + a·t</div>
+                                <div class="platform-mock__progress"><span style="width:64%"></span></div>
+                            </div>
+                            <div class="platform-mock__chat">
+                                <div class="me">Pourquoi la vitesse augmente-t-elle ?</div>
+                                <div class="bot"><b><Icon Name="spark" Size="13" Stroke="2" /> Tuteur</b>Parce que l’accélération est positive : à chaque seconde, v gagne a m/s…</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="platform-mock__badge"><Icon Name="tick" Size="16" Stroke="2.4" /> Quiz corrigé · 17/20</div>
+            </div>
+        </div>
+
+        <div class="platform__features">
+            @foreach (var f in Features)
+            {
+                <article class="platform-feature">
+                    <span class="platform-feature__icon"><Icon Name="@f.Icon" Size="22" /></span>
+                    <h3>@f.Title</h3>
+                    <p>@f.Text</p>
+                </article>
+            }
+        </div>
+
+        <div class="platform__audiences">
+            @foreach (var a in Audiences)
+            {
+                <article class="platform-audience">
+                    <span class="platform-audience__tag">@a.Tag</span>
+                    <h3>@a.Title</h3>
+                    <ul>
+                        @foreach (var item in a.Items)
+                        {
+                            <li><Icon Name="tick" Size="16" Stroke="2.2" /> @item</li>
+                        }
+                    </ul>
+                </article>
+            }
+        </div>
+    </div>
+</section>
+
+@code {
+    private record Feature(string Icon, string Title, string Text);
+    private record Audience(string Tag, string Title, string[] Items);
+
+    private static readonly Feature[] Features =
+    [
+        new("book", "Cours structurés", "Un PDF, un lien ou des photos du cahier deviennent un cours clair, avec titres, formules et images."),
+        new("chat", "Tuteur IA", "Un tuteur qui connaît le cours répond aux questions et explique pas à pas, même le soir."),
+        new("check", "Évaluations corrigées", "Quiz générés depuis la leçon, devoirs rendus en photo et aide à la correction."),
+        new("lab", "Labos et simulations", "Des expériences interactives proposées selon la leçon pour manipuler les notions."),
+        new("users", "Classes et partage", "Les enseignants créent leurs classes et partagent cours et évaluations en un clic."),
+        new("chart", "Suivi des progrès", "Élèves et parents suivent les résultats et la progression, matière par matière."),
+    ];
+
+    private static readonly Audience[] Audiences =
+    [
+        new("Élèves", "Réviser à son rythme", ["Les cours de ses enseignants", "Un tuteur pour chaque leçon", "Des quiz pour s’entraîner"]),
+        new("Enseignants", "Préparer et suivre ses classes", ["Import de cours en quelques minutes", "Évaluations et copies au même endroit", "Un assistant pour gagner du temps"]),
+        new("Parents", "Accompagner sans s’inquiéter", ["Les résultats de ses enfants", "L’emploi du temps de la semaine", "Une formule Famille jusqu’à 3 comptes"]),
+    ];
+}

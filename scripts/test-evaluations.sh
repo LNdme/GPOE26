@@ -27,8 +27,13 @@ iso() { date -u -d "$1" +%Y-%m-%dT%H:%M:%SZ; }
 
 echo "── Préparation (comptes de démonstration + nouveaux comptes)"
 PROF=$(login prof@gpoe26.cm); ELEVE=$(login eleve@gpoe26.cm); PARENT=$(login parent@gpoe26.cm)
-req GET "$USER_API/classrooms/mine" "$PROF"; CLASS=$(echo "$BODY" | jq -r '.[0].id'); INVITE=$(echo "$BODY" | jq -r '.[0].inviteCode')
-BOB=$(register "{\"email\":\"bob@t.cm\",\"username\":\"bob\",\"password\":\"Test1234!\",\"inviteCode\":\"$INVITE\"}")
+req GET "$USER_API/classrooms/mine" "$PROF"; CLASS=$(echo "$BODY" | jq -r '.[]|select(.name=="Terminale C").id')
+# Bob entre dans la classe avec le code personnel donné par le responsable du lycée de démonstration (admin)
+ADMIN=$(login admin@gpoe26.cm); DEMO=55555555-5555-5555-5555-555555555555
+req POST "$USER_API/organizations/$DEMO/students" "$ADMIN" "{\"lastName\":\"BOB\",\"classroomId\":\"$CLASS\"}"
+req POST "$USER_API/organizations/$DEMO/students/$(echo "$BODY" | jq -r .id)/code" "$ADMIN"
+req POST "$USER_API/auth/codes/activate" "" "{\"code\":\"$(echo "$BODY" | jq -r .code)\",\"username\":\"bob\",\"password\":\"Test1234!\",\"email\":\"bob@t.cm\"}"
+BOB=$(echo "$BODY" | jq -r .token)
 INTRUS=$(register '{"email":"intrus@t.cm","username":"intrus","password":"Test1234!"}')
 AUTRE=$(register '{"email":"autre@t.cm","username":"autreprof","password":"Test1234!","role":"Teacher","initialClasses":["Première"]}')
 req GET "$USER_API/classrooms/mine" "$AUTRE"; AUTRE_CLASS=$(echo "$BODY" | jq -r '.[0].id')

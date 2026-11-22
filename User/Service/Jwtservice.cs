@@ -11,10 +11,28 @@ namespace User.Service
     public class Jwtservice(IConfiguration config)
     {
 
-        public (string token, DateTime expiresAt) GenerateToken(
-            AppUser user,
-            Entitlement entitlement,
-            WorkspaceSummaryDto? activeWorkspace = null)
+        /// <summary>Durée maximale d'une session renouvelée sans ressaisir le mot de passe (Jwt:MaxSessionHours, 12 h par défaut).</summary>
+        public TimeSpan MaxSession => TimeSpan.FromHours(config.GetValue("Jwt:MaxSessionHours", 12));
+
+        /// <summary>Une session ouverte à cette date peut-elle encore être prolongée ?</summary>
+        public static bool CanRenew(DateTime signedInAt, DateTime now, TimeSpan maxSession) =>
+            signedInAt <= now && now - signedInAt < maxSession;
+
+        /// <summary>Date de la connexion par mot de passe, lue dans le jeton (claim "auth_time"). Null si absente.</summary>
+        public static DateTime? SignedInAt(ClaimsPrincipal principal) =>
+            long.TryParse(principal.FindFirst("auth_time")?.Value, out var seconds)
+                ? DateTimeOffset.FromUnixTimeSeconds(seconds).UtcDateTime
+                : null;
+
+        /// <param name="signedInAt">
+        /// Date de la connexion par mot de passe. Conservée d'un renouvellement à l'autre :
+        /// c'est elle, pas la date du jeton, qui borne la durée de la session.
+        /// </param>
+        /// <param name="hats">Casquettes (lot P3), une claim « hats » par casquette ; déduites du rôle si absentes.</param>
+        /// <param name="activeWorkspace">Espace de travail actif : ses claims (workspace_id, workspace_kind, workspace_role)
+        /// sont exigés par les services. Sans lui, le jeton ne donne accès qu'aux routes sans espace de travail.</param>
+        public (string token, DateTime expiresAt) GenerateToken(AppUser user, Entitlement entitlement, DateTime? signedInAt = null,
+            IReadOnlyList<string>? hats = null, WorkspaceSummaryDto? activeWorkspace = null)
         {
             var jwtKey = config["Jwt:Key"]
                 ?? throw new InvalidOperationException("Jwt:Key manquant dans la configuration.");
@@ -33,19 +51,28 @@ namespace User.Service
             //   "premium"  → pour réserver les fonctions Premium aux abonnés
             var claims = new List<Claim>
             {
-                new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-                new Claim(JwtRegisteredClaimNames.Email, user.Email),
-                new Claim("username", user.Username),
-                new Claim("role", user.Role.ToString()),
-                new Claim("level", user.Level ?? ""),
-                new Claim("specialite", user.Specialite ?? ""),
-                new Claim("filiere", user.Filiere ?? ""),
-                new Claim("lang", user.Language),
-                // "premium" → les services Chat/Quiz réservent le tuteur IA et les quiz illimités aux abonnés
-                new Claim("premium", entitlement.IsPremium ? "true" : "false"),
-                new Claim("plan", entitlement.Plan?.ToString() ?? ""),
-                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            };
+            new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+            new Claim(JwtRegisteredClaimNames.Email, user.Email ?? ""),
+            new Claim("username", user.Username),
+            new Claim("role", user.Role.ToString()),
+            new Claim("level", user.Level ?? ""),
+            new Claim("stage", user.Stage?.ToString() ?? ""),
+            new Claim("specialite", user.Specialite ?? ""),
+            new Claim("filiere", user.Filiere ?? ""),
+            new Claim("lang", user.Language),
+            // "premium" → les services Chat/Quiz réservent le tuteur IA et les quiz illimités aux abonnés
+            new Claim("premium", entitlement.IsPremium ? "true" : "false"),
+            new Claim("plan", entitlement.Plan?.ToString() ?? ""),
+            // "site_editor" → le service du site autorise la gestion du contenu (en plus du rôle Admin)
+            new Claim("site_editor", user.SiteEditor ? "true" : "false"),
+            // "admin" → droit d'administration, indépendant du rôle (le service User le revérifie en base)
+            new Claim("admin", user.IsAdmin ? "true" : "false"),
+            new Claim("auth_time", new DateTimeOffset(DateTime.SpecifyKind(signedInAt ?? DateTime.UtcNow, DateTimeKind.Utc)).ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+        }
+            // "hats" → casquettes (lot P3) : les autres services pourront les lire sans interroger la base
+            .Concat((hats ?? HatRules.FromRole(user.Role)).Select(h => new Claim("hats", h)))
+            .ToList();
 
             if (activeWorkspace is not null)
             {

@@ -133,13 +133,18 @@
 </div>
 
 @code {
+    // Lot J1 : tout compte peut apprendre ; Quiz ne rend la copie qu'à son auteur et à l'auteur de l'évaluation
+    protected override string[]? RequiredHats => [UserHats.Learner];
+
     [Parameter] public Guid Id { get; set; }
     [Parameter] public Guid SubmissionId { get; set; }
     [SupplyParameterFromQuery(Name = "eleve")] public string? Student { get; set; }
 
     private class GradeForm { public decimal Points { get; set; } public string? Feedback { get; set; } }
 
-    private bool IsTeacher => Session.CanTeach;
+    // Vue de correction : la copie d'un autre (on est alors l'auteur de l'évaluation), pas le rôle du compte.
+    // Un enseignant qui apprend voit sa propre copie comme un élève.
+    private bool IsTeacher => _review is { } r ? r.StudentId != Session.Profile?.Id : Student is not null;
     private bool _loading = true, _busy, _aiEnabled;
     private Guid? _aiFor;
     private string? _error;

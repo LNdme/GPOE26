@@ -6,6 +6,23 @@ using Quiz.Model;
 
 namespace Quiz.Endpoints;
 
+/// <summary>Rôles du compte (claim "role"), vérifiés en plus des rôles de l'espace de travail.</summary>
+public static class Roles
+{
+    public const string Student = "Student";
+    public const string Teacher = "Teacher";
+    public const string Parent = "Parent";
+
+    public static IServiceCollection AddRolePolicies(this IServiceCollection services)
+    {
+        services.AddAuthorizationBuilder()
+            .AddPolicy(Student, p => p.RequireRole(Student))
+            .AddPolicy(Teacher, p => p.RequireRole(Teacher))
+            .AddPolicy(Parent, p => p.RequireRole(Parent));
+        return services;
+    }
+}
+
 public static class EndpointHelpers
 {
     /// <summary>Id utilisateur (claim "sub" — MapInboundClaims est désactivé)</summary>

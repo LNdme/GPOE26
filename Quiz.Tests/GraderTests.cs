@@ -184,3 +184,51 @@ public class GraderTests
         Assert.Throws<FormatException>(() => AiGradingService.Parse("pas de json", 6));
     }
 }
+
+public class ProblemSetParserTests
+{
+    [Fact]
+    public void Lit_enonce_indices_et_solution()
+    {
+        var problems = Quiz.Service.ProblemSetParser.Parse("""
+            Voici la série.
+            ## Exercice 1
+            ### Énoncé
+            Calculer $I$.
+            ### Indice
+            Loi d'Ohm.
+            ### Indice 2
+            Additionner les branches.
+            ### Solution
+            $I = U/R$.
+            ## Exercice 2
+            ### Énoncé
+            Second.
+            ### Solution
+            Fin.
+            """);
+
+        Assert.Equal(2, problems.Count);
+        Assert.Equal("Calculer $I$.", problems[0].Statement.Trim());
+        Assert.Equal(2, problems[0].Hints.Count);
+        Assert.Contains("I = U/R", problems[0].Solution);
+    }
+
+    [Fact]
+    public void Ecarte_un_exercice_sans_solution() =>
+        Assert.Empty(Quiz.Service.ProblemSetParser.Parse("## Exercice 1\n### Énoncé\nSeul."));
+
+    [Fact]
+    public void Repare_les_commandes_latex_dans_le_json()
+    {
+        var repaired = Quiz.Service.ProblemSetParser.RepairLatexEscapes("""{"a":"$\frac{1}{2}$ et \theta"}""");
+        Assert.Equal(@"$\frac{1}{2}$ et \theta", System.Text.Json.JsonDocument.Parse(repaired).RootElement.GetProperty("a").GetString());
+    }
+
+    [Fact]
+    public void Ne_touche_pas_aux_echappements_json()
+    {
+        const string json = """{"a":"ligne\nsuite \u00e9 \"x\" \\frac"}""";
+        Assert.Equal(json, Quiz.Service.ProblemSetParser.RepairLatexEscapes(json));
+    }
+}

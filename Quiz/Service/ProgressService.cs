@@ -10,7 +10,8 @@ namespace Quiz.Service;
 ///   - Résultat d'une évaluation = meilleure tentative corrigée (note ramenée au barème)
 ///   - Maîtrise d'un cours = points obtenus / points possibles sur les questions corrigées
 ///     liées à ce cours (question.CourseId, sinon assessment.CourseId), toutes tentatives confondues
-///   - Moyenne = moyenne des résultats sur 20
+///   - Moyenne = moyenne des résultats sur 20, hors quiz d'entraînement (refaisables après avoir vu la correction,
+///     ils gonflaient la moyenne ; leurs résultats restent affichés et comptent dans la maîtrise par cours)
 /// Arrondis « à l'école » (81,25 % → 81,3 %), pas l'arrondi bancaire par défaut de .NET.
 /// Pour un élève ou un parent, seuls les résultats publiés (ResultsReleased) sont pris en compte.
 /// </summary>
@@ -66,7 +67,7 @@ public class ProgressService(EvaluationContext db)
                 })
                 .ToList();
 
-            var scored = results.Where(r => r.ScoreScaled is not null).ToList();
+            var scored = results.Where(r => r.ScoreScaled is not null && r.Kind != AssessmentKind.Practice).ToList();
             double? average = scored.Count == 0
                 ? null
                 : Math.Round(scored.Average(r => (double)r.ScoreScaled!.Value / r.ScaleTo * 20), 2, MidpointRounding.AwayFromZero);

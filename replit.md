@@ -40,7 +40,15 @@ Le script compile et démarre les 6 services en parallèle. La Web attend 30s av
 
 ## Variables d'environnement nécessaires
 - `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` — PostgreSQL (auto-configuré sur Replit)
-- `DEEPSEEK_API_KEY` — pour les services Chat (tuteur IA) et Quiz
+- `LLM_API_KEY` (ou l'ancienne `DEEPSEEK_API_KEY`) — pour les services Chat (tuteur IA), Quiz et Cours
+- `JWT_KEY` (secret, facultatif) — clé qui signe les jetons de connexion. À défaut, `start.sh` en crée une au premier lancement dans `.secrets/jwt-key` (hors du dépôt)
+- `ADMIN_EMAILS` — comptes déjà inscrits à promouvoir administrateurs, séparés par `;`
+- `APP_ENV` — `Production` par défaut. `Development` recrée les comptes de démonstration (mot de passe public), le paiement simulé et Swagger : à réserver à un espace privé
+
+## Sécurité (depuis l'audit du 10 nov. 2026)
+- Seul le port 5000 (le site) est publié ; les services internes ne sont plus exposés par `.replit`
+- Le site tourne en Production : pas de comptes de démonstration, pas de paiement simulé
+- Si la base contient encore les comptes de démonstration (`admin@`, `prof@`, `eleve@`, `parent@gpoe26.cm`), changez leur mot de passe ou supprimez-les
 
 ## Prochaines étapes (session plan)
 - T001 : Refonte modèle Course (MarkdownContent unifié, Status, SourceType)

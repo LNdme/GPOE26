@@ -22,6 +22,9 @@ public static class CodeGenerator
     /// <summary>8 caractères aléatoires (31⁸ ≈ 8,5 × 10¹¹ combinaisons) : une clé a une valeur marchande.</summary>
     public static string SubscriptionKey(string prefix) => $"{prefix}-{Random(4)}-{Random(4)}";
 
+    /// <summary>Code personnel à usage unique (élève, enseignant, responsable) : « GP-7Q2K-9XRM », 31⁸ combinaisons.</summary>
+    public static string AccessCode() => $"GP-{Random(4)}-{Random(4)}";
+
     /// <summary>Mise en forme canonique d'un code saisi par l'utilisateur (espaces, minuscules).</summary>
     public static string Normalize(string code) => code.Trim().ToUpperInvariant().Replace(' ', '-');
 

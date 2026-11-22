@@ -1,0 +1,216 @@
+@inherits LayoutComponentBase
+@using GPOE26.UI.Components
+@using GPOE26.UI.Models
+@inject GPOE26.UI.Services.SessionState Session
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@using GPOE26.UI.Components.Workspace
+@using GPOE26.Web.Components.UI
+@implements IDisposable
+
+@* Espace d'administration du site : réservé au rôle Admin.
+   Les pages ne sont rendues (et donc ne chargent rien) qu'une fois le rôle vérifié ;
+   l'API refuse de toute façon les écritures sans jeton administrateur. *@
+<PageTitle>Administration – GPOE26</PageTitle>
+
+<div class="admin-app">
+    @if (!_ready)
+    {
+        <div class="admin-gate"><span class="spinner-border text-brand-dark" role="status"></span></div>
+    }
+    else if (!Session.IsAuthenticated)
+    {
+        <div class="admin-gate">
+            <div class="admin-gate__card">
+                <span class="admin-gate__icon"><Icon Name="shield" Size="28" /></span>
+                <h1>Espace réservé</h1>
+                <p>Connectez-vous avec un compte administrateur pour gérer le contenu du site.</p>
+                <a class="site-btn site-btn--primary" href="@LoginUrl">Se connecter</a>
+                <a class="site-btn site-btn--quiet" href="/">Retour au site</a>
+            </div>
+        </div>
+    }
+    else if (Session.Profile?.CanEditSite != true)
+    {
+        <div class="admin-gate">
+            <div class="admin-gate__card">
+                <span class="admin-gate__icon is-warn"><Icon Name="shield" Size="28" /></span>
+                <h1>Accès refusé</h1>
+                <p>Seuls les administrateurs et les éditeurs du site peuvent modifier son contenu. Demandez l’accès à un administrateur.</p>
+                <a class="site-btn site-btn--primary" href="/app">Aller à mon espace</a>
+                <a class="site-btn site-btn--quiet" href="/">Retour au site</a>
+            </div>
+        </div>
+    }
+    else
+    {
+        @* Administration à panneaux : l'outil choisi occupe tout l'écran ; l'agent s'ouvre à sa gauche, à la demande.
+           La barre d'outils est à droite, réductible en icônes (comme le menu de l'espace d'apprentissage). *@
+        <div class="adm @(_toolsCompact ? "tools-compact" : "") @(_open ? "is-open" : "")">
+            <header class="adm-topbar">
+                <span class="adm-topbar__title"><Icon Name="@Current.Icon" Size="18" /> @Current.Label</span>
+                <button type="button" class="adm-agent-btn @(AgentOpen ? "on" : "")" aria-pressed="@(AgentOpen ? "true" : "false")" @onclick="ToggleAgentAsync">
+                    <Icon Name="spark" Size="18" /> Agent
+                </button>
+                <button type="button" class="adm-icon" aria-label="Ouvrir les outils" aria-expanded="@(_open ? "true" : "false")" @onclick="() => _open = true">
+                    <Icon Name="menu" Size="22" Stroke="2" />
+                </button>
+            </header>
+
+            <div class="adm-work">
+                <Workspace @ref="_ws" LayoutKey="admin" ShowReopenBar="false" LayoutChanged="Refresh">
+                    <WorkspacePanel Id="agent" Title="Agent du site" Icon="spark" ShortcutKey="g" StartClosed="true"
+                                    StatusText="@(_agentBusy ? "L'agent rédige…" : null)">
+                        <SiteAgentPanel BusyChanged="OnAgentBusy" />
+                    </WorkspacePanel>
+                    <WorkspacePanel Id="outil" Title="@Current.Label" Icon="@Current.Icon" ShortcutKey="o">
+                        <main class="admin-main" id="contenu">
+                            <PageErrorBoundary HomeHref="/admin">@Body</PageErrorBoundary>
+                        </main>
+                    </WorkspacePanel>
+                </Workspace>
+            </div>
+
+            <button type="button" class="adm-scrim" tabindex="-1" aria-label="Fermer les outils" @onclick="() => _open = false"></button>
+
+            <aside class="adm-tools" aria-label="Outils d'administration">
+                <div class="adm-tools__head">
+                    <a class="adm-brand" href="/admin" title="Administration du site">
+                        <span class="site-brand__mark">LT</span>
+                        <span class="adm-label"><strong>Administration</strong><small>@(IsAdmin ? "Administrateur" : "Éditeur du site")</small></span>
+                    </a>
+                    <button type="button" class="adm-icon adm-collapse" title="@(_toolsCompact ? "Déplier les outils" : "Réduire les outils")"
+                            aria-label="@(_toolsCompact ? "Déplier les outils" : "Réduire les outils")" aria-expanded="@(_toolsCompact ? "false" : "true")"
+                            @onclick="ToggleToolsAsync">
+                        <Icon Name="sidebar" Size="18" />
+                    </button>
+                </div>
+
+                <button type="button" class="adm-tool adm-tool--agent @(AgentOpen ? "on" : "")" aria-pressed="@(AgentOpen ? "true" : "false")"
+                        title="Agent du site (Alt+G)" @onclick="ToggleAgentAsync">
+                    <Icon Name="spark" Size="18" /> <span class="adm-label">@(AgentOpen ? "Fermer l'agent" : "Demander à l'agent")</span>
+                </button>
+
+                <nav class="adm-nav">
+                    @foreach (var group in Tools.Where(t => !t.AdminOnly || IsAdmin).GroupBy(t => t.Group))
+                    {
+                        @if (group.Key is { Length: > 0 } title)
+                        {
+                            <span class="adm-nav__title adm-label">@title</span>
+                        }
+                        @foreach (var tool in group)
+                        {
+                            <NavLink class="adm-tool" href="@tool.Href" title="@tool.Label" Match="@(tool.Href == "/admin" ? NavLinkMatch.All : NavLinkMatch.Prefix)">
+                                <Icon Name="@tool.Icon" Size="18" /> <span class="adm-label">@tool.Label</span>
+                            </NavLink>
+                        }
+                    }
+                </nav>
+
+                <div class="adm-tools__foot">
+                    <a class="adm-tool" href="/" target="_blank" rel="noopener" title="Voir le site"><Icon Name="external" Size="18" /> <span class="adm-label">Voir le site</span></a>
+                    <a class="adm-tool" href="/app" title="Mon espace"><Icon Name="left" Size="18" /> <span class="adm-label">Mon espace</span></a>
+                    <div class="adm-me" title="@Session.Profile?.Username">
+                        <span class="site-user__avatar">@(Session.Profile?.Username is { Length: > 0 } u ? u[..1].ToUpperInvariant() : "A")</span>
+                        <span class="adm-label"><strong>@Session.Profile?.Username</strong><small>@(IsAdmin ? "Administrateur" : "Éditeur du site")</small></span>
+                    </div>
+                </div>
+            </aside>
+            <SessionNotice />
+        </div>
+    }
+</div>
+
+@code {
+    private bool _ready;
+    private bool _open, _toolsCompact, _agentBusy;
+    private Workspace? _ws;
+
+    private record Tool(string Href, string Label, string Icon, string Group, bool AdminOnly = false);
+
+    // Outils de la barre de droite. L'outil courant donne son titre au panneau principal.
+    private static readonly Tool[] Tools =
+    [
+        new("/admin", "Tableau de bord", "grid", ""),
+        new("/admin/actualites", "Actualités", "news", "Contenu"),
+        new("/admin/evenements", "Événements", "calendar", "Contenu"),
+        new("/admin/activites", "Activités", "activity", "Contenu"),
+        new("/admin/equipe", "Équipe", "users", "Contenu"),
+        new("/admin/etablissement", "Coordonnées", "building", "Établissement", AdminOnly: true),
+        new("/admin/abonnements", "Abonnements", "card", "Plateforme", AdminOnly: true),
+        new("/admin/licences", "Licences", "building", "Plateforme", AdminOnly: true),
+        new("/admin/utilisateurs", "Comptes et accès", "key", "Plateforme", AdminOnly: true),
+    ];
+
+    private Tool Current
+    {
+        get
+        {
+            var path = "/" + Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimEnd('/');
+            return Tools.Where(t => t.Href != "/admin" && (path == t.Href || path.StartsWith(t.Href + "/")))
+                       .OrderByDescending(t => t.Href.Length).FirstOrDefault() ?? Tools[0];
+        }
+    }
+
+    private bool AgentOpen => _ws?.IsOpen("agent") == true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += Refresh;
+        Nav.LocationChanged += OnLocationChanged;
+        await Session.RestoreAsync();
+        _ready = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            _prefs = await JS.InvokeAsync<IJSObjectReference>("import", "./_content/GPOE26.UI/workspace.js");
+            _toolsCompact = await _prefs.InvokeAsync<string?>("loadPref", "admin-tools") == "compact";
+            StateHasChanged();
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
+
+    private IJSObjectReference? _prefs;
+
+    private async Task ToggleToolsAsync()
+    {
+        _toolsCompact = !_toolsCompact;
+        try { if (_prefs is not null) await _prefs.InvokeVoidAsync("savePref", "admin-tools", _toolsCompact ? "compact" : "wide"); }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task ToggleAgentAsync()
+    {
+        _open = false;
+        if (_ws is not null) await _ws.ToggleOpenAsync("agent");
+    }
+
+    private void OnAgentBusy(bool busy) => _agentBusy = busy;
+
+    public void Dispose()
+    {
+        Session.Changed -= Refresh;
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+
+    private void Refresh() => InvokeAsync(StateHasChanged);
+
+    private bool IsAdmin => Session.IsAuthenticated && Session.Profile?.IsAdmin == true;
+
+    // Retour sur la page d'administration demandée après la connexion
+    private string LoginUrl => "/login?retour=" + Uri.EscapeDataString("/" + Nav.ToBaseRelativePath(Nav.Uri));
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        _open = false;
+        // Choisir un outil le remet à l'écran, même si son panneau avait été fermé
+        if (_ws is not null && !_ws.IsOpen("outil")) _ = InvokeAsync(() => _ws.OpenPanelAsync("outil"));
+        Refresh();
+    }
+}

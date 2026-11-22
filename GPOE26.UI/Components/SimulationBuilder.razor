@@ -1,0 +1,126 @@
+@* Choix et réglage d'un laboratoire à insérer dans un cours. *@
+<div class="ga-card sunk">
+    <div class="ga-card-head">
+        <span class="ga-label"><Icon Name="spark" Size="16" /> Insérer une simulation</span>
+        <button type="button" class="ga-icon-btn" aria-label="Fermer" @onclick="OnClose"><Icon Name="x" /></button>
+    </div>
+
+    <div class="sb-grid" role="group" aria-label="Type de simulation">
+        @foreach (var type in SimulationCatalog.Types)
+        {
+            <button type="button" class="sb-type @(_type?.Id == type.Id ? "on" : "")" aria-pressed="@Aria.State(_type?.Id == type.Id)" @onclick="() => Select(type)">
+                <strong>@type.Name</strong>
+                <span>@type.Description</span>
+            </button>
+        }
+    </div>
+
+    @if (_type is not null && _draft is not null)
+    {
+        <div class="ga-field">
+            <label for="sb-title">Titre du labo</label>
+            <input id="sb-title" class="ga-input" maxlength="120" @bind="_draft.Title" />
+        </div>
+        <div class="sb-fields">
+            @foreach (var choice in _type.Choices)
+            {
+                <div class="ga-field">
+                    <label for="sb-@choice.Key">@choice.Label</label>
+                    <select id="sb-@choice.Key" class="ga-select" value="@_draft.Choices[choice.Key]" @onchange="e => _draft.Choices[choice.Key] = e.Value?.ToString() ?? choice.Options[0].Value">
+                        @foreach (var option in choice.Options) { <option value="@option.Value">@option.Label</option> }
+                    </select>
+                </div>
+            }
+            @foreach (var number in _type.Numbers)
+            {
+                <div class="ga-field">
+                    <label for="sb-@number.Key">@number.Label@(number.Unit is null ? "" : $" ({number.Unit})")</label>
+                    <input id="sb-@number.Key" class="ga-input" type="number" min="@number.Min" max="@number.Max" step="@number.Step"
+                           value="@_draft.Numbers[number.Key].ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                           @onchange="e => SetNumber(number, e.Value)" />
+                </div>
+            }
+        </div>
+        @foreach (var field in _type.Texts)
+        {
+            <div class="ga-field">
+                <label for="sb-@field.Key">@field.Label</label>
+                <input id="sb-@field.Key" class="ga-input" value="@_draft.Texts[field.Key]" @onchange="e => _draft.Texts[field.Key] = e.Value?.ToString() ?? string.Empty" />
+                @if (field.Help is not null) { <span class="help">@field.Help</span> }
+            </div>
+        }
+        <div class="ga-field">
+            <label for="sb-caption">Consigne affichée sous le labo</label>
+            <input id="sb-caption" class="ga-input" maxlength="300" @bind="_draft.Caption" />
+        </div>
+
+        <details class="sb-more">
+            <summary>Ajouter une question de prédiction (avant de lancer le labo)</summary>
+            <div class="ga-field">
+                <label for="sb-pq">Question</label>
+                <input id="sb-pq" class="ga-input" placeholder="ex. Si R1 diminue, le courant total…" @bind="_draft.PredictQuestion" />
+            </div>
+            <div class="ga-field">
+                <label for="sb-po">Réponses proposées (une par ligne)</label>
+                <textarea id="sb-po" class="ga-textarea" rows="3" @bind="_draft.PredictOptions"></textarea>
+            </div>
+            <div class="ga-field">
+                <label for="sb-pa">Numéro de la bonne réponse</label>
+                <input id="sb-pa" class="ga-input" type="number" min="1" max="6" @bind="_draft.PredictAnswer" />
+            </div>
+            <div class="ga-field">
+                <label for="sb-pe">Explication montrée après le choix</label>
+                <input id="sb-pe" class="ga-input" @bind="_draft.PredictExplain" />
+            </div>
+        </details>
+
+        <details class="sb-more">
+            <summary>Ajouter un contrôle de mesure (réponse numérique)</summary>
+            <div class="ga-field">
+                <label for="sb-cq">Question</label>
+                <input id="sb-cq" class="ga-input" placeholder="ex. Pour U = 12 V, R1 = 100 Ω et R2 = 220 Ω, que vaut le courant total ?" @bind="_draft.CheckQuestion" />
+            </div>
+            <div class="sb-fields">
+                <div class="ga-field">
+                    <label for="sb-ca">Valeur attendue</label>
+                    <input id="sb-ca" class="ga-input" inputmode="decimal" placeholder="0.175" @bind="_draft.CheckAnswer" />
+                </div>
+                <div class="ga-field">
+                    <label for="sb-cu">Unité</label>
+                    <input id="sb-cu" class="ga-input" placeholder="A" @bind="_draft.CheckUnit" />
+                </div>
+            </div>
+            <div class="ga-field">
+                <label for="sb-ch">Indice en cas d'erreur</label>
+                <input id="sb-ch" class="ga-input" @bind="_draft.CheckHint" />
+            </div>
+        </details>
+
+        <button type="button" class="ga-btn small" style="align-self:flex-start" disabled="@(!IsComplete)" @onclick="InsertAsync"><Icon Name="plus" /> Insérer dans le cours</button>
+    }
+</div>
+
+@code {
+    [Parameter] public EventCallback<string> OnInsert { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private SimType? _type;
+    private SimulationDraft? _draft;
+
+    private bool IsComplete => _type is not null && _draft is not null
+        && _type.Texts.Where(t => t.Required).All(t => !string.IsNullOrWhiteSpace(_draft.Texts[t.Key]));
+
+    private void Select(SimType type)
+    {
+        _type = type;
+        _draft = SimulationCatalog.NewDraft(type);
+    }
+
+    private void SetNumber(SimNumber number, object? value)
+    {
+        if (double.TryParse(value?.ToString()?.Replace(',', '.'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsed))
+            _draft!.Numbers[number.Key] = Math.Clamp(parsed, number.Min, number.Max);
+    }
+
+    private Task InsertAsync() => OnInsert.InvokeAsync(SimulationCatalog.ToMarkdown(_type!, _draft!));
+}
