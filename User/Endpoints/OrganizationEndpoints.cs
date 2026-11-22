@@ -232,7 +232,7 @@ public static class OrganizationEndpoints
         .WithSummary("Classes de l'espace (année en cours par défaut) et leurs enseignants")
         .Produces<List<SpaceClassDto>>();
 
-        space.MapPost("/classes", async (Guid orgId, SpaceClassRequest req, UserContext db, ClassroomService classrooms) =>
+        space.MapPost("/classes", async (Guid orgId, SpaceClassRequest req, UserContext db, ClassroomService classrooms, WorkspaceService workspaces) =>
         {
             var org = await db.Organizations.FindAsync(orgId);
             if (org is null) return Results.NotFound();
@@ -246,6 +246,8 @@ public static class OrganizationEndpoints
                 Name = req.Name.Trim(),
                 Kind = org.Type == OrganizationType.Institution ? ClassroomKind.Group : ClassroomKind.Class,
                 OrganizationId = orgId,
+                // Espace de travail de l'établissement (ou de l'enseignant indépendant), exigé par les routes des classes
+                WorkspaceId = await workspaces.WorkspaceIdForSpaceAsync(orgId),
                 SchoolYearId = yearId,
                 Level = req.Level,
                 SubSystem = req.SubSystem

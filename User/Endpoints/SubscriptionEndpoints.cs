@@ -5,6 +5,7 @@ using User.DTOs;
 using User.Helper;
 using User.Model;
 using User.Service;
+using GPOE26.Workspaces.Abstractions;
 
 namespace User.Endpoints;
 
@@ -12,7 +13,10 @@ public static class SubscriptionEndpoints
 {
     public static void MapSubscriptionEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/subscriptions").WithTags("Abonnements").RequireAuthorization();
+        var group = app.MapGroup("/subscriptions")
+            .WithTags("Abonnements")
+            .RequireAuthorization()
+            .RequireCurrentWorkspaceMembership();
 
         // ── GET /subscriptions/me ─────────────────────────────────────────────────
         // Droit Premium courant + abonnements payés par l'utilisateur (avec la clé familiale à partager).
@@ -41,7 +45,7 @@ public static class SubscriptionEndpoints
             var user = await db.CurrentUserAsync(principal);
             if (user is null) return Results.Unauthorized();
 
-            var error = await subs.RedeemAsync(user, req.Code);
+            var error = await subs.RedeemAsync(user, req.Code, principal.GetWorkspaceContext());
             return error switch
             {
                 RedeemError.None => Results.Ok(await subs.GetEntitlementAsync(user.Id)),
@@ -57,16 +61,27 @@ public static class SubscriptionEndpoints
         // ── POST /subscriptions/checkout ──────────────────────────────────────────
         // Crée l'abonnement en attente de paiement. Le paiement (Mobile Money, carte)
         // sera branché en phase 5 ; d'ici là un administrateur l'active.
-        group.MapPost("/checkout", async (CheckoutRequest req, ClaimsPrincipal principal, UserContext db, SubscriptionService subs) =>
+        group.MapPost("/checkout", async (
+            CheckoutRequest req,
+            ClaimsPrincipal principal,
+            UserContext db,
+            SubscriptionService subs,
+            WorkspaceService workspaces,
+            CancellationToken cancellationToken) =>
         {
             var user = await db.CurrentUserAsync(principal);
             if (user is null) return Results.Unauthorized();
 
+            var workspace = principal.GetWorkspaceContext();
             var allowed = (req.Plan, user.Role) switch
             {
-                (SubscriptionPlan.StudentPremium, UserRole.Student) => true,
-                (SubscriptionPlan.Family, UserRole.Parent) => true,
-                (SubscriptionPlan.Teacher, UserRole.Teacher) => true,
+                (SubscriptionPlan.StudentPremium, UserRole.Student) =>
+                    workspace.HasAnyRole(WorkspaceRoles.Learner),
+                (SubscriptionPlan.Family, UserRole.Parent) =>
+                    workspace.Kind == WorkspaceKinds.Family &&
+                    workspace.HasAnyRole(WorkspaceRoles.Guardian),
+                (SubscriptionPlan.Teacher, UserRole.Teacher) =>
+                    workspace.HasAnyRole(WorkspaceRoles.Instructor),
                 _ => false
             };
             if (!allowed)
@@ -80,7 +95,9 @@ public static class SubscriptionEndpoints
                 Seats = req.Plan == SubscriptionPlan.Family ? subs.FamilySeats : 1
             };
             db.Subscriptions.Add(sub);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(cancellationToken);
+            if (req.Plan == SubscriptionPlan.Family)
+                await workspaces.EnsureFamilyWorkspaceAsync(user.Id, cancellationToken: cancellationToken);
             return Results.Accepted($"/subscriptions/me", new SubscriptionDto(sub, []));
         })
         .WithSummary("Souscrire (en attente de paiement)")
@@ -131,7 +148,7 @@ public static class SubscriptionEndpoints
             var trial = await subs.StartTrialAsync(userId, SubscriptionPlan.Teacher);
             return Results.Ok(new SubscriptionDto(trial, []));
         })
-        .RequireAuthorization(Policies.Teacher)
+        .RequireUserWorkspaceRoles(WorkspaceRole.Instructor)
         .WithSummary("Démarrer l'essai gratuit enseignant")
         .Produces<SubscriptionDto>()
         .Produces(409);

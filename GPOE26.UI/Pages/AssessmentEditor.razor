@@ -247,6 +247,7 @@
     [SupplyParameterFromQuery(Name = "type")] public string? Type { get; set; }
 
     protected override string[]? RequiredHats => [UserHats.Teacher];
+    protected override WorkspaceRole[]? AllowedWorkspaceRoles => [WorkspaceRole.Instructor, WorkspaceRole.Admin];
 
     private bool _loading = true, _busy, _adding;
     private string? _error, _info;

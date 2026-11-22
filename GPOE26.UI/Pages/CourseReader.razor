@@ -216,10 +216,10 @@ else
         if (result.Ok) _feedback = (await Courses.FeedbackAsync(Id)).Value;
 
         // Évaluations d'entraînement ouvertes : proposées à l'élève à la fin du cours
-        // Temps d'étude compté pour toute personne qui apprend (un parent aussi, lot P3) ; les évaluations de classe
-        // restent celles d'un élève (le service Quiz les réserve au rôle élève)
+        // Temps d'étude compté pour toute personne qui apprend (un parent aussi, lot P3) ; évaluations proposées à qui
+        // a le rôle « apprenant » dans l'espace actif (lot J1 : plus seulement le rôle élève)
         if (Session.Role != UserRole.Teacher) StartStudyClock();
-        if (Session.Role == UserRole.Student)
+        if (Session.CanLearn)
         {
             var mine = await Assessments.MineAsStudentAsync();
             _related = (mine.Value ?? new()).Where(a => a.Kind == AssessmentKind.Practice && a.CanStart(DateTime.UtcNow)).Take(3).ToList();

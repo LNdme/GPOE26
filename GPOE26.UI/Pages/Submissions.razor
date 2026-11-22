@@ -79,6 +79,7 @@
 @code {
     [Parameter] public Guid Id { get; set; }
     protected override string[]? RequiredHats => [UserHats.Teacher];
+    protected override WorkspaceRole[]? AllowedWorkspaceRoles => [WorkspaceRole.Instructor, WorkspaceRole.Admin];
 
     private bool _loading = true;
     private string? _error;

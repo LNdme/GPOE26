@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using GPOE26.Workspaces.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Quiz.Data;
 using Quiz.DTOs;
@@ -12,19 +13,29 @@ public static class AssessmentEndpoints
 {
     public static void MapAssessmentEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/assessments").WithTags("Évaluations").RequireAuthorization();
+        var group = app.MapGroup("/assessments")
+            .WithTags("Évaluations")
+            .RequireAuthorization()
+            .RequireWorkspaceContext();
 
         // ── POST /assessments ─────────────────────────────────────────────────────
         group.MapPost("", async (AssessmentInput input, ClaimsPrincipal principal, EvaluationContext db, UserDirectoryClient users) =>
         {
             if (await ForeignClassroomsAsync(input, principal, users) is { } refused) return refused;
-            var assessment = new Assessment { TeacherId = principal.UserId(), Title = input.Title };
+            var workspace = principal.GetWorkspaceContext();
+
+            var assessment = new Assessment
+            {
+                TeacherId = principal.UserId(),
+                WorkspaceId = workspace.WorkspaceId,
+                Title = input.Title
+            };
             Apply(assessment, input);
             db.Assessments.Add(assessment);
             await db.SaveChangesAsync();
             return Results.Created($"/assessments/{assessment.Id}", new AssessmentDto(assessment, withQuestions: true));
         })
-        .RequireAuthorization(Roles.Teacher)
+        .RequireWorkspaceRoles(WorkspaceRoles.Instructor, WorkspaceRoles.Admin)
         .WithSummary("Créer une évaluation (brouillon)")
         .Produces<AssessmentDto>(201);
 
@@ -33,14 +44,19 @@ public static class AssessmentEndpoints
         group.MapGet("/authored", async (ClaimsPrincipal principal, EvaluationContext db) =>
         {
             var userId = principal.UserId();
+            // Celles de l'espace de travail actif (une évaluation d'avant les espaces de travail compte dans l'espace personnel)
+            var workspace = principal.GetWorkspaceContext();
+            var workspaceId = workspace.WorkspaceId;
+            var personal = workspace.IsPersonal;
             var own = await db.Assessments.Include(a => a.Questions)
-                .Where(a => a.TeacherId == userId)
+                .Where(a => a.TeacherId == userId && (a.WorkspaceId == workspaceId || (personal && a.WorkspaceId == null)))
                 .OrderByDescending(a => a.UpdatedAt)
                 .AsNoTracking()
                 .ToListAsync();
             return Results.Ok(own.Select(a => new AssessmentDto(a, withQuestions: false)));
         })
         .RequireAuthorization(Roles.Teacher)
+        .RequireWorkspaceRoles(WorkspaceRoles.Instructor, WorkspaceRoles.Admin)
         .WithSummary("Mes évaluations d'auteur")
         .Produces<List<AssessmentDto>>();
 
@@ -50,6 +66,10 @@ public static class AssessmentEndpoints
         group.MapGet("/mine", async (ClaimsPrincipal principal, EvaluationContext db, UserDirectoryClient users) =>
         {
             var userId = principal.UserId();
+            // Rôle « apprenant » dans l'espace de travail actif : tout espace personnel le donne (tout compte peut apprendre)
+            var workspace = principal.GetWorkspaceContext();
+            if (!workspace.HasAnyRole(WorkspaceRoles.Learner)) return Results.Forbid();
+
             // Lot J4 : les évaluations des classes quittées restent dans « Rendues », marquées Former (plus de tentative)
             var (assigned, former) = await LearnerHistoryAsync(db, users, userId);
             var ids = assigned.Select(a => a.Id).ToList();
@@ -84,13 +104,15 @@ public static class AssessmentEndpoints
         group.MapGet("/{id:guid}", async (Guid id, ClaimsPrincipal principal, EvaluationContext db, UserDirectoryClient users) =>
         {
             var userId = principal.UserId();
-            var own = await db.OwnedAssessmentAsync(id, userId);
+            var workspace = principal.GetWorkspaceContext();
+            var own = await db.OwnedAssessmentAsync(id, userId, workspace);
             if (own is not null) return Results.Ok(new AssessmentDto(own, withQuestions: true));
 
             // Collègue d'un établissement où l'évaluation est déposée : il la voit entière, pour décider de la copier
             if (await LibraryEndpoints.ReadableFromLibraryAsync(db, id, users) is { } deposited)
                 return Results.Ok(new AssessmentDto(deposited, withQuestions: true));
 
+            if (!workspace.HasAnyRole(WorkspaceRoles.Learner)) return Results.NotFound();
             var assigned = (await AssignedToLearnerAsync(db, users, userId)).FirstOrDefault(a => a.Id == id);
             return assigned is null ? Results.NotFound() : Results.Ok(new AssessmentDto(assigned, withQuestions: false));
         })
@@ -102,7 +124,8 @@ public static class AssessmentEndpoints
         // Modifiable tant qu'aucun élève n'a commencé à composer.
         group.MapPut("/{id:guid}", async (Guid id, AssessmentInput input, ClaimsPrincipal principal, EvaluationContext db, UserDirectoryClient users) =>
         {
-            var assessment = await db.OwnedAssessmentAsync(id, principal.UserId());
+            var workspace = principal.GetWorkspaceContext();
+            var assessment = await db.OwnedAssessmentAsync(id, principal.UserId(), workspace);
             if (assessment is null) return Results.NotFound();
             // Vérifié à chaque modification, pas seulement à la publication : une évaluation déjà publiée
             // pouvait être réassignée aux classes d'un collègue
@@ -121,7 +144,7 @@ public static class AssessmentEndpoints
             await db.SaveChangesAsync();
             return Results.Ok(new AssessmentDto(assessment, withQuestions: true));
         })
-        .RequireAuthorization(Roles.Teacher)
+        .RequireWorkspaceRoles(WorkspaceRoles.Instructor, WorkspaceRoles.Admin)
         .WithSummary("Modifier une évaluation")
         .Produces<AssessmentDto>()
         .Produces(400)
@@ -130,7 +153,8 @@ public static class AssessmentEndpoints
         // ── POST /assessments/{id}/publish ────────────────────────────────────────
         group.MapPost("/{id:guid}/publish", async (Guid id, ClaimsPrincipal principal, EvaluationContext db, UserDirectoryClient users) =>
         {
-            var assessment = await db.OwnedAssessmentAsync(id, principal.UserId());
+            var workspace = principal.GetWorkspaceContext();
+            var assessment = await db.OwnedAssessmentAsync(id, principal.UserId(), workspace);
             if (assessment is null) return Results.NotFound();
             if (assessment.Status == AssessmentStatus.Closed)
                 return EndpointHelpers.Error(409, "Cette évaluation est clôturée.");
@@ -150,7 +174,7 @@ public static class AssessmentEndpoints
             }
             return Results.Ok(new AssessmentDto(assessment, withQuestions: true));
         })
-        .RequireAuthorization(Roles.Teacher)
+        .RequireWorkspaceRoles(WorkspaceRoles.Instructor, WorkspaceRoles.Admin)
         .WithSummary("Publier pour les classes sélectionnées")
         .Produces<AssessmentDto>()
         .Produces(400);
@@ -159,7 +183,8 @@ public static class AssessmentEndpoints
         // Plus aucune tentative ne peut démarrer ; les résultats deviennent visibles aux élèves.
         group.MapPost("/{id:guid}/close", async (Guid id, ClaimsPrincipal principal, EvaluationContext db) =>
         {
-            var assessment = await db.OwnedAssessmentAsync(id, principal.UserId());
+            var workspace = principal.GetWorkspaceContext();
+            var assessment = await db.OwnedAssessmentAsync(id, principal.UserId(), workspace);
             if (assessment is null) return Results.NotFound();
             if (assessment.Status != AssessmentStatus.Published)
                 return EndpointHelpers.Error(409, "Seule une évaluation publiée peut être clôturée.");
@@ -171,13 +196,14 @@ public static class AssessmentEndpoints
             await AttemptRules.FinalizeExpiredAsync(db, DateTime.UtcNow, assessmentId: id);
             return Results.Ok(new AssessmentDto(assessment, withQuestions: false));
         })
-        .RequireAuthorization(Roles.Teacher)
+        .RequireWorkspaceRoles(WorkspaceRoles.Instructor, WorkspaceRoles.Admin)
         .WithSummary("Clôturer une évaluation");
 
         // ── DELETE /assessments/{id} ──────────────────────────────────────────────
         group.MapDelete("/{id:guid}", async (Guid id, ClaimsPrincipal principal, EvaluationContext db) =>
         {
-            var assessment = await db.OwnedAssessmentAsync(id, principal.UserId());
+            var workspace = principal.GetWorkspaceContext();
+            var assessment = await db.OwnedAssessmentAsync(id, principal.UserId(), workspace);
             if (assessment is null) return Results.NotFound();
             if (await db.Submissions.AnyAsync(s => s.AssessmentId == id))
                 return EndpointHelpers.Error(409, "Des élèves ont composé : clôturez l'évaluation plutôt que de la supprimer.");
@@ -186,7 +212,7 @@ public static class AssessmentEndpoints
             await db.SaveChangesAsync();
             return Results.NoContent();
         })
-        .RequireAuthorization(Roles.Teacher)
+        .RequireWorkspaceRoles(WorkspaceRoles.Instructor, WorkspaceRoles.Admin)
         .WithSummary("Supprimer une évaluation sans copie");
     }
 

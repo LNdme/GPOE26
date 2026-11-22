@@ -33,12 +33,15 @@ public class ProfileService(UserContext db, SubscriptionService subs, Jwtservice
     public async Task<UserProfileDto> ProfileAsync(AppUser user) =>
         new(user, await subs.GetEntitlementAsync(user.Id), await HatsAsync(user));
 
-    /// <summary>Jeton neuf et profil à jour. <paramref name="signedInAt"/> : date de la connexion d'origine (renouvellement).</summary>
-    public async Task<AuthResponse> AuthAsync(AppUser user, DateTime? signedInAt = null)
+    /// <summary>
+    /// Jeton neuf et profil à jour. <paramref name="signedInAt"/> : date de la connexion d'origine (renouvellement) ;
+    /// <paramref name="activeWorkspace"/> : espace de travail actif, dont les claims sont exigés par les services.
+    /// </summary>
+    public async Task<AuthResponse> AuthAsync(AppUser user, DateTime? signedInAt = null, WorkspaceSummaryDto? activeWorkspace = null)
     {
         var entitlement = await subs.GetEntitlementAsync(user.Id);
         var hats = await HatsAsync(user);
-        var (token, expiresAt) = jwt.GenerateToken(user, entitlement, signedInAt, hats);
-        return new AuthResponse(token, expiresAt, new UserProfileDto(user, entitlement, hats));
+        var (token, expiresAt) = jwt.GenerateToken(user, entitlement, signedInAt, hats, activeWorkspace);
+        return new AuthResponse(token, expiresAt, new UserProfileDto(user, entitlement, hats), activeWorkspace);
     }
 }

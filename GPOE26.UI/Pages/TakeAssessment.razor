@@ -179,8 +179,10 @@ else
 @code {
     [Parameter] public Guid Id { get; set; }
 
-    // Lot J1 : tout compte peut apprendre ; Quiz vérifie que l'évaluation lui est assignée comme apprenant
+    // Lot J1 : tout compte peut apprendre (tout espace personnel donne le rôle « apprenant ») ; Quiz vérifie que
+    // l'évaluation lui est assignée comme apprenant
     protected override string[]? RequiredHats => [UserHats.Learner];
+    protected override WorkspaceRole[]? AllowedWorkspaceRoles => [WorkspaceRole.Learner];
 
     private bool _loading = true, _busy, _confirm;
     private string? _error;

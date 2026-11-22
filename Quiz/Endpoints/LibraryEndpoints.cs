@@ -4,6 +4,7 @@ using Quiz.Data;
 using Quiz.DTOs;
 using Quiz.Model;
 using Quiz.Service;
+using GPOE26.Workspaces.Abstractions;
 
 namespace Quiz.Endpoints;
 
@@ -65,7 +66,7 @@ public static class LibraryEndpoints
             EvaluationContext db, UserDirectoryClient users) =>
         {
             var userId = principal.UserId();
-            var assessment = await db.OwnedAssessmentAsync(id, userId);
+            var assessment = await db.OwnedAssessmentAsync(id, userId, principal.GetWorkspaceContext());
             if (assessment is null) return Results.NotFound();
 
             var wanted = req.OrganizationIds?.Distinct().ToList() ?? new();
@@ -117,10 +118,12 @@ public static class LibraryEndpoints
         group.MapPost("/{id:guid}/copy", async (Guid id, ClaimsPrincipal principal, EvaluationContext db, UserDirectoryClient users) =>
         {
             var userId = principal.UserId();
-            var source = await db.OwnedAssessmentAsync(id, userId) ?? await ReadableFromLibraryAsync(db, id, users);
+            var workspace = principal.GetWorkspaceContext();
+            var source = await db.OwnedAssessmentAsync(id, userId, workspace) ?? await ReadableFromLibraryAsync(db, id, users);
             if (source is null) return Results.NotFound();
 
             var copy = AssessmentLibrary.Copy(source, userId);
+            copy.WorkspaceId = workspace.WorkspaceId;
             db.Assessments.Add(copy);
             await db.SaveChangesAsync();
             return Results.Created($"/assessments/{copy.Id}", new AssessmentDto(copy, withQuestions: true));

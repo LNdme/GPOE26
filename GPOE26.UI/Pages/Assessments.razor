@@ -125,7 +125,8 @@
     // Lot J1 : tout compte peut apprendre (élève, parent, enseignant qui suit une classe)
     protected override string[]? RequiredHats => [UserHats.Learner];
 
-    private bool IsTeacher => Session.Role == UserRole.Teacher;
+    // Vue d'auteur selon le rôle dans l'espace de travail actif (enseignant ou administrateur), comme le service Quiz
+    private bool IsTeacher => Session.CanTeach;
     private bool _loading = true;
     private int _tab;
     private string? _error, _info;

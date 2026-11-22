@@ -18,6 +18,8 @@ namespace User.Model
         /// </summary>
         public Guid? TeacherId { get; set; }
 
+        public Guid? WorkspaceId { get; set; }
+
         public Guid? OrganizationId { get; set; }
 
         public Guid? SchoolYearId { get; set; }

@@ -152,6 +152,7 @@
     // Gestionnaire d'un établissement (enseignant ou non) : il suit toutes les évaluations de la classe
     protected override string[]? RequiredHats => [UserHats.Teacher, UserHats.Guardian];
     private bool ManagerView => _class?.IsManager == true;
+    protected override WorkspaceRole[]? AllowedWorkspaceRoles => [WorkspaceRole.Instructor, WorkspaceRole.Admin];
 
     private bool _loading = true, _onlyHelp;
     private Guid? _confirmRemove;

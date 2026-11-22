@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using GPOE26.Workspaces.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Quiz.Data;
 using Quiz.DTOs;
@@ -12,7 +13,10 @@ public static class ProgressEndpoints
 {
     public static void MapProgressEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/progress").WithTags("Suivi").RequireAuthorization();
+        var group = app.MapGroup("/progress")
+            .WithTags("Suivi")
+            .RequireAuthorization()
+            .RequireWorkspaceContext();
 
         // ── GET /progress/classrooms/{classroomId} ────────────────────────────────
         // Tableau d'une classe : élèves × évaluations, et maîtrise par cours. Le service User décide qui y a accès
@@ -28,8 +32,10 @@ public static class ProgressEndpoints
             if (members is null) return Results.NotFound();
 
             var userId = principal.UserId();
+            var workspace = principal.GetWorkspaceContext();
             var query = db.Assessments.Include(a => a.Questions)
-                .Where(a => a.Status != AssessmentStatus.Draft && a.ClassroomIds.Contains(classroomId));
+                .Where(a => a.Status != AssessmentStatus.Draft && a.ClassroomIds.Contains(classroomId)
+                            && (a.WorkspaceId == workspace.WorkspaceId || (workspace.IsPersonal && a.WorkspaceId == null)));
             if (!ClassroomRef.SeesAllAssessments(await classroom))
                 query = query.Where(a => a.TeacherId == userId);
             var assessments = await query.AsNoTracking().ToListAsync();
@@ -60,6 +66,7 @@ public static class ProgressEndpoints
 
             return Results.Ok(new ClassroomProgressDto(classroomId, headers, students));
         })
+        .RequireWorkspaceRoles(WorkspaceRoles.Instructor, WorkspaceRoles.Admin)
         .WithSummary("Suivi d'une classe (ses enseignants ; ses gestionnaires voient toutes les évaluations ; anciens élèves par période)")
         .Produces<ClassroomProgressDto>()
         .Produces(404);
@@ -75,14 +82,17 @@ public static class ProgressEndpoints
             var detailed = await users.FeatureAsync("detailed-progress") is not null;
             return Results.Ok(detailed ? computed[studentId] : computed[studentId] with { Mastery = [] });
         })
+        .RequireWorkspaceRoles(WorkspaceRoles.Learner)
         .WithSummary("Mes résultats et ma maîtrise par cours")
         .Produces<StudentProgressDto>();
 
         // ── GET /progress/students/{studentId} ────────────────────────────────────
         // Parent rattaché (lien accepté) : résultats publiés des évaluations faites par l'enfant.
-        group.MapGet("/students/{studentId:guid}", async (Guid studentId, EvaluationContext db, UserDirectoryClient users,
+        group.MapGet("/students/{studentId:guid}", async (Guid studentId, ClaimsPrincipal principal,
+            EvaluationContext db, UserDirectoryClient users,
             ProgressService progress) =>
         {
+            var workspace = principal.GetWorkspaceContext();
             var child = await users.ActiveChildAsync(studentId);
             if (child is null) return Results.NotFound();
 
@@ -101,7 +111,10 @@ public static class ProgressEndpoints
                 ProgressHidden = !shares
             });
         })
-        .RequireAuthorization(Roles.Parent)
+        .RequireWorkspaceKindAndRoles(
+            WorkspaceKinds.Family,
+            WorkspaceRoles.Owner,
+            WorkspaceRoles.Guardian)
         .WithSummary("Résultats d'un enfant (parent)")
         .Produces<StudentProgressDto>()
         .Produces(404);

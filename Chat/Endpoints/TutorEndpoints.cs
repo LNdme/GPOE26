@@ -1,8 +1,10 @@
 using System.Security.Claims;
+using GPOE26.Agent.Abstractions;
 using Chat.Data;
 using Chat.Model;
 using Chat.Service;
 using GPOE26.ServiceDefaults.Llm;
+using GPOE26.Workspaces.Abstractions;
 using Microsoft.EntityFrameworkCore;
 
 namespace Chat.Endpoints;
@@ -73,14 +75,43 @@ public static class TutorEndpoints
 
     public static void MapTutorEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/tutor").WithTags("Tuteur").RequireAuthorization();
+        var group = app.MapGroup("/tutor")
+            .WithTags("Tuteur")
+            .RequireAuthorization()
+            .RequireWorkspaceContext();
+
+        group.MapGet("/mcp/extensions", (IAgentExtensionRegistry registry) =>
+        {
+            var extensions = registry.Manifests
+                .Where(manifest => manifest.Kind == AgentExtensionKind.McpServer)
+                .Select(manifest => new McpExtensionCatalogDto(
+                    manifest.Id,
+                    manifest.Name,
+                    manifest.Description,
+                    manifest.Publisher.Name,
+                    manifest.Capabilities.Select(capability => new McpCapabilityCatalogDto(
+                        capability.Id,
+                        capability.Description,
+                        capability.RequiredPermissionIds)).ToArray(),
+                    manifest.RequestedPermissions.Select(permission => new McpPermissionCatalogDto(
+                        permission.Id,
+                        permission.Description,
+                        permission.Required)).ToArray()))
+                .ToArray();
+            return Results.Ok(extensions);
+        })
+        .WithSummary("Lister les extensions MCP déclarées par l'opérateur, sans configuration ni secret");
 
         // ── GET /tutor/conversations ──────────────────────────────────────────────
         group.MapGet("/conversations", async (ClaimsPrincipal principal, TutorContext db) =>
         {
             var userId = UserId(principal);
+            var workspace = principal.GetWorkspaceContext();
             var list = await db.Conversations
-                .Where(c => c.UserId == userId && c.Messages.Any())
+                .Where(c => c.UserId == userId &&
+                    (c.WorkspaceId == workspace.WorkspaceId ||
+                     (workspace.IsPersonal && c.WorkspaceId == null)) &&
+                    c.Messages.Any())
                 .OrderByDescending(c => c.UpdatedAt)
                 .Select(c => new ConversationSummaryDto(c.Id, c.CourseId, c.CourseTitle, c.Subject,
                     c.Messages.Count, c.Messages.Count(m => m.Pinned),
@@ -101,9 +132,14 @@ public static class TutorEndpoints
         group.MapGet("/courses/{courseId:guid}", async (Guid courseId, ClaimsPrincipal principal, TutorContext db) =>
         {
             var userId = UserId(principal);
+            var workspace = principal.GetWorkspaceContext();
             var conversation = await db.Conversations.AsNoTracking()
                 .Include(c => c.Messages.OrderBy(m => m.CreatedAt))
-                .FirstOrDefaultAsync(c => c.UserId == userId && c.CourseId == courseId);
+                .FirstOrDefaultAsync(c =>
+                    c.UserId == userId &&
+                    c.CourseId == courseId &&
+                    (c.WorkspaceId == workspace.WorkspaceId ||
+                     (workspace.IsPersonal && c.WorkspaceId == null)));
             return Results.Ok(conversation is null
                 ? new ConversationDto(null, courseId, null, new())
                 : new ConversationDto(conversation.Id, courseId, conversation.CourseTitle,
@@ -114,8 +150,23 @@ public static class TutorEndpoints
         // ── POST /tutor/courses/{courseId}/messages ───────────────────────────────
         group.MapPost("/courses/{courseId:guid}/messages", async (Guid courseId, AskTutorRequest req, ClaimsPrincipal principal,
             TutorContext db, PlatformClients platform, LlmClient llm, AgentContextService agent,
-            AiQuota quota, CourseIndex index, ILogger<TutorContext> logger, CancellationToken ct) =>
+            AiQuota quota, CourseIndex index, TutorConversationService agentTutor, ILogger<TutorContext> logger, CancellationToken ct) =>
         {
+            // Un profil d'agent demandé explicitement passe par le harnais d'agent (runtime Agent Framework, outils, MCP).
+            // Sans profil, c'est le tuteur de la plateforme (profil de l'apprenant, passages du cours, quotas).
+            if (!string.IsNullOrWhiteSpace(req.ProfileId))
+            {
+                var userId = UserId(principal);
+                if ((await quota.CheckAsync(userId, AiFeatures.Tutor, ct)).Refusal is { } refused)
+                    return Error(403, refused);
+                var outcome = await agentTutor.AskAsync(userId, principal.GetWorkspaceContext(),
+                    principal.FindFirst("level")?.Value, courseId, req, ct);
+                if (outcome.Response is null)
+                    return Error(outcome.ErrorStatus!.Value, outcome.ErrorMessage!);
+                await quota.RecordAsync(userId, AiFeatures.Tutor, ct);
+                return Results.Ok(outcome.Response);
+            }
+
             if (UnknownModel(llm, req.Model) is { } unknown) return unknown;
             var (refusal, ask) = await PrepareAsync(courseId, req, principal, db, platform, agent, quota, index, ct);
             if (refusal is not null) return refusal;
@@ -220,8 +271,13 @@ public static class TutorEndpoints
         group.MapPut("/messages/{id:guid}/pin", async (Guid id, PinRequest req, ClaimsPrincipal principal, TutorContext db) =>
         {
             var userId = UserId(principal);
+            var workspace = principal.GetWorkspaceContext();
             var message = await db.Messages.Include(m => m.Conversation)
-                .FirstOrDefaultAsync(m => m.Id == id && m.Conversation.UserId == userId);
+                .FirstOrDefaultAsync(m =>
+                    m.Id == id &&
+                    m.Conversation.UserId == userId &&
+                    (m.Conversation.WorkspaceId == workspace.WorkspaceId ||
+                     (workspace.IsPersonal && m.Conversation.WorkspaceId == null)));
             if (message is null) return Results.NotFound();
             message.Pinned = req.Pinned;
             await db.SaveChangesAsync();
@@ -233,8 +289,12 @@ public static class TutorEndpoints
         group.MapGet("/pinned", async (ClaimsPrincipal principal, TutorContext db) =>
         {
             var userId = UserId(principal);
+            var workspace = principal.GetWorkspaceContext();
             var pinned = await db.Messages.AsNoTracking()
-                .Where(m => m.Pinned && m.Conversation.UserId == userId)
+                .Where(m => m.Pinned &&
+                    m.Conversation.UserId == userId &&
+                    (m.Conversation.WorkspaceId == workspace.WorkspaceId ||
+                     (workspace.IsPersonal && m.Conversation.WorkspaceId == null)))
                 .OrderByDescending(m => m.CreatedAt)
                 .Select(m => new
                 {
@@ -253,7 +313,12 @@ public static class TutorEndpoints
         group.MapDelete("/courses/{courseId:guid}", async (Guid courseId, ClaimsPrincipal principal, TutorContext db) =>
         {
             var userId = UserId(principal);
-            var conversation = await db.Conversations.FirstOrDefaultAsync(c => c.UserId == userId && c.CourseId == courseId);
+            var workspace = principal.GetWorkspaceContext();
+            var conversation = await db.Conversations.FirstOrDefaultAsync(c =>
+                c.UserId == userId &&
+                c.CourseId == courseId &&
+                (c.WorkspaceId == workspace.WorkspaceId ||
+                 (workspace.IsPersonal && c.WorkspaceId == null)));
             if (conversation is null) return Results.NoContent();
 
             var imageIds = await db.Messages.Where(m => m.ConversationId == conversation.Id && m.ImageId != null)
@@ -291,6 +356,7 @@ public static class TutorEndpoints
         CourseIndex index, CancellationToken ct)
     {
         var userId = UserId(principal);
+        var workspace = principal.GetWorkspaceContext();
         var text = req.Message?.Trim() ?? "";
         if (text.Length == 0 && req.ImageId is null)
             return (Error(400, "Écris ta question ou joins une photo."), null);
@@ -316,11 +382,16 @@ public static class TutorEndpoints
 
         var conversation = await db.Conversations
             .Include(c => c.Messages.OrderBy(m => m.CreatedAt))
-            .FirstOrDefaultAsync(c => c.UserId == userId && c.CourseId == courseId, ct);
+            .FirstOrDefaultAsync(c => c.UserId == userId && c.CourseId == courseId &&
+                (c.WorkspaceId == workspace.WorkspaceId || (workspace.IsPersonal && c.WorkspaceId == null)), ct);
         if (conversation is null)
         {
-            conversation = new TutorConversation { UserId = userId, CourseId = courseId };
+            conversation = new TutorConversation { UserId = userId, CourseId = courseId, WorkspaceId = workspace.WorkspaceId };
             db.Conversations.Add(conversation);
+        }
+        else
+        {
+            conversation.WorkspaceId ??= workspace.WorkspaceId;
         }
         conversation.CourseTitle = course?.Title ?? TutorConversation.FreeTitle;
         conversation.Subject = course?.Subject;
@@ -450,3 +521,21 @@ public static class TutorEndpoints
 
     private static IResult Error(int status, string message) => Results.Json(new { message }, statusCode: status);
 }
+
+public sealed record McpExtensionCatalogDto(
+    string Id,
+    string Name,
+    string Description,
+    string PublisherName,
+    IReadOnlyList<McpCapabilityCatalogDto> Capabilities,
+    IReadOnlyList<McpPermissionCatalogDto> Permissions);
+
+public sealed record McpCapabilityCatalogDto(
+    string Id,
+    string Description,
+    IReadOnlyList<string> RequiredPermissionIds);
+
+public sealed record McpPermissionCatalogDto(
+    string Id,
+    string Description,
+    bool Required);

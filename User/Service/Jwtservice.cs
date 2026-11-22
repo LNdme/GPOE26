@@ -2,6 +2,8 @@ using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using GPOE26.Workspaces.Abstractions;
+using User.Helper;
 using User.Model;
 
 namespace User.Service
@@ -27,8 +29,10 @@ namespace User.Service
         /// c'est elle, pas la date du jeton, qui borne la durée de la session.
         /// </param>
         /// <param name="hats">Casquettes (lot P3), une claim « hats » par casquette ; déduites du rôle si absentes.</param>
+        /// <param name="activeWorkspace">Espace de travail actif : ses claims (workspace_id, workspace_kind, workspace_role)
+        /// sont exigés par les services. Sans lui, le jeton ne donne accès qu'aux routes sans espace de travail.</param>
         public (string token, DateTime expiresAt) GenerateToken(AppUser user, Entitlement entitlement, DateTime? signedInAt = null,
-            IReadOnlyList<string>? hats = null)
+            IReadOnlyList<string>? hats = null, WorkspaceSummaryDto? activeWorkspace = null)
         {
             var jwtKey = config["Jwt:Key"]
                 ?? throw new InvalidOperationException("Jwt:Key manquant dans la configuration.");
@@ -45,7 +49,7 @@ namespace User.Service
             //   "subjects" → pour personnaliser les exemples
             //   "lang"     → pour répondre dans la bonne langue
             //   "premium"  → pour réserver les fonctions Premium aux abonnés
-            var claims = new[]
+            var claims = new List<Claim>
             {
             new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new Claim(JwtRegisteredClaimNames.Email, user.Email ?? ""),
@@ -68,7 +72,17 @@ namespace User.Service
         }
             // "hats" → casquettes (lot P3) : les autres services pourront les lire sans interroger la base
             .Concat((hats ?? HatRules.FromRole(user.Role)).Select(h => new Claim("hats", h)))
-            .ToArray();
+            .ToList();
+
+            if (activeWorkspace is not null)
+            {
+                claims.Add(new Claim(WorkspaceClaimTypes.Id, activeWorkspace.Id.ToString()));
+                claims.Add(new Claim(WorkspaceClaimTypes.Kind, activeWorkspace.Kind.ToString()));
+                claims.AddRange(activeWorkspace.Roles
+                    .Distinct()
+                    .OrderBy(role => role)
+                    .Select(role => new Claim(WorkspaceClaimTypes.Role, role.ToString())));
+            }
 
             var expiresAt = DateTime.UtcNow.AddMinutes(
                 config.GetValue<int>("Jwt:ExpirationMinutes", 60));

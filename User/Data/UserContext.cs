@@ -22,6 +22,11 @@ namespace User.Data
         public DbSet<AccessCode> AccessCodes { get; set; }
         public DbSet<SharingOptOut> SharingOptOuts { get; set; }
         public DbSet<SchemaVersion> SchemaVersions { get; set; }
+        public DbSet<Workspace> Workspaces { get; set; }
+        public DbSet<WorkspaceMembership> WorkspaceMemberships { get; set; }
+        public DbSet<WorkspaceRoleGrant> WorkspaceRoleGrants { get; set; }
+        public DbSet<McpPermissionGrantRecord> McpPermissionGrants { get; set; }
+        public DbSet<McpProcessConfiguration> McpProcessConfigurations { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -59,6 +64,7 @@ namespace User.Data
             {
                 entity.HasIndex(c => c.InviteCode).IsUnique();
                 entity.HasIndex(c => c.TeacherId);
+                entity.HasIndex(c => c.WorkspaceId);
                 entity.Property(c => c.Name).HasMaxLength(120);
                 entity.Property(c => c.InviteCode).HasMaxLength(16);
                 entity.Property(c => c.Kind).HasConversion<string>();
@@ -170,6 +176,88 @@ namespace User.Data
             {
                 entity.Property(o => o.Scope).HasConversion<string>();
                 entity.HasIndex(o => o.LearnerId);
+            });
+
+            modelBuilder.Entity<Workspace>(entity =>
+            {
+                entity.Property(workspace => workspace.Name).HasMaxLength(200);
+                entity.Property(workspace => workspace.Kind).HasConversion<string>();
+                entity.HasIndex(workspace => new { workspace.Kind, workspace.OwnerUserId }).IsUnique();
+                entity.HasIndex(workspace => workspace.OrganizationId).IsUnique();
+                entity.HasOne<AppUser>()
+                    .WithMany()
+                    .HasForeignKey(workspace => workspace.OwnerUserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                entity.HasOne<Organization>()
+                    .WithMany()
+                    .HasForeignKey(workspace => workspace.OrganizationId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<WorkspaceMembership>(entity =>
+            {
+                entity.HasIndex(membership => new { membership.WorkspaceId, membership.UserId }).IsUnique();
+                entity.HasIndex(membership => new { membership.UserId, membership.Status });
+                entity.Property(membership => membership.Status).HasConversion<string>();
+                entity.HasOne(membership => membership.Workspace)
+                    .WithMany(workspace => workspace.Memberships)
+                    .HasForeignKey(membership => membership.WorkspaceId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                entity.HasOne(membership => membership.User)
+                    .WithMany()
+                    .HasForeignKey(membership => membership.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<WorkspaceRoleGrant>(entity =>
+            {
+                entity.HasKey(grant => new { grant.MembershipId, grant.Role });
+                entity.Property(grant => grant.Role).HasConversion<string>();
+                entity.HasOne(grant => grant.Membership)
+                    .WithMany(membership => membership.RoleGrants)
+                    .HasForeignKey(grant => grant.MembershipId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<McpPermissionGrantRecord>(entity =>
+            {
+                entity.HasKey(grant => new { grant.UserId, grant.WorkspaceId, grant.ExtensionId });
+                entity.Property(grant => grant.ExtensionId).HasMaxLength(200);
+                entity.Property(grant => grant.CapabilityIds).HasColumnType("text[]");
+                entity.Property(grant => grant.PermissionIds).HasColumnType("text[]");
+                entity.HasIndex(grant => new { grant.WorkspaceId, grant.UserId, grant.RevokedAt });
+                entity.HasOne<Workspace>()
+                    .WithMany()
+                    .HasForeignKey(grant => grant.WorkspaceId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                entity.HasOne<AppUser>()
+                    .WithMany()
+                    .HasForeignKey(grant => grant.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                entity.HasOne<AppUser>()
+                    .WithMany()
+                    .HasForeignKey(grant => grant.ApprovedByUserId)
+                    .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<McpProcessConfiguration>(entity =>
+            {
+                entity.HasKey(configuration => new
+                {
+                    configuration.UserId,
+                    configuration.WorkspaceId,
+                    configuration.ExtensionId
+                });
+                entity.Property(configuration => configuration.ExtensionId).HasMaxLength(200);
+                entity.Property(configuration => configuration.ProtectedOptions).IsRequired();
+                entity.HasOne<Workspace>()
+                    .WithMany()
+                    .HasForeignKey(configuration => configuration.WorkspaceId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                entity.HasOne<AppUser>()
+                    .WithMany()
+                    .HasForeignKey(configuration => configuration.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
         }
     }

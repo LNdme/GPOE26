@@ -39,7 +39,7 @@ public static class AccessCodeEndpoints
         // ── POST /auth/codes/activate ─────────────────────────────────────────────
         // Crée le compte (élève ou enseignant selon le code) et l'active, ou rien si le code ne passe pas.
         auth.MapPost("/activate", async (ActivateCodeRequest req, UserContext db, AccessCodeService codes,
-            Jwtservice jwt, ProfileService profiles, SubscriptionService subs) =>
+            Jwtservice jwt, ProfileService profiles, SubscriptionService subs, WorkspaceService workspaces) =>
         {
             var (error, info) = await codes.CheckAsync(req.Code);
             if (error != CodeError.None) return Results.BadRequest(new { message = AccessCodeService.Message(error) });
@@ -75,7 +75,8 @@ public static class AccessCodeEndpoints
             }
             await tx.CommitAsync();
 
-            return Results.Created("/auth/me", await profiles.AuthAsync(user));
+            var activeWorkspace = await workspaces.DefaultForAsync(user);
+            return Results.Created("/auth/me", await profiles.AuthAsync(user, activeWorkspace: activeWorkspace));
         })
         .WithSummary("Créer son compte avec son code personnel")
         .Produces<AuthResponse>(201)
@@ -84,7 +85,8 @@ public static class AccessCodeEndpoints
 
         // ── POST /auth/login-matricule ────────────────────────────────────────────
         // Élève d'un établissement : code de l'établissement + matricule + mot de passe (ou code de sa fiche).
-        app.MapPost("/auth/login-matricule", async (MatriculeLoginRequest req, AccessCodeService codes, Jwtservice jwt, ProfileService profiles, SubscriptionService subs) =>
+        app.MapPost("/auth/login-matricule", async (MatriculeLoginRequest req, AccessCodeService codes, Jwtservice jwt, ProfileService profiles,
+            SubscriptionService subs, WorkspaceService workspaces) =>
         {
             var (user, activation) = await codes.MatriculeLoginAsync(req.School, req.Matricule, req.Password);
             if (activation != CodeError.None)
@@ -92,7 +94,8 @@ public static class AccessCodeEndpoints
             if (user is null)
                 return Results.Json(new { message = "Code d'établissement, matricule ou mot de passe incorrect." }, statusCode: StatusCodes.Status401Unauthorized);
 
-            return Results.Ok(await profiles.AuthAsync(user));
+            var activeWorkspace = await workspaces.DefaultForAsync(user);
+            return Results.Ok(await profiles.AuthAsync(user, activeWorkspace: activeWorkspace));
         })
         .WithTags("Codes personnels")
         .WithSummary("Connexion d'un élève par le code de son établissement et son matricule")

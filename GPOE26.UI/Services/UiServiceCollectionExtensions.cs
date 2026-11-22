@@ -17,6 +17,8 @@ public static class UiServiceCollectionExtensions
         services.AddScoped<ICourseApi, CourseApi>();
         services.AddScoped<IAssessmentApi, AssessmentApi>();
         services.AddScoped<IProgressApi, ProgressApi>();
+        services.AddScoped<IMcpConsentApi, McpConsentApi>();
+        services.AddScoped<IAdminMcpApi, AdminMcpApi>();
         services.AddScoped<ITutorApi, TutorApi>();
         services.AddScoped<IMediaApi, MediaApi>();
         services.AddScoped<IPlanApi, PlanApi>();

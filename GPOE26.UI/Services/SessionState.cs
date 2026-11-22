@@ -13,7 +13,11 @@ public interface ISessionStore
     Task ClearAsync();
 }
 
-public record StoredSession(string Token, DateTime ExpiresAt, UserProfile Profile);
+public record StoredSession(
+    string Token,
+    DateTime ExpiresAt,
+    UserProfile Profile,
+    WorkspaceSummary? ActiveWorkspace = null);
 
 /// <summary>
 /// Session de l'utilisateur connecté (une par circuit Blazor / par fenêtre de l'application).
@@ -27,6 +31,7 @@ public class SessionState(ISessionStore store)
     // Tâche partagée : la mise en page et la page appellent RestoreAsync en même temps ;
     // chacune doit attendre la même restauration (sinon la seconde croit l'utilisateur déconnecté)
     private Task? _restore;
+    private TaskCompletionSource? _workspaceResolution;
 
     // Renouvellement du jeton : un seul à la fois, même si plusieurs appels d'API partent ensemble
     private Task? _renewal;
@@ -46,10 +51,33 @@ public class SessionState(ISessionStore store)
     public string? Token { get; private set; }
     public DateTime ExpiresAt { get; private set; }
     public UserProfile? Profile { get; private set; }
+    public WorkspaceSummary? ActiveWorkspace { get; private set; }
 
     public bool IsAuthenticated => Token is not null && DateTime.UtcNow < ExpiresAt;
     public UserRole? Role => IsAuthenticated ? Profile?.Role : null;
     public bool IsPremium => Profile?.IsPremium == true;
+    public bool CanTeach => HasWorkspaceRole(WorkspaceRole.Instructor, WorkspaceRole.Admin);
+    public bool CanLearn => HasWorkspaceRole(WorkspaceRole.Learner);
+    public bool CanManageCourses => HasWorkspaceRole(
+        WorkspaceRole.Owner,
+        WorkspaceRole.Admin,
+        WorkspaceRole.Guardian,
+        WorkspaceRole.Instructor);
+    public bool IsFamilyGuardian =>
+        ActiveWorkspace?.Kind == WorkspaceKind.Family &&
+        HasWorkspaceRole(WorkspaceRole.Guardian);
+
+    public bool HasWorkspaceRole(params WorkspaceRole[] roles) =>
+        ActiveWorkspace?.Roles.Any(activeRole => roles.Contains(activeRole)) == true;
+
+    public Task WaitForWorkspaceResolutionAsync() =>
+        _workspaceResolution?.Task ?? Task.CompletedTask;
+
+    public void CompleteWorkspaceResolution()
+    {
+        _workspaceResolution?.TrySetResult();
+        _workspaceResolution = null;
+    }
 
     /// <summary>La formule de l'utilisateur inclut-elle cette fonctionnalité ?</summary>
     public bool HasFeature(string code) => Profile?.Features?.Any(f => f.Code == code) == true;
@@ -81,8 +109,8 @@ public class SessionState(ISessionStore store)
         {
             var saved = await store.LoadAsync();
             if (saved is not null && saved.ExpiresAt > DateTime.UtcNow)
-                {
-                Apply(saved.Token, saved.ExpiresAt, saved.Profile, notify: true);
+            {
+                Apply(saved.Token, saved.ExpiresAt, saved.Profile, saved.ActiveWorkspace, notify: true);
                 _profileCheckedAt = DateTime.MinValue;   // copie du navigateur : à relire au service User
             }
             else if (saved is not null)
@@ -97,8 +125,8 @@ public class SessionState(ISessionStore store)
 
     public async Task SignInAsync(AuthResponse auth)
     {
-        Apply(auth.Token, auth.ExpiresAt, auth.Profile, notify: true);
-        await store.SaveAsync(new StoredSession(auth.Token, auth.ExpiresAt, auth.Profile));
+        Apply(auth.Token, auth.ExpiresAt, auth.Profile, auth.ActiveWorkspace, notify: true);
+        await store.SaveAsync(new StoredSession(auth.Token, auth.ExpiresAt, auth.Profile, auth.ActiveWorkspace));
     }
 
     /// <summary>
@@ -122,8 +150,10 @@ public class SessionState(ISessionStore store)
                 return;
             }
 
-            Apply(auth.Token, auth.ExpiresAt, auth.Profile, notify: true);
-            try { await store.SaveAsync(new StoredSession(auth.Token, auth.ExpiresAt, auth.Profile)); }
+            // Le serveur garde l'espace de travail du jeton renouvelé (tant que la personne en est membre)
+            var workspace = auth.ActiveWorkspace ?? ActiveWorkspace;
+            Apply(auth.Token, auth.ExpiresAt, auth.Profile, workspace, notify: true);
+            try { await store.SaveAsync(new StoredSession(auth.Token, auth.ExpiresAt, auth.Profile, workspace)); }
             catch { /* navigateur injoignable : le jeton neuf sert déjà en mémoire, il sera enregistré au prochain renouvellement */ }
         }
         catch
@@ -140,8 +170,8 @@ public class SessionState(ISessionStore store)
     public async Task UpdateProfileAsync(UserProfile profile)
     {
         if (Token is null) return;
-        Apply(Token, ExpiresAt, profile, notify: true);
-        await store.SaveAsync(new StoredSession(Token, ExpiresAt, profile));
+        Apply(Token, ExpiresAt, profile, ActiveWorkspace, notify: true);
+        await store.SaveAsync(new StoredSession(Token, ExpiresAt, profile, ActiveWorkspace));
     }
 
     /// <summary>
@@ -166,8 +196,9 @@ public class SessionState(ISessionStore store)
             // Déconnexion ou autre connexion pendant l'appel : ce profil n'est plus celui de la session
             if (profile is null || token is null || Token != token) return;
 
-            Apply(token, ExpiresAt, profile, notify: true);
-            try { await store.SaveAsync(new StoredSession(token, ExpiresAt, profile)); }
+            // Le profil relu ne change pas l'espace de travail actif
+            Apply(token, ExpiresAt, profile, ActiveWorkspace, notify: true);
+            try { await store.SaveAsync(new StoredSession(token, ExpiresAt, profile, ActiveWorkspace)); }
             catch { /* navigateur injoignable : le profil neuf sert déjà en mémoire */ }
         }
         catch
@@ -185,16 +216,38 @@ public class SessionState(ISessionStore store)
     {
         Token = null;
         Profile = null;
+        ActiveWorkspace = null;
         ExpiresAt = DateTime.MinValue;
         _profileCheckedAt = DateTime.MinValue;
+        CompleteWorkspaceResolution();
         await SafeClearAsync();
         Changed?.Invoke();
+    }
+
+    public async Task ClearActiveWorkspaceAsync()
+    {
+        if (Token is null || Profile is null) return;
+
+        Apply(Token, ExpiresAt, Profile, null, notify: true);
+        try
+        {
+            await store.SaveAsync(new StoredSession(Token, ExpiresAt, Profile, null));
+        }
+        finally
+        {
+            CompleteWorkspaceResolution();
+        }
     }
 
     /// <summary>Le serveur a refusé le jeton (401) : on considère la session terminée.</summary>
     public Task ExpireAsync() => SignOutAsync();
 
-    private void Apply(string token, DateTime expiresAt, UserProfile profile, bool notify)
+    private void Apply(
+        string token,
+        DateTime expiresAt,
+        UserProfile profile,
+        WorkspaceSummary? activeWorkspace,
+        bool notify)
     {
         if (token != Token)
         {
@@ -205,6 +258,14 @@ public class SessionState(ISessionStore store)
         ExpiresAt = expiresAt;
         Profile = profile;
         _profileCheckedAt = DateTime.UtcNow;   // profil tout juste reçu du service User (la restauration le remet à relire)
+        ActiveWorkspace = activeWorkspace;
+        if (activeWorkspace is null)
+        {
+            if (_workspaceResolution is null || _workspaceResolution.Task.IsCompleted)
+                _workspaceResolution = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+        else
+            CompleteWorkspaceResolution();
         if (notify) Changed?.Invoke();
     }
 

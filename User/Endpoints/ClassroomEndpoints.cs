@@ -6,6 +6,7 @@ using User.DTOs;
 using User.Helper;
 using User.Model;
 using User.Service;
+using GPOE26.Workspaces.Abstractions;
 
 namespace User.Endpoints;
 
@@ -18,21 +19,32 @@ public static class ClassroomEndpoints
 {
     public static void MapClassroomEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/classrooms").WithTags("Classes").RequireAuthorization();
+        var group = app.MapGroup("/classrooms")
+            .WithTags("Classes")
+            .RequireAuthorization()
+            .RequireCurrentWorkspaceMembership();
 
         // ── POST /classrooms ──────────────────────────────────────────────────────
-        // Un enseignant crée sa classe dans son espace (son établissement, sinon son espace indépendant).
+        // Un enseignant crée sa classe dans son espace (son établissement, sinon son espace indépendant),
+        // rattachée à l'espace de travail actif.
         group.MapPost("", async (CreateClassroomRequest req, ClaimsPrincipal principal, UserContext db, ClassroomService classrooms) =>
         {
             var teacher = await db.CurrentUserAsync(principal);
             if (teacher is null) return Results.Unauthorized();
 
-            var classroom = await classrooms.CreateAsync(teacher, req.Name, req.Level, req.SubSystem, req.Subject);
+            var workspace = principal.GetWorkspaceContext();
+            var classroom = await classrooms.CreateAsync(
+                teacher,
+                workspace.WorkspaceId,
+                req.Name,
+                req.Level,
+                req.SubSystem,
+                req.Subject);
             await db.SaveChangesAsync();
             var dto = (await ToDtosAsync(db, [(classroom, 0)], teacher.Id, _ => ClassroomRole.Teacher)).Single();
             return Results.Created($"/classrooms/{classroom.Id}", dto);
         })
-        .RequireAuthorization(Policies.Teacher)
+        .RequireUserWorkspaceRoles(WorkspaceRole.Instructor, WorkspaceRole.Admin)
         .WithSummary("Créer une classe (ou un groupe)")
         .Produces<ClassroomDto>(201);
 
@@ -49,11 +61,19 @@ public static class ClassroomEndpoints
             if (!TryParseInclude(include, out var former))
                 return Results.BadRequest(new { message = $"Valeur inconnue pour « include » : {include} (attendu : former)." });
 
+            var workspace = principal.GetWorkspaceContext();
             var user = await db.CurrentUserAsync(principal);
             if (user is null) return Results.Unauthorized();
 
+            // Classes enseignées : celles de l'espace de travail actif (une classe d'avant les espaces de travail compte
+            // dans l'espace personnel). Classes rejointes pour apprendre : toutes, comme avant.
+            var workspaceId = workspace.WorkspaceId;
+            var personal = workspace.IsPersonal;
             var taughtIds = ClassroomViewRules.WantsTaught(wanted)
-                ? await db.ClassroomTeachers.Where(t => t.TeacherId == user.Id).Select(t => t.ClassroomId).Distinct().ToListAsync()
+                ? await db.ClassroomTeachers.Where(t => t.TeacherId == user.Id)
+                    .Join(db.Classrooms, t => t.ClassroomId, c => c.Id, (t, c) => c)
+                    .Where(c => c.WorkspaceId == workspaceId || (personal && c.WorkspaceId == null))
+                    .Select(c => c.Id).Distinct().ToListAsync()
                 : [];
             var periods = ClassroomViewRules.WantsJoined(wanted)
                 ? await (former ? db.ClassroomMembers.IgnoreQueryFilters() : db.ClassroomMembers)
@@ -91,8 +111,11 @@ public static class ClassroomEndpoints
         group.MapGet("/{id:guid}", async (Guid id, ClaimsPrincipal principal, UserContext db, ClassroomService classrooms, SpaceService spaces) =>
         {
             var userId = principal.GetUserId();
+            var workspace = principal.GetWorkspaceContext();
             var classroom = await db.Classrooms.FirstOrDefaultAsync(c => c.Id == id);
             if (classroom is null || userId is null || await classrooms.RoleInAsync(classroom, userId.Value) is not { } role)
+                return Results.NotFound();
+            if (role != ClassroomRole.Student && !InWorkspace(classroom, workspace))
                 return Results.NotFound();
 
             var count = await db.ClassroomMembers.CountAsync(m => m.ClassroomId == id);
@@ -115,7 +138,7 @@ public static class ClassroomEndpoints
                 return Results.BadRequest(new { message = $"Valeur inconnue pour « include » : {include} (attendu : former)." });
             var userId = principal.GetUserId();
             var classroom = await db.Classrooms.FirstOrDefaultAsync(c => c.Id == id);
-            if (classroom is null || userId is null) return Results.NotFound();
+            if (classroom is null || userId is null || !InWorkspace(classroom, principal.GetWorkspaceContext())) return Results.NotFound();
             var role = await classrooms.RoleInAsync(classroom, userId.Value);
             if (role is not (ClassroomRole.Teacher or ClassroomRole.Manager)) return Results.NotFound();
 
@@ -159,6 +182,7 @@ public static class ClassroomEndpoints
 
             return Results.Ok(members.OrderBy(m => m.LeftAt is not null).ThenBy(m => m.Username).ToList());
         })
+        .RequireUserWorkspaceRoles(WorkspaceRole.Instructor, WorkspaceRole.Admin)
         .WithSummary("Élèves d'une classe (enseignants et gestionnaires) ; ?include=former : et les anciens encore visibles")
         .Produces<List<ClassroomMemberDto>>()
         .Produces(400);
@@ -169,7 +193,8 @@ public static class ClassroomEndpoints
             UserContext db, ClassroomService classrooms) =>
         {
             var userId = principal.GetUserId();
-            if (studentId != userId && !await CanTeachOrManageAsync(db, classrooms, id, userId)) return Results.NotFound();
+            if (studentId != userId && !await CanTeachOrManageAsync(db, classrooms, id, userId, principal.GetWorkspaceContext()))
+                return Results.NotFound();
 
             // Lot J2 : la période est close, plus supprimée (historique de l'élève, résultats gardés par la classe)
             var ended = await db.ClassroomMembers
@@ -184,8 +209,9 @@ public static class ClassroomEndpoints
         group.MapDelete("/{id:guid}", async (Guid id, ClaimsPrincipal principal, UserContext db, ClassroomService classrooms) =>
         {
             var userId = principal.GetUserId();
+            var workspace = principal.GetWorkspaceContext();
             var classroom = await db.Classrooms.FirstOrDefaultAsync(c => c.Id == id);
-            if (classroom is null || userId is null) return Results.NotFound();
+            if (classroom is null || userId is null || !InWorkspace(classroom, workspace)) return Results.NotFound();
 
             var isMain = await db.ClassroomTeachers.AnyAsync(t => t.ClassroomId == id && t.TeacherId == userId && t.IsMain);
             if (!isMain && await classrooms.RoleInAsync(classroom, userId.Value) != ClassroomRole.Manager)
@@ -195,6 +221,7 @@ public static class ClassroomEndpoints
             await db.SaveChangesAsync();
             return Results.NoContent();
         })
+        .RequireUserWorkspaceRoles(WorkspaceRole.Instructor, WorkspaceRole.Admin)
         .WithSummary("Archiver une classe");
     }
 
@@ -205,13 +232,19 @@ public static class ClassroomEndpoints
         return former || string.IsNullOrWhiteSpace(include);
     }
 
-    private static async Task<bool> CanTeachOrManageAsync(UserContext db, ClassroomService classrooms, Guid classroomId, Guid? userId)
+    /// <summary>Enseignant de la classe ou gestionnaire de son espace, la classe étant dans l'espace de travail actif.</summary>
+    private static async Task<bool> CanTeachOrManageAsync(UserContext db, ClassroomService classrooms, Guid classroomId, Guid? userId,
+        WorkspaceTokenContext workspace)
     {
         if (userId is null) return false;
         var classroom = await db.Classrooms.FirstOrDefaultAsync(c => c.Id == classroomId);
-        return classroom is not null
+        return classroom is not null && InWorkspace(classroom, workspace)
                && await classrooms.RoleInAsync(classroom, userId.Value) is ClassroomRole.Teacher or ClassroomRole.Manager;
     }
+
+    /// <summary>Classe de l'espace de travail actif (une classe d'avant les espaces de travail compte dans l'espace personnel).</summary>
+    private static bool InWorkspace(Classroom classroom, WorkspaceTokenContext workspace) =>
+        classroom.WorkspaceId == workspace.WorkspaceId || (workspace.IsPersonal && classroom.WorkspaceId is null);
 
     /// <summary>DTO de chaque classe, avec ses enseignants et la place qu'y occupe l'utilisateur.</summary>
     private static async Task<List<ClassroomDto>> ToDtosAsync(UserContext db, List<(Classroom Classroom, int Count)> rows,

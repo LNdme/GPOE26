@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using GPOE26.Workspaces.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Quiz.Data;
 using Quiz.DTOs;
@@ -31,7 +32,10 @@ public static class SubmissionEndpoints
 
     public static void MapSubmissionEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/assessments/{id:guid}").WithTags("Copies").RequireAuthorization();
+        var group = app.MapGroup("/assessments/{id:guid}")
+            .WithTags("Copies")
+            .RequireAuthorization()
+            .RequireWorkspaceContext();
 
         // ═══ Apprenant : tout compte (lot J1) ; chaque route vérifie que l'évaluation ou la copie est la sienne ═══
 
@@ -82,6 +86,7 @@ public static class SubmissionEndpoints
             await db.SaveChangesAsync();
             return Results.Created($"/assessments/{id}/submissions/{submission.Id}", ToAttempt(submission, assessment, new()));
         })
+        .RequireWorkspaceRoles(WorkspaceRoles.Learner)
         .WithSummary("Commencer (ou reprendre) une tentative")
         .Produces<AttemptDto>(201)
         .Produces(409);
@@ -135,6 +140,7 @@ public static class SubmissionEndpoints
             await db.SaveChangesAsync();
             return Results.Ok(ToDto(submission, assessment, teacherView: false, await PhotosAsync(db, submission.Id)));
         })
+        .RequireWorkspaceRoles(WorkspaceRoles.Learner)
         .WithSummary("Rendre sa copie (correction automatique immédiate)")
         .Produces<SubmissionDto>()
         .Produces(409);
@@ -145,12 +151,15 @@ public static class SubmissionEndpoints
         group.MapGet("/submissions/{submissionId:guid}", async (Guid id, Guid submissionId, ClaimsPrincipal principal, EvaluationContext db) =>
         {
             var userId = principal.UserId();
+            var workspace = principal.GetWorkspaceContext();
             var submission = await db.Submissions.Include(s => s.Answers).Include(s => s.Assessment).ThenInclude(a => a.Questions)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(s => s.Id == submissionId && s.AssessmentId == id);
             if (submission is null) return Results.NotFound();
 
-            var isTeacher = submission.Assessment.TeacherId == userId;
+            var isTeacher = workspace.HasAnyRole(WorkspaceRoles.Instructor, WorkspaceRoles.Admin) &&
+                            submission.Assessment.TeacherId == userId &&
+                            submission.Assessment.IsInWorkspace(workspace);
             if (!isTeacher && submission.StudentId != userId) return Results.NotFound();
             return Results.Ok(ToDto(submission, submission.Assessment, teacherView: isTeacher, await PhotosAsync(db, submission.Id)));
         })
@@ -162,7 +171,8 @@ public static class SubmissionEndpoints
         // ── GET /assessments/{id}/submissions ─────────────────────────────────────
         group.MapGet("/submissions", async (Guid id, ClaimsPrincipal principal, EvaluationContext db, UserDirectoryClient users) =>
         {
-            var assessment = await db.OwnedAssessmentAsync(id, principal.UserId());
+            var workspace = principal.GetWorkspaceContext();
+            var assessment = await db.OwnedAssessmentAsync(id, principal.UserId(), workspace);
             if (assessment is null) return Results.NotFound();
 
             var submissions = await db.Submissions.Include(s => s.Answers)
@@ -183,7 +193,7 @@ public static class SubmissionEndpoints
                 ProgressService.Scale(s.Score, s.MaxScore, assessment.ScaleTo),
                 s.Answers.Count(a => a.NeedsManualGrading))));
         })
-        .RequireAuthorization(Roles.Teacher)
+        .RequireWorkspaceRoles(WorkspaceRoles.Instructor, WorkspaceRoles.Admin)
         .WithSummary("Copies rendues et en cours")
         .Produces<List<SubmissionRowDto>>();
 
@@ -192,7 +202,8 @@ public static class SubmissionEndpoints
         group.MapPut("/submissions/{submissionId:guid}/answers/{questionId:guid}/grade", async (Guid id, Guid submissionId,
             Guid questionId, GradeAnswerRequest req, ClaimsPrincipal principal, EvaluationContext db) =>
         {
-            var assessment = await db.OwnedAssessmentAsync(id, principal.UserId());
+            var workspace = principal.GetWorkspaceContext();
+            var assessment = await db.OwnedAssessmentAsync(id, principal.UserId(), workspace);
             if (assessment is null) return Results.NotFound();
             var question = assessment.Questions.FirstOrDefault(q => q.Id == questionId);
             var submission = await db.Submissions.Include(s => s.Answers)
@@ -211,7 +222,7 @@ public static class SubmissionEndpoints
             await db.SaveChangesAsync();
             return Results.Ok(ToDto(submission!, assessment, teacherView: true, await PhotosAsync(db, submission!.Id)));
         })
-        .RequireAuthorization(Roles.Teacher)
+        .RequireWorkspaceRoles(WorkspaceRoles.Instructor, WorkspaceRoles.Admin)
         .WithSummary("Noter une réponse")
         .Produces<SubmissionDto>();
 
@@ -223,7 +234,8 @@ public static class SubmissionEndpoints
         {
             if (await quota.RefusalAsync(principal.UserId(), AiFeatures.Grading, ct) is { } refusal)
                 return EndpointHelpers.Error(403, refusal);
-            var assessment = await db.OwnedAssessmentAsync(id, principal.UserId());
+            var workspace = principal.GetWorkspaceContext();
+            var assessment = await db.OwnedAssessmentAsync(id, principal.UserId(), workspace);
             if (assessment is null) return Results.NotFound();
             if (!assessment.AiAssistedGrading)
                 return EndpointHelpers.Error(400, "La correction assistée est désactivée pour cette évaluation.");
@@ -253,7 +265,7 @@ public static class SubmissionEndpoints
                 return EndpointHelpers.Error(502, "L'IA n'a pas pu proposer de note. Réessayez ou notez manuellement.");
             }
         })
-        .RequireAuthorization(Roles.Teacher)
+        .RequireWorkspaceRoles(WorkspaceRoles.Instructor, WorkspaceRoles.Admin)
         .WithSummary("Demander une proposition de note à l'IA")
         .Produces<AiSuggestionDto>()
         .Produces(502);
@@ -300,6 +312,7 @@ public static class SubmissionEndpoints
             return Results.Ok(new AnswerPhotoDto(photo));
         })
         .DisableAntiforgery()
+        .RequireWorkspaceRoles(WorkspaceRoles.Learner)
         .WithSummary("Joindre la photo d'une copie à une réponse ouverte (lue ensuite par l'IA, en arrière-plan)")
         .Produces<AnswerPhotoDto>();
 
@@ -336,6 +349,7 @@ public static class SubmissionEndpoints
             await db.SaveChangesAsync();
             return Results.NoContent();
         })
+        .RequireWorkspaceRoles(WorkspaceRoles.Learner)
         .WithSummary("Retirer une photo (avant de rendre la copie)");
 
         // ── GET /assessments/{id}/submissions/{submissionId}/photos/{photoId} ─────
@@ -343,12 +357,19 @@ public static class SubmissionEndpoints
             ClaimsPrincipal principal, EvaluationContext db) =>
         {
             var userId = principal.UserId();
+            var workspace = principal.GetWorkspaceContext();
             var photo = await db.AnswerPhotos.AsNoTracking()
                 .FirstOrDefaultAsync(p => p.Id == photoId && p.SubmissionId == submissionId);
             if (photo is null) return Results.NotFound();
-            var teacherId = await db.Submissions.Where(s => s.Id == submissionId && s.AssessmentId == id)
-                .Select(s => (Guid?)s.Assessment.TeacherId).FirstOrDefaultAsync();
-            if (teacherId is null || (photo.StudentId != userId && teacherId != userId)) return Results.NotFound();
+            var submissionExists = await db.Submissions.AnyAsync(s => s.Id == submissionId && s.AssessmentId == id);
+            if (!submissionExists) return Results.NotFound();
+            var teacherCanView = await db.Assessments.AnyAsync(a =>
+                a.Id == id &&
+                workspace.HasAnyRole(WorkspaceRoles.Instructor, WorkspaceRoles.Admin) &&
+                a.TeacherId == userId &&
+                (a.WorkspaceId == workspace.WorkspaceId ||
+                 (workspace.IsPersonal && a.WorkspaceId == null)));
+            if (photo.StudentId != userId && !teacherCanView) return Results.NotFound();
             return Results.File(photo.Data, photo.ContentType);
         })
         .WithSummary("Image d'une copie photographiée (l'élève auteur ou l'enseignant)");
@@ -395,6 +416,7 @@ public static class SubmissionEndpoints
                 return EndpointHelpers.Error(502, "L'IA n'a pas pu analyser ta copie. Réessaie dans un instant.");
             }
         })
+        .RequireWorkspaceRoles(WorkspaceRoles.Learner)
         .WithSummary("Analyse de ma démarche par l'IA (après publication des résultats)")
         .Produces<AiFeedbackDto>();
     }

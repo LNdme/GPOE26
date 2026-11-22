@@ -16,6 +16,7 @@ var llmApiKey = builder.AddParameter(
     "llm-apikey",
     FirstNonEmpty(builder.Configuration["Parameters:llm-apikey"], builder.Configuration["OPENROUTER_API_KEY"], builder.Configuration["LLM_API_KEY"]),
     secret: true);
+var mcpChatServiceKey = builder.AddParameter("mcp-chat-service-key", secret: true);
 
 
 
@@ -54,6 +55,7 @@ var userService = builder.AddProject<Projects.User>("user")
     // Premiers administrateurs du site (comptes déjà inscrits) :
     //   dotnet user-secrets set "Parameters:admin-emails" "a@exemple.cm;b@exemple.cm" --project GPOE26.AppHost
     .WithEnvironment("Admin__Emails", builder.Configuration["Parameters:admin-emails"] ?? "")
+    .WithEnvironment("Mcp__ChatServiceKey", mcpChatServiceKey)
     .WithReference(userDb)   // ← ajoute
     .WaitFor(userDb)         // ← ajoute
     .WaitFor(apiService);
@@ -72,6 +74,7 @@ var chatService = builder.AddProject<Projects.Chat>("chat")
     .WithEnvironment("Jwt__Key", jwtKeyValue)
     .WithEnvironment("Jwt__Issuer", jwtIssuer)
     .WithEnvironment("Jwt__Audience", jwtAudience)
+    .WithEnvironment("Mcp__ChatServiceKey", mcpChatServiceKey)
     .WithEnvironment("Services__User", userService.GetEndpoint("http"))    // abonnement Premium
     .WithEnvironment("Services__ApiService", apiService.GetEndpoint("http"))   // contenu du site, pour l'agent de l'administration
     .WithEnvironment("Services__Cours", coursService.GetEndpoint("http"))  // contenu du cours étudié

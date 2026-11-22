@@ -6,6 +6,7 @@ using System.Security.Claims;
 using System.Text;
 using User.Data;
 using User.DTOs;
+using GPOE26.Workspaces.Abstractions;
 using User.Endpoints;
 using User.Helper;
 using User.Model;
@@ -67,6 +68,13 @@ builder.Services.AddScoped<ClassroomService>();
 builder.Services.AddScoped<SpaceService>();
 builder.Services.AddScoped<AccessCodeService>();
 builder.Services.AddScoped<VisibilityService>();   // lot J3 : qui voit quoi, retraits de partage
+builder.Services.AddScoped<WorkspaceService>();
+builder.Services.AddDataProtection();
+builder.Services.AddScoped<McpAuthorizationService>();
+builder.Services.AddScoped<GPOE26.Agent.Abstractions.IMcpPermissionGrantStore>(
+    services => services.GetRequiredService<McpAuthorizationService>());
+builder.Services.AddScoped<GPOE26.Agent.Abstractions.IMcpServerProcessOptionsStore>(
+    services => services.GetRequiredService<McpAuthorizationService>());
 
 // Applique les [Required], [MinLength]… des DTOs aux Minimal APIs (sinon ils sont ignorés)
 builder.Services.AddValidation();
@@ -122,6 +130,8 @@ using (var scope = app.Services.CreateScope())
     await AdminBootstrap.PromoteConfiguredAdminsAsync(db, app.Configuration, app.Logger);
     // Après le jeu de démonstration, pour qu'il soit repris comme le reste
     await UserDataMigrations.RunAsync(db, app.Logger);
+    // Les classes créées ou déplacées ci-dessus rejoignent leur espace de travail sans attendre le prochain démarrage
+    await UserSchema.AlignWorkspacesAsync(db);
 }
 
 if (app.Environment.IsDevelopment())
@@ -159,7 +169,7 @@ var auth = app.MapGroup("/auth").WithTags("Auth");
 // Inscription guidée (élève, enseignant ou parent). Les clés et codes sont vérifiés
 // AVANT la création du compte : une clé invalide ne laisse pas de compte à moitié créé.
 auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice jwt, ProfileService profiles,
-    SubscriptionService subs, ClassroomService classrooms, SpaceService spaces) =>
+    SubscriptionService subs, ClassroomService classrooms, SpaceService spaces, WorkspaceService workspaces) =>
 {
     // L'administration est un droit donné par un administrateur, jamais un rôle choisi à l'inscription.
     // Un rôle inconnu (ancien « Admin » envoyé en nombre, par exemple) est refusé.
@@ -225,6 +235,27 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
     };
     LearningContextRules.ApplyAtRegistration(user, req.Country, req.TimeZone, req.EducationSystem, req.LevelBand, req.Goal);
     db.AppUsers.Add(user);
+    await db.SaveChangesAsync();
+    var activeWorkspace = await workspaces.EnsurePersonalWorkspaceAsync(user.Id);
+
+    if (req.SubscriptionKey is not null)
+        await subs.RedeemAsync(user, req.SubscriptionKey);
+
+    if (req.StartTrial)
+        await subs.StartTrialAsync(user.Id, SubscriptionPlan.Teacher);
+
+    if (user.Role == UserRole.Parent)
+    {
+        await workspaces.EnsureFamilyWorkspaceAsync(user.Id);
+        activeWorkspace = (await workspaces.GetMineAsync(user.Id))
+            .Single(workspace => workspace.Kind == WorkspaceKind.Family);
+    }
+    else if (user.OrganizationId is { } organizationId)
+    {
+        activeWorkspace = (await workspaces.GetMineAsync(user.Id))
+            .FirstOrDefault(workspace => workspace.OrganizationId == organizationId)
+            ?? activeWorkspace;
+    }
 
     // Enseignant indépendant : son espace existe dès l'inscription (« Mes élèves et codes »), même sans classe
     if (req.Role == UserRole.Teacher && req.TeachingContext == TeachingContext.Independent)
@@ -240,19 +271,18 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
             var subSystem = !isSchool || !LearningContextRules.UsesCameroonSubSystems(user) ? (SchoolSubSystem?)null
                 : name.StartsWith("Form", StringComparison.OrdinalIgnoreCase) || name.EndsWith("Sixth", StringComparison.OrdinalIgnoreCase)
                     ? SchoolSubSystem.Anglophone : SchoolSubSystem.Francophone;
-            await classrooms.CreateAsync(user, name, isSchool ? name.Trim() : null, subSystem);
+            await classrooms.CreateAsync(
+                user,
+                activeWorkspace.Id,
+                name,
+                isSchool ? name.Trim() : null,
+                subSystem);
         }
     }
 
     await db.SaveChangesAsync();
 
-    if (req.SubscriptionKey is not null)
-        await subs.RedeemAsync(user, req.SubscriptionKey);
-
-    if (req.StartTrial)
-        await subs.StartTrialAsync(user.Id, SubscriptionPlan.Teacher);
-
-    return Results.Created("/auth/me", await profiles.AuthAsync(user));
+    return Results.Created("/auth/me", await profiles.AuthAsync(user, activeWorkspace: activeWorkspace));
 })
 .WithSummary("Créer un compte")
 .Produces<AuthResponse>(201)
@@ -260,7 +290,13 @@ auth.MapPost("/register", async (RegisterRequest req, UserContext db, Jwtservice
 .Produces(400);
 
 // ── POST /auth/login ──────────────────────────────────────────────────────────
-auth.MapPost("/login", async (LoginRequest req, UserContext db, Jwtservice jwt, ProfileService profiles, SubscriptionService subs) =>
+auth.MapPost("/login", async (
+    LoginRequest req,
+    UserContext db,
+    Jwtservice jwt,
+    ProfileService profiles,
+    SubscriptionService subs,
+    WorkspaceService workspaces) =>
 {
     // Adresse e-mail ou nom d'utilisateur (élève entré par son code, sans adresse)
     var login = req.Email.Trim();
@@ -281,8 +317,9 @@ auth.MapPost("/login", async (LoginRequest req, UserContext db, Jwtservice jwt, 
 
     user.LastLoginAt = DateTime.UtcNow;
     await db.SaveChangesAsync();
+    var activeWorkspace = await workspaces.DefaultForAsync(user);
 
-    return Results.Ok(await profiles.AuthAsync(user));
+    return Results.Ok(await profiles.AuthAsync(user, activeWorkspace: activeWorkspace));
 })
 .WithSummary("Se connecter")
 .Produces<AuthResponse>()
@@ -293,7 +330,8 @@ auth.MapPost("/login", async (LoginRequest req, UserContext db, Jwtservice jwt, 
 // Sans cela, la session tombait 60 minutes après la connexion, même en pleine épreuve.
 // Le rôle, les droits et la formule sont relus en base : un changement s'applique au renouvellement suivant.
 // La session reste bornée (Jwt:MaxSessionHours) : au-delà, il faut se reconnecter.
-auth.MapPost("/refresh", async (ClaimsPrincipal principal, UserContext db, Jwtservice jwt, ProfileService profiles, SubscriptionService subs) =>
+auth.MapPost("/refresh", async (ClaimsPrincipal principal, UserContext db, Jwtservice jwt, ProfileService profiles, SubscriptionService subs,
+    WorkspaceService workspaces) =>
 {
     var user = await db.CurrentUserAsync(principal);
     if (user is null) return Results.Unauthorized();
@@ -302,7 +340,10 @@ auth.MapPost("/refresh", async (ClaimsPrincipal principal, UserContext db, Jwtse
     if (!Jwtservice.CanRenew(signedInAt, DateTime.UtcNow, jwt.MaxSession))
         return Results.Unauthorized();
 
-    return Results.Ok(await profiles.AuthAsync(user, signedInAt));
+    // Le même espace de travail qu'avant le renouvellement, tant que la personne en est membre
+    var current = principal.TryGetWorkspaceContext(out var context) ? context!.WorkspaceId : (Guid?)null;
+    var activeWorkspace = await workspaces.CurrentOrDefaultAsync(user, current);
+    return Results.Ok(await profiles.AuthAsync(user, signedInAt, activeWorkspace));
 })
 .RequireAuthorization()
 .WithSummary("Prolonger la session (jeton neuf, profil à jour)")
@@ -334,6 +375,8 @@ app.MapProfileEndpoints();
 app.MapOrganizationEndpoints();
 app.MapStudentEndpoints();
 app.MapAccessCodeEndpoints();
+app.MapWorkspaceEndpoints();
+app.MapMcpRuntimeEndpoints();
 
 
 

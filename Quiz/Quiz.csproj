@@ -37,6 +37,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\GPOE26.ServiceDefaults\GPOE26.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\GPOE26.Workspaces.Abstractions\GPOE26.Workspaces.Abstractions.csproj" />
   </ItemGroup>
 
 </Project>

@@ -37,6 +37,7 @@ public class EvaluationContext(DbContextOptions<EvaluationContext> options) : Db
         modelBuilder.Entity<Assessment>(entity =>
         {
             entity.HasIndex(a => a.TeacherId);
+            entity.HasIndex(a => a.WorkspaceId);
             entity.Property(a => a.Title).HasMaxLength(200);
             entity.Property(a => a.Kind).HasConversion<string>();
             entity.Property(a => a.Status).HasConversion<string>();

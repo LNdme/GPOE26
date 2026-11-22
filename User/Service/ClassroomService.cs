@@ -12,7 +12,7 @@ public class ClassroomService(UserContext db, SpaceService spaces)
     /// La classe est rangée dans l'espace de l'enseignant (son établissement, sinon son espace indépendant),
     /// dans l'année en cours, et il en devient le professeur principal.
     /// </summary>
-    public async Task<Classroom> CreateAsync(AppUser teacher, string name, string? level = null,
+    public async Task<Classroom> CreateAsync(AppUser teacher, Guid workspaceId, string name, string? level = null,
         SchoolSubSystem? subSystem = null, string? subject = null)
     {
         var (organizationId, schoolYearId) = await spaces.TeacherSpaceAsync(teacher);
@@ -23,6 +23,7 @@ public class ClassroomService(UserContext db, SpaceService spaces)
             TeacherId = teacher.Id,
             OrganizationId = organizationId,
             SchoolYearId = schoolYearId,
+            WorkspaceId = workspaceId,
             Level = level,
             SubSystem = subSystem,
             Subject = subject ?? (teacher.TeachingSubjects.Count == 1 ? teacher.TeachingSubjects[0] : null)

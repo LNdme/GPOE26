@@ -1,0 +1,35 @@
+services:
+  mcp-egress-proxy:
+    container_name: gpoe-mcp-egress-proxy
+    image: ubuntu/squid@sha256:6a097f68bae708cedbabd6188d68c7e2e7a38cedd05a176e1cc0ba29e3bbe029
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 0.25
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"
+      net.ipv6.conf.default.disable_ipv6: "1"
+    tmpfs:
+      - /run:size=1m
+      - /etc/ssl/private:size=1m
+      - /var/log/squid:size=4m
+      - /var/spool/squid:size=16m
+    volumes:
+      - ./squid.conf:/etc/squid/squid.conf:ro
+    networks:
+      uplink:
+        gw_priority: 1
+
+networks:
+  uplink:
+    name: gpoe-mcp-uplink
+    driver: bridge
